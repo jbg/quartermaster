@@ -122,9 +122,15 @@ struct BatchDetailView: View {
                         }
                     }
                     .disabled(isActing)
-                } else if let location {
+                }
+                if let location {
+                    // Always available. For active batches the target sheet
+                    // flashes the row we came from; for depleted ones there's
+                    // nothing to flash (the batch isn't in the active list),
+                    // but the sheet still gives useful "what's actually here
+                    // now" context for the same product + location.
                     Button {
-                        openInInventory(product: batch.product, location: location)
+                        openInInventory(product: batch.product, location: location, batch: batch)
                     } label: {
                         Label("Open in Inventory", systemImage: "arrow.up.right.square")
                     }
@@ -200,11 +206,14 @@ struct BatchDetailView: View {
         }
     }
 
-    private func openInInventory(product: Product, location: Location) {
+    private func openInInventory(product: Product, location: Location, batch: StockBatch) {
+        // Highlight only makes sense when the originating batch is actually
+        // in the active list — depleted batches wouldn't be there, so the
+        // flash would no-op and confuse the eye. Send nil in that case.
         appState.pendingInventoryTarget = InventoryTarget(
             productID: product.id,
             locationID: location.id,
-            highlightBatchID: batchID,
+            highlightBatchID: isDepleted(batch) ? nil : batch.id,
         )
         // Dismiss the containing sheet stack so the deep-link can resolve
         // cleanly on the Inventory tab.
