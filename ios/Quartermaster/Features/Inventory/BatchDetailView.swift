@@ -19,12 +19,9 @@ struct BatchDetailView: View {
 
     @State private var state: LoadState = .loading
     @State private var locations: [Location] = []
+    @State private var recentEvents: [StockEvent] = []
     @State private var isActing = false
     @State private var actionError: String?
-    /// Bump after any action that should refresh the embedded mini-history.
-    /// Applied as `.id(historyReloadToken)` on `MiniBatchHistory` so SwiftUI
-    /// rebuilds the view and its `.task` re-runs.
-    @State private var historyReloadToken: Int = 0
 
     var body: some View {
         Group {
@@ -106,12 +103,16 @@ struct BatchDetailView: View {
             }
 
             Section("Recent history for this batch") {
-                MiniBatchHistory(batchID: batch.id)
-                    .id(historyReloadToken)
+                MiniBatchHistory(entries: recentEvents)
             }
 
             Section {
-                if isDepleted(batch) {
+                // Restore is only meaningful when the batch was explicitly
+                // discarded — a batch fully drained by `/stock/consume`
+                // would 409 with `batch_not_restorable`, so don't offer
+                // the action in the first place. The check mirrors the
+                // server's own `restore_in_tx` gate.
+                if isDepleted(batch), recentEvents.first?.eventType == .discard {
                     Button {
                         Task { await restore(batch) }
                     } label: {
@@ -182,7 +183,14 @@ struct BatchDetailView: View {
             locations = (try? await appState.api.locations()) ?? []
         }
         do {
-            let batch = try await appState.api.getStock(id: batchID)
+            // Parallelise: batch state + its recent events in one round trip.
+            // `getStock` is authoritative; events are best-effort (empty on
+            // failure still lets the screen render).
+            async let batchTask = appState.api.getStock(id: batchID)
+            async let eventsTask = appState.api.listBatchEvents(id: batchID, limit: 10)
+
+            let batch = try await batchTask
+            recentEvents = (try? await eventsTask)?.items ?? []
             let location = locations.first(where: { $0.id == batch.locationID })
             state = .loaded(batch, location)
         } catch let err as APIError {
@@ -197,8 +205,10 @@ struct BatchDetailView: View {
         defer { isActing = false }
         do {
             _ = try await appState.api.restoreStock(id: batch.id)
+            // `load()` now refreshes both the batch state and the events
+            // list, so the mini-history picks up the new `restore` row
+            // automatically — no reload token needed.
             await load()
-            historyReloadToken &+= 1
         } catch let err as APIError {
             actionError = err.userFacingMessage
         } catch {
@@ -229,35 +239,21 @@ struct BatchDetailView: View {
 }
 
 /// Inline mini-timeline of the last handful of events for a given batch.
-/// Lives in `BatchDetailView` so the full history sheet stays elsewhere.
+/// A pure renderer — events are loaded by `BatchDetailView.load()` so
+/// a restore / other action can refresh both the batch state and this
+/// list in one round trip.
 private struct MiniBatchHistory: View {
-    @Environment(AppState.self) private var appState
-    let batchID: UUID
-
-    @State private var entries: [StockEvent] = []
-    @State private var isLoading = true
+    let entries: [StockEvent]
 
     var body: some View {
-        Group {
-            if isLoading {
-                ProgressView()
-            } else if entries.isEmpty {
-                Text("No events recorded.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(entries) { event in
-                    StockEventRowView(event: event)
-                }
+        if entries.isEmpty {
+            Text("No events recorded.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        } else {
+            ForEach(entries) { event in
+                StockEventRowView(event: event)
             }
         }
-        .task { await load() }
-    }
-
-    private func load() async {
-        isLoading = true
-        let page = try? await appState.api.listBatchEvents(id: batchID, limit: 10)
-        entries = page?.items ?? []
-        isLoading = false
     }
 }
