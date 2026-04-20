@@ -484,6 +484,213 @@
             "bearer": []
           }
         ]
+      },
+      "delete": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "delete_one",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProductRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/products/{id}/refresh": {
+      "post": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "refresh",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
       }
     },
     "/stock": {
@@ -915,9 +1122,15 @@
       "ConsumeResponse": {
         "type": "object",
         "required": [
-          "consumed"
+          "consumed",
+          "consume_request_id"
         ],
         "properties": {
+          "consume_request_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Correlates the `consume` events this call wrote to the ledger."
+          },
           "consumed": {
             "type": "array",
             "items": {
@@ -932,6 +1145,8 @@
           "batch_id",
           "quantity",
           "unit",
+          "quantity_in_requested_unit",
+          "requested_unit",
           "depleted"
         ],
         "properties": {
@@ -943,6 +1158,14 @@
             "type": "boolean"
           },
           "quantity": {
+            "type": "string",
+            "description": "Amount taken from this batch, in the batch's own unit."
+          },
+          "quantity_in_requested_unit": {
+            "type": "string",
+            "description": "Same amount, converted to the unit the caller requested in the\n`ConsumeRequest`. Lets the client display \"200 ml consumed\" even\nwhen the underlying batch stores litres."
+          },
+          "requested_unit": {
             "type": "string"
           },
           "unit": {
@@ -1234,6 +1457,7 @@
           "id",
           "product",
           "location_id",
+          "initial_quantity",
           "quantity",
           "unit",
           "created_at"
@@ -1251,6 +1475,9 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "initial_quantity": {
+            "type": "string"
           },
           "location_id": {
             "type": "string",
@@ -1321,7 +1548,8 @@
         "type": "object",
         "required": [
           "code",
-          "family"
+          "family",
+          "to_base_milli"
         ],
         "properties": {
           "code": {
@@ -1329,6 +1557,46 @@
           },
           "family": {
             "type": "string"
+          },
+          "to_base_milli": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Conversion factor to the family's base unit (`g` for mass, `ml` for\nvolume, `piece` for count), expressed as thousandths so we can keep it\nan integer. Divide by 1000 to get the multiplier."
+          }
+        }
+      },
+      "UpdateProductRequest": {
+        "type": "object",
+        "properties": {
+          "brand": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "family": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "image_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preferred_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -1340,7 +1608,7 @@
               "string",
               "null"
             ],
-            "description": "Use `null` inside a JSON field to explicitly clear the expiry date;\nomit the field entirely to leave it unchanged."
+            "description": "`null` inside JSON clears the expiry; omitting the field leaves it\nuntouched."
           },
           "location_id": {
             "type": [
@@ -1365,13 +1633,8 @@
             "type": [
               "string",
               "null"
-            ]
-          },
-          "unit": {
-            "type": [
-              "string",
-              "null"
-            ]
+            ],
+            "description": "Changing `quantity` writes an `adjust` event. `unit` is immutable once\nthe batch has been created — delete and re-add if it was wrong."
           }
         }
       },

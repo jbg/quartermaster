@@ -11,6 +11,7 @@ struct InventoryView: View {
 
     @State private var showSearchSheet = false
     @State private var batchesSheet: BatchesSheetTarget?
+    @State private var pendingProduct: Product?
 
     struct BatchesSheetTarget: Identifiable {
         let product: Product
@@ -50,8 +51,6 @@ struct InventoryView: View {
         .refreshable { await load() }
         .sheet(isPresented: $showSearchSheet) {
             ProductSearchView { product in
-                // Present AddStockView after product is picked.
-                // Using nested sheet via a small coordinator state.
                 pendingProduct = product
             }
         }
@@ -61,17 +60,19 @@ struct InventoryView: View {
             }
         }
         .sheet(item: $batchesSheet) { target in
+            let locationBatches = batches.filter {
+                $0.product.id == target.product.id && $0.locationID == target.location.id
+            }
             ProductBatchesSheet(
                 product: target.product,
                 location: target.location,
-                batches: batches.filter { $0.product.id == target.product.id && $0.locationID == target.location.id },
+                allLocations: locations,
+                batches: locationBatches,
             ) {
                 await load()
             }
         }
     }
-
-    @State private var pendingProduct: Product?
 
     @ViewBuilder
     private var loadedContent: some View {
@@ -88,18 +89,19 @@ struct InventoryView: View {
             }
 
             ForEach(locations) { location in
-                let byProduct = groupedByProduct(for: location)
+                let groups = groupedByProduct(for: location)
                 Section {
-                    if byProduct.isEmpty {
+                    if groups.isEmpty {
                         emptyLocationRow(location)
                     } else {
-                        ForEach(byProduct, id: \.product.id) { group in
+                        ForEach(groups, id: \.product.id) { group in
                             Button {
                                 batchesSheet = BatchesSheetTarget(product: group.product, location: location)
                             } label: {
                                 ProductRow(
                                     product: group.product,
-                                    batches: group.batches,
+                                    visibleBatches: group.visibleBatches,
+                                    allBatches: group.allBatches,
                                     units: appState.units,
                                 )
                             }
@@ -118,35 +120,46 @@ struct InventoryView: View {
 
     private struct ProductGroup {
         let product: Product
-        let batches: [StockBatch]
+        let visibleBatches: [StockBatch]
+        let allBatches: [StockBatch]
     }
 
     private func groupedByProduct(for location: Location) -> [ProductGroup] {
-        let forLocation = batches.filter { $0.locationID == location.id && filter.matches($0) }
-        let dict = Dictionary(grouping: forLocation, by: { $0.product.id })
-        return dict.values
-            .compactMap { group -> ProductGroup? in
-                guard let any = group.first else { return nil }
-                let sorted = group.sorted { lhs, rhs in
-                    switch (lhs.expiresOnDate, rhs.expiresOnDate) {
-                    case let (l?, r?): return l < r
-                    case (nil, _?): return false
-                    case (_?, nil): return true
-                    case (nil, nil): return lhs.createdAt < rhs.createdAt
-                    }
-                }
-                return ProductGroup(product: any.product, batches: sorted)
-            }
-            .sorted { lhs, rhs in
-                let le = lhs.batches.compactMap(\.expiresOnDate).min()
-                let re = rhs.batches.compactMap(\.expiresOnDate).min()
-                switch (le, re) {
+        let inLocation = batches.filter { $0.locationID == location.id }
+        let allByProduct = Dictionary(grouping: inLocation, by: { $0.product.id })
+
+        var groups: [ProductGroup] = []
+        for (_, all) in allByProduct {
+            let visible = all.filter { filter.matches($0) }
+            if visible.isEmpty { continue }
+
+            let sortByExpiry: (StockBatch, StockBatch) -> Bool = { lhs, rhs in
+                switch (lhs.expiresOnDate, rhs.expiresOnDate) {
                 case let (l?, r?): return l < r
                 case (nil, _?): return false
                 case (_?, nil): return true
-                case (nil, nil): return lhs.product.name < rhs.product.name
+                case (nil, nil): return lhs.createdAt < rhs.createdAt
                 }
             }
+            let visibleSorted = visible.sorted(by: sortByExpiry)
+            let allSorted = all.sorted(by: sortByExpiry)
+            groups.append(ProductGroup(
+                product: visibleSorted[0].product,
+                visibleBatches: visibleSorted,
+                allBatches: allSorted,
+            ))
+        }
+
+        return groups.sorted { lhs, rhs in
+            let le = lhs.visibleBatches.compactMap(\.expiresOnDate).min()
+            let re = rhs.visibleBatches.compactMap(\.expiresOnDate).min()
+            switch (le, re) {
+            case let (l?, r?): return l < r
+            case (nil, _?): return false
+            case (_?, nil): return true
+            case (nil, nil): return lhs.product.name < rhs.product.name
+            }
+        }
     }
 
     @ViewBuilder

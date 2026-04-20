@@ -6,11 +6,13 @@ struct ProductBatchesSheet: View {
 
     let product: Product
     let location: Location
+    let allLocations: [Location]
     @State var batches: [StockBatch]
     var onMutated: () async -> Void
 
     @State private var editing: StockBatch?
     @State private var consumeTarget: StockBatch?
+    @State private var showProductDetails = false
     @State private var errorMessage: String?
 
     var body: some View {
@@ -48,12 +50,23 @@ struct ProductBatchesSheet: View {
             .navigationTitle(product.displayTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        Button {
+                            showProductDetails = true
+                        } label: {
+                            Label("Product details", systemImage: "info.circle")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
             }
             .sheet(item: $editing) { batch in
-                EditBatchForm(batch: batch, product: product, locations: [location]) { updated in
+                EditBatchForm(batch: batch, product: product, locations: allLocations) { updated in
                     if let idx = batches.firstIndex(where: { $0.id == updated.id }) {
                         batches[idx] = updated
                     }
@@ -67,6 +80,19 @@ struct ProductBatchesSheet: View {
                         batches = refreshed
                     }
                     if batches.isEmpty { dismiss() }
+                }
+            }
+            .sheet(isPresented: $showProductDetails) {
+                ProductDetailView(product: product) { action in
+                    Task {
+                        await onMutated()
+                        switch action {
+                        case .deleted:
+                            dismiss()
+                        case .updated, .refreshed:
+                            break
+                        }
+                    }
                 }
             }
             .alert("Couldn't update stock", isPresented: Binding(
@@ -105,11 +131,23 @@ struct BatchRow: View {
                 if let note = batch.note, !note.isEmpty {
                     Text(note).font(.caption).foregroundStyle(.secondary)
                 }
+                if let opened = batch.openedOnDate {
+                    Label("Opened \(Self.relativeDate(opened))", systemImage: "seal")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
             ExpiryBadge(expiresOn: batch.expiresOnDate)
         }
         .padding(.vertical, 2)
+    }
+
+    private static func relativeDate(_ d: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: d)
     }
 }
 
@@ -123,10 +161,13 @@ private struct EditBatchForm: View {
     var onUpdated: (StockBatch) -> Void
 
     @State private var quantity: String
-    @State private var unitCode: String
     @State private var locationID: UUID
     @State private var hasExpiry: Bool
     @State private var expiry: Date
+    @State private var hadExpiryOriginally: Bool
+    @State private var hasOpened: Bool
+    @State private var opened: Date
+    @State private var hadOpenedOriginally: Bool
     @State private var note: String
     @State private var isSubmitting = false
     @State private var errorMessage: String?
@@ -137,21 +178,34 @@ private struct EditBatchForm: View {
         self.locations = locations
         self.onUpdated = onUpdated
         _quantity = State(initialValue: batch.quantity)
-        _unitCode = State(initialValue: batch.unit)
         _locationID = State(initialValue: batch.locationID)
-        _hasExpiry = State(initialValue: batch.expiresOn != nil)
+        let originalExpiry = batch.expiresOn != nil
+        _hasExpiry = State(initialValue: originalExpiry)
+        _hadExpiryOriginally = State(initialValue: originalExpiry)
         _expiry = State(initialValue: batch.expiresOnDate ?? Calendar.current.date(byAdding: .day, value: 30, to: .now) ?? .now)
+        let originalOpened = batch.openedOn != nil
+        _hasOpened = State(initialValue: originalOpened)
+        _hadOpenedOriginally = State(initialValue: originalOpened)
+        _opened = State(initialValue: batch.openedOnDate ?? .now)
         _note = State(initialValue: batch.note ?? "")
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Quantity") {
-                    TextField("Amount", text: $quantity).keyboardType(.decimalPad)
-                    Picker("Unit", selection: $unitCode) {
-                        ForEach(appState.unitsFor(family: product.family), id: \.code) { u in
-                            Text(u.code).tag(u.code)
+                Section {
+                    DecimalField(title: "Amount", text: $quantity)
+                    LabeledContent("Unit", value: batch.unit)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("Quantity")
+                } footer: {
+                    Text("The unit is fixed when the batch is added. Change it by deleting the batch and re-adding.")
+                }
+                Section("Location") {
+                    Picker("Location", selection: $locationID) {
+                        ForEach(locations) { loc in
+                            Text(loc.name).tag(loc.id)
                         }
                     }
                 }
@@ -159,6 +213,17 @@ private struct EditBatchForm: View {
                     Toggle("Set expiry date", isOn: $hasExpiry.animation())
                     if hasExpiry {
                         DatePicker("Expires", selection: $expiry, displayedComponents: .date)
+                    }
+                    if hadExpiryOriginally && !hasExpiry {
+                        Text("Saving will remove the expiry date from this batch.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Section {
+                    Toggle("Mark as opened", isOn: $hasOpened.animation())
+                    if hasOpened {
+                        DatePicker("Opened on", selection: $opened, displayedComponents: .date)
                     }
                 }
                 Section("Note") {
@@ -187,13 +252,38 @@ private struct EditBatchForm: View {
     private func submit() async {
         isSubmitting = true
         errorMessage = nil
-        let request = UpdateStockRequest(
-            quantity: quantity,
-            unit: unitCode,
-            locationID: locationID != batch.locationID ? locationID : nil,
-            expiresOn: hasExpiry ? Self.iso.string(from: expiry) : nil,
-            note: note.trimmingCharacters(in: .whitespaces).isEmpty ? nil : note,
-        )
+        var request = UpdateStockRequest()
+        if quantity != batch.quantity {
+            request.quantity = quantity
+        }
+        if locationID != batch.locationID {
+            request.locationID = locationID
+        }
+        if hasExpiry {
+            let s = StockBatch.yyyymmdd.string(from: expiry)
+            if s != batch.expiresOn {
+                request.expiresOn = s
+            }
+        } else if hadExpiryOriginally {
+            request.clearExpiresOn = true
+        }
+        if hasOpened {
+            let s = StockBatch.yyyymmdd.string(from: opened)
+            if s != batch.openedOn {
+                request.openedOn = s
+            }
+        } else if hadOpenedOriginally {
+            request.clearOpenedOn = true
+        }
+        let trimmedNote = note.trimmingCharacters(in: .whitespaces)
+        if trimmedNote.isEmpty {
+            if batch.note != nil {
+                request.clearNote = true
+            }
+        } else if trimmedNote != batch.note {
+            request.note = trimmedNote
+        }
+
         do {
             let updated = try await appState.api.updateStock(id: batch.id, request: request)
             onUpdated(updated)
@@ -205,14 +295,6 @@ private struct EditBatchForm: View {
         }
         isSubmitting = false
     }
-
-    private static let iso: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        f.timeZone = .init(identifier: "UTC")
-        f.locale = .init(identifier: "en_US_POSIX")
-        return f
-    }()
 }
 
 private struct ConsumeForm: View {
@@ -239,7 +321,7 @@ private struct ConsumeForm: View {
         NavigationStack {
             Form {
                 Section("How much did you use?") {
-                    TextField("Amount", text: $quantity).keyboardType(.decimalPad)
+                    DecimalField(title: "Amount", text: $quantity)
                     Picker("Unit", selection: $unitCode) {
                         ForEach(appState.unitsFor(family: product.family), id: \.code) { u in
                             Text(u.code).tag(u.code)

@@ -22,6 +22,20 @@ pub enum ApiError {
     #[error("insufficient stock: requested {requested}, have {available}")]
     InsufficientStock { requested: String, available: String },
 
+    #[error("this product has active stock (delete or consume it first)")]
+    ProductHasStock,
+
+    #[error(
+        "this product has active stock with incompatible units for the new family: {conflicting_units:?}"
+    )]
+    ProductHasIncompatibleStock { conflicting_units: Vec<String> },
+
+    #[error("OpenFoodFacts products are read-only from the client — refresh instead")]
+    OffProductReadOnly,
+
+    #[error("this action is only available on OpenFoodFacts-sourced products")]
+    ManualProductNotRefreshable,
+
     #[error("unauthorized")]
     Unauthorized,
 
@@ -65,6 +79,14 @@ impl IntoResponse for ApiError {
             ApiError::UnknownUnit(_) => (StatusCode::BAD_REQUEST, "unknown_unit"),
             ApiError::UnitFamilyMismatch { .. } => (StatusCode::BAD_REQUEST, "unit_family_mismatch"),
             ApiError::InsufficientStock { .. } => (StatusCode::BAD_REQUEST, "insufficient_stock"),
+            ApiError::ProductHasStock => (StatusCode::CONFLICT, "product_has_stock"),
+            ApiError::ProductHasIncompatibleStock { .. } => {
+                (StatusCode::CONFLICT, "product_has_incompatible_stock")
+            }
+            ApiError::OffProductReadOnly => (StatusCode::FORBIDDEN, "off_product_read_only"),
+            ApiError::ManualProductNotRefreshable => {
+                (StatusCode::BAD_REQUEST, "manual_product_not_refreshable")
+            }
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             ApiError::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             ApiError::NotFound => (StatusCode::NOT_FOUND, "not_found"),

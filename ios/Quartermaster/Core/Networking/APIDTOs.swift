@@ -128,13 +128,15 @@ struct Product: Codable, Sendable, Identifiable, Hashable {
         case imageURL = "image_url"
     }
 
-    /// Formatted label for list rows: "Brand · Name" or just "Name".
     var displayTitle: String {
         if let brand, !brand.isEmpty {
             return "\(brand) · \(name)"
         }
         return name
     }
+
+    var isOFF: Bool { source == "openfoodfacts" }
+    var isManual: Bool { source == "manual" }
 }
 
 struct ProductSearchResponse: Codable, Sendable {
@@ -159,12 +161,50 @@ struct CreateProductRequest: Encodable {
     }
 }
 
+/// PATCH body for manual products. Encodes only the fields the caller
+/// actually set; `clearBrand` / `clearImageURL` emit an explicit JSON null
+/// so the backend's double-option deserializer can distinguish "leave alone"
+/// from "clear".
+struct UpdateProductRequest: Encodable {
+    var name: String?
+    var brand: String?
+    var clearBrand: Bool = false
+    var family: ProductFamily?
+    var preferredUnit: String?
+    var imageURL: String?
+    var clearImageURL: Bool = false
+
+    enum CodingKeys: String, CodingKey {
+        case name, brand, family
+        case preferredUnit = "preferred_unit"
+        case imageURL = "image_url"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        if let name { try c.encode(name, forKey: .name) }
+        if clearBrand {
+            try c.encodeNil(forKey: .brand)
+        } else if let brand {
+            try c.encode(brand, forKey: .brand)
+        }
+        if let family { try c.encode(family, forKey: .family) }
+        if let preferredUnit { try c.encode(preferredUnit, forKey: .preferredUnit) }
+        if clearImageURL {
+            try c.encodeNil(forKey: .imageURL)
+        } else if let imageURL {
+            try c.encode(imageURL, forKey: .imageURL)
+        }
+    }
+}
+
 // MARK: - Stock
 
 struct StockBatch: Codable, Sendable, Identifiable, Hashable {
     let id: UUID
     let product: Product
     let locationID: UUID
+    let initialQuantity: String
     let quantity: String
     let unit: String
     let expiresOn: String?
@@ -175,6 +215,7 @@ struct StockBatch: Codable, Sendable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id, product, quantity, unit, note
         case locationID = "location_id"
+        case initialQuantity = "initial_quantity"
         case expiresOn = "expires_on"
         case openedOn = "opened_on"
         case createdAt = "created_at"
@@ -185,7 +226,12 @@ struct StockBatch: Codable, Sendable, Identifiable, Hashable {
         return Self.yyyymmdd.date(from: expiresOn)
     }
 
-    private static let yyyymmdd: DateFormatter = {
+    var openedOnDate: Date? {
+        guard let openedOn else { return nil }
+        return Self.yyyymmdd.date(from: openedOn)
+    }
+
+    static let yyyymmdd: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         f.timeZone = .init(identifier: "UTC")
@@ -216,17 +262,46 @@ struct CreateStockRequest: Encodable {
     }
 }
 
+/// PATCH body for stock batches. `quantity` routes through an adjust event;
+/// metadata fields go through plain column updates. `unit` is intentionally
+/// absent — it's immutable after creation. Clearable date/note fields use
+/// the same encoder-level explicit-null pattern as `UpdateProductRequest`.
 struct UpdateStockRequest: Encodable {
     var quantity: String?
-    var unit: String?
     var locationID: UUID?
     var expiresOn: String?
+    var clearExpiresOn: Bool = false
+    var openedOn: String?
+    var clearOpenedOn: Bool = false
     var note: String?
+    var clearNote: Bool = false
 
     enum CodingKeys: String, CodingKey {
-        case quantity, unit, note
+        case quantity, note
         case locationID = "location_id"
         case expiresOn = "expires_on"
+        case openedOn = "opened_on"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        if let quantity { try c.encode(quantity, forKey: .quantity) }
+        if let locationID { try c.encode(locationID, forKey: .locationID) }
+        if clearExpiresOn {
+            try c.encodeNil(forKey: .expiresOn)
+        } else if let expiresOn {
+            try c.encode(expiresOn, forKey: .expiresOn)
+        }
+        if clearOpenedOn {
+            try c.encodeNil(forKey: .openedOn)
+        } else if let openedOn {
+            try c.encode(openedOn, forKey: .openedOn)
+        }
+        if clearNote {
+            try c.encodeNil(forKey: .note)
+        } else if let note {
+            try c.encode(note, forKey: .note)
+        }
     }
 }
 
@@ -245,18 +320,30 @@ struct ConsumeRequest: Encodable {
 
 struct ConsumedBatch: Codable, Sendable {
     let batchID: UUID
+    /// Amount taken from the batch, in the batch's own unit.
     let quantity: String
     let unit: String
+    /// Same amount converted to the unit the caller requested.
+    let quantityInRequestedUnit: String
+    let requestedUnit: String
     let depleted: Bool
 
     enum CodingKeys: String, CodingKey {
         case quantity, unit, depleted
         case batchID = "batch_id"
+        case quantityInRequestedUnit = "quantity_in_requested_unit"
+        case requestedUnit = "requested_unit"
     }
 }
 
 struct ConsumeResponse: Codable, Sendable {
     let consumed: [ConsumedBatch]
+    let consumeRequestID: UUID
+
+    enum CodingKeys: String, CodingKey {
+        case consumed
+        case consumeRequestID = "consume_request_id"
+    }
 }
 
 // MARK: - Errors
@@ -266,7 +353,7 @@ struct APIErrorBody: Codable, Sendable {
     let message: String
 }
 
-// MARK: - Request builders (legacy, kept for slice-1 compatibility)
+// MARK: - Request builders (auth, unchanged)
 
 struct RegisterRequest: Encodable {
     let username: String

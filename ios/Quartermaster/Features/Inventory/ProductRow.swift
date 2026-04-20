@@ -2,7 +2,11 @@ import SwiftUI
 
 struct ProductRow: View {
     let product: Product
-    let batches: [StockBatch]
+    /// Batches displayed by the active filter (may be a subset of the product's stock).
+    let visibleBatches: [StockBatch]
+    /// All of the product's batches in this location, unfiltered. Used to
+    /// show a "... of <total>" contrast when a filter is hiding some batches.
+    let allBatches: [StockBatch]
     let units: [Unit]
 
     var body: some View {
@@ -12,16 +16,7 @@ struct ProductRow: View {
                 Text(product.displayTitle)
                     .font(.body)
                     .lineLimit(2)
-                HStack(spacing: 6) {
-                    Text(totalLabel)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                    if batches.count > 1 {
-                        Text("· \(batches.count) batches")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                quantityLine
             }
             Spacer()
             ExpiryBadge(expiresOn: earliestExpiry)
@@ -64,16 +59,44 @@ struct ProductRow: View {
     }
 
     private var earliestExpiry: Date? {
-        batches.compactMap(\.expiresOnDate).min()
+        visibleBatches.compactMap(\.expiresOnDate).min()
     }
 
-    private var totalLabel: String {
-        if let total = UnitConversion.sum(batches, inUnit: product.preferredUnit, units: units) {
-            return "\(formatDecimal(total)) \(product.preferredUnit)"
+    @ViewBuilder
+    private var quantityLine: some View {
+        let visibleTotal = UnitConversion.sum(visibleBatches, inUnit: product.preferredUnit, units: units)
+        let allTotal = UnitConversion.sum(allBatches, inUnit: product.preferredUnit, units: units)
+        let filterHidingSomething = allBatches.count != visibleBatches.count
+
+        HStack(spacing: 6) {
+            if let visibleTotal {
+                if filterHidingSomething, let allTotal {
+                    Text("\(formatDecimal(visibleTotal)) \(product.preferredUnit) matching")
+                        .font(.subheadline.weight(.medium))
+                    Text("·")
+                        .foregroundStyle(.secondary)
+                    Text("\(formatDecimal(allTotal)) \(product.preferredUnit) total")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("\(formatDecimal(visibleTotal)) \(product.preferredUnit)")
+                        .font(.subheadline.weight(.medium))
+                }
+            } else {
+                Text("Mixed units")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            if filterHidingSomething {
+                Text("· \(visibleBatches.count)/\(allBatches.count) batches")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if visibleBatches.count > 1 {
+                Text("· \(visibleBatches.count) batches")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
-        // Fallback when any batch is in an incompatible unit (shouldn't happen
-        // given server-side family-match enforcement, but handle gracefully).
-        return "Mixed units"
     }
 
     private func formatDecimal(_ d: Decimal) -> String {

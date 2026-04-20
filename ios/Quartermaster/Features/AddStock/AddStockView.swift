@@ -12,6 +12,8 @@ struct AddStockView: View {
     @State private var selectedLocationID: UUID?
     @State private var hasExpiry: Bool = false
     @State private var expiry: Date = Calendar.current.date(byAdding: .day, value: 30, to: .now) ?? .now
+    @State private var hasOpened: Bool = false
+    @State private var opened: Date = .now
     @State private var note: String = ""
 
     @State private var locations: [Location] = []
@@ -25,8 +27,7 @@ struct AddStockView: View {
                     productHeader
                 }
                 Section("Quantity") {
-                    TextField("Amount", text: $quantity)
-                        .keyboardType(.decimalPad)
+                    DecimalField(title: "Amount", text: $quantity)
                     Picker("Unit", selection: $unitCode) {
                         ForEach(unitOptions, id: \.code) { u in
                             Text(u.code).tag(u.code)
@@ -45,6 +46,14 @@ struct AddStockView: View {
                     if hasExpiry {
                         DatePicker("Expires", selection: $expiry, displayedComponents: .date)
                     }
+                }
+                Section {
+                    Toggle("Mark as opened", isOn: $hasOpened.animation())
+                    if hasOpened {
+                        DatePicker("Opened on", selection: $opened, displayedComponents: .date)
+                    }
+                } footer: {
+                    Text("For items with a 'best within N days once opened' rule.")
                 }
                 Section("Note") {
                     TextField("Optional", text: $note, axis: .vertical)
@@ -143,8 +152,8 @@ struct AddStockView: View {
             locationID: locationID,
             quantity: quantity,
             unit: unitCode,
-            expiresOn: hasExpiry ? Self.isoFormatter.string(from: expiry) : nil,
-            openedOn: nil,
+            expiresOn: hasExpiry ? StockBatch.yyyymmdd.string(from: expiry) : nil,
+            openedOn: hasOpened ? StockBatch.yyyymmdd.string(from: opened) : nil,
             note: note.trimmingCharacters(in: .whitespaces).isEmpty ? nil : note,
         )
         do {
@@ -158,12 +167,4 @@ struct AddStockView: View {
         }
         isSubmitting = false
     }
-
-    private static let isoFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        f.timeZone = .init(identifier: "UTC")
-        f.locale = .init(identifier: "en_US_POSIX")
-        return f
-    }()
 }

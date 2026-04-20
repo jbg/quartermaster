@@ -9,7 +9,9 @@ use axum::{
 use chrono::NaiveDate;
 use qm_core::batch::plan_consumption;
 use qm_db::products::ProductRow;
-use qm_db::stock::{StockBatchWithProduct, StockFilter, StockUpdate};
+use qm_db::stock::{
+    StockBatchRow, StockBatchWithProduct, StockFilter, StockMetadataUpdate,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -49,6 +51,7 @@ pub struct StockBatchDto {
     pub id: Uuid,
     pub product: ProductDto,
     pub location_id: Uuid,
+    pub initial_quantity: String,
     pub quantity: String,
     pub unit: String,
     pub expires_on: Option<String>,
@@ -63,6 +66,7 @@ impl From<StockBatchWithProduct> for StockBatchDto {
             id: j.batch.id,
             product: j.product.into(),
             location_id: j.batch.location_id,
+            initial_quantity: j.batch.initial_quantity,
             quantity: j.batch.quantity,
             unit: j.batch.unit,
             expires_on: j.batch.expires_on,
@@ -103,11 +107,12 @@ pub struct CreateStockRequest {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateStockRequest {
+    /// Changing `quantity` writes an `adjust` event. `unit` is immutable once
+    /// the batch has been created — delete and re-add if it was wrong.
     pub quantity: Option<String>,
-    pub unit: Option<String>,
     pub location_id: Option<Uuid>,
-    /// Use `null` inside a JSON field to explicitly clear the expiry date;
-    /// omit the field entirely to leave it unchanged.
+    /// `null` inside JSON clears the expiry; omitting the field leaves it
+    /// untouched.
     #[serde(default, deserialize_with = "double_option::deserialize")]
     pub expires_on: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option::deserialize")]
@@ -127,14 +132,22 @@ pub struct ConsumeRequest {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ConsumedBatchDto {
     pub batch_id: Uuid,
+    /// Amount taken from this batch, in the batch's own unit.
     pub quantity: String,
     pub unit: String,
+    /// Same amount, converted to the unit the caller requested in the
+    /// `ConsumeRequest`. Lets the client display "200 ml consumed" even
+    /// when the underlying batch stores litres.
+    pub quantity_in_requested_unit: String,
+    pub requested_unit: String,
     pub depleted: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ConsumeResponse {
     pub consumed: Vec<ConsumedBatchDto>,
+    /// Correlates the `consume` events this call wrote to the ledger.
+    pub consume_request_id: Uuid,
 }
 
 // ----- handlers -----
@@ -280,10 +293,9 @@ pub async fn update(
     let product = load_product_for_write(&state, household_id, existing.product_id).await?;
 
     if let Some(q) = req.quantity.as_deref() {
-        validate_positive_decimal(q)?;
-    }
-    if let Some(unit) = req.unit.as_deref() {
-        validate_unit_family(unit, &product.family)?;
+        // Allow quantity=0 via adjust (same as discard semantically). The
+        // stricter `validate_positive_decimal` only applies at create time.
+        Decimal::from_str(q).map_err(|_| ApiError::BadRequest("quantity not a valid decimal".into()))?;
     }
     if let Some(loc) = req.location_id {
         validate_location(&state, household_id, loc).await?;
@@ -295,16 +307,31 @@ pub async fn update(
         validate_iso_date(d)?;
     }
 
-    let upd = StockUpdate {
-        quantity: req.quantity.as_deref(),
-        unit: req.unit.as_deref(),
+    // Quantity changes funnel through `adjust` (writes an event); metadata
+    // changes go through `update_metadata` (no event). Both can appear in
+    // the same PATCH call.
+    if let Some(qty) = req.quantity.as_deref() {
+        qm_db::stock::adjust(&state.db, household_id, id, qty, current.user_id, None).await?;
+    }
+
+    let metadata = StockMetadataUpdate {
         location_id: req.location_id,
         expires_on: req.expires_on.as_ref().map(|o| o.as_deref()),
         opened_on: req.opened_on.as_ref().map(|o| o.as_deref()),
         note: req.note.as_ref().map(|o| o.as_deref()),
     };
-    let row = qm_db::stock::update(&state.db, household_id, id, &upd).await?;
-    Ok(Json(StockBatchWithProduct { batch: row, product }.into()))
+    let has_metadata = req.location_id.is_some()
+        || req.expires_on.is_some()
+        || req.opened_on.is_some()
+        || req.note.is_some();
+    if has_metadata {
+        qm_db::stock::update_metadata(&state.db, household_id, id, &metadata).await?;
+    }
+
+    let refreshed = qm_db::stock::get(&state.db, household_id, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok(Json(StockBatchWithProduct { batch: refreshed, product }.into()))
 }
 
 #[utoipa::path(
@@ -324,8 +351,8 @@ pub async fn delete_one(
     Path(id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    let removed = qm_db::stock::delete(&state.db, household_id, id).await?;
-    if removed {
+    let found = qm_db::stock::discard(&state.db, household_id, id, current.user_id, None).await?;
+    if found {
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(ApiError::NotFound)
@@ -380,22 +407,30 @@ pub async fn consume(
         Err(err) => return Err(ApiError::Domain(err)),
     };
 
-    qm_db::stock::apply_consumption(&state.db, household_id, &plan).await?;
+    let consume_request_id =
+        qm_db::stock::apply_consumption(&state.db, household_id, &plan, current.user_id).await?;
 
-    // Report the plan back in a shape that mirrors what each batch was asked
-    // to give up, expressed in the batch's own unit (matches our domain).
-    let consumed = plan
-        .into_iter()
-        .zip(batches.iter())
-        .map(|(c, b)| ConsumedBatchDto {
+    // Zip the plan back with the batches so we can report the consumption
+    // in both the batch's unit and the user's requested unit.
+    let mut consumed = Vec::with_capacity(plan.len());
+    for (c, batch) in plan.into_iter().zip(batches.iter()) {
+        // qm_core::units::convert returns quantity in the `to` unit.
+        let in_requested = qm_core::units::convert(c.quantity, &batch.unit, &req.unit)
+            .unwrap_or(c.quantity);
+        consumed.push(ConsumedBatchDto {
             batch_id: c.batch_id,
             quantity: c.quantity.to_string(),
-            unit: b.unit.clone(),
+            unit: batch.unit.clone(),
+            quantity_in_requested_unit: in_requested.to_string(),
+            requested_unit: req.unit.clone(),
             depleted: c.depletes,
-        })
-        .collect();
+        });
+    }
 
-    Ok(Json(ConsumeResponse { consumed }))
+    Ok(Json(ConsumeResponse {
+        consumed,
+        consume_request_id,
+    }))
 }
 
 // ----- helpers -----
@@ -440,7 +475,6 @@ async fn load_product_for_write(
     let product = qm_db::products::find_by_id(&state.db, product_id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    // Manual products are household-private; OFF products are shared.
     if product.source == qm_db::products::SOURCE_MANUAL
         && product.created_by_household_id != Some(household_id)
     {
@@ -449,3 +483,5 @@ async fn load_product_for_write(
     Ok(product)
 }
 
+#[allow(dead_code)]
+type _KeepStockBatchRowInScope = StockBatchRow;

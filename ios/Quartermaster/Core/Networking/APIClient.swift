@@ -81,6 +81,32 @@ actor APIClient {
         try await get("/products/\(id.uuidString.lowercased())", authenticated: true)
     }
 
+    func updateProduct(id: UUID, request: UpdateProductRequest) async throws -> Product {
+        try await send(
+            method: "PATCH",
+            path: "/products/\(id.uuidString.lowercased())",
+            body: request,
+            authenticated: true,
+        )
+    }
+
+    func deleteProduct(id: UUID) async throws {
+        let _: EmptyResponse = try await send(
+            method: "DELETE",
+            path: "/products/\(id.uuidString.lowercased())",
+            body: Optional<EmptyBody>.none,
+            authenticated: true,
+        )
+    }
+
+    func refreshProduct(id: UUID) async throws -> Product {
+        try await post(
+            "/products/\(id.uuidString.lowercased())/refresh",
+            body: EmptyBody(),
+            authenticated: true,
+        )
+    }
+
     // MARK: - Stock
 
     func listStock(

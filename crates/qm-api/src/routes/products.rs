@@ -4,7 +4,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use qm_db::products::ProductRow;
+use qm_db::products::{ProductRow, ProductUpdate};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -22,7 +22,25 @@ pub fn router() -> Router<AppState> {
         .route("/products/search", get(search))
         .route("/products/by-barcode/{barcode}", get(by_barcode))
         .route("/products", post(create))
-        .route("/products/{id}", get(get_one))
+        .route(
+            "/products/{id}",
+            get(get_one).patch(update).delete(delete_one),
+        )
+        .route("/products/{id}/refresh", post(refresh))
+}
+
+/// Deserializer helper for explicit-null semantics on optional-clearable
+/// fields, mirroring the same pattern used on `UpdateStockRequest`.
+mod double_option {
+    use serde::{Deserialize, Deserializer};
+
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: Deserialize<'de>,
+    {
+        Ok(Some(Option::<T>::deserialize(deserializer)?))
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -64,6 +82,17 @@ pub struct CreateProductRequest {
     pub barcode: Option<String>,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateProductRequest {
+    pub name: Option<String>,
+    #[serde(default, deserialize_with = "double_option::deserialize")]
+    pub brand: Option<Option<String>>,
+    pub family: Option<String>,
+    pub preferred_unit: Option<String>,
+    #[serde(default, deserialize_with = "double_option::deserialize")]
+    pub image_url: Option<Option<String>>,
+}
+
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct SearchQuery {
     pub q: String,
@@ -81,6 +110,8 @@ pub struct BarcodeLookupResponse {
     /// `cache` when served from our DB, `openfoodfacts` when fetched just now.
     pub source: &'static str,
 }
+
+// ----- handlers -----
 
 #[utoipa::path(
     get,
@@ -154,34 +185,7 @@ pub async fn by_barcode(
         }
     }
 
-    // Stale / absent — fetch from OFF.
-    let off = OpenFoodFactsClient::new(state.http.clone());
-    match off.fetch(&barcode).await {
-        OffResult::Found(p) => {
-            let family = openfoodfacts::infer_family(p.quantity_unit.as_deref());
-            let preferred = qm_db::products::base_unit_for_family(family.as_str());
-            let row = qm_db::products::upsert_from_off(
-                &state.db,
-                &p.barcode,
-                &p.name,
-                p.brand.as_deref(),
-                family.as_str(),
-                Some(preferred),
-                p.image_url.as_deref(),
-            )
-            .await?;
-            qm_db::barcode_cache::put_hit(&state.db, &barcode, row.id).await?;
-            Ok(Json(BarcodeLookupResponse {
-                product: row.into(),
-                source: "openfoodfacts",
-            }))
-        }
-        OffResult::NotFound => {
-            qm_db::barcode_cache::put_miss(&state.db, &barcode).await?;
-            Err(ApiError::NotFound)
-        }
-        OffResult::Upstream(_) => Err(ApiError::BadGateway),
-    }
+    fetch_and_cache(&state, &barcode).await
 }
 
 #[utoipa::path(
@@ -208,12 +212,7 @@ pub async fn create(
             "product name must be 1..=256 chars".into(),
         ));
     }
-    if !matches!(req.family.as_str(), "mass" | "volume" | "count") {
-        return Err(ApiError::BadRequest(format!(
-            "family must be one of mass, volume, count (got {})",
-            req.family,
-        )));
-    }
+    validate_family(&req.family)?;
     if let Some(pu) = req.preferred_unit.as_deref() {
         let u = qm_core::units::lookup(pu).map_err(|_| ApiError::UnknownUnit(pu.to_owned()))?;
         if u.family.as_str() != req.family {
@@ -271,4 +270,220 @@ pub async fn get_one(
         return Err(ApiError::NotFound);
     }
     Ok(Json(row.into()))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/products/{id}",
+    tag = "products",
+    params(("id" = Uuid, Path)),
+    request_body = UpdateProductRequest,
+    responses(
+        (status = 200, body = ProductDto),
+        (status = 400, body = crate::error::ApiErrorBody),
+        (status = 403, body = crate::error::ApiErrorBody),
+        (status = 404, body = crate::error::ApiErrorBody),
+        (status = 409, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn update(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdateProductRequest>,
+) -> ApiResult<Json<ProductDto>> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+
+    let existing = qm_db::products::find_by_id(&state.db, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+
+    // OFF products are read-only from the client; only refresh is allowed.
+    if existing.source == qm_db::products::SOURCE_OFF {
+        return Err(ApiError::OffProductReadOnly);
+    }
+
+    // Manual product: only the owning household may edit.
+    if existing.created_by_household_id != Some(household_id) {
+        return Err(ApiError::NotFound);
+    }
+
+    // Validation on provided fields.
+    if let Some(name) = req.name.as_deref() {
+        let trimmed = name.trim();
+        if trimmed.is_empty() || trimmed.len() > 256 {
+            return Err(ApiError::BadRequest(
+                "product name must be 1..=256 chars".into(),
+            ));
+        }
+    }
+    if let Some(fam) = req.family.as_deref() {
+        validate_family(fam)?;
+        if fam != existing.family {
+            let conflicts = qm_db::stock::conflicting_units_for_family_change(
+                &state.db,
+                existing.id,
+                fam,
+            )
+            .await?;
+            if !conflicts.is_empty() {
+                return Err(ApiError::ProductHasIncompatibleStock {
+                    conflicting_units: conflicts,
+                });
+            }
+        }
+    }
+
+    // If both family and preferred_unit are changing, validate in the new
+    // family; otherwise validate preferred_unit against the existing family.
+    let effective_family = req.family.as_deref().unwrap_or(&existing.family);
+    if let Some(pu) = req.preferred_unit.as_deref() {
+        let u = qm_core::units::lookup(pu).map_err(|_| ApiError::UnknownUnit(pu.to_owned()))?;
+        if u.family.as_str() != effective_family {
+            return Err(ApiError::UnitFamilyMismatch {
+                product_family: effective_family.to_owned(),
+                unit: pu.to_owned(),
+            });
+        }
+    }
+
+    let name_trim = req.name.as_deref().map(str::trim);
+    let brand_inner: Option<Option<&str>> = req.brand.as_ref().map(|inner| {
+        inner
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    });
+    let image_inner: Option<Option<&str>> = req.image_url.as_ref().map(|inner| {
+        inner
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    });
+
+    let updated = qm_db::products::update(
+        &state.db,
+        id,
+        &ProductUpdate {
+            name: name_trim,
+            brand: brand_inner,
+            family: req.family.as_deref(),
+            preferred_unit: req.preferred_unit.as_deref(),
+            image_url: image_inner,
+        },
+    )
+    .await?;
+
+    Ok(Json(updated.into()))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/products/{id}",
+    tag = "products",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 204),
+        (status = 403, body = crate::error::ApiErrorBody),
+        (status = 404, body = crate::error::ApiErrorBody),
+        (status = 409, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn delete_one(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<StatusCode> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    let existing = qm_db::products::find_by_id(&state.db, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if existing.source == qm_db::products::SOURCE_OFF {
+        return Err(ApiError::OffProductReadOnly);
+    }
+    if existing.created_by_household_id != Some(household_id) {
+        return Err(ApiError::NotFound);
+    }
+    if qm_db::stock::has_active_stock_for_product(&state.db, id).await? {
+        return Err(ApiError::ProductHasStock);
+    }
+    qm_db::products::soft_delete(&state.db, id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    post,
+    path = "/products/{id}/refresh",
+    tag = "products",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = ProductDto),
+        (status = 400, body = crate::error::ApiErrorBody),
+        (status = 404, body = crate::error::ApiErrorBody),
+        (status = 502, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn refresh(
+    State(state): State<AppState>,
+    _current: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<ProductDto>> {
+    let existing = qm_db::products::find_by_id(&state.db, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if existing.source != qm_db::products::SOURCE_OFF {
+        return Err(ApiError::ManualProductNotRefreshable);
+    }
+    let Some(barcode) = existing.off_barcode.clone() else {
+        return Err(ApiError::ManualProductNotRefreshable);
+    };
+    qm_db::products::invalidate_barcode_cache_for(&state.db, id).await?;
+
+    let response = fetch_and_cache(&state, &barcode).await?;
+    Ok(Json(response.0.product))
+}
+
+// ----- helpers -----
+
+async fn fetch_and_cache(state: &AppState, barcode: &str) -> ApiResult<Json<BarcodeLookupResponse>> {
+    let off = OpenFoodFactsClient::new(state.http.clone());
+    match off.fetch(barcode).await {
+        OffResult::Found(p) => {
+            let family = openfoodfacts::infer_family(p.quantity_unit.as_deref());
+            let preferred = qm_db::products::base_unit_for_family(family.as_str());
+            let row = qm_db::products::upsert_from_off(
+                &state.db,
+                &p.barcode,
+                &p.name,
+                p.brand.as_deref(),
+                family.as_str(),
+                Some(preferred),
+                p.image_url.as_deref(),
+            )
+            .await?;
+            qm_db::barcode_cache::put_hit(&state.db, barcode, row.id).await?;
+            Ok(Json(BarcodeLookupResponse {
+                product: row.into(),
+                source: "openfoodfacts",
+            }))
+        }
+        OffResult::NotFound => {
+            qm_db::barcode_cache::put_miss(&state.db, barcode).await?;
+            Err(ApiError::NotFound)
+        }
+        OffResult::Upstream(_) => Err(ApiError::BadGateway),
+    }
+}
+
+fn validate_family(f: &str) -> ApiResult<()> {
+    if matches!(f, "mass" | "volume" | "count") {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest(format!(
+            "family must be one of mass, volume, count (got {f})",
+        )))
+    }
 }

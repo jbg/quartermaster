@@ -134,7 +134,7 @@ pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<ProductRow>, s
     let row = sqlx::query(
         "SELECT id, source, off_barcode, name, brand, family, default_unit, \
                 image_url, fetched_at, created_by_household_id, created_at \
-         FROM product WHERE id = ?",
+         FROM product WHERE id = ? AND deleted_at IS NULL",
     )
     .bind(id.to_string())
     .fetch_optional(&db.pool)
@@ -149,7 +149,7 @@ pub async fn find_by_off_barcode(
     let row = sqlx::query(
         "SELECT id, source, off_barcode, name, brand, family, default_unit, \
                 image_url, fetched_at, created_by_household_id, created_at \
-         FROM product WHERE off_barcode = ? AND source = ?",
+         FROM product WHERE off_barcode = ? AND source = ? AND deleted_at IS NULL",
     )
     .bind(barcode)
     .bind(SOURCE_OFF)
@@ -172,7 +172,8 @@ pub async fn search(
         "SELECT id, source, off_barcode, name, brand, family, default_unit, \
                 image_url, fetched_at, created_by_household_id, created_at \
          FROM product \
-         WHERE (source = ? OR created_by_household_id = ?) \
+         WHERE deleted_at IS NULL \
+           AND (source = ? OR created_by_household_id = ?) \
            AND (LOWER(name) LIKE LOWER(?) OR LOWER(COALESCE(brand, '')) LIKE LOWER(?)) \
          ORDER BY name ASC \
          LIMIT ?",
@@ -185,6 +186,85 @@ pub async fn search(
     .fetch_all(&db.pool)
     .await?;
     rows.into_iter().map(row_to_product).collect()
+}
+
+/// Partial update of a manual product. Pass `Some(Some(value))` to set,
+/// `Some(None)` to clear (only applicable to brand/preferred_unit/image_url;
+/// the others are required-non-null), or `None` to leave unchanged.
+#[derive(Debug, Default, Clone)]
+pub struct ProductUpdate<'a> {
+    pub name: Option<&'a str>,
+    pub brand: Option<Option<&'a str>>,
+    pub family: Option<&'a str>,
+    pub preferred_unit: Option<&'a str>,
+    pub image_url: Option<Option<&'a str>>,
+}
+
+pub async fn update(
+    db: &Database,
+    id: Uuid,
+    upd: &ProductUpdate<'_>,
+) -> Result<ProductRow, sqlx::Error> {
+    let current = find_by_id(db, id).await?.ok_or(sqlx::Error::RowNotFound)?;
+    let name = upd.name.unwrap_or(&current.name);
+    let family = upd.family.unwrap_or(&current.family);
+    let preferred_unit = upd.preferred_unit.unwrap_or(&current.preferred_unit);
+    let brand: Option<String> = match upd.brand {
+        Some(inner) => inner.map(str::to_owned),
+        None => current.brand.clone(),
+    };
+    let image_url: Option<String> = match upd.image_url {
+        Some(inner) => inner.map(str::to_owned),
+        None => current.image_url.clone(),
+    };
+
+    sqlx::query(
+        "UPDATE product SET name = ?, brand = ?, family = ?, default_unit = ?, image_url = ? \
+         WHERE id = ?",
+    )
+    .bind(name)
+    .bind(brand.as_deref())
+    .bind(family)
+    .bind(preferred_unit)
+    .bind(image_url.as_deref())
+    .bind(id.to_string())
+    .execute(&db.pool)
+    .await?;
+
+    find_by_id(db, id).await?.ok_or(sqlx::Error::RowNotFound)
+}
+
+/// Soft-delete a product. The row stays so depleted stock_batches keep
+/// resolving their product for history views; finds / searches hide it.
+pub async fn soft_delete(db: &Database, id: Uuid) -> Result<bool, sqlx::Error> {
+    let res = sqlx::query(
+        "UPDATE product SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
+    )
+    .bind(now_utc_rfc3339())
+    .bind(id.to_string())
+    .execute(&db.pool)
+    .await?;
+    Ok(res.rows_affected() > 0)
+}
+
+/// Drop the barcode_cache row for this OFF product's barcode. Used by the
+/// "Refresh from OpenFoodFacts" endpoint. Returns false if the product
+/// isn't OFF-sourced or has no barcode.
+pub async fn invalidate_barcode_cache_for(
+    db: &Database,
+    id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let Some(product) = find_by_id(db, id).await? else {
+        return Ok(false);
+    };
+    let Some(barcode) = product.off_barcode.as_deref() else {
+        return Ok(false);
+    };
+    sqlx::query("DELETE FROM barcode_cache WHERE barcode = ?")
+        .bind(barcode)
+        .execute(&db.pool)
+        .await?;
+    Ok(true)
 }
 
 fn row_to_product(row: sqlx::any::AnyRow) -> Result<ProductRow, sqlx::Error> {

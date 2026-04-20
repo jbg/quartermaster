@@ -15,6 +15,7 @@ pub mod locations;
 pub mod memberships;
 pub mod products;
 pub mod stock;
+pub mod stock_events;
 pub mod tokens;
 pub mod users;
 

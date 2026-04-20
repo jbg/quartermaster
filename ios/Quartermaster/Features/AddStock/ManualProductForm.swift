@@ -9,8 +9,8 @@ struct ManualProductForm: View {
 
     @State private var name: String = ""
     @State private var brand: String = ""
-    @State private var family: ProductFamily = .count
-    @State private var preferredUnit: String = ProductFamily.count.baseUnit
+    @State private var family: ProductFamily = .mass
+    @State private var preferredUnit: String = ProductFamily.mass.baseUnit
     @State private var barcode: String = ""
     @State private var isSubmitting = false
     @State private var errorMessage: String?
