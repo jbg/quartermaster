@@ -13,6 +13,7 @@ final class AppState {
     var phase: Phase = .launching
     var serverURL: URL = ServerConfig.defaultURL
     var lastError: String?
+    var units: [Unit] = []
 
     private let tokenStore = TokenStore()
     private(set) var api: APIClient
@@ -33,6 +34,7 @@ final class AppState {
         do {
             let me = try await api.me()
             phase = .authenticated(me)
+            await loadUnits()
         } catch {
             await tokenStore.clear()
             phase = .unauthenticated
@@ -64,12 +66,24 @@ final class AppState {
     func logout() async {
         _ = try? await api.logout()
         await tokenStore.clear()
+        units = []
         phase = .unauthenticated
     }
 
     func updateServerURL(_ url: URL) {
         serverURL = url
         api = APIClient(baseURL: url, tokenStore: tokenStore)
+    }
+
+    func unitsFor(family: ProductFamily) -> [Unit] {
+        units.filter { $0.family == family }
+    }
+
+    private func loadUnits() async {
+        if !units.isEmpty { return }
+        if let fresh = try? await api.units() {
+            units = fresh
+        }
     }
 
     private func userMessage(for error: Error) -> String {

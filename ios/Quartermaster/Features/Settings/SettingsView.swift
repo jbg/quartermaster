@@ -30,6 +30,19 @@ struct SettingsView: View {
             }
 
             Section {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Product data attribution")
+                        .font(.footnote.weight(.semibold))
+                    Text("Barcode lookups use [Open Food Facts](https://world.openfoodfacts.org), an open database available under the [Open Database Licence (ODbL)](https://opendatacommons.org/licenses/odbl/1-0/).")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 2)
+            } header: {
+                Text("About")
+            }
+
+            Section {
                 Text("Quartermaster • v0.1.0")
                     .font(.footnote)
                     .foregroundStyle(.secondary)

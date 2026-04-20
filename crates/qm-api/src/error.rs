@@ -10,6 +10,18 @@ pub enum ApiError {
     #[error("bad request: {0}")]
     BadRequest(String),
 
+    #[error("unknown unit: {0}")]
+    UnknownUnit(String),
+
+    #[error("unit {unit} does not belong to this product's family ({product_family})")]
+    UnitFamilyMismatch {
+        product_family: String,
+        unit: String,
+    },
+
+    #[error("insufficient stock: requested {requested}, have {available}")]
+    InsufficientStock { requested: String, available: String },
+
     #[error("unauthorized")]
     Unauthorized,
 
@@ -24,6 +36,9 @@ pub enum ApiError {
 
     #[error("registration is disabled")]
     RegistrationDisabled,
+
+    #[error("upstream service unavailable")]
+    BadGateway,
 
     #[error("database error")]
     Database(#[from] sqlx::Error),
@@ -47,11 +62,15 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         let (status, code) = match &self {
             ApiError::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
+            ApiError::UnknownUnit(_) => (StatusCode::BAD_REQUEST, "unknown_unit"),
+            ApiError::UnitFamilyMismatch { .. } => (StatusCode::BAD_REQUEST, "unit_family_mismatch"),
+            ApiError::InsufficientStock { .. } => (StatusCode::BAD_REQUEST, "insufficient_stock"),
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             ApiError::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             ApiError::NotFound => (StatusCode::NOT_FOUND, "not_found"),
             ApiError::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
             ApiError::RegistrationDisabled => (StatusCode::FORBIDDEN, "registration_disabled"),
+            ApiError::BadGateway => (StatusCode::BAD_GATEWAY, "upstream"),
             ApiError::Database(err) => {
                 tracing::error!(?err, "database error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal")

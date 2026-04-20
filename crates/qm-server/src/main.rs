@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, str::FromStr, sync::Arc};
+use std::{net::SocketAddr, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use figment::{
@@ -11,6 +11,12 @@ use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
+const USER_AGENT: &str = concat!(
+    "Quartermaster/",
+    env!("CARGO_PKG_VERSION"),
+    " (+https://github.com/jbg/quartermaster)",
+);
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct RawConfig {
     bind: String,
@@ -18,6 +24,8 @@ struct RawConfig {
     registration_mode: String,
     access_token_ttl_seconds: i64,
     refresh_token_ttl_seconds: i64,
+    off_positive_ttl_days: i64,
+    off_negative_ttl_days: i64,
 }
 
 impl Default for RawConfig {
@@ -28,6 +36,8 @@ impl Default for RawConfig {
             registration_mode: "first_run_only".into(),
             access_token_ttl_seconds: 30 * 60,
             refresh_token_ttl_seconds: 60 * 24 * 60 * 60,
+            off_positive_ttl_days: 30,
+            off_negative_ttl_days: 7,
         }
     }
 }
@@ -54,16 +64,25 @@ async fn main() -> anyhow::Result<()> {
         .context("connecting to database")?;
     db.migrate().await.context("running migrations")?;
 
+    let http = reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .timeout(Duration::from_secs(5))
+        .build()
+        .context("building HTTP client")?;
+
     let api_config = ApiConfig {
         registration_mode: RegistrationMode::from_str(&raw.registration_mode)
             .map_err(anyhow::Error::msg)?,
         access_token_ttl_seconds: raw.access_token_ttl_seconds,
         refresh_token_ttl_seconds: raw.refresh_token_ttl_seconds,
+        off_positive_ttl_days: raw.off_positive_ttl_days,
+        off_negative_ttl_days: raw.off_negative_ttl_days,
     };
 
     let state = AppState {
         db,
         config: Arc::new(api_config),
+        http,
     };
 
     let app = qm_api::router(state).layer(TraceLayer::new_for_http());

@@ -12,7 +12,7 @@ actor APIClient {
         self.session = session
     }
 
-    // MARK: - Endpoints
+    // MARK: - Accounts
 
     func register(username: String, password: String, email: String?) async throws -> TokenPair {
         let body = RegisterRequest(
@@ -30,15 +30,106 @@ actor APIClient {
     }
 
     func logout() async throws {
-        let _: EmptyResponse = try await post("/auth/logout", body: EmptyBody(), authenticated: true)
+        let _: EmptyResponse = try await send(
+            method: "POST",
+            path: "/auth/logout",
+            body: Optional<EmptyBody>.none,
+            authenticated: true,
+        )
     }
 
     func me() async throws -> Me {
         try await get("/auth/me", authenticated: true)
     }
 
+    // MARK: - Locations
+
     func locations() async throws -> [Location] {
         try await get("/locations", authenticated: true)
+    }
+
+    // MARK: - Units
+
+    func units() async throws -> [Unit] {
+        try await get("/units", authenticated: true)
+    }
+
+    // MARK: - Products
+
+    func searchProducts(query: String, limit: Int = 20) async throws -> [Product] {
+        var components = URLComponents()
+        components.path = "/products/search"
+        components.queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "limit", value: String(limit)),
+        ]
+        let path = components.url?.absoluteString ?? "/products/search"
+        let response: ProductSearchResponse = try await get(path, authenticated: true)
+        return response.items
+    }
+
+    func lookupBarcode(_ barcode: String) async throws -> BarcodeLookupResponse {
+        let encoded = barcode.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? barcode
+        return try await get("/products/by-barcode/\(encoded)", authenticated: true)
+    }
+
+    func createProduct(_ request: CreateProductRequest) async throws -> Product {
+        try await post("/products", body: request, authenticated: true)
+    }
+
+    func getProduct(id: UUID) async throws -> Product {
+        try await get("/products/\(id.uuidString.lowercased())", authenticated: true)
+    }
+
+    // MARK: - Stock
+
+    func listStock(
+        locationID: UUID? = nil,
+        productID: UUID? = nil,
+        expiringBefore: String? = nil,
+    ) async throws -> [StockBatch] {
+        var components = URLComponents()
+        components.path = "/stock"
+        var items: [URLQueryItem] = []
+        if let locationID {
+            items.append(.init(name: "location_id", value: locationID.uuidString.lowercased()))
+        }
+        if let productID {
+            items.append(.init(name: "product_id", value: productID.uuidString.lowercased()))
+        }
+        if let expiringBefore {
+            items.append(.init(name: "expiring_before", value: expiringBefore))
+        }
+        if !items.isEmpty { components.queryItems = items }
+        let path = components.url?.absoluteString ?? "/stock"
+        let response: StockListResponse = try await get(path, authenticated: true)
+        return response.items
+    }
+
+    func createStock(_ request: CreateStockRequest) async throws -> StockBatch {
+        try await post("/stock", body: request, authenticated: true)
+    }
+
+    func updateStock(id: UUID, request: UpdateStockRequest) async throws -> StockBatch {
+        try await send(
+            method: "PATCH",
+            path: "/stock/\(id.uuidString.lowercased())",
+            body: request,
+            authenticated: true,
+        )
+    }
+
+    func deleteStock(id: UUID) async throws {
+        let _: EmptyResponse = try await send(
+            method: "DELETE",
+            path: "/stock/\(id.uuidString.lowercased())",
+            body: Optional<EmptyBody>.none,
+            authenticated: true,
+        )
+    }
+
+    func consumeStock(_ request: ConsumeRequest) async throws -> ConsumeResponse {
+        try await post("/stock/consume", body: request, authenticated: true)
     }
 
     // MARK: - Plumbing
@@ -59,7 +150,18 @@ actor APIClient {
     ) async throws -> T {
         var attemptedRefresh = false
         while true {
-            var request = URLRequest(url: baseURL.appendingPathComponent(path))
+            let url = baseURL.appendingPathComponent(path).absoluteString
+            // appendingPathComponent URL-encodes the whole thing if it has a
+            // query string, so fall back to manual URL construction when the
+            // path contains a "?".
+            let finalURL: URL
+            if path.contains("?") {
+                finalURL = URL(string: baseURL.absoluteString + path) ?? baseURL
+            } else {
+                finalURL = URL(string: url) ?? baseURL.appendingPathComponent(path)
+            }
+
+            var request = URLRequest(url: finalURL)
             request.httpMethod = method
             request.setValue("application/json", forHTTPHeaderField: "Accept")
             if let body {

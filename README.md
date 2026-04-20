@@ -66,6 +66,10 @@ Writes `openapi.json` at the repo root. Commit the result so the iOS build plugi
 
 The v1 scope is intentionally narrow — see the status section. Please open an issue to discuss feature ideas before writing code.
 
+## Open Food Facts & ODbL
+
+Barcode lookups hit the [Open Food Facts](https://world.openfoodfacts.org) public API, and the server caches the result locally in `barcode_cache`. Open Food Facts data is licensed under the [Open Database Licence (ODbL) v1.0](https://opendatacommons.org/licenses/odbl/1-0/). That has implications for anyone *redistributing* a Quartermaster instance's database (self-hosters who only use it privately are fine). A more thorough audit is tracked in [TODO.md](TODO.md) under cross-cutting work.
+
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).

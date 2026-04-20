@@ -17,6 +17,7 @@ qm-db = { path = "../qm-db" }
 anyhow.workspace = true
 axum.workspace = true
 figment.workspace = true
+reqwest.workspace = true
 serde.workspace = true
 sqlx.workspace = true
 tokio.workspace = true

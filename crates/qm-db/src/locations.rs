@@ -14,6 +14,23 @@ pub struct LocationRow {
     pub created_at: String,
 }
 
+pub async fn find(
+    db: &Database,
+    household_id: Uuid,
+    id: Uuid,
+) -> Result<Option<LocationRow>, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT id, household_id, name, kind, sort_order, created_at \
+         FROM location \
+         WHERE id = ? AND household_id = ?",
+    )
+    .bind(id.to_string())
+    .bind(household_id.to_string())
+    .fetch_optional(&db.pool)
+    .await?;
+    row.map(row_to_location).transpose()
+}
+
 pub async fn list_for_household(
     db: &Database,
     household_id: Uuid,

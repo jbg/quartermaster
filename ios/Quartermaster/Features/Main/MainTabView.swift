@@ -12,7 +12,7 @@ struct MainTabView: View {
             }
 
             Tab("Scan", systemImage: "barcode.viewfinder", value: Screen.scan) {
-                NavigationStack { ScanPlaceholderView() }
+                NavigationStack { ScanScreen() }
             }
 
             Tab("Settings", systemImage: "gear", value: Screen.settings) {
