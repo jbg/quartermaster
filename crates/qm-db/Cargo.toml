@@ -1,0 +1,21 @@
+[package]
+name = "qm-db"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+qm-core = { path = "../qm-core" }
+
+chrono.workspace = true
+rust_decimal.workspace = true
+serde.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
