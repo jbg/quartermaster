@@ -12,6 +12,7 @@ struct InventoryView: View {
     @State private var showSearchSheet = false
     @State private var batchesSheet: BatchesSheetTarget?
     @State private var pendingProduct: Product?
+    @State private var resolvingDeepLink = false
 
     struct BatchesSheetTarget: Identifiable {
         let product: Product
@@ -49,6 +50,10 @@ struct InventoryView: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        .onChange(of: appState.pendingInventoryTarget) { _, target in
+            guard let target else { return }
+            Task { await resolveDeepLink(target) }
+        }
         .sheet(isPresented: $showSearchSheet) {
             ProductSearchView { product in
                 pendingProduct = product
@@ -210,5 +215,33 @@ struct InventoryView: View {
             loadError = error.localizedDescription
         }
         isLoading = false
+    }
+
+    private func resolveDeepLink(_ target: InventoryTarget) async {
+        guard !resolvingDeepLink else { return }
+        resolvingDeepLink = true
+        defer { resolvingDeepLink = false }
+
+        // Clear the pending target first so repeated sets don't re-trigger.
+        appState.pendingInventoryTarget = nil
+
+        // Ensure inventory is loaded so the sheet's `batches` filter has data.
+        if batches.isEmpty && locations.isEmpty {
+            await load()
+        }
+
+        // Resolve product from the already-loaded batches first; fall back to
+        // a network fetch if the product isn't represented in active stock
+        // (e.g. the user is deep-linking to a depleted batch's product).
+        let product: Product?
+        if let fromBatches = batches.first(where: { $0.product.id == target.productID })?.product {
+            product = fromBatches
+        } else {
+            product = try? await appState.api.getProduct(id: target.productID)
+        }
+        let location = locations.first(where: { $0.id == target.locationID })
+
+        guard let product, let location else { return }
+        batchesSheet = BatchesSheetTarget(product: product, location: location)
     }
 }

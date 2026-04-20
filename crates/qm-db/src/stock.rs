@@ -442,20 +442,61 @@ pub async fn restore(
     actor: Uuid,
 ) -> Result<StockBatchRow, RestoreError> {
     let mut tx = db.pool.begin().await?;
+    restore_in_tx(&mut tx, household_id, id, actor).await?;
+    tx.commit().await?;
+    get(db, household_id, id)
+        .await?
+        .ok_or(RestoreError::NotFound)
+}
 
+/// Bulk version of `restore`: one transaction spans every ID, and any
+/// `NotRestorable` / `NotFound` among them aborts the whole thing so the
+/// caller sees an all-or-nothing outcome.
+pub async fn restore_many(
+    db: &Database,
+    household_id: Uuid,
+    ids: &[Uuid],
+    actor: Uuid,
+) -> Result<Vec<StockBatchRow>, RestoreError> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut tx = db.pool.begin().await?;
+    for id in ids {
+        restore_in_tx(&mut tx, household_id, *id, actor).await?;
+    }
+    tx.commit().await?;
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        let row = get(db, household_id, *id)
+            .await?
+            .ok_or(RestoreError::NotFound)?;
+        out.push(row);
+    }
+    Ok(out)
+}
+
+/// Internal restore primitive. Runs inside the caller's transaction so
+/// `restore_many` can batch many IDs under a single commit boundary.
+async fn restore_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    household_id: Uuid,
+    id: Uuid,
+    actor: Uuid,
+) -> Result<(), RestoreError> {
     // Verify the batch belongs to the household (mirrors `get` but inside tx).
     let present = sqlx::query(
         "SELECT id FROM stock_batch WHERE id = ? AND household_id = ?",
     )
     .bind(id.to_string())
     .bind(household_id.to_string())
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await?;
     if present.is_none() {
         return Err(RestoreError::NotFound);
     }
 
-    let latest = latest_for_batch_tx(&mut tx, id).await?;
+    let latest = latest_for_batch_tx(tx, id).await?;
     let Some(latest) = latest else {
         return Err(RestoreError::NotRestorable);
     };
@@ -471,7 +512,7 @@ pub async fn restore(
     let new_quantity = restored_delta; // since batch was at zero post-discard
 
     insert_event(
-        &mut tx,
+        tx,
         household_id,
         id,
         EVENT_RESTORE,
@@ -489,13 +530,10 @@ pub async fn restore(
     .bind(new_quantity.to_string())
     .bind(id.to_string())
     .bind(household_id.to_string())
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
-    tx.commit().await?;
-    get(db, household_id, id)
-        .await?
-        .ok_or(RestoreError::NotFound)
+    Ok(())
 }
 
 pub async fn list_active_batches(
@@ -849,6 +887,49 @@ mod tests {
 
         let err = restore(&db, hid, b.id, uid).await.err().expect("should fail");
         assert!(matches!(err, RestoreError::NotRestorable));
+    }
+
+    #[tokio::test]
+    async fn restore_many_atomic_success() {
+        let (db, hid, uid, lid, pid) = setup().await;
+        let a = create(&db, hid, pid, lid, "100", "g", None, None, None, uid).await.unwrap();
+        let b = create(&db, hid, pid, lid, "200", "g", None, None, None, uid).await.unwrap();
+        discard(&db, hid, a.id, uid, None).await.unwrap();
+        discard(&db, hid, b.id, uid, None).await.unwrap();
+
+        let restored = restore_many(&db, hid, &[a.id, b.id], uid).await.expect("restore_many");
+        assert_eq!(restored.len(), 2);
+        for row in restored {
+            assert!(row.depleted_at.is_none());
+        }
+        for batch_id in [a.id, b.id] {
+            let events = stock_events::list_for_batch(&db, batch_id).await.unwrap();
+            assert_eq!(events.last().unwrap().event_type, "restore");
+        }
+    }
+
+    #[tokio::test]
+    async fn restore_many_rolls_back_when_one_isnt_discardable() {
+        let (db, hid, uid, lid, pid) = setup().await;
+        // Batch A has been discarded (restorable). Batch B is still active
+        // (not restorable). Asking for both should leave both untouched.
+        let a = create(&db, hid, pid, lid, "100", "g", None, None, None, uid).await.unwrap();
+        let b = create(&db, hid, pid, lid, "200", "g", None, None, None, uid).await.unwrap();
+        discard(&db, hid, a.id, uid, None).await.unwrap();
+
+        let err = restore_many(&db, hid, &[a.id, b.id], uid).await.err().expect("should fail");
+        assert!(matches!(err, RestoreError::NotRestorable));
+
+        // A remains discarded (still 0, depleted_at set). No stray events.
+        let a_after = get(&db, hid, a.id).await.unwrap().unwrap();
+        assert!(a_after.depleted_at.is_some(), "A should still be discarded");
+        let a_events = stock_events::list_for_batch(&db, a.id).await.unwrap();
+        assert_eq!(a_events.len(), 2, "A should have only add + discard, no restore");
+
+        // B untouched.
+        let b_after = get(&db, hid, b.id).await.unwrap().unwrap();
+        assert_eq!(b_after.quantity, "200");
+        assert!(b_after.depleted_at.is_none());
     }
 
     #[tokio::test]

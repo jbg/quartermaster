@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct MainTabView: View {
+    @Environment(AppState.self) private var appState
     enum Screen: Hashable { case inventory, scan, settings }
 
     @State private var selection: Screen = .inventory
@@ -17,6 +18,14 @@ struct MainTabView: View {
 
             Tab("Settings", systemImage: "gear", value: Screen.settings) {
                 NavigationStack { SettingsView() }
+            }
+        }
+        .onChange(of: appState.pendingInventoryTarget) { _, target in
+            // Deep-link out of history / other tabs into Inventory. The
+            // Inventory view itself observes the same value and presents
+            // the batches sheet.
+            if target != nil {
+                selection = .inventory
             }
         }
     }

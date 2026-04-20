@@ -2,6 +2,10 @@ import SwiftUI
 
 struct StockEventRowView: View {
     let event: StockEvent
+    /// When true, the expiry badge alongside the quantity is suppressed
+    /// (useful for the collapsed child rows inside a consume group, where
+    /// the parent already carries the expiry context).
+    var showExpiry: Bool = true
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -19,6 +23,9 @@ struct StockEventRowView: View {
                     Text(quantityLabel)
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(accent)
+                    if showExpiry, event.batchExpiresOn != nil {
+                        ExpiryBadge(expiresOn: event.batchExpiresOnDate)
+                    }
                 }
                 Text(productLine)
                     .font(.body)
@@ -64,7 +71,7 @@ struct StockEventRowView: View {
         }
     }
 
-    private static let relative: RelativeDateTimeFormatter = {
+    nonisolated(unsafe) private static let relative: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .abbreviated
         return f

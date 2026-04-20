@@ -30,6 +30,7 @@ pub fn router() -> Router<AppState> {
         .route("/stock", get(list).post(create))
         .route("/stock/consume", post(consume))
         .route("/stock/events", get(list_events))
+        .route("/stock/restore-many", post(restore_many))
         .route("/stock/{id}", get(get_one).patch(update).delete(delete_one))
         .route("/stock/{id}/events", get(list_events_for_batch))
         .route("/stock/{id}/restore", post(restore_one))
@@ -457,6 +458,9 @@ pub struct StockEventDto {
     /// Signed decimal in `unit`.
     pub quantity_delta: String,
     pub unit: String,
+    /// The batch's current expiry date (YYYY-MM-DD), if any. Lets clients
+    /// render "expiring tomorrow" context on history rows.
+    pub batch_expires_on: Option<String>,
     pub note: Option<String>,
     pub created_at: String,
     pub created_by_username: Option<String>,
@@ -473,6 +477,7 @@ impl From<TimelineEntryRow> for StockEventDto {
             event_type: r.event.event_type,
             quantity_delta: r.event.quantity_delta,
             unit: r.batch_unit,
+            batch_expires_on: r.batch_expires_on,
             note: r.event.note,
             created_at: r.event.created_at,
             created_by_username: r.created_by_username,
@@ -486,15 +491,20 @@ impl From<TimelineEntryRow> for StockEventDto {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct StockEventListResponse {
     pub items: Vec<StockEventDto>,
-    /// When the last returned item's `created_at`, if a full page was
-    /// returned — pass it back as the `before_created_at` query parameter
-    /// to fetch the next page. `None` when we've reached the end.
+    /// Pagination cursor — the last returned item's `created_at` when a
+    /// full page came back, otherwise `None`. Always pair with
+    /// `next_before_id` to fetch the next page; the pair avoids the
+    /// same-millisecond tiebreak problem that a timestamp alone can miss.
     pub next_before: Option<String>,
+    /// Pagination cursor — the last returned item's `id` when a full
+    /// page came back, otherwise `None`.
+    pub next_before_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct EventListQuery {
     pub before_created_at: Option<String>,
+    pub before_id: Option<Uuid>,
     pub limit: Option<i64>,
 }
 
@@ -524,6 +534,7 @@ pub async fn list_events(
         household_id,
         None,
         q.before_created_at.as_deref(),
+        q.before_id,
         limit,
     )
     .await?;
@@ -562,6 +573,7 @@ pub async fn list_events_for_batch(
         household_id,
         Some(id),
         q.before_created_at.as_deref(),
+        q.before_id,
         limit,
     )
     .await?;
@@ -569,13 +581,74 @@ pub async fn list_events_for_batch(
 }
 
 fn build_event_response(rows: Vec<TimelineEntryRow>, limit: i64) -> StockEventListResponse {
-    let next_before = if (rows.len() as i64) >= limit {
-        rows.last().map(|r| r.event.created_at.clone())
+    let (next_before, next_before_id) = if (rows.len() as i64) >= limit {
+        rows.last()
+            .map(|r| (Some(r.event.created_at.clone()), Some(r.event.id)))
+            .unwrap_or((None, None))
     } else {
-        None
+        (None, None)
     };
     let items: Vec<StockEventDto> = rows.into_iter().map(Into::into).collect();
-    StockEventListResponse { items, next_before }
+    StockEventListResponse {
+        items,
+        next_before,
+        next_before_id,
+    }
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct RestoreManyRequest {
+    /// Batch IDs to restore. All restored atomically: if any isn't
+    /// recoverable (wasn't discarded, or already restored), the whole
+    /// request rolls back with `batch_not_restorable`.
+    pub ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RestoreManyResponse {
+    pub restored: Vec<StockBatchDto>,
+}
+
+const MAX_RESTORE_MANY: usize = 100;
+
+#[utoipa::path(
+    post,
+    path = "/stock/restore-many",
+    tag = "stock",
+    request_body = RestoreManyRequest,
+    responses(
+        (status = 200, body = RestoreManyResponse),
+        (status = 400, body = crate::error::ApiErrorBody),
+        (status = 409, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn restore_many(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Json(req): Json<RestoreManyRequest>,
+) -> ApiResult<Json<RestoreManyResponse>> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    if req.ids.is_empty() {
+        return Err(ApiError::BadRequest("ids must not be empty".into()));
+    }
+    if req.ids.len() > MAX_RESTORE_MANY {
+        return Err(ApiError::BadRequest(format!(
+            "too many ids in one request (max {MAX_RESTORE_MANY})",
+        )));
+    }
+
+    let rows = qm_db::stock::restore_many(&state.db, household_id, &req.ids, current.user_id).await?;
+
+    // Join each batch with its product for the response DTO.
+    let mut restored = Vec::with_capacity(rows.len());
+    for row in rows {
+        let product = qm_db::products::find_including_deleted(&state.db, row.product_id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+        restored.push(StockBatchWithProduct { batch: row, product }.into());
+    }
+    Ok(Json(RestoreManyResponse { restored }))
 }
 
 #[utoipa::path(

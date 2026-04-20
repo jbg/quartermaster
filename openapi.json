@@ -973,6 +973,18 @@
             }
           },
           {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -997,6 +1009,61 @@
             }
           },
           "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/stock/restore-many": {
+      "post": {
+        "tags": [
+          "stock"
+        ],
+        "operationId": "restore_many",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreManyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreManyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
             "description": "",
             "content": {
               "application/json": {
@@ -1186,6 +1253,18 @@
                 "string",
                 "null"
               ]
+            }
+          },
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
             }
           },
           {
@@ -1711,6 +1790,36 @@
           }
         }
       },
+      "RestoreManyRequest": {
+        "type": "object",
+        "required": [
+          "ids"
+        ],
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Batch IDs to restore. All restored atomically: if any isn't\nrecoverable (wasn't discarded, or already restored), the whole\nrequest rolls back with `batch_not_restorable`."
+          }
+        }
+      },
+      "RestoreManyResponse": {
+        "type": "object",
+        "required": [
+          "restored"
+        ],
+        "properties": {
+          "restored": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StockBatchDto"
+            }
+          }
+        }
+      },
       "StockBatchDto": {
         "type": "object",
         "required": [
@@ -1778,6 +1887,13 @@
           "product"
         ],
         "properties": {
+          "batch_expires_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The batch's current expiry date (YYYY-MM-DD), if any. Lets clients\nrender \"expiring tomorrow\" context on history rows."
+          },
           "batch_id": {
             "type": "string",
             "format": "uuid"
@@ -1842,7 +1958,15 @@
               "string",
               "null"
             ],
-            "description": "When the last returned item's `created_at`, if a full page was\nreturned — pass it back as the `before_created_at` query parameter\nto fetch the next page. `None` when we've reached the end."
+            "description": "Pagination cursor — the last returned item's `created_at` when a\nfull page came back, otherwise `None`. Always pair with\n`next_before_id` to fetch the next page; the pair avoids the\nsame-millisecond tiebreak problem that a timestamp alone can miss."
+          },
+          "next_before_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Pagination cursor — the last returned item's `id` when a full\npage came back, otherwise `None`."
           }
         }
       },

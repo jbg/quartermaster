@@ -144,6 +144,10 @@ actor APIClient {
         return response.items
     }
 
+    func getStock(id: UUID) async throws -> StockBatch {
+        try await get("/stock/\(id.uuidString.lowercased())", authenticated: true)
+    }
+
     func createStock(_ request: CreateStockRequest) async throws -> StockBatch {
         try await post("/stock", body: request, authenticated: true)
     }
@@ -172,32 +176,25 @@ actor APIClient {
 
     func listStockEvents(
         beforeCreatedAt: String? = nil,
+        beforeID: UUID? = nil,
         limit: Int = 50,
     ) async throws -> StockEventListResponse {
-        var components = URLComponents()
-        components.path = "/stock/events"
-        var items = [URLQueryItem(name: "limit", value: String(limit))]
-        if let beforeCreatedAt {
-            items.append(URLQueryItem(name: "before_created_at", value: beforeCreatedAt))
-        }
-        components.queryItems = items
-        let path = components.url?.absoluteString ?? "/stock/events"
+        let path = buildEventsPath("/stock/events", beforeCreatedAt: beforeCreatedAt, beforeID: beforeID, limit: limit)
         return try await get(path, authenticated: true)
     }
 
     func listBatchEvents(
         id: UUID,
         beforeCreatedAt: String? = nil,
+        beforeID: UUID? = nil,
         limit: Int = 50,
     ) async throws -> StockEventListResponse {
-        var components = URLComponents()
-        components.path = "/stock/\(id.uuidString.lowercased())/events"
-        var items = [URLQueryItem(name: "limit", value: String(limit))]
-        if let beforeCreatedAt {
-            items.append(URLQueryItem(name: "before_created_at", value: beforeCreatedAt))
-        }
-        components.queryItems = items
-        let path = components.url?.absoluteString ?? "/stock/\(id.uuidString.lowercased())/events"
+        let path = buildEventsPath(
+            "/stock/\(id.uuidString.lowercased())/events",
+            beforeCreatedAt: beforeCreatedAt,
+            beforeID: beforeID,
+            limit: limit,
+        )
         return try await get(path, authenticated: true)
     }
 
@@ -207,6 +204,33 @@ actor APIClient {
             body: EmptyBody(),
             authenticated: true,
         )
+    }
+
+    func restoreManyStock(ids: [UUID]) async throws -> RestoreManyResponse {
+        try await post(
+            "/stock/restore-many",
+            body: RestoreManyRequest(ids: ids),
+            authenticated: true,
+        )
+    }
+
+    private nonisolated func buildEventsPath(
+        _ base: String,
+        beforeCreatedAt: String?,
+        beforeID: UUID?,
+        limit: Int,
+    ) -> String {
+        var components = URLComponents()
+        components.path = base
+        var items = [URLQueryItem(name: "limit", value: String(limit))]
+        if let beforeCreatedAt {
+            items.append(URLQueryItem(name: "before_created_at", value: beforeCreatedAt))
+        }
+        if let beforeID {
+            items.append(URLQueryItem(name: "before_id", value: beforeID.uuidString.lowercased()))
+        }
+        components.queryItems = items
+        return components.url?.absoluteString ?? base
     }
 
     // MARK: - Plumbing

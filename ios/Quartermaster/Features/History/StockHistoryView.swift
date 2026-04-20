@@ -13,10 +13,14 @@ struct StockHistoryView: View {
 
     @State private var entries: [StockEvent] = []
     @State private var nextBefore: String?
+    @State private var nextBeforeID: UUID?
     @State private var isLoadingInitial = true
     @State private var isLoadingMore = false
     @State private var errorMessage: String?
-    @State private var undoingID: UUID?
+    @State private var expandedGroups: Set<UUID> = []
+    @State private var selectionMode = false
+    @State private var selected: Set<UUID> = []
+    @State private var isRestoring = false
 
     var body: some View {
         Group {
@@ -31,9 +35,29 @@ struct StockHistoryView: View {
                 }
             } else {
                 list
+                    .safeAreaInset(edge: .bottom) {
+                        if selectionMode {
+                            bulkRestoreBar
+                        }
+                    }
             }
         }
         .navigationTitle(title)
+        .navigationDestination(for: UUID.self) { batchID in
+            BatchDetailView(batchID: batchID)
+        }
+        .toolbar {
+            if !entries.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(selectionMode ? "Cancel" : "Select") {
+                        withAnimation {
+                            selectionMode.toggle()
+                            if !selectionMode { selected.removeAll() }
+                        }
+                    }
+                }
+            }
+        }
         .task { await loadInitial() }
         .refreshable { await loadInitial() }
         .alert("Couldn't load history", isPresented: Binding(
@@ -56,10 +80,10 @@ struct StockHistoryView: View {
     @ViewBuilder
     private var list: some View {
         List {
-            ForEach(groupedByDay, id: \.0) { (day, events) in
+            ForEach(groupedByDay, id: \.0) { (day, groups) in
                 Section {
-                    ForEach(events) { event in
-                        row(for: event)
+                    ForEach(groups) { group in
+                        rowFor(group)
                     }
                 } header: {
                     Text(day)
@@ -87,12 +111,45 @@ struct StockHistoryView: View {
     }
 
     @ViewBuilder
-    private func row(for event: StockEvent) -> some View {
-        StockEventRowView(event: event)
-            .overlay(alignment: .trailing) {
-                if undoingID == event.id {
-                    ProgressView().padding(.trailing, 8)
+    private func rowFor(_ group: DisplayGroup) -> some View {
+        switch group {
+        case .single(let event):
+            singleRow(event)
+        case .consumeGroup(let id, let events):
+            // Consume groups are not selectable — they represent a single
+            // action that already landed atomically. Select mode simply
+            // greys them out.
+            ConsumeGroupRow(
+                requestID: id,
+                events: events,
+                preferredUnit: events.first?.product.preferredUnit ?? "",
+                units: appState.units,
+                expandedGroups: $expandedGroups,
+            )
+            .opacity(selectionMode ? 0.5 : 1)
+        }
+    }
+
+    @ViewBuilder
+    private func singleRow(_ event: StockEvent) -> some View {
+        if selectionMode {
+            Button {
+                toggleSelection(event)
+            } label: {
+                HStack {
+                    StockEventRowView(event: event)
+                        .opacity(event.eventType == .discard ? 1 : 0.4)
+                    Spacer()
+                    Image(systemName: selected.contains(event.id) ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(event.eventType == .discard ? Color.accentColor : .secondary)
                 }
+            }
+            .buttonStyle(.plain)
+            .disabled(event.eventType != .discard)
+        } else {
+            NavigationLink(value: event.batchID) {
+                StockEventRowView(event: event)
             }
             .contextMenu {
                 if event.eventType == .discard {
@@ -113,35 +170,123 @@ struct StockHistoryView: View {
                     .tint(.green)
                 }
             }
+        }
     }
 
-    private var groupedByDay: [(String, [StockEvent])] {
-        var groups: [(String, [StockEvent])] = []
+    @ViewBuilder
+    private var bulkRestoreBar: some View {
+        HStack {
+            Text("\(selected.count) selected")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button {
+                Task { await bulkRestore() }
+            } label: {
+                if isRestoring {
+                    ProgressView()
+                } else {
+                    Text("Undo \(selected.count)").fontWeight(.semibold)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(selected.isEmpty || isRestoring)
+        }
+        .padding()
+        .background(.thinMaterial)
+    }
+
+    // MARK: - Grouping
+
+    enum DisplayGroup: Identifiable {
+        case single(StockEvent)
+        case consumeGroup(UUID, [StockEvent])
+
+        var id: String {
+            switch self {
+            case .single(let e): e.id.uuidString
+            case .consumeGroup(let rid, _): "group-\(rid.uuidString)"
+            }
+        }
+
+        var timestamp: String {
+            switch self {
+            case .single(let e): e.createdAt
+            case .consumeGroup(_, let events): events.first?.createdAt ?? ""
+            }
+        }
+    }
+
+    private var displayGroups: [DisplayGroup] {
+        var groups: [DisplayGroup] = []
+        var i = 0
+        while i < entries.count {
+            let event = entries[i]
+            if event.eventType == .consume, let rid = event.consumeRequestID {
+                var batch: [StockEvent] = [event]
+                var j = i + 1
+                while j < entries.count,
+                      entries[j].eventType == .consume,
+                      entries[j].consumeRequestID == rid {
+                    batch.append(entries[j])
+                    j += 1
+                }
+                if batch.count >= 2 {
+                    groups.append(.consumeGroup(rid, batch))
+                    i = j
+                    continue
+                }
+            }
+            groups.append(.single(event))
+            i += 1
+        }
+        return groups
+    }
+
+    private var groupedByDay: [(String, [DisplayGroup])] {
+        var out: [(String, [DisplayGroup])] = []
         var current: String?
-        var bucket: [StockEvent] = []
+        var bucket: [DisplayGroup] = []
         let df = Self.dayHeader
 
-        for event in entries {
-            let label = event.createdAtDate.map(df.string(from:)) ?? "Unknown date"
+        for group in displayGroups {
+            let date: Date? = {
+                let iso = group.timestamp
+                return Self.iso.date(from: iso)
+            }()
+            let label = date.map(df.string(from:)) ?? "Unknown date"
             if label != current {
-                if let c = current { groups.append((c, bucket)) }
+                if let c = current { out.append((c, bucket)) }
                 current = label
                 bucket = []
             }
-            bucket.append(event)
+            bucket.append(group)
         }
-        if let c = current { groups.append((c, bucket)) }
-        return groups
+        if let c = current { out.append((c, bucket)) }
+        return out
+    }
+
+    // MARK: - Actions
+
+    private func toggleSelection(_ event: StockEvent) {
+        guard event.eventType == .discard else { return }
+        if selected.contains(event.id) {
+            selected.remove(event.id)
+        } else {
+            selected.insert(event.id)
+        }
     }
 
     private func loadInitial() async {
         isLoadingInitial = true
         errorMessage = nil
         nextBefore = nil
+        nextBeforeID = nil
         do {
-            let page = try await fetch(before: nil)
+            let page = try await fetch(beforeCreatedAt: nil, beforeID: nil)
             entries = page.items
             nextBefore = page.nextBefore
+            nextBeforeID = page.nextBeforeID
         } catch let err as APIError {
             errorMessage = err.userFacingMessage
         } catch {
@@ -151,32 +296,61 @@ struct StockHistoryView: View {
     }
 
     private func loadMore() async {
-        guard !isLoadingMore, let cursor = nextBefore else { return }
+        guard !isLoadingMore, let cursorTs = nextBefore else { return }
         isLoadingMore = true
         do {
-            let page = try await fetch(before: cursor)
+            let page = try await fetch(beforeCreatedAt: cursorTs, beforeID: nextBeforeID)
             entries.append(contentsOf: page.items)
             nextBefore = page.nextBefore
+            nextBeforeID = page.nextBeforeID
         } catch {
             // Keep quiet on pagination errors — user can retry via pull-to-refresh.
         }
         isLoadingMore = false
     }
 
-    private func fetch(before cursor: String?) async throws -> StockEventListResponse {
+    private func fetch(beforeCreatedAt: String?, beforeID: UUID?) async throws -> StockEventListResponse {
         switch scope {
         case .household:
-            try await appState.api.listStockEvents(beforeCreatedAt: cursor, limit: 50)
+            try await appState.api.listStockEvents(
+                beforeCreatedAt: beforeCreatedAt,
+                beforeID: beforeID,
+                limit: 50,
+            )
         case .batch(let id):
-            try await appState.api.listBatchEvents(id: id, beforeCreatedAt: cursor, limit: 50)
+            try await appState.api.listBatchEvents(
+                id: id,
+                beforeCreatedAt: beforeCreatedAt,
+                beforeID: beforeID,
+                limit: 50,
+            )
         }
     }
 
     private func undo(_ event: StockEvent) async {
-        undoingID = event.id
-        defer { undoingID = nil }
         do {
             _ = try await appState.api.restoreStock(id: event.batchID)
+            await loadInitial()
+            await onChange?()
+        } catch let err as APIError {
+            errorMessage = err.userFacingMessage
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func bulkRestore() async {
+        guard !selected.isEmpty else { return }
+        isRestoring = true
+        defer { isRestoring = false }
+        let batchIDs: [UUID] = selected.compactMap { eventID in
+            entries.first(where: { $0.id == eventID })?.batchID
+        }
+        guard !batchIDs.isEmpty else { return }
+        do {
+            _ = try await appState.api.restoreManyStock(ids: batchIDs)
+            selectionMode = false
+            selected.removeAll()
             await loadInitial()
             await onChange?()
         } catch let err as APIError {
@@ -190,6 +364,12 @@ struct StockHistoryView: View {
         let f = DateFormatter()
         f.dateStyle = .medium
         f.timeStyle = .none
+        return f
+    }()
+
+    nonisolated(unsafe) private static let iso: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
 }

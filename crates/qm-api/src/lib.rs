@@ -97,6 +97,7 @@ impl std::str::FromStr for RegistrationMode {
         routes::stock::list_events,
         routes::stock::list_events_for_batch,
         routes::stock::restore_one,
+        routes::stock::restore_many,
     ),
     components(schemas(
         routes::health::HealthResponse,
@@ -123,6 +124,8 @@ impl std::str::FromStr for RegistrationMode {
         routes::stock::ConsumeResponse,
         routes::stock::StockEventDto,
         routes::stock::StockEventListResponse,
+        routes::stock::RestoreManyRequest,
+        routes::stock::RestoreManyResponse,
         error::ApiErrorBody,
     )),
     tags(

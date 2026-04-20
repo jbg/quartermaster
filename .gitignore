@@ -41,3 +41,6 @@ ios/Quartermaster/Generated/
 .idea/
 *.swp
 *.swo
+
+# Working notes — kept locally, not in the repo
+TODO.md

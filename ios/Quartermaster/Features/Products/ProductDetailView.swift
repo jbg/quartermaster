@@ -19,6 +19,7 @@ struct ProductDetailView: View {
     @State private var family: ProductFamily
     @State private var preferredUnit: String
     @State private var imageURLText: String
+    @State private var imageURLValid: Bool = true
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var confirmDelete = false
@@ -108,10 +109,11 @@ struct ProductDetailView: View {
             }
         }
         Section {
-            TextField("Image URL (optional)", text: $imageURLText)
-                .textInputAutocapitalization(.never)
-                .keyboardType(.URL)
-                .autocorrectionDisabled()
+            ValidatedURLField(
+                title: "Image URL (optional)",
+                text: $imageURLText,
+                isValid: $imageURLValid,
+            )
         } footer: {
             Text("Used as the thumbnail in inventory lists.")
         }
@@ -192,7 +194,7 @@ struct ProductDetailView: View {
     }
 
     private var canSave: Bool {
-        !name.trimmingCharacters(in: .whitespaces).isEmpty
+        !name.trimmingCharacters(in: .whitespaces).isEmpty && imageURLValid
     }
 
     // MARK: - Actions

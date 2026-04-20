@@ -37,6 +37,9 @@ pub struct TimelineEntryRow {
     /// in this unit. Included for display so the UI doesn't have to fetch
     /// the batch separately.
     pub batch_unit: String,
+    /// The batch's current expiry date (YYYY-MM-DD), if any. Lets the UI
+    /// contextualise events with "expiring tomorrow" badges.
+    pub batch_expires_on: Option<String>,
     /// Joined product for display. Includes soft-deleted products so the
     /// history timeline remains intact after a product is removed.
     pub product: crate::products::ProductRow,
@@ -84,15 +87,19 @@ pub async fn list_for_household(
 /// Household-scoped timeline, optionally narrowed to a single batch. Drives
 /// both `GET /stock/events` and `GET /stock/{id}/events`.
 ///
-/// Pagination: cursor-based on `created_at`. Pass `before_created_at` equal
-/// to the last-seen event's `created_at` to fetch the next page. Tie-breaks
-/// within a microsecond are handled by `id DESC` in the ORDER BY, which is
-/// enough for our UUIDv7 ids — per-second ordering is monotonic.
+/// Pagination: pass `(before_created_at, before_id)` as a pair equal to the
+/// last-seen row's `(created_at, id)`. The predicate
+/// `created_at < X OR (created_at = X AND id < Y)` walks the compound order
+/// key exactly once per page — no duplicates when two events land in the
+/// same millisecond. Omitting `before_id` falls back to a plain
+/// `created_at < ?`, preserving the older single-field cursor behaviour for
+/// any caller that never paginates past page one.
 pub async fn list_timeline(
     db: &Database,
     household_id: Uuid,
     batch_id: Option<Uuid>,
     before_created_at: Option<&str>,
+    before_id: Option<Uuid>,
     limit: i64,
 ) -> Result<Vec<TimelineEntryRow>, sqlx::Error> {
     let mut sql = String::from(
@@ -101,7 +108,7 @@ pub async fn list_timeline(
             e.event_type AS e_event_type, e.quantity_delta AS e_quantity_delta, \
             e.note AS e_note, e.created_at AS e_created_at, e.created_by AS e_created_by, \
             e.consume_request_id AS e_consume_request_id, \
-            b.unit AS b_unit, \
+            b.unit AS b_unit, b.expires_on AS b_expires_on, \
             p.id AS p_id, p.source AS p_source, p.off_barcode AS p_off_barcode, \
             p.name AS p_name, p.brand AS p_brand, p.family AS p_family, \
             p.default_unit AS p_default_unit, p.image_url AS p_image_url, \
@@ -117,8 +124,10 @@ pub async fn list_timeline(
     if batch_id.is_some() {
         sql.push_str("AND e.batch_id = ? ");
     }
-    if before_created_at.is_some() {
-        sql.push_str("AND e.created_at < ? ");
+    match (before_created_at.is_some(), before_id.is_some()) {
+        (true, true) => sql.push_str("AND (e.created_at < ? OR (e.created_at = ? AND e.id < ?)) "),
+        (true, false) => sql.push_str("AND e.created_at < ? "),
+        _ => {}
     }
     sql.push_str("ORDER BY e.created_at DESC, e.id DESC LIMIT ?");
 
@@ -126,8 +135,14 @@ pub async fn list_timeline(
     if let Some(bid) = batch_id {
         q = q.bind(bid.to_string());
     }
-    if let Some(before) = before_created_at {
-        q = q.bind(before);
+    match (before_created_at, before_id) {
+        (Some(c), Some(i)) => {
+            q = q.bind(c).bind(c).bind(i.to_string());
+        }
+        (Some(c), None) => {
+            q = q.bind(c);
+        }
+        _ => {}
     }
     q = q.bind(limit);
 
@@ -223,7 +238,116 @@ fn row_to_timeline_entry(row: sqlx::any::AnyRow) -> Result<TimelineEntryRow, sql
     Ok(TimelineEntryRow {
         event,
         batch_unit: row.try_get("b_unit")?,
+        batch_expires_on: row.try_get("b_expires_on")?,
         product,
         created_by_username: row.try_get("u_username")?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{households, locations, memberships, products, stock, users};
+
+    async fn setup() -> (crate::Database, Uuid, Uuid, Uuid, Uuid) {
+        let db = crate::test_db().await;
+        let h = households::create(&db, "h").await.unwrap();
+        let u = users::create(&db, "u", None, "hash").await.unwrap();
+        memberships::insert(&db, h.id, u.id, "admin").await.unwrap();
+        locations::seed_defaults(&db, h.id).await.unwrap();
+        let locs = locations::list_for_household(&db, h.id).await.unwrap();
+        let pantry = locs.iter().find(|l| l.kind == "pantry").unwrap().id;
+        let p = products::create_manual(&db, h.id, "Flour", None, "mass", Some("g"), None)
+            .await
+            .unwrap();
+        (db, h.id, u.id, pantry, p.id)
+    }
+
+    #[tokio::test]
+    async fn list_timeline_includes_batch_expiry() {
+        let (db, hid, uid, lid, pid) = setup().await;
+        stock::create(&db, hid, pid, lid, "500", "g", Some("2026-06-01"), None, None, uid)
+            .await
+            .unwrap();
+        stock::create(&db, hid, pid, lid, "200", "g", None, None, None, uid)
+            .await
+            .unwrap();
+
+        let rows = list_timeline(&db, hid, None, None, None, 10).await.unwrap();
+        // Two adds, newest first.
+        assert_eq!(rows.len(), 2);
+        // One carries the expiry; the other is None. Order depends on which was
+        // inserted second (that one is newest and has no expiry).
+        assert!(rows.iter().any(|r| r.batch_expires_on.as_deref() == Some("2026-06-01")));
+        assert!(rows.iter().any(|r| r.batch_expires_on.is_none()));
+    }
+
+    #[tokio::test]
+    async fn list_timeline_cursor_respects_id_tiebreak() {
+        let (db, hid, uid, lid, pid) = setup().await;
+        // Seed a single batch so we can hang hand-crafted events off it.
+        let b = stock::create(&db, hid, pid, lid, "1", "g", None, None, None, uid)
+            .await
+            .unwrap();
+        // Drop the create's `add` event so the fixture contains only the pair
+        // we control below, keeping the test assertions simple.
+        sqlx::query("DELETE FROM stock_event WHERE batch_id = ?")
+            .bind(b.id.to_string())
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        // Two events with identical `created_at` — the cursor must still
+        // walk them without duplicates or gaps.
+        let shared_ts = "2026-04-20T12:00:00.000Z";
+        let id_a = Uuid::now_v7();
+        let id_b = Uuid::now_v7(); // id_b > id_a under UUIDv7 time-ordering
+        insert_raw(&db, id_a, hid, b.id, "adjust", "1", shared_ts, uid).await;
+        insert_raw(&db, id_b, hid, b.id, "adjust", "2", shared_ts, uid).await;
+
+        // ORDER BY created_at DESC, id DESC → id_b is first page.
+        let page1 = list_timeline(&db, hid, None, None, None, 1).await.unwrap();
+        assert_eq!(page1.len(), 1);
+        assert_eq!(page1[0].event.id, id_b);
+
+        // Cursor pair drives page 2 — id_a is left.
+        let page2 = list_timeline(&db, hid, None, Some(shared_ts), Some(id_b), 1)
+            .await
+            .unwrap();
+        assert_eq!(page2.len(), 1, "tiebreak should surface the remaining event, not drop it");
+        assert_eq!(page2[0].event.id, id_a);
+
+        // One more hop returns empty.
+        let page3 = list_timeline(&db, hid, None, Some(shared_ts), Some(id_a), 1)
+            .await
+            .unwrap();
+        assert!(page3.is_empty());
+    }
+
+    async fn insert_raw(
+        db: &crate::Database,
+        id: Uuid,
+        household_id: Uuid,
+        batch_id: Uuid,
+        event_type: &str,
+        delta: &str,
+        created_at: &str,
+        created_by: Uuid,
+    ) {
+        sqlx::query(
+            "INSERT INTO stock_event \
+             (id, household_id, batch_id, event_type, quantity_delta, note, created_at, created_by, consume_request_id) \
+             VALUES (?, ?, ?, ?, ?, NULL, ?, ?, NULL)",
+        )
+        .bind(id.to_string())
+        .bind(household_id.to_string())
+        .bind(batch_id.to_string())
+        .bind(event_type)
+        .bind(delta)
+        .bind(created_at)
+        .bind(created_by.to_string())
+        .execute(&db.pool)
+        .await
+        .unwrap();
+    }
 }

@@ -14,6 +14,10 @@ final class AppState {
     var serverURL: URL = ServerConfig.defaultURL
     var lastError: String?
     var units: [Unit] = []
+    /// Deep-link target set by history → "Open in Inventory". MainTabView
+    /// observes this to switch tabs; InventoryView observes it to present
+    /// the batches sheet for the named product+location, then clears it.
+    var pendingInventoryTarget: InventoryTarget?
 
     private let tokenStore = TokenStore()
     private(set) var api: APIClient
@@ -92,4 +96,9 @@ final class AppState {
         }
         return error.localizedDescription
     }
+}
+
+struct InventoryTarget: Equatable, Hashable, Sendable {
+    let productID: UUID
+    let locationID: UUID
 }

@@ -386,6 +386,7 @@ struct StockEvent: Codable, Sendable, Identifiable, Hashable {
     let eventType: StockEventType
     let quantityDelta: String
     let unit: String
+    let batchExpiresOn: String?
     let note: String?
     let createdAt: String
     let createdByUsername: String?
@@ -397,10 +398,16 @@ struct StockEvent: Codable, Sendable, Identifiable, Hashable {
         case id, unit, note, product
         case eventType = "event_type"
         case quantityDelta = "quantity_delta"
+        case batchExpiresOn = "batch_expires_on"
         case createdAt = "created_at"
         case createdByUsername = "created_by_username"
         case batchID = "batch_id"
         case consumeRequestID = "consume_request_id"
+    }
+
+    var batchExpiresOnDate: Date? {
+        guard let batchExpiresOn else { return nil }
+        return StockBatch.yyyymmdd.date(from: batchExpiresOn)
     }
 
     var createdAtDate: Date? {
@@ -419,11 +426,21 @@ struct StockEvent: Codable, Sendable, Identifiable, Hashable {
 struct StockEventListResponse: Codable, Sendable {
     let items: [StockEvent]
     let nextBefore: String?
+    let nextBeforeID: UUID?
 
     enum CodingKeys: String, CodingKey {
         case items
         case nextBefore = "next_before"
+        case nextBeforeID = "next_before_id"
     }
+}
+
+struct RestoreManyRequest: Encodable {
+    let ids: [UUID]
+}
+
+struct RestoreManyResponse: Codable, Sendable {
+    let restored: [StockBatch]
 }
 
 // MARK: - Errors
