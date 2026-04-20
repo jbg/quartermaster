@@ -8,6 +8,7 @@ struct ProductBatchesSheet: View {
     let location: Location
     let allLocations: [Location]
     @State var batches: [StockBatch]
+    var highlightBatchID: UUID? = nil
     var onMutated: () async -> Void
 
     @State private var editing: StockBatch?
@@ -15,38 +16,51 @@ struct ProductBatchesSheet: View {
     @State private var showProductDetails = false
     @State private var showBatchHistory: StockBatch?
     @State private var errorMessage: String?
+    /// Batch currently showing the "you came from here" flash. Cleared by a
+    /// background task after ~1.5 s so the pulse feels transient.
+    @State private var flashingBatchID: UUID?
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(batches) { batch in
-                    BatchRow(batch: batch)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                Task { await delete(batch) }
-                            } label: {
-                                Label("Delete", systemImage: "trash")
+            ScrollViewReader { proxy in
+                List {
+                    ForEach(batches) { batch in
+                        BatchRow(batch: batch)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    Task { await delete(batch) }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
                             }
-                        }
-                        .swipeActions(edge: .leading) {
-                            Button {
-                                editing = batch
-                            } label: {
-                                Label("Edit", systemImage: "pencil")
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    editing = batch
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                .tint(.blue)
                             }
-                            .tint(.blue)
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture { editing = batch }
-                }
-                Section {
-                    Button {
-                        consumeTarget = batches.first
-                    } label: {
-                        Label("Consume", systemImage: "fork.knife")
+                            .contentShape(Rectangle())
+                            .onTapGesture { editing = batch }
+                            .listRowBackground(
+                                flashingBatchID == batch.id
+                                    ? Color.accentColor.opacity(0.18)
+                                    : Color.clear,
+                            )
+                            .animation(.easeOut(duration: 0.4), value: flashingBatchID)
+                            .id(batch.id)
                     }
-                    .disabled(batches.isEmpty)
+                    Section {
+                        Button {
+                            consumeTarget = batches.first
+                        } label: {
+                            Label("Consume", systemImage: "fork.knife")
+                        }
+                        .disabled(batches.isEmpty)
+                    }
                 }
+                .task(id: highlightBatchID) { await flashHighlight(proxy: proxy) }
             }
             .navigationTitle(product.displayTitle)
             .navigationBarTitleDisplayMode(.inline)
@@ -125,6 +139,18 @@ struct ProductBatchesSheet: View {
                 Text(errorMessage ?? "")
             }
         }
+    }
+
+    private func flashHighlight(proxy: ScrollViewProxy) async {
+        guard let target = highlightBatchID,
+              batches.contains(where: { $0.id == target })
+        else { return }
+        withAnimation {
+            proxy.scrollTo(target, anchor: .center)
+            flashingBatchID = target
+        }
+        try? await Task.sleep(for: .milliseconds(1400))
+        withAnimation { flashingBatchID = nil }
     }
 
     private func delete(_ batch: StockBatch) async {

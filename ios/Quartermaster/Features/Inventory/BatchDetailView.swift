@@ -21,6 +21,10 @@ struct BatchDetailView: View {
     @State private var locations: [Location] = []
     @State private var isActing = false
     @State private var actionError: String?
+    /// Bump after any action that should refresh the embedded mini-history.
+    /// Applied as `.id(historyReloadToken)` on `MiniBatchHistory` so SwiftUI
+    /// rebuilds the view and its `.task` re-runs.
+    @State private var historyReloadToken: Int = 0
 
     var body: some View {
         Group {
@@ -103,6 +107,7 @@ struct BatchDetailView: View {
 
             Section("Recent history for this batch") {
                 MiniBatchHistory(batchID: batch.id)
+                    .id(historyReloadToken)
             }
 
             Section {
@@ -187,6 +192,7 @@ struct BatchDetailView: View {
         do {
             _ = try await appState.api.restoreStock(id: batch.id)
             await load()
+            historyReloadToken &+= 1
         } catch let err as APIError {
             actionError = err.userFacingMessage
         } catch {
@@ -198,6 +204,7 @@ struct BatchDetailView: View {
         appState.pendingInventoryTarget = InventoryTarget(
             productID: product.id,
             locationID: location.id,
+            highlightBatchID: batchID,
         )
         // Dismiss the containing sheet stack so the deep-link can resolve
         // cleanly on the Inventory tab.

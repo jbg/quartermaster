@@ -37,7 +37,7 @@ pub enum ApiError {
     ManualProductNotRefreshable,
 
     #[error("this batch can't be restored — only discarded batches can be undone")]
-    BatchNotRestorable,
+    BatchNotRestorable { unrestorable_ids: Vec<uuid::Uuid> },
 
     #[error("unauthorized")]
     Unauthorized,
@@ -73,6 +73,11 @@ pub struct ApiErrorBody {
     pub code: &'static str,
     /// Human-readable description. Not localised; clients should prefer `code`.
     pub message: String,
+    /// Present on `code = batch_not_restorable` when the failure came from a
+    /// bulk call — lists the specific batches the caller needs to look at.
+    /// Absent on single-batch restore (the path already names the batch).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unrestorable_ids: Option<Vec<uuid::Uuid>>,
 }
 
 impl IntoResponse for ApiError {
@@ -90,7 +95,7 @@ impl IntoResponse for ApiError {
             ApiError::ManualProductNotRefreshable => {
                 (StatusCode::BAD_REQUEST, "manual_product_not_refreshable")
             }
-            ApiError::BatchNotRestorable => (StatusCode::CONFLICT, "batch_not_restorable"),
+            ApiError::BatchNotRestorable { .. } => (StatusCode::CONFLICT, "batch_not_restorable"),
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             ApiError::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             ApiError::NotFound => (StatusCode::NOT_FOUND, "not_found"),
@@ -107,9 +112,16 @@ impl IntoResponse for ApiError {
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal")
             }
         };
+        let unrestorable_ids = match &self {
+            ApiError::BatchNotRestorable { unrestorable_ids } if !unrestorable_ids.is_empty() => {
+                Some(unrestorable_ids.clone())
+            }
+            _ => None,
+        };
         let body = ApiErrorBody {
             code,
             message: self.to_string(),
+            unrestorable_ids,
         };
         (status, Json(body)).into_response()
     }

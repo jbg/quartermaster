@@ -423,6 +423,10 @@ pub enum RestoreError {
     /// last consume event doesn't carry enough information to reconstruct
     /// the pre-consume state honestly).
     NotRestorable,
+    /// Bulk-restore rolled back because at least one of the inputs wasn't
+    /// restorable. The vector names exactly the IDs that failed so the
+    /// caller can point the user at them.
+    NotRestorableMany(Vec<Uuid>),
     Database(sqlx::Error),
 }
 
@@ -449,9 +453,12 @@ pub async fn restore(
         .ok_or(RestoreError::NotFound)
 }
 
-/// Bulk version of `restore`: one transaction spans every ID, and any
-/// `NotRestorable` / `NotFound` among them aborts the whole thing so the
-/// caller sees an all-or-nothing outcome.
+/// Bulk version of `restore`. One transaction spans every ID. Visits each
+/// in turn; if any is unrecoverable (unknown batch or last event isn't a
+/// discard), continues collecting unrestorable IDs rather than bailing on
+/// the first — then rolls back the whole transaction and returns the list.
+/// Lets the caller tell the user exactly which rows were the problem
+/// instead of a generic "one of these failed".
 pub async fn restore_many(
     db: &Database,
     household_id: Uuid,
@@ -462,10 +469,29 @@ pub async fn restore_many(
         return Ok(Vec::new());
     }
     let mut tx = db.pool.begin().await?;
+    let mut unrestorable: Vec<Uuid> = Vec::new();
+
     for id in ids {
-        restore_in_tx(&mut tx, household_id, *id, actor).await?;
+        match restore_in_tx(&mut tx, household_id, *id, actor).await {
+            Ok(()) => {}
+            // `NotFound` on a bulk op is "unknown-or-not-yours" — treat it
+            // like any other unrestorable so the caller gets one clean list.
+            Err(RestoreError::NotFound) | Err(RestoreError::NotRestorable) => {
+                unrestorable.push(*id);
+            }
+            Err(other) => return Err(other),
+        }
     }
+
+    if !unrestorable.is_empty() {
+        // Dropping `tx` without commit rolls back any restores we wrote
+        // before we discovered the problem rows. The caller is left with
+        // the same state they started in.
+        return Err(RestoreError::NotRestorableMany(unrestorable));
+    }
+
     tx.commit().await?;
+
     let mut out = Vec::with_capacity(ids.len());
     for id in ids {
         let row = get(db, household_id, *id)
@@ -918,7 +944,13 @@ mod tests {
         discard(&db, hid, a.id, uid, None).await.unwrap();
 
         let err = restore_many(&db, hid, &[a.id, b.id], uid).await.err().expect("should fail");
-        assert!(matches!(err, RestoreError::NotRestorable));
+        match err {
+            RestoreError::NotRestorableMany(ids) => {
+                // Only B is unrestorable; A is, but we rolled back because of B.
+                assert_eq!(ids, vec![b.id]);
+            }
+            other => panic!("expected NotRestorableMany, got {other:?}"),
+        }
 
         // A remains discarded (still 0, depleted_at set). No stray events.
         let a_after = get(&db, hid, a.id).await.unwrap().unwrap();
@@ -930,6 +962,25 @@ mod tests {
         let b_after = get(&db, hid, b.id).await.unwrap().unwrap();
         assert_eq!(b_after.quantity, "200");
         assert!(b_after.depleted_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn restore_many_reports_every_unrestorable_id() {
+        let (db, hid, uid, lid, pid) = setup().await;
+        // Two active batches (neither discarded) — both should show up in
+        // the unrestorable list, not just the first.
+        let a = create(&db, hid, pid, lid, "100", "g", None, None, None, uid).await.unwrap();
+        let b = create(&db, hid, pid, lid, "200", "g", None, None, None, uid).await.unwrap();
+
+        let err = restore_many(&db, hid, &[a.id, b.id], uid).await.err().expect("should fail");
+        match err {
+            RestoreError::NotRestorableMany(ids) => {
+                assert_eq!(ids.len(), 2);
+                assert!(ids.contains(&a.id));
+                assert!(ids.contains(&b.id));
+            }
+            other => panic!("expected NotRestorableMany, got {other:?}"),
+        }
     }
 
     #[tokio::test]

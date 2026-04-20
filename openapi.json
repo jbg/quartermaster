@@ -1405,6 +1405,17 @@
           "message": {
             "type": "string",
             "description": "Human-readable description. Not localised; clients should prefer `code`."
+          },
+          "unrestorable_ids": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Present on `code = batch_not_restorable` when the failure came from a\nbulk call — lists the specific batches the caller needs to look at.\nAbsent on single-batch restore (the path already names the batch)."
           }
         }
       },

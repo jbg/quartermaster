@@ -40,7 +40,12 @@ impl From<RestoreError> for ApiError {
     fn from(e: RestoreError) -> Self {
         match e {
             RestoreError::NotFound => ApiError::NotFound,
-            RestoreError::NotRestorable => ApiError::BatchNotRestorable,
+            RestoreError::NotRestorable => ApiError::BatchNotRestorable {
+                unrestorable_ids: Vec::new(),
+            },
+            RestoreError::NotRestorableMany(ids) => ApiError::BatchNotRestorable {
+                unrestorable_ids: ids,
+            },
             RestoreError::Database(err) => ApiError::Database(err),
         }
     }

@@ -25,8 +25,13 @@ struct ConsumeGroupRow: View {
                         .clipShape(Circle())
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Consumed")
-                            .font(.subheadline.weight(.semibold))
+                        HStack(spacing: 6) {
+                            Text("Consumed")
+                                .font(.subheadline.weight(.semibold))
+                            if let sharedExpiry = sharedExpiryDate {
+                                ExpiryBadge(expiresOn: sharedExpiry)
+                            }
+                        }
                         Text(summaryLine)
                             .font(.body)
                             .lineLimit(2)
@@ -71,6 +76,18 @@ struct ConsumeGroupRow: View {
 
     private var isExpanded: Bool {
         expandedGroups.contains(requestID)
+    }
+
+    /// When every event in the correlation carries the same non-nil
+    /// `batchExpiresOn`, surface it on the collapsed row. Mixed or
+    /// all-nil → hide the badge to keep the summary honest.
+    private var sharedExpiryDate: Date? {
+        let values = Set(events.map(\.batchExpiresOn))
+        guard values.count == 1,
+              let only = values.first,
+              let stringValue = only
+        else { return nil }
+        return StockBatch.yyyymmdd.date(from: stringValue)
     }
 
     private func toggle() {

@@ -448,6 +448,15 @@ struct RestoreManyResponse: Codable, Sendable {
 struct APIErrorBody: Codable, Sendable {
     let code: String
     let message: String
+    /// Populated on `code == "batch_not_restorable"` when the failure came
+    /// from `POST /stock/restore-many` — identifies which batches were the
+    /// problem so the UI can name them.
+    let unrestorableIds: [UUID]?
+
+    enum CodingKeys: String, CodingKey {
+        case code, message
+        case unrestorableIds = "unrestorable_ids"
+    }
 }
 
 // MARK: - Request builders (auth, unchanged)

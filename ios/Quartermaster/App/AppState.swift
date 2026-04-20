@@ -101,4 +101,8 @@ final class AppState {
 struct InventoryTarget: Equatable, Hashable, Sendable {
     let productID: UUID
     let locationID: UUID
+    /// When set, the batches sheet should scroll to and briefly highlight
+    /// this batch — so "Open in Inventory" from a history row makes it
+    /// obvious which batch the user came from when there are several.
+    var highlightBatchID: UUID?
 }

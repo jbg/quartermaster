@@ -354,10 +354,37 @@ struct StockHistoryView: View {
             await loadInitial()
             await onChange?()
         } catch let err as APIError {
-            errorMessage = err.userFacingMessage
+            errorMessage = bulkRestoreErrorMessage(for: err)
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// When `POST /stock/restore-many` rolls back, the server returns a
+    /// 409 whose body names the specific `unrestorable_ids`. Fold that into
+    /// a user-facing message that points at product names rather than
+    /// opaque UUIDs when we can resolve them.
+    private func bulkRestoreErrorMessage(for error: APIError) -> String {
+        if case .server(status: 409, let body) = error,
+           let body,
+           body.code == "batch_not_restorable",
+           let ids = body.unrestorableIds, !ids.isEmpty
+        {
+            let names: [String] = ids.compactMap { id in
+                entries.first(where: { $0.batchID == id })?.product.displayTitle
+            }
+            let count = ids.count
+            let subject = count == 1 ? "1 batch" : "\(count) batches"
+            if names.isEmpty {
+                return "\(subject) couldn't be undone — they may already have been restored."
+            }
+            // De-dup while preserving first-seen order so a batch touched
+            // by two events doesn't appear twice.
+            var seen = Set<String>()
+            let unique = names.filter { seen.insert($0).inserted }
+            return "Couldn't undo: \(unique.joined(separator: ", ")). They may already have been restored."
+        }
+        return error.userFacingMessage
     }
 
     private static let dayHeader: DateFormatter = {

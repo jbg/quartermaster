@@ -17,6 +17,9 @@ struct InventoryView: View {
     struct BatchesSheetTarget: Identifiable {
         let product: Product
         let location: Location
+        /// Passed through from a deep-link so the sheet can scroll / flash
+        /// the originating batch.
+        var highlightBatchID: UUID? = nil
         var id: String { "\(product.id)-\(location.id)" }
     }
 
@@ -73,6 +76,7 @@ struct InventoryView: View {
                 location: target.location,
                 allLocations: locations,
                 batches: locationBatches,
+                highlightBatchID: target.highlightBatchID,
             ) {
                 await load()
             }
@@ -242,6 +246,10 @@ struct InventoryView: View {
         let location = locations.first(where: { $0.id == target.locationID })
 
         guard let product, let location else { return }
-        batchesSheet = BatchesSheetTarget(product: product, location: location)
+        batchesSheet = BatchesSheetTarget(
+            product: product,
+            location: location,
+            highlightBatchID: target.highlightBatchID,
+        )
     }
 }
