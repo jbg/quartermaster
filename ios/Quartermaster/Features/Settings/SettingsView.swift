@@ -17,6 +17,14 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Inventory") {
+                NavigationLink {
+                    StockHistoryView(scope: .household)
+                } label: {
+                    Label("Stock history", systemImage: "clock.arrow.circlepath")
+                }
+            }
+
             Section("Server") {
                 LabeledContent("URL", value: appState.serverURL.absoluteString)
             }

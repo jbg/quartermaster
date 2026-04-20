@@ -1,3 +1,21 @@
+//! Event-sourced stock operations.
+//!
+//! Every quantity-changing function wraps its SELECT + UPDATE + event-INSERT
+//! in a single transaction, and `stock_batch.quantity` is a cache of
+//! `SUM(stock_event.quantity_delta)` for the batch.
+//!
+//! **Concurrency assumption (single writer OR SQLite).** Under SQLite's
+//! default `SERIALIZABLE` transaction isolation the "read current, write
+//! new" pattern here is safe; concurrent writers will be serialised by the
+//! engine. Under Postgres `READ COMMITTED` (the sqlx default) two concurrent
+//! `adjust` calls could each read the same pre-change quantity, each write
+//! an event based on that read, and end with `quantity` out of sync with
+//! `SUM(quantity_delta)`. Moving to Postgres requires either per-connection
+//! `SERIALIZABLE` isolation or a row-level `SELECT ... FOR UPDATE` in
+//! `adjust` / `apply_consumption` / `discard` / `restore`. See
+//! `TODO.md#cross-cutting` and `cargo xtask verify-stock-ledger` for
+//! post-facto drift detection.
+
 use std::str::FromStr;
 
 use chrono::{DateTime, NaiveDate, Utc};
@@ -8,7 +26,9 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::products::ProductRow;
-use crate::stock_events::{EVENT_ADD, EVENT_ADJUST, EVENT_CONSUME, EVENT_DISCARD};
+use crate::stock_events::{
+    latest_for_batch_tx, EVENT_ADD, EVENT_ADJUST, EVENT_CONSUME, EVENT_DISCARD, EVENT_RESTORE,
+};
 use crate::{now_utc_rfc3339, Database};
 
 #[derive(Debug, Clone, Serialize)]
@@ -84,7 +104,8 @@ pub async fn list(
             p.id AS p_id, p.source AS p_source, p.off_barcode AS p_off_barcode, p.name AS p_name, \
             p.brand AS p_brand, p.family AS p_family, p.default_unit AS p_default_unit, \
             p.image_url AS p_image_url, p.fetched_at AS p_fetched_at, \
-            p.created_by_household_id AS p_created_by_household_id, p.created_at AS p_created_at \
+            p.created_by_household_id AS p_created_by_household_id, p.created_at AS p_created_at, \
+            p.deleted_at AS p_deleted_at \
          FROM stock_batch s \
          INNER JOIN product p ON p.id = s.product_id \
          WHERE s.household_id = ? ",
@@ -394,6 +415,89 @@ pub async fn discard(
     Ok(true)
 }
 
+#[derive(Debug)]
+pub enum RestoreError {
+    NotFound,
+    /// The batch's most recent event isn't a `discard`. Restore only undoes
+    /// an explicit discard; fully-consumed batches are out of scope (the
+    /// last consume event doesn't carry enough information to reconstruct
+    /// the pre-consume state honestly).
+    NotRestorable,
+    Database(sqlx::Error),
+}
+
+impl From<sqlx::Error> for RestoreError {
+    fn from(e: sqlx::Error) -> Self {
+        Self::Database(e)
+    }
+}
+
+/// Undo a discard: re-activate the batch at the exact pre-discard balance.
+/// Rejects with `NotRestorable` if the batch was consumed to zero (no
+/// discard event), already restored, or otherwise doesn't end on a discard.
+pub async fn restore(
+    db: &Database,
+    household_id: Uuid,
+    id: Uuid,
+    actor: Uuid,
+) -> Result<StockBatchRow, RestoreError> {
+    let mut tx = db.pool.begin().await?;
+
+    // Verify the batch belongs to the household (mirrors `get` but inside tx).
+    let present = sqlx::query(
+        "SELECT id FROM stock_batch WHERE id = ? AND household_id = ?",
+    )
+    .bind(id.to_string())
+    .bind(household_id.to_string())
+    .fetch_optional(&mut *tx)
+    .await?;
+    if present.is_none() {
+        return Err(RestoreError::NotFound);
+    }
+
+    let latest = latest_for_batch_tx(&mut tx, id).await?;
+    let Some(latest) = latest else {
+        return Err(RestoreError::NotRestorable);
+    };
+    if latest.event_type != EVENT_DISCARD {
+        return Err(RestoreError::NotRestorable);
+    }
+
+    // The discard event's delta is negative (e.g. -500). The restore is its
+    // inverse (+500). Parse, negate, serialise back.
+    let discard_delta = Decimal::from_str(&latest.quantity_delta)
+        .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+    let restored_delta = -discard_delta;
+    let new_quantity = restored_delta; // since batch was at zero post-discard
+
+    insert_event(
+        &mut tx,
+        household_id,
+        id,
+        EVENT_RESTORE,
+        &restored_delta.to_string(),
+        Some("restored via POST /stock/{id}/restore"),
+        actor,
+        None,
+    )
+    .await?;
+
+    sqlx::query(
+        "UPDATE stock_batch SET quantity = ?, depleted_at = NULL \
+         WHERE id = ? AND household_id = ?",
+    )
+    .bind(new_quantity.to_string())
+    .bind(id.to_string())
+    .bind(household_id.to_string())
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    get(db, household_id, id)
+        .await?
+        .ok_or(RestoreError::NotFound)
+}
+
 pub async fn list_active_batches(
     db: &Database,
     household_id: Uuid,
@@ -608,6 +712,7 @@ fn row_to_joined(row: sqlx::any::AnyRow) -> Result<StockBatchWithProduct, sqlx::
             .transpose()
             .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         created_at: row.try_get("p_created_at")?,
+        deleted_at: row.try_get("p_deleted_at")?,
     };
     Ok(StockBatchWithProduct { batch, product })
 }
@@ -699,6 +804,51 @@ mod tests {
         assert_eq!(events[1].quantity_delta, "-500");
 
         assert_eq!(balance_from_events(&db, b.id).await, Decimal::ZERO);
+    }
+
+    #[tokio::test]
+    async fn restore_after_discard() {
+        let (db, hid, uid, lid, pid) = setup().await;
+        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid).await.unwrap();
+        discard(&db, hid, b.id, uid, None).await.unwrap();
+
+        let restored = restore(&db, hid, b.id, uid).await.expect("restore");
+        assert_eq!(restored.quantity, "500");
+        assert!(restored.depleted_at.is_none());
+
+        let events = stock_events::list_for_batch(&db, b.id).await.unwrap();
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].event_type, "add");
+        assert_eq!(events[1].event_type, "discard");
+        assert_eq!(events[2].event_type, "restore");
+        assert_eq!(events[2].quantity_delta, "500");
+
+        // Ledger sum matches cached quantity.
+        assert_eq!(balance_from_events(&db, b.id).await, Decimal::from(500));
+    }
+
+    #[tokio::test]
+    async fn restore_rejects_when_last_event_isnt_discard() {
+        let (db, hid, uid, lid, pid) = setup().await;
+        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid).await.unwrap();
+        // Fully consume the batch via apply_consumption.
+        let refs = vec![b.to_batch_ref().unwrap()];
+        let plan = qm_core::batch::plan_consumption(refs, Decimal::from(500), "g").unwrap();
+        apply_consumption(&db, hid, &plan, uid).await.unwrap();
+
+        let err = restore(&db, hid, b.id, uid).await.err().expect("should fail");
+        assert!(matches!(err, RestoreError::NotRestorable));
+    }
+
+    #[tokio::test]
+    async fn restore_rejects_after_double_restore() {
+        let (db, hid, uid, lid, pid) = setup().await;
+        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid).await.unwrap();
+        discard(&db, hid, b.id, uid, None).await.unwrap();
+        restore(&db, hid, b.id, uid).await.expect("first restore");
+
+        let err = restore(&db, hid, b.id, uid).await.err().expect("should fail");
+        assert!(matches!(err, RestoreError::NotRestorable));
     }
 
     #[tokio::test]

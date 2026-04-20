@@ -408,6 +408,18 @@
               ],
               "format": "int64"
             }
+          },
+          {
+            "name": "include_deleted",
+            "in": "query",
+            "description": "When true, include soft-deleted manual products. Soft-deleted rows\nhave `deleted_at` populated; clients can render them muted.",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -693,6 +705,62 @@
         ]
       }
     },
+    "/products/{id}/restore": {
+      "post": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "restore",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/stock": {
       "get": {
         "tags": [
@@ -886,6 +954,66 @@
         ]
       }
     },
+    "/stock/events": {
+      "get": {
+        "tags": [
+          "stock"
+        ],
+        "operationId": "list_events",
+        "parameters": [
+          {
+            "name": "before_created_at",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockEventListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/stock/{id}": {
       "get": {
         "tags": [
@@ -1016,6 +1144,131 @@
             }
           },
           "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/stock/{id}/events": {
+      "get": {
+        "tags": [
+          "stock"
+        ],
+        "operationId": "list_events_for_batch",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "before_created_at",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockEventListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/stock/{id}/restore": {
+      "post": {
+        "tags": [
+          "stock"
+        ],
+        "operationId": "restore_one",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockBatchDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
             "description": "",
             "content": {
               "application/json": {
@@ -1367,6 +1620,13 @@
               "null"
             ]
           },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "RFC-3339 timestamp when the product was soft-deleted. Present only\nwhen the caller explicitly asked for deleted rows (e.g. via\n`/products/search?include_deleted=true` or the history timeline)."
+          },
           "family": {
             "type": "string"
           },
@@ -1503,6 +1763,86 @@
           },
           "unit": {
             "type": "string"
+          }
+        }
+      },
+      "StockEventDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "event_type",
+          "quantity_delta",
+          "unit",
+          "created_at",
+          "batch_id",
+          "product"
+        ],
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "consume_request_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Shared by all rows written by a single `POST /stock/consume` call."
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "created_by_username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_type": {
+            "type": "string",
+            "description": "One of `add`, `consume`, `adjust`, `discard`, `restore`."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product": {
+            "$ref": "#/components/schemas/ProductDto"
+          },
+          "quantity_delta": {
+            "type": "string",
+            "description": "Signed decimal in `unit`."
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
+      "StockEventListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StockEventDto"
+            }
+          },
+          "next_before": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the last returned item's `created_at`, if a full page was\nreturned — pass it back as the `before_created_at` query parameter\nto fetch the next page. `None` when we've reached the end."
           }
         }
       },

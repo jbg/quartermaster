@@ -10,8 +10,9 @@ use chrono::NaiveDate;
 use qm_core::batch::plan_consumption;
 use qm_db::products::ProductRow;
 use qm_db::stock::{
-    StockBatchRow, StockBatchWithProduct, StockFilter, StockMetadataUpdate,
+    RestoreError, StockBatchRow, StockBatchWithProduct, StockFilter, StockMetadataUpdate,
 };
+use qm_db::stock_events::TimelineEntryRow;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -28,7 +29,20 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/stock", get(list).post(create))
         .route("/stock/consume", post(consume))
+        .route("/stock/events", get(list_events))
         .route("/stock/{id}", get(get_one).patch(update).delete(delete_one))
+        .route("/stock/{id}/events", get(list_events_for_batch))
+        .route("/stock/{id}/restore", post(restore_one))
+}
+
+impl From<RestoreError> for ApiError {
+    fn from(e: RestoreError) -> Self {
+        match e {
+            RestoreError::NotFound => ApiError::NotFound,
+            RestoreError::NotRestorable => ApiError::BatchNotRestorable,
+            RestoreError::Database(err) => ApiError::Database(err),
+        }
+    }
 }
 
 /// Deserializer helper: treats a missing field as `None` and a present-null
@@ -431,6 +445,162 @@ pub async fn consume(
         consumed,
         consume_request_id,
     }))
+}
+
+// ----- history / restore -----
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct StockEventDto {
+    pub id: Uuid,
+    /// One of `add`, `consume`, `adjust`, `discard`, `restore`.
+    pub event_type: String,
+    /// Signed decimal in `unit`.
+    pub quantity_delta: String,
+    pub unit: String,
+    pub note: Option<String>,
+    pub created_at: String,
+    pub created_by_username: Option<String>,
+    pub batch_id: Uuid,
+    pub product: ProductDto,
+    /// Shared by all rows written by a single `POST /stock/consume` call.
+    pub consume_request_id: Option<Uuid>,
+}
+
+impl From<TimelineEntryRow> for StockEventDto {
+    fn from(r: TimelineEntryRow) -> Self {
+        Self {
+            id: r.event.id,
+            event_type: r.event.event_type,
+            quantity_delta: r.event.quantity_delta,
+            unit: r.batch_unit,
+            note: r.event.note,
+            created_at: r.event.created_at,
+            created_by_username: r.created_by_username,
+            batch_id: r.event.batch_id,
+            product: r.product.into(),
+            consume_request_id: r.event.consume_request_id,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct StockEventListResponse {
+    pub items: Vec<StockEventDto>,
+    /// When the last returned item's `created_at`, if a full page was
+    /// returned — pass it back as the `before_created_at` query parameter
+    /// to fetch the next page. `None` when we've reached the end.
+    pub next_before: Option<String>,
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct EventListQuery {
+    pub before_created_at: Option<String>,
+    pub limit: Option<i64>,
+}
+
+const DEFAULT_EVENT_LIMIT: i64 = 50;
+const MAX_EVENT_LIMIT: i64 = 200;
+
+#[utoipa::path(
+    get,
+    path = "/stock/events",
+    tag = "stock",
+    params(EventListQuery),
+    responses(
+        (status = 200, body = StockEventListResponse),
+        (status = 401, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_events(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Query(q): Query<EventListQuery>,
+) -> ApiResult<Json<StockEventListResponse>> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    let limit = q.limit.unwrap_or(DEFAULT_EVENT_LIMIT).clamp(1, MAX_EVENT_LIMIT);
+    let rows = qm_db::stock_events::list_timeline(
+        &state.db,
+        household_id,
+        None,
+        q.before_created_at.as_deref(),
+        limit,
+    )
+    .await?;
+    Ok(Json(build_event_response(rows, limit)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/stock/{id}/events",
+    tag = "stock",
+    params(
+        ("id" = Uuid, Path),
+        EventListQuery,
+    ),
+    responses(
+        (status = 200, body = StockEventListResponse),
+        (status = 404, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_events_for_batch(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<Uuid>,
+    Query(q): Query<EventListQuery>,
+) -> ApiResult<Json<StockEventListResponse>> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    // Enforce access by the household-scoped batch lookup before querying events.
+    qm_db::stock::get(&state.db, household_id, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+
+    let limit = q.limit.unwrap_or(DEFAULT_EVENT_LIMIT).clamp(1, MAX_EVENT_LIMIT);
+    let rows = qm_db::stock_events::list_timeline(
+        &state.db,
+        household_id,
+        Some(id),
+        q.before_created_at.as_deref(),
+        limit,
+    )
+    .await?;
+    Ok(Json(build_event_response(rows, limit)))
+}
+
+fn build_event_response(rows: Vec<TimelineEntryRow>, limit: i64) -> StockEventListResponse {
+    let next_before = if (rows.len() as i64) >= limit {
+        rows.last().map(|r| r.event.created_at.clone())
+    } else {
+        None
+    };
+    let items: Vec<StockEventDto> = rows.into_iter().map(Into::into).collect();
+    StockEventListResponse { items, next_before }
+}
+
+#[utoipa::path(
+    post,
+    path = "/stock/{id}/restore",
+    tag = "stock",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = StockBatchDto),
+        (status = 404, body = crate::error::ApiErrorBody),
+        (status = 409, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn restore_one(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<StockBatchDto>> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    let row = qm_db::stock::restore(&state.db, household_id, id, current.user_id).await?;
+    let product = qm_db::products::find_including_deleted(&state.db, row.product_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok(Json(StockBatchWithProduct { batch: row, product }.into()))
 }
 
 // ----- helpers -----

@@ -5,6 +5,7 @@ struct ProductDetailView: View {
         case updated(Product)
         case refreshed(Product)
         case deleted
+        case restored(Product)
     }
 
     @Environment(AppState.self) private var appState
@@ -17,6 +18,7 @@ struct ProductDetailView: View {
     @State private var brand: String
     @State private var family: ProductFamily
     @State private var preferredUnit: String
+    @State private var imageURLText: String
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var confirmDelete = false
@@ -28,6 +30,7 @@ struct ProductDetailView: View {
         _brand = State(initialValue: product.brand ?? "")
         _family = State(initialValue: product.family)
         _preferredUnit = State(initialValue: product.preferredUnit)
+        _imageURLText = State(initialValue: product.imageURL?.absoluteString ?? "")
     }
 
     var body: some View {
@@ -49,9 +52,9 @@ struct ProductDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(product.isManual ? "Cancel" : "Done") { dismiss() }
+                    Button(product.isManual && !product.isDeleted ? "Cancel" : "Done") { dismiss() }
                 }
-                if product.isManual {
+                if product.isManual && !product.isDeleted {
                     ToolbarItem(placement: .confirmationAction) {
                         Button { Task { await save() } } label: {
                             if isSubmitting { ProgressView() } else { Text("Save").fontWeight(.semibold) }
@@ -79,6 +82,15 @@ struct ProductDetailView: View {
 
     @ViewBuilder
     private var manualBody: some View {
+        if product.isDeleted {
+            deletedManualBody
+        } else {
+            editableManualBody
+        }
+    }
+
+    @ViewBuilder
+    private var editableManualBody: some View {
         Section("Product") {
             TextField("Name", text: $name)
             TextField("Brand (optional)", text: $brand)
@@ -96,6 +108,14 @@ struct ProductDetailView: View {
             }
         }
         Section {
+            TextField("Image URL (optional)", text: $imageURLText)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+                .autocorrectionDisabled()
+        } footer: {
+            Text("Used as the thumbnail in inventory lists.")
+        }
+        Section {
             Button(role: .destructive) {
                 confirmDelete = true
             } label: {
@@ -108,6 +128,34 @@ struct ProductDetailView: View {
             if !appState.unitsFor(family: newFamily).contains(where: { $0.code == preferredUnit }) {
                 preferredUnit = newFamily.baseUnit
             }
+        }
+    }
+
+    @ViewBuilder
+    private var deletedManualBody: some View {
+        Section("Deleted product") {
+            LabeledContent("Name", value: product.name)
+            if let brand = product.brand, !brand.isEmpty {
+                LabeledContent("Brand", value: brand)
+            }
+            LabeledContent("Family", value: product.family.displayName)
+            if let deletedAt = product.deletedAt {
+                LabeledContent("Deleted at", value: deletedAt)
+            }
+        }
+        Section {
+            Button {
+                Task { await restore() }
+            } label: {
+                if isSubmitting {
+                    ProgressView()
+                } else {
+                    Label("Restore product", systemImage: "arrow.uturn.backward")
+                }
+            }
+            .disabled(isSubmitting)
+        } footer: {
+            Text("The product becomes searchable and usable again. Any old depleted batches that referenced it already retained their history.")
         }
     }
 
@@ -172,6 +220,16 @@ struct ProductDetailView: View {
         if preferredUnit != product.preferredUnit {
             request.preferredUnit = preferredUnit
         }
+        let trimmedImage = imageURLText.trimmingCharacters(in: .whitespaces)
+        let existingImage = product.imageURL?.absoluteString
+        switch (existingImage, trimmedImage) {
+        case (_, "") where existingImage != nil:
+            request.clearImageURL = true
+        case let (existing, new) where existing != new && !new.isEmpty:
+            request.imageURL = new
+        default:
+            break
+        }
 
         do {
             let updated = try await appState.api.updateProduct(id: product.id, request: request)
@@ -206,6 +264,21 @@ struct ProductDetailView: View {
         do {
             let refreshed = try await appState.api.refreshProduct(id: product.id)
             onChange(.refreshed(refreshed))
+            dismiss()
+        } catch let err as APIError {
+            errorMessage = err.userFacingMessage
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isSubmitting = false
+    }
+
+    private func restore() async {
+        isSubmitting = true
+        errorMessage = nil
+        do {
+            let restored = try await appState.api.restoreProduct(id: product.id)
+            onChange(.restored(restored))
             dismiss()
         } catch let err as APIError {
             errorMessage = err.userFacingMessage

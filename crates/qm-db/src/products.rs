@@ -7,6 +7,11 @@ use crate::{now_utc_rfc3339, Database};
 pub const SOURCE_OFF: &str = "openfoodfacts";
 pub const SOURCE_MANUAL: &str = "manual";
 
+/// Standard column list for reads. Embedded in every SELECT so new columns
+/// only need adding in one place.
+const COLS: &str = "id, source, off_barcode, name, brand, family, default_unit, \
+                    image_url, fetched_at, created_by_household_id, created_at, deleted_at";
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ProductRow {
     pub id: Uuid,
@@ -20,6 +25,7 @@ pub struct ProductRow {
     pub fetched_at: Option<String>,
     pub created_by_household_id: Option<Uuid>,
     pub created_at: String,
+    pub deleted_at: Option<String>,
 }
 
 pub fn base_unit_for_family(family: &str) -> &'static str {
@@ -72,6 +78,7 @@ pub async fn create_manual(
         fetched_at: None,
         created_by_household_id: Some(household_id),
         created_at,
+        deleted_at: None,
     })
 }
 
@@ -131,14 +138,26 @@ pub async fn upsert_from_off(
 }
 
 pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<ProductRow>, sqlx::Error> {
-    let row = sqlx::query(
-        "SELECT id, source, off_barcode, name, brand, family, default_unit, \
-                image_url, fetched_at, created_by_household_id, created_at \
-         FROM product WHERE id = ? AND deleted_at IS NULL",
-    )
-    .bind(id.to_string())
-    .fetch_optional(&db.pool)
-    .await?;
+    let sql = format!("SELECT {COLS} FROM product WHERE id = ? AND deleted_at IS NULL");
+    let row = sqlx::query(&sql)
+        .bind(id.to_string())
+        .fetch_optional(&db.pool)
+        .await?;
+    row.map(row_to_product).transpose()
+}
+
+/// Same as `find_by_id` but doesn't filter out soft-deleted rows. Used by
+/// the product-restore endpoint and by history timelines that need to
+/// resolve product names even for deleted products.
+pub async fn find_including_deleted(
+    db: &Database,
+    id: Uuid,
+) -> Result<Option<ProductRow>, sqlx::Error> {
+    let sql = format!("SELECT {COLS} FROM product WHERE id = ?");
+    let row = sqlx::query(&sql)
+        .bind(id.to_string())
+        .fetch_optional(&db.pool)
+        .await?;
     row.map(row_to_product).transpose()
 }
 
@@ -146,51 +165,62 @@ pub async fn find_by_off_barcode(
     db: &Database,
     barcode: &str,
 ) -> Result<Option<ProductRow>, sqlx::Error> {
-    let row = sqlx::query(
-        "SELECT id, source, off_barcode, name, brand, family, default_unit, \
-                image_url, fetched_at, created_by_household_id, created_at \
-         FROM product WHERE off_barcode = ? AND source = ? AND deleted_at IS NULL",
-    )
-    .bind(barcode)
-    .bind(SOURCE_OFF)
-    .fetch_optional(&db.pool)
-    .await?;
+    let sql = format!(
+        "SELECT {COLS} FROM product WHERE off_barcode = ? AND source = ? AND deleted_at IS NULL"
+    );
+    let row = sqlx::query(&sql)
+        .bind(barcode)
+        .bind(SOURCE_OFF)
+        .fetch_optional(&db.pool)
+        .await?;
     row.map(row_to_product).transpose()
 }
 
-/// Search products visible to `household_id` — all OFF-sourced products plus
-/// this household's manual products. Case-sensitivity follows the DB's default
-/// collation; for SQLite this means ASCII case-insensitive via LIKE lowercasing.
+/// Search products visible to `household_id`. `include_deleted` surfaces
+/// soft-deleted rows — the UI can render them muted and offer Restore.
+pub async fn search_with_deleted(
+    db: &Database,
+    household_id: Uuid,
+    query: &str,
+    limit: i64,
+    include_deleted: bool,
+) -> Result<Vec<ProductRow>, sqlx::Error> {
+    let pattern = format!("%{}%", query.replace('%', r"\%"));
+    let deleted_clause = if include_deleted {
+        ""
+    } else {
+        "AND deleted_at IS NULL"
+    };
+    let sql = format!(
+        "SELECT {COLS} \
+         FROM product \
+         WHERE (source = ? OR created_by_household_id = ?) \
+           {deleted_clause} \
+           AND (LOWER(name) LIKE LOWER(?) OR LOWER(COALESCE(brand, '')) LIKE LOWER(?)) \
+         ORDER BY name ASC \
+         LIMIT ?"
+    );
+    let rows = sqlx::query(&sql)
+        .bind(SOURCE_OFF)
+        .bind(household_id.to_string())
+        .bind(&pattern)
+        .bind(&pattern)
+        .bind(limit)
+        .fetch_all(&db.pool)
+        .await?;
+    rows.into_iter().map(row_to_product).collect()
+}
+
+/// Convenience wrapper: searches visible non-deleted products only.
 pub async fn search(
     db: &Database,
     household_id: Uuid,
     query: &str,
     limit: i64,
 ) -> Result<Vec<ProductRow>, sqlx::Error> {
-    let pattern = format!("%{}%", query.replace('%', r"\%"));
-    let rows = sqlx::query(
-        "SELECT id, source, off_barcode, name, brand, family, default_unit, \
-                image_url, fetched_at, created_by_household_id, created_at \
-         FROM product \
-         WHERE deleted_at IS NULL \
-           AND (source = ? OR created_by_household_id = ?) \
-           AND (LOWER(name) LIKE LOWER(?) OR LOWER(COALESCE(brand, '')) LIKE LOWER(?)) \
-         ORDER BY name ASC \
-         LIMIT ?",
-    )
-    .bind(SOURCE_OFF)
-    .bind(household_id.to_string())
-    .bind(&pattern)
-    .bind(&pattern)
-    .bind(limit)
-    .fetch_all(&db.pool)
-    .await?;
-    rows.into_iter().map(row_to_product).collect()
+    search_with_deleted(db, household_id, query, limit, false).await
 }
 
-/// Partial update of a manual product. Pass `Some(Some(value))` to set,
-/// `Some(None)` to clear (only applicable to brand/preferred_unit/image_url;
-/// the others are required-non-null), or `None` to leave unchanged.
 #[derive(Debug, Default, Clone)]
 pub struct ProductUpdate<'a> {
     pub name: Option<&'a str>,
@@ -247,9 +277,19 @@ pub async fn soft_delete(db: &Database, id: Uuid) -> Result<bool, sqlx::Error> {
     Ok(res.rows_affected() > 0)
 }
 
+/// Undo a previous soft-delete.
+pub async fn restore(db: &Database, id: Uuid) -> Result<bool, sqlx::Error> {
+    let res = sqlx::query(
+        "UPDATE product SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL",
+    )
+    .bind(id.to_string())
+    .execute(&db.pool)
+    .await?;
+    Ok(res.rows_affected() > 0)
+}
+
 /// Drop the barcode_cache row for this OFF product's barcode. Used by the
-/// "Refresh from OpenFoodFacts" endpoint. Returns false if the product
-/// isn't OFF-sourced or has no barcode.
+/// "Refresh from OpenFoodFacts" endpoint.
 pub async fn invalidate_barcode_cache_for(
     db: &Database,
     id: Uuid,
@@ -285,6 +325,7 @@ fn row_to_product(row: sqlx::any::AnyRow) -> Result<ProductRow, sqlx::Error> {
             .transpose()
             .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         created_at: row.try_get("created_at")?,
+        deleted_at: row.try_get("deleted_at")?,
     })
 }
 
@@ -303,6 +344,7 @@ mod tests {
         assert_eq!(p.family, "mass");
         assert_eq!(p.preferred_unit, "g");
         assert_eq!(p.source, "manual");
+        assert!(p.deleted_at.is_none());
 
         let got = find_by_id(&db, p.id).await.unwrap().unwrap();
         assert_eq!(got.name, "Basmati rice");
@@ -359,5 +401,45 @@ mod tests {
         assert_eq!(first.id, second.id);
         assert_eq!(second.name, "Spaghetti No. 5");
         assert_eq!(second.brand.as_deref(), Some("Barilla"));
+    }
+
+    #[tokio::test]
+    async fn search_with_deleted_flag_toggles_visibility() {
+        let db = crate::test_db().await;
+        let h = households::create(&db, "h").await.unwrap();
+        let p = create_manual(&db, h.id, "Retired widget", None, "count", None, None).await.unwrap();
+
+        assert_eq!(search(&db, h.id, "retired", 10).await.unwrap().len(), 1);
+
+        soft_delete(&db, p.id).await.unwrap();
+        assert_eq!(search(&db, h.id, "retired", 10).await.unwrap().len(), 0);
+        assert_eq!(
+            search_with_deleted(&db, h.id, "retired", 10, true).await.unwrap().len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn restore_flips_deleted_at_null() {
+        let db = crate::test_db().await;
+        let h = households::create(&db, "h").await.unwrap();
+        let p = create_manual(&db, h.id, "Widget", None, "count", None, None).await.unwrap();
+        soft_delete(&db, p.id).await.unwrap();
+        assert!(find_by_id(&db, p.id).await.unwrap().is_none());
+
+        let undone = restore(&db, p.id).await.unwrap();
+        assert!(undone);
+        let got = find_by_id(&db, p.id).await.unwrap().unwrap();
+        assert!(got.deleted_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn find_including_deleted_returns_tombstone() {
+        let db = crate::test_db().await;
+        let h = households::create(&db, "h").await.unwrap();
+        let p = create_manual(&db, h.id, "Widget", None, "count", None, None).await.unwrap();
+        soft_delete(&db, p.id).await.unwrap();
+        let got = find_including_deleted(&db, p.id).await.unwrap().unwrap();
+        assert!(got.deleted_at.is_some());
     }
 }

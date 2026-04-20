@@ -3231,7 +3231,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "qm-api",
+ "qm-db",
+ "rust_decimal",
  "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
  "utoipa",
 ]
 

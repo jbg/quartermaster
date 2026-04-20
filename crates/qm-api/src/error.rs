@@ -36,6 +36,9 @@ pub enum ApiError {
     #[error("this action is only available on OpenFoodFacts-sourced products")]
     ManualProductNotRefreshable,
 
+    #[error("this batch can't be restored — only discarded batches can be undone")]
+    BatchNotRestorable,
+
     #[error("unauthorized")]
     Unauthorized,
 
@@ -87,6 +90,7 @@ impl IntoResponse for ApiError {
             ApiError::ManualProductNotRefreshable => {
                 (StatusCode::BAD_REQUEST, "manual_product_not_refreshable")
             }
+            ApiError::BatchNotRestorable => (StatusCode::CONFLICT, "batch_not_restorable"),
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             ApiError::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             ApiError::NotFound => (StatusCode::NOT_FOUND, "not_found"),

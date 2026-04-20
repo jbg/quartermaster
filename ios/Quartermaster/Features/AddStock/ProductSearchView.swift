@@ -11,10 +11,18 @@ struct ProductSearchView: View {
     @State private var isSearching = false
     @State private var searchTask: Task<Void, Never>?
     @State private var showManualCreate = false
+    @State private var includeDeleted = false
+    @State private var restoringDeleted: Product?
 
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    Toggle("Show deleted", isOn: $includeDeleted.animation())
+                        .toggleStyle(.switch)
+                        .font(.footnote)
+                }
+
                 if query.count < 2 {
                     Section {
                         Text("Type at least two characters to search.")
@@ -30,15 +38,21 @@ struct ProductSearchView: View {
                         }
                     }
                 }
+
                 ForEach(results) { product in
                     Button {
-                        onPick(product)
-                        dismiss()
+                        if product.isDeleted {
+                            restoringDeleted = product
+                        } else {
+                            onPick(product)
+                            dismiss()
+                        }
                     } label: {
                         ProductListRow(product: product)
                     }
                     .buttonStyle(.plain)
                 }
+
                 Section {
                     Button {
                         showManualCreate = true
@@ -67,10 +81,21 @@ struct ProductSearchView: View {
                     await performSearch(newValue)
                 }
             }
+            .onChange(of: includeDeleted) { _, _ in
+                guard query.count >= 2 else { return }
+                Task { await performSearch(query) }
+            }
             .sheet(isPresented: $showManualCreate) {
                 ManualProductForm(prefillBarcode: nil) { created in
                     onPick(created)
                     dismiss()
+                }
+            }
+            .sheet(item: $restoringDeleted) { product in
+                ProductDetailView(product: product) { action in
+                    if case .restored = action {
+                        Task { await performSearch(query) }
+                    }
                 }
             }
         }
@@ -78,7 +103,10 @@ struct ProductSearchView: View {
 
     private func performSearch(_ q: String) async {
         isSearching = true
-        let fetched = (try? await appState.api.searchProducts(query: q)) ?? []
+        let fetched = (try? await appState.api.searchProducts(
+            query: q,
+            includeDeleted: includeDeleted,
+        )) ?? []
         if !Task.isCancelled {
             results = fetched
         }
@@ -117,10 +145,15 @@ struct ProductListRow: View {
                     if product.source == "manual" {
                         Text("· Manual")
                     }
+                    if product.isDeleted {
+                        Text("· Deleted")
+                            .foregroundStyle(.red)
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
+            .opacity(product.isDeleted ? 0.55 : 1)
         }
     }
 }

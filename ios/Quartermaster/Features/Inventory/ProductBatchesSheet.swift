@@ -13,6 +13,7 @@ struct ProductBatchesSheet: View {
     @State private var editing: StockBatch?
     @State private var consumeTarget: StockBatch?
     @State private var showProductDetails = false
+    @State private var showBatchHistory: StockBatch?
     @State private var errorMessage: String?
 
     var body: some View {
@@ -57,6 +58,13 @@ struct ProductBatchesSheet: View {
                         } label: {
                             Label("Product details", systemImage: "info.circle")
                         }
+                        if let first = batches.first {
+                            Button {
+                                showBatchHistory = first
+                            } label: {
+                                Label("Batch history", systemImage: "clock.arrow.circlepath")
+                            }
+                        }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
@@ -89,8 +97,21 @@ struct ProductBatchesSheet: View {
                         switch action {
                         case .deleted:
                             dismiss()
-                        case .updated, .refreshed:
+                        case .updated, .refreshed, .restored:
                             break
+                        }
+                    }
+                }
+            }
+            .sheet(item: $showBatchHistory) { batch in
+                NavigationStack {
+                    StockHistoryView(scope: .batch(batch.id)) {
+                        await onMutated()
+                        if let refreshed = try? await appState.api.listStock(
+                            locationID: location.id,
+                            productID: product.id,
+                        ) {
+                            batches = refreshed
                         }
                     }
                 }
@@ -309,6 +330,7 @@ private struct ConsumeForm: View {
     @State private var unitCode: String
     @State private var isSubmitting = false
     @State private var errorMessage: String?
+    @State private var successMessage: String?
 
     init(product: Product, location: Location, onConsumed: @escaping () async -> Void) {
         self.product = product
@@ -350,6 +372,19 @@ private struct ConsumeForm: View {
                     .disabled(!canSubmit || isSubmitting)
                 }
             }
+            .alert("Consumed", isPresented: Binding(
+                get: { successMessage != nil },
+                set: { if !$0 { successMessage = nil } }
+            )) {
+                Button("OK") {
+                    Task {
+                        await onConsumed()
+                        dismiss()
+                    }
+                }
+            } message: {
+                Text(successMessage ?? "")
+            }
         }
     }
 
@@ -368,14 +403,32 @@ private struct ConsumeForm: View {
             unit: unitCode,
         )
         do {
-            _ = try await appState.api.consumeStock(request)
-            await onConsumed()
-            dismiss()
+            let response = try await appState.api.consumeStock(request)
+            successMessage = buildSuccessMessage(response: response)
         } catch let err as APIError {
             errorMessage = err.userFacingMessage
         } catch {
             errorMessage = error.localizedDescription
         }
         isSubmitting = false
+    }
+
+    private func buildSuccessMessage(response: ConsumeResponse) -> String {
+        let total = response.consumed.reduce(Decimal.zero) { partial, c in
+            partial + (Decimal(string: c.quantityInRequestedUnit) ?? .zero)
+        }
+        let totalLabel = "\(Self.format(total)) \(unitCode)"
+        let count = response.consumed.count
+        if count <= 1 {
+            return "Consumed \(totalLabel)."
+        }
+        return "Consumed \(totalLabel) across \(count) batches."
+    }
+
+    private static func format(_ d: Decimal) -> String {
+        var copy = d
+        var rounded = Decimal()
+        NSDecimalRound(&rounded, &copy, 3, .plain)
+        return NSDecimalNumber(decimal: rounded).stringValue
     }
 }

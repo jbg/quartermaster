@@ -12,6 +12,7 @@ struct ManualProductForm: View {
     @State private var family: ProductFamily = .mass
     @State private var preferredUnit: String = ProductFamily.mass.baseUnit
     @State private var barcode: String = ""
+    @State private var imageURLText: String = ""
     @State private var isSubmitting = false
     @State private var errorMessage: String?
 
@@ -33,6 +34,14 @@ struct ManualProductForm: View {
                             Text(u.code).tag(u.code)
                         }
                     }
+                }
+                Section {
+                    TextField("Image URL (optional)", text: $imageURLText)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                        .autocorrectionDisabled()
+                } footer: {
+                    Text("Used as the thumbnail in inventory lists.")
                 }
                 Section("Barcode") {
                     TextField("Optional", text: $barcode)
@@ -83,11 +92,13 @@ struct ManualProductForm: View {
         errorMessage = nil
         let cleanBrand = brand.trimmingCharacters(in: .whitespaces)
         let cleanBarcode = barcode.trimmingCharacters(in: .whitespaces)
+        let cleanImageURL = imageURLText.trimmingCharacters(in: .whitespaces)
         let request = CreateProductRequest(
             name: name.trimmingCharacters(in: .whitespaces),
             brand: cleanBrand.isEmpty ? nil : cleanBrand,
             family: family,
             preferredUnit: preferredUnit.isEmpty ? nil : preferredUnit,
+            imageURL: cleanImageURL.isEmpty ? nil : cleanImageURL,
             barcode: cleanBarcode.isEmpty ? nil : cleanBarcode,
         )
         do {

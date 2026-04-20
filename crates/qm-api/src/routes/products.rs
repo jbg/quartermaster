@@ -27,6 +27,7 @@ pub fn router() -> Router<AppState> {
             get(get_one).patch(update).delete(delete_one),
         )
         .route("/products/{id}/refresh", post(refresh))
+        .route("/products/{id}/restore", post(restore))
 }
 
 /// Deserializer helper for explicit-null semantics on optional-clearable
@@ -53,6 +54,10 @@ pub struct ProductDto {
     pub image_url: Option<String>,
     pub barcode: Option<String>,
     pub source: String,
+    /// RFC-3339 timestamp when the product was soft-deleted. Present only
+    /// when the caller explicitly asked for deleted rows (e.g. via
+    /// `/products/search?include_deleted=true` or the history timeline).
+    pub deleted_at: Option<String>,
 }
 
 impl From<ProductRow> for ProductDto {
@@ -66,6 +71,7 @@ impl From<ProductRow> for ProductDto {
             image_url: p.image_url,
             barcode: p.off_barcode,
             source: p.source,
+            deleted_at: p.deleted_at,
         }
     }
 }
@@ -97,6 +103,9 @@ pub struct UpdateProductRequest {
 pub struct SearchQuery {
     pub q: String,
     pub limit: Option<i64>,
+    /// When true, include soft-deleted manual products. Soft-deleted rows
+    /// have `deleted_at` populated; clients can render them muted.
+    pub include_deleted: Option<bool>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -135,7 +144,15 @@ pub async fn search(
         return Ok(Json(ProductSearchResponse { items: Vec::new() }));
     }
     let limit = q.limit.unwrap_or(20).clamp(1, 100);
-    let rows = qm_db::products::search(&state.db, household_id, query, limit).await?;
+    let include_deleted = q.include_deleted.unwrap_or(false);
+    let rows = qm_db::products::search_with_deleted(
+        &state.db,
+        household_id,
+        query,
+        limit,
+        include_deleted,
+    )
+    .await?;
     Ok(Json(ProductSearchResponse {
         items: rows.into_iter().map(Into::into).collect(),
     }))
@@ -440,10 +457,90 @@ pub async fn refresh(
     let Some(barcode) = existing.off_barcode.clone() else {
         return Err(ApiError::ManualProductNotRefreshable);
     };
-    qm_db::products::invalidate_barcode_cache_for(&state.db, id).await?;
 
-    let response = fetch_and_cache(&state, &barcode).await?;
-    Ok(Json(response.0.product))
+    // Fetch OFF first so we can check for family conflicts before
+    // touching local state.
+    let off = OpenFoodFactsClient::new(state.http.clone());
+    let off_product = match off.fetch(&barcode).await {
+        OffResult::Found(p) => p,
+        OffResult::NotFound => return Err(ApiError::NotFound),
+        OffResult::Upstream(_) => return Err(ApiError::BadGateway),
+    };
+    let family = openfoodfacts::infer_family(off_product.quantity_unit.as_deref());
+
+    // Guard: if OFF's inference changes the family, don't silently adopt it
+    // when active batches would become cross-family. Same check the PATCH
+    // handler runs.
+    if family.as_str() != existing.family {
+        let conflicts = qm_db::stock::conflicting_units_for_family_change(
+            &state.db,
+            existing.id,
+            family.as_str(),
+        )
+        .await?;
+        if !conflicts.is_empty() {
+            return Err(ApiError::ProductHasIncompatibleStock {
+                conflicting_units: conflicts,
+            });
+        }
+    }
+
+    // Safe to land the new data.
+    qm_db::products::invalidate_barcode_cache_for(&state.db, id).await?;
+    let preferred = qm_db::products::base_unit_for_family(family.as_str());
+    let row = qm_db::products::upsert_from_off(
+        &state.db,
+        &off_product.barcode,
+        &off_product.name,
+        off_product.brand.as_deref(),
+        family.as_str(),
+        Some(preferred),
+        off_product.image_url.as_deref(),
+    )
+    .await?;
+    qm_db::barcode_cache::put_hit(&state.db, &barcode, row.id).await?;
+
+    Ok(Json(row.into()))
+}
+
+#[utoipa::path(
+    post,
+    path = "/products/{id}/restore",
+    tag = "products",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = ProductDto),
+        (status = 403, body = crate::error::ApiErrorBody),
+        (status = 404, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn restore(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<ProductDto>> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    let existing = qm_db::products::find_including_deleted(&state.db, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if existing.source == qm_db::products::SOURCE_OFF {
+        return Err(ApiError::OffProductReadOnly);
+    }
+    if existing.created_by_household_id != Some(household_id) {
+        return Err(ApiError::NotFound);
+    }
+    if existing.deleted_at.is_none() {
+        return Err(ApiError::Conflict(
+            "product is not deleted".into(),
+        ));
+    }
+
+    qm_db::products::restore(&state.db, id).await?;
+    let refreshed = qm_db::products::find_by_id(&state.db, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok(Json(refreshed.into()))
 }
 
 // ----- helpers -----

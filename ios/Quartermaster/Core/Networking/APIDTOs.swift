@@ -121,11 +121,13 @@ struct Product: Codable, Sendable, Identifiable, Hashable {
     let imageURL: URL?
     let barcode: String?
     let source: String
+    let deletedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, brand, family, barcode, source
         case preferredUnit = "preferred_unit"
         case imageURL = "image_url"
+        case deletedAt = "deleted_at"
     }
 
     var displayTitle: String {
@@ -137,6 +139,7 @@ struct Product: Codable, Sendable, Identifiable, Hashable {
 
     var isOFF: Bool { source == "openfoodfacts" }
     var isManual: Bool { source == "manual" }
+    var isDeleted: Bool { deletedAt != nil }
 }
 
 struct ProductSearchResponse: Codable, Sendable {
@@ -153,11 +156,13 @@ struct CreateProductRequest: Encodable {
     let brand: String?
     let family: ProductFamily
     let preferredUnit: String?
+    let imageURL: String?
     let barcode: String?
 
     enum CodingKeys: String, CodingKey {
         case name, brand, family, barcode
         case preferredUnit = "preferred_unit"
+        case imageURL = "image_url"
     }
 }
 
@@ -343,6 +348,81 @@ struct ConsumeResponse: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case consumed
         case consumeRequestID = "consume_request_id"
+    }
+}
+
+// MARK: - Stock events
+
+enum StockEventType: String, Codable, Sendable, Hashable {
+    case add
+    case consume
+    case adjust
+    case discard
+    case restore
+
+    var displayLabel: String {
+        switch self {
+        case .add: "Added"
+        case .consume: "Consumed"
+        case .adjust: "Adjusted"
+        case .discard: "Discarded"
+        case .restore: "Restored"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .add: "plus.circle"
+        case .consume: "fork.knife"
+        case .adjust: "pencil"
+        case .discard: "trash"
+        case .restore: "arrow.uturn.backward"
+        }
+    }
+}
+
+struct StockEvent: Codable, Sendable, Identifiable, Hashable {
+    let id: UUID
+    let eventType: StockEventType
+    let quantityDelta: String
+    let unit: String
+    let note: String?
+    let createdAt: String
+    let createdByUsername: String?
+    let batchID: UUID
+    let product: Product
+    let consumeRequestID: UUID?
+
+    enum CodingKeys: String, CodingKey {
+        case id, unit, note, product
+        case eventType = "event_type"
+        case quantityDelta = "quantity_delta"
+        case createdAt = "created_at"
+        case createdByUsername = "created_by_username"
+        case batchID = "batch_id"
+        case consumeRequestID = "consume_request_id"
+    }
+
+    var createdAtDate: Date? {
+        Self.iso.date(from: createdAt)
+    }
+
+    // ISO8601DateFormatter is documented as thread-safe; marking the shared
+    // instance nonisolated(unsafe) satisfies Swift 6 strict concurrency.
+    nonisolated(unsafe) private static let iso: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+}
+
+struct StockEventListResponse: Codable, Sendable {
+    let items: [StockEvent]
+    let nextBefore: String?
+
+    enum CodingKeys: String, CodingKey {
+        case items
+        case nextBefore = "next_before"
     }
 }
 

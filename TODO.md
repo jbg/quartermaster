@@ -1,23 +1,25 @@
 # Quartermaster — next slice candidates
 
-Grouped by theme, not priority. The natural order to finish v1 is roughly **Slice 2 follow-ups → Slice 3 → cross-cutting**.
+Grouped by theme, not priority. The natural order to finish v1 is roughly **Event-log follow-ups → Slice 3 → cross-cutting**.
 
-Slice 2 (products + barcodes + stock + scan + populated inventory) shipped in `4aa83c0`.
+Shipped so far:
+- Slice 1 — initial skeleton (`5263a83`)
+- Slice 2 — products, barcodes, stock, scan, populated inventory (`4aa83c0`)
+- Slice 2 follow-ups — event-sourced stock, product management, UX polish (`e8666c2`)
 
-## Slice 2 follow-ups — things we noticed while building
+## Event-log follow-ups — things we noticed after making stock event-sourced
 
-Smaller than a slice of their own, but they'll bite if left out. Roughly ordered by impact.
+The ledger exists but is inert from the user's perspective — it's written on every change and never read outside tests. Small bits of scaffolding turn it into the consumption-history / analytics foundation the refactor was meant to unlock.
 
-- **Product edit (name, brand, family, preferred unit, image).** OpenFoodFacts' family inference falls back to `count` when it can't tell, and occasionally gets it wrong outright (Coca-Cola landed as `mass` in testing because OFF's `product_quantity_unit` was "g" for some SKUs). Users need a way to correct a product's family and preferred unit after the fact. Also needed for fixing typos in manual products. `PATCH /products/{id}` (admin-or-creator) + an iOS product detail screen. Deleting a product that has stock should be refused.
-- **Move a batch between locations.** `EditBatchForm` currently only presents the batch's current location, so "I just moved this from the pantry to the freezer" is awkward. Fix: pass all `locations` into `EditBatchForm` (already in scope on the caller) and bind the picker.
-- **Expose `opened_on` in AddStock + batch edit.** The DB column, DTO, and request type all carry it; the iOS forms don't show it yet. Useful for dairy, sauces, and anything with a "use within N days once opened" expectation.
-- **Explicit "clear expiry" control on iOS.** Backend supports `null` via double-option. The edit form only lets you set a date or leave it alone — add a "Remove expiry" destructive button inside the expiry section.
-- **Make filter-chip totals honest.** Under *Expiring soon*, a product row shows the sum of only the matching batches and the filtered batch count. That's logically consistent but probably confusing ("I have 1.3 kg total but this says 300 g?"). Options: (a) show both "300 g expiring soon / 1.3 kg total" on the row, or (b) hide the product row from the section when any of its batches don't match — i.e. surface only *fully* expiring-soon products. Worth a product call.
-- **Force-refresh a cached barcode.** Today the TTL is the only path back to OFF once we've cached a response. Add a "Refresh from OpenFoodFacts" action on product detail that invalidates the cache row and re-fetches — useful when OFF data improves or our inference was wrong.
-- **Consume response in the requested unit.** `POST /stock/consume` returns quantities in each *batch's* unit (so consuming 400 ml across a 500 ml + 1 l batch pair comes back as "300 ml / 0.10 l"). Technically correct, UX-wise odd. Add a `requested_unit`-normalised quantity to each `ConsumedBatchDto` alongside the batch's own.
-- **Decimal-pad keyboard dismissal.** iOS decimal pad has no return key. Add a toolbar "Done" to quantity fields in AddStockView / EditBatchForm / ConsumeForm, or dismiss on tap-outside.
-- **Depleted batch retention policy.** `stock_batch` rows with `depleted_at` set are kept forever. Not a problem at household scale but there's no endpoint or UI to see/clean them. Either add a retention window (delete after 1 year?) or a "History" screen gated behind a "Show depleted" toggle on `/stock`.
-- **Default family picker on manual product.** Currently defaults to `Count`. Mass is probably more common for manual entries (bulk staples, spices). Trivial default change but worth validating.
+- **`GET /stock/events` + `GET /stock/{id}/events`.** Read-side HTTP surface over the `stock_event` table. Paginated by `created_at DESC`, filterable by `event_type` and `since=`. Keep it stable so iOS and future clients can build timeline views against it. Reuses `qm_db::stock_events::list_for_household` which already exists.
+- **`cargo xtask verify-stock-ledger`.** Walk every `stock_batch` and assert `quantity == SUM(stock_event.quantity_delta)`. Fast, run-on-demand — catches silent drift if a bug ever writes one side of the transaction without the other. A CI pre-flight hook could run it against a fresh migration + fixture.
+- **iOS "History" sheet.** Minimal first pass: a "History" row in Settings (or on the batches sheet) that opens a timeline — date, product, event type, delta, and who did it. Depleted batches finally get a home. No analytics yet; just the raw events sorted by time.
+- **Undo a discard.** Deleting a batch is currently an accepted one-way trip. The ledger can support a "restore" event (`delta = +previous_current_quantity`, `event_type = restore`, clears `depleted_at`). Tie it to a swipe action on a history row or a snackbar "Undo" immediately after delete.
+- **Refresh should respect family conflicts.** `POST /products/{id}/refresh` currently trusts whatever OFF returns and overwrites `family`. If a household has active batches whose units don't fit the new family, we'd silently corrupt referential integrity. Mirror the check from `PATCH /products/{id}`: if the incoming family differs from the current one, run `conflicting_units_for_family_change` and refuse with `product_has_incompatible_stock`.
+- **Concurrent-adjust race.** Two users editing the same batch at the same second both read the pre-change quantity, compute deltas against it, and each writes an event + updates the cached balance. SQLite's default serialisable transactions save us today; Postgres under READ COMMITTED would not. Either run `UPDATE … RETURNING` to fold the select-for-compute into the write, or set Postgres connections to `SERIALIZABLE` isolation. Document the assumption either way.
+- **Surface `quantity_in_requested_unit` in the iOS consume flow.** Server returns it; nothing displays it. A "Consumed 400 ml across two batches" confirmation toast / sheet is the natural home.
+- **Un-delete a product.** Soft-deleted manual products stay in the DB forever. No UI to resurrect. Small admin screen or a "Show deleted" toggle on product search would cover it.
+- **Image URL on manual products.** `UpdateProductRequest` accepts `image_url`, but `ProductDetailView` doesn't expose it. Not a barn-burner — a URL field plus a basic remote-image picker would close it out.
 
 ## Slice 3 — household management + admin polish
 
@@ -33,11 +35,11 @@ Needed before any multi-user self-hosted deployment makes sense.
 
 Not blocking v1 but the earlier each lands the better the rest of the work feels.
 
-- **swift-openapi-generator SPM plugin.** Replace hand-rolled DTOs in `ios/Quartermaster/Core/Networking/APIDTOs.swift` with generated types driven off the checked-in `openapi.json`. Add the plugin via `project.yml` and regenerate on every `cargo xtask export-openapi`. With slice 2 done, the DTO surface is ~10 types — the right time to cut over before it grows further.
-- **Postgres support in qm-db tests.** Spin up Postgres via testcontainers; run the same repo tests against both backends to catch `sqlx::Any` divergences early.
-- **Integration tests in qm-api.** Spin up the router against a temp SQLite DB and exercise the full auth + products + stock flow in Rust — currently only covered by the manual curl script used to verify each slice.
+- **swift-openapi-generator SPM plugin.** Replace hand-rolled DTOs in `ios/Quartermaster/Core/Networking/APIDTOs.swift` with generated types driven off the checked-in `openapi.json`. Add the plugin via `project.yml` and regenerate on every `cargo xtask export-openapi`. The DTO surface is ~15 types now — past the right moment to cut over, but still worth doing before Slice 3 piles on more.
+- **Postgres support in qm-db tests.** Spin up Postgres via testcontainers; run the same repo tests against both backends to catch `sqlx::Any` divergences early. Especially important now that `apply_consumption` / `adjust` / `discard` rely on transactional semantics.
+- **Integration tests in qm-api.** Spin up the router against a temp SQLite DB and exercise the full auth + products + stock + events flow in Rust — currently only covered by the manual curl script used to verify each slice.
 - **Docker image + compose quickstart.** Static-linked release binary in a `scratch` or `distroless` image; a `docker-compose.yml` with the SQLite volume mount and env vars documented in README.
-- **GitHub Actions CI.** `cargo test --workspace`, `cargo xtask export-openapi` and fail if `openapi.json` drifts, `xcodebuild -scheme Quartermaster build` on a hosted macOS runner. Matrix the Rust job over SQLite and Postgres.
+- **GitHub Actions CI.** `cargo test --workspace`, `cargo xtask export-openapi` and fail if `openapi.json` drifts, `cargo xtask verify-stock-ledger` against a fixture DB, `xcodebuild -scheme Quartermaster build` on a hosted macOS runner. Matrix the Rust job over SQLite and Postgres.
 - **Structured tracing.** JSON log output behind `RUST_LOG=info,qm=debug`; request IDs in spans; include user_id/household_id in request scopes once auth is resolved.
 - **Rate limiting on auth + barcode endpoints.** `tower-governor` or similar on `/auth/login`, `/auth/register`, `/auth/refresh` to slow down credential stuffing; also on `/products/by-barcode/{}` so a single misbehaving client can't batter OpenFoodFacts on our behalf.
 - **OFF client hardening.** Today a single request = single `reqwest` call with a 5s timeout. Add retries with jitter on transient upstream errors, and a circuit breaker so a prolonged OFF outage doesn't stall every barcode scan for 5 seconds.
