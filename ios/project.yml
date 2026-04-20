@@ -1,6 +1,6 @@
 name: Quartermaster
 options:
-  bundleIdPrefix: com.quartermaster
+  bundleIdPrefix: com.jasperhugo
   deploymentTarget:
     iOS: "26.0"
   defaultConfig: Debug
@@ -10,7 +10,7 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: "42J2SSX5SM"
     CODE_SIGN_STYLE: Automatic
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
@@ -27,7 +27,7 @@ targets:
           - Generated/**
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.quartermaster.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.jasperhugo.quartermaster
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
