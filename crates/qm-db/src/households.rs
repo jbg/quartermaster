@@ -92,3 +92,46 @@ pub async fn rename(
     }
     find_by_id(db, id).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{memberships, test_support, users};
+
+    async fn assert_current_household_ordering(db: &Database) {
+        let user = users::create(db, "alice", None, "hash").await.unwrap();
+        let older = create(db, "Older").await.unwrap();
+        let newer = create(db, "Newer").await.unwrap();
+
+        memberships::insert(db, older.id, user.id, "member").await.unwrap();
+        memberships::insert(db, newer.id, user.id, "member").await.unwrap();
+
+        let current = find_for_user(db, user.id).await.unwrap().unwrap();
+        assert_eq!(current.id, newer.id);
+
+        let tied_at = "2026-01-01T00:00:00.000Z";
+        sqlx::query("UPDATE membership SET joined_at = ? WHERE user_id = ?")
+            .bind(tied_at)
+            .bind(user.id.to_string())
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        let tie_winner = find_for_user(db, user.id).await.unwrap().unwrap();
+        assert_eq!(tie_winner.id, older.id.max(newer.id));
+    }
+
+    #[tokio::test]
+    async fn current_household_ordering_matches_on_sqlite() {
+        let db = crate::test_db().await;
+        assert_current_household_ordering(&db).await;
+    }
+
+    #[tokio::test]
+    async fn current_household_ordering_matches_on_postgres() {
+        let Some(test_db) = test_support::postgres().await else {
+            return;
+        };
+        assert_current_household_ordering(test_db.db()).await;
+    }
+}

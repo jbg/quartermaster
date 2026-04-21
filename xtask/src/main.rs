@@ -16,6 +16,13 @@ fn main() -> ExitCode {
                 .expect("runtime")
                 .block_on(verify_stock_ledger())
         }
+        "seed-ledger-fixture" => {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime")
+                .block_on(seed_ledger_fixture())
+        }
         "" | "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -99,6 +106,67 @@ async fn verify_stock_ledger() -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn seed_ledger_fixture() -> anyhow::Result<()> {
+    let url = env::var("QM_DATABASE_URL").unwrap_or_else(|_| "sqlite://data.db?mode=rwc".into());
+    println!("seeding stock ledger fixture into {url}");
+    let db = qm_db::Database::connect(&url)
+        .await
+        .context("connecting to database")?;
+    db.migrate().await.context("running migrations")?;
+
+    let household = qm_db::households::create(&db, "Fixture Household")
+        .await
+        .context("creating household")?;
+    qm_db::locations::seed_defaults(&db, household.id)
+        .await
+        .context("seeding locations")?;
+    let pantry = qm_db::locations::list_for_household(&db, household.id)
+        .await
+        .context("listing locations")?
+        .into_iter()
+        .find(|loc| loc.kind == "pantry")
+        .context("finding pantry location")?;
+    let user = qm_db::users::create(&db, "fixture-admin", Some("fixture@example.com"), "hash")
+        .await
+        .context("creating user")?;
+    qm_db::memberships::insert(&db, household.id, user.id, "admin")
+        .await
+        .context("creating membership")?;
+    let product = qm_db::products::create_manual(
+        &db,
+        household.id,
+        "Fixture Rice",
+        Some("Acme"),
+        "mass",
+        Some("g"),
+        None,
+        None,
+    )
+    .await
+    .context("creating product")?;
+
+    let batch = qm_db::stock::create(
+        &db,
+        household.id,
+        product.id,
+        pantry.id,
+        "500",
+        "g",
+        Some("2026-12-31"),
+        None,
+        Some("fixture batch"),
+        user.id,
+    )
+    .await
+    .context("creating stock")?;
+    qm_db::stock::adjust(&db, household.id, batch.id, "450", user.id, Some("fixture adjust"))
+        .await
+        .context("adjusting stock")?;
+
+    println!("seeded fixture household={} batch={}", household.id, batch.id);
+    Ok(())
+}
+
 async fn sum_ledger_for_batch(db: &qm_db::Database, batch_id: &str) -> anyhow::Result<Decimal> {
     let rows = sqlx::query(
         "SELECT quantity_delta FROM stock_event WHERE batch_id = ?",
@@ -130,5 +198,6 @@ fn print_help() {
     println!();
     println!("subcommands:");
     println!("  export-openapi          write openapi.json to the repo root");
+    println!("  seed-ledger-fixture     seed a small DB fixture for ledger verification");
     println!("  verify-stock-ledger     assert cached quantities match the event log");
 }

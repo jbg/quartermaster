@@ -800,20 +800,31 @@ fn uuid_from(row: &sqlx::any::AnyRow, col: &str) -> Result<Uuid, sqlx::Error> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use crate::{households, locations, memberships, products, stock_events, users};
+    use tokio::{
+        sync::{Barrier, Notify},
+        time::{sleep, Duration},
+    };
+
+    async fn setup_with_db(db: &Database) -> (Uuid, Uuid, Uuid, Uuid) {
+        let h = households::create(db, "h").await.unwrap();
+        let u = users::create(db, "u", None, "hash").await.unwrap();
+        memberships::insert(db, h.id, u.id, "admin").await.unwrap();
+        locations::seed_defaults(db, h.id).await.unwrap();
+        let locs = locations::list_for_household(db, h.id).await.unwrap();
+        let pantry = locs.iter().find(|l| l.kind == "pantry").unwrap().id;
+        let p = products::create_manual(db, h.id, "Flour", None, "mass", Some("g"), None, None)
+            .await.unwrap();
+        (h.id, u.id, pantry, p.id)
+    }
 
     async fn setup() -> (Database, Uuid, Uuid, Uuid, Uuid) {
         let db = crate::test_db().await;
-        let h = households::create(&db, "h").await.unwrap();
-        let u = users::create(&db, "u", None, "hash").await.unwrap();
-        memberships::insert(&db, h.id, u.id, "admin").await.unwrap();
-        locations::seed_defaults(&db, h.id).await.unwrap();
-        let locs = locations::list_for_household(&db, h.id).await.unwrap();
-        let pantry = locs.iter().find(|l| l.kind == "pantry").unwrap().id;
-        let p = products::create_manual(&db, h.id, "Flour", None, "mass", Some("g"), None, None)
-            .await.unwrap();
-        (db, h.id, u.id, pantry, p.id)
+        let (hid, uid, lid, pid) = setup_with_db(&db).await;
+        (db, hid, uid, lid, pid)
     }
 
     async fn balance_from_events(db: &Database, batch_id: Uuid) -> Decimal {
@@ -823,6 +834,37 @@ mod tests {
             .into_iter()
             .map(|e| Decimal::from_str(&e.quantity_delta).unwrap())
             .sum()
+    }
+
+    async fn assert_stock_ledger_parity(db: &Database) {
+        let (hid, uid, lid, pid) = setup_with_db(db).await;
+        let batch = create(db, hid, pid, lid, "500", "g", None, None, None, uid).await.unwrap();
+
+        assert_eq!(balance_from_events(db, batch.id).await, Decimal::from(500));
+
+        let adjusted = adjust(db, hid, batch.id, "300", uid, None).await.unwrap();
+        assert_eq!(adjusted.quantity, "300");
+        assert_eq!(balance_from_events(db, batch.id).await, Decimal::from(300));
+
+        let refs = vec![adjusted.to_batch_ref().unwrap()];
+        let plan = qm_core::batch::plan_consumption(refs, Decimal::from(100), "g").unwrap();
+        apply_consumption(db, hid, &plan, uid).await.unwrap();
+        assert_eq!(balance_from_events(db, batch.id).await, Decimal::from(200));
+
+        discard(db, hid, batch.id, uid, None).await.unwrap();
+        assert_eq!(balance_from_events(db, batch.id).await, Decimal::ZERO);
+
+        let restored = restore(db, hid, batch.id, uid).await.unwrap();
+        assert_eq!(restored.quantity, "200");
+        assert_eq!(balance_from_events(db, batch.id).await, Decimal::from(200));
+
+        let other = create(db, hid, pid, lid, "125", "g", None, None, None, uid).await.unwrap();
+        discard(db, hid, batch.id, uid, None).await.unwrap();
+        discard(db, hid, other.id, uid, None).await.unwrap();
+        let restored_many = restore_many(db, hid, &[batch.id, other.id], uid).await.unwrap();
+        assert_eq!(restored_many.len(), 2);
+        assert_eq!(balance_from_events(db, batch.id).await, Decimal::from(200));
+        assert_eq!(balance_from_events(db, other.id).await, Decimal::from(125));
     }
 
     #[tokio::test]
@@ -1083,5 +1125,106 @@ mod tests {
 
         discard(&db, hid, b.id, uid, None).await.unwrap();
         assert!(!has_active_stock_for_product(&db, pid).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn stock_ledger_parity_matches_on_sqlite() {
+        let db = crate::test_db().await;
+        assert_stock_ledger_parity(&db).await;
+    }
+
+    #[tokio::test]
+    async fn stock_ledger_parity_matches_on_postgres() {
+        let Some(test_db) = crate::test_support::postgres().await else {
+            return;
+        };
+        assert_stock_ledger_parity(test_db.db()).await;
+    }
+
+    #[tokio::test]
+    async fn restore_many_rollback_matches_on_postgres() {
+        let Some(test_db) = crate::test_support::postgres().await else {
+            return;
+        };
+        let db = test_db.db();
+        let (hid, uid, lid, pid) = setup_with_db(db).await;
+        let a = create(db, hid, pid, lid, "100", "g", None, None, None, uid).await.unwrap();
+        let b = create(db, hid, pid, lid, "200", "g", None, None, None, uid).await.unwrap();
+        discard(db, hid, a.id, uid, None).await.unwrap();
+
+        let err = restore_many(db, hid, &[a.id, b.id], uid).await.err().unwrap();
+        match err {
+            RestoreError::NotRestorableMany(ids) => assert_eq!(ids, vec![b.id]),
+            other => panic!("expected NotRestorableMany, got {other:?}"),
+        }
+        assert_eq!(balance_from_events(db, a.id).await, Decimal::ZERO);
+        assert_eq!(balance_from_events(db, b.id).await, Decimal::from(200));
+    }
+
+    #[tokio::test]
+    async fn postgres_row_locking_serializes_overlapping_adjusts() {
+        let Some(test_db) = crate::test_support::postgres().await else {
+            return;
+        };
+        let db = test_db.db().clone();
+        let (hid, uid, lid, pid) = setup_with_db(&db).await;
+        let batch = create(&db, hid, pid, lid, "500", "g", None, None, None, uid).await.unwrap();
+
+        let locked = Arc::new(Barrier::new(2));
+        let release = Arc::new(Notify::new());
+
+        let db1 = db.clone();
+        let locked1 = locked.clone();
+        let release1 = release.clone();
+        let t1 = tokio::spawn(async move {
+            let mut tx = db1.pool.begin().await.unwrap();
+            let current = fetch_locked_batch_row(&mut tx, db1.backend(), hid, batch.id, "quantity")
+                .await
+                .unwrap()
+                .unwrap();
+            let current_qty = Decimal::from_str(&current.try_get::<String, _>("quantity").unwrap()).unwrap();
+            locked1.wait().await;
+            release1.notified().await;
+
+            let new_qty = Decimal::from(400);
+            let delta = new_qty - current_qty;
+            let depleted_at = if new_qty.is_zero() {
+                Some(now_utc_rfc3339())
+            } else {
+                None
+            };
+            sqlx::query("UPDATE stock_batch SET quantity = ?, depleted_at = ? WHERE id = ? AND household_id = ?")
+                .bind(new_qty.to_string())
+                .bind(depleted_at)
+                .bind(batch.id.to_string())
+                .bind(hid.to_string())
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            insert_event(&mut tx, hid, batch.id, EVENT_ADJUST, &delta.to_string(), None, uid, None)
+                .await
+                .unwrap();
+            tx.commit().await.unwrap();
+        });
+
+        let db2 = db.clone();
+        let locked2 = locked.clone();
+        let t2 = tokio::spawn(async move {
+            locked2.wait().await;
+            adjust(&db2, hid, batch.id, "300", uid, None).await.unwrap()
+        });
+
+        sleep(Duration::from_millis(100)).await;
+        release.notify_one();
+
+        t1.await.unwrap();
+        let final_batch = t2.await.unwrap();
+
+        assert_eq!(final_batch.quantity, "300");
+        assert_eq!(balance_from_events(&db, batch.id).await, Decimal::from(300));
+        let events = stock_events::list_for_batch(&db, batch.id).await.unwrap();
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[1].quantity_delta, "-100");
+        assert_eq!(events[2].quantity_delta, "-100");
     }
 }

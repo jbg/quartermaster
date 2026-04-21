@@ -19,6 +19,8 @@ pub mod stock;
 pub mod stock_events;
 pub mod tokens;
 pub mod users;
+#[cfg(test)]
+pub mod test_support;
 
 #[derive(Clone, Debug)]
 pub struct Database {
@@ -40,17 +42,25 @@ impl Database {
     pub async fn connect(url: &str) -> Result<Self, sqlx::Error> {
         sqlx::any::install_default_drivers();
 
+        let backend = backend_from_url(url);
         let opts = sqlx::any::AnyConnectOptions::from_str(url)?;
         let pool = AnyPoolOptions::new()
+            .after_connect(move |conn, _meta| {
+                Box::pin(async move {
+                    if backend == Backend::Sqlite {
+                        // SQLite does not enforce foreign keys unless
+                        // explicitly enabled on each connection.
+                        sqlx::query("PRAGMA foreign_keys = ON").execute(&mut *conn).await?;
+                        // Let concurrent writers wait briefly instead of
+                        // surfacing immediate "database is locked" errors.
+                        sqlx::query("PRAGMA busy_timeout = 5000").execute(&mut *conn).await?;
+                    }
+                    Ok(())
+                })
+            })
             .max_connections(8)
             .connect_with(opts)
             .await?;
-        let backend = backend_from_url(url);
-
-        if backend == Backend::Sqlite {
-            // SQLite does not enforce foreign keys unless explicitly asked.
-            sqlx::query("PRAGMA foreign_keys = ON").execute(&pool).await?;
-        }
 
         Ok(Self { pool, backend })
     }
@@ -80,24 +90,5 @@ fn backend_from_url(url: &str) -> Backend {
 
 #[cfg(test)]
 async fn test_db() -> Database {
-    sqlx::any::install_default_drivers();
-    // SQLite's private in-memory databases are per-connection, so force a
-    // single connection in tests — otherwise migrations and queries land in
-    // different databases.
-    let opts = sqlx::any::AnyConnectOptions::from_str("sqlite::memory:").expect("opts");
-    let pool = AnyPoolOptions::new()
-        .max_connections(1)
-        .connect_with(opts)
-        .await
-        .expect("connect");
-    sqlx::query("PRAGMA foreign_keys = ON")
-        .execute(&pool)
-        .await
-        .expect("foreign_keys");
-    let db = Database {
-        pool,
-        backend: Backend::Sqlite,
-    };
-    db.migrate().await.expect("migrate");
-    db
+    test_support::sqlite().await.into_db()
 }

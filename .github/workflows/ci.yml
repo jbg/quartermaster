@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run workspace tests (SQLite lane)
+        if: matrix.backend == 'sqlite'
+        run: cargo test --workspace
+
+      - name: Run qm-db tests with Postgres parity enabled
+        if: matrix.backend == 'postgres'
+        env:
+          QM_REQUIRE_POSTGRES_TESTS: "1"
+          QM_POSTGRES_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: cargo test -p qm-db -- --nocapture
+
+  openapi-and-ledger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Export OpenAPI
+        run: cargo xtask export-openapi
+
+      - name: Check OpenAPI drift
+        run: git diff --exit-code -- openapi.json ios/Quartermaster/openapi.json
+
+      - name: Seed ledger fixture
+        env:
+          QM_DATABASE_URL: sqlite://${{ github.workspace }}/ledger-fixture.db?mode=rwc
+        run: cargo xtask seed-ledger-fixture
+
+      - name: Verify stock ledger
+        env:
+          QM_DATABASE_URL: sqlite://${{ github.workspace }}/ledger-fixture.db?mode=rwc
+        run: cargo xtask verify-stock-ledger
+
+  ios-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build iOS app
+        run: >-
+          xcodebuild
+          -project ios/Quartermaster.xcodeproj
+          -scheme Quartermaster
+          -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2'
+          -skipPackagePluginValidation
+          build
