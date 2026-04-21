@@ -12,7 +12,7 @@ Early work in progress. v1 is being built toward an "empty pantry" first vertica
 
 - **Backend:** Rust (Axum + SQLx + Tokio), single self-hosted binary
 - **Database:** SQLite by default (one `.db` file), Postgres optional via config
-- **Mobile:** native clients. iOS first (SwiftUI, iOS 26, Liquid Glass), then Android, then web
+- **Mobile:** native clients. iOS first (SwiftUI, iOS 26, Liquid Glass), then Android, then web. iOS types + HTTP client are generated at Xcode build time from the checked-in OpenAPI spec via [swift-openapi-generator](https://github.com/apple/swift-openapi-generator)
 - **Products / barcodes:** [OpenFoodFacts](https://world.openfoodfacts.org) with local cache; manual entry always available
 - **Auth:** local accounts with household invite codes; opaque access + refresh tokens
 - **License:** Apache-2.0
@@ -28,8 +28,9 @@ Early work in progress. v1 is being built toward an "empty pantry" first vertica
 │   ├── qm-api/             Axum handlers, middleware, OpenAPI
 │   └── qm-server/          the shipped binary
 ├── xtask/                  developer tasks (export-openapi, …)
-├── openapi.json            generated, checked in for hermetic mobile builds
-└── ios/Quartermaster/      SwiftUI app
+├── openapi.json            generated spec (canonical copy, for external consumers + CI drift check)
+└── ios/Quartermaster/      SwiftUI app — consumes openapi.json via a build-tool plugin
+    └── openapi.json        second copy, read by the Xcode plugin (kept in sync by xtask)
 ```
 
 ## Running the backend
@@ -60,7 +61,9 @@ open http://localhost:8080/docs      # Swagger UI (when built with default featu
 cargo xtask export-openapi
 ```
 
-Writes `openapi.json` at the repo root. Commit the result so the iOS build plugin stays hermetic.
+Writes `openapi.json` at the repo root **and** at `ios/Quartermaster/openapi.json`. The iOS target's Xcode build-tool plugin reads the second copy; the first is the canonical one (external consumers, CI drift check). Commit both so the iOS build stays hermetic.
+
+Re-run this after any change to a Rust DTO, route, or enum — the next iOS build will regenerate `Components.Schemas.*` and the generated `Client` automatically.
 
 ## Contributing
 
