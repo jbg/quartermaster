@@ -44,6 +44,7 @@ pub async fn create_manual(
     family: &str,
     preferred_unit: Option<&str>,
     barcode: Option<&str>,
+    image_url: Option<&str>,
 ) -> Result<ProductRow, sqlx::Error> {
     let id = Uuid::now_v7();
     let created_at = now_utc_rfc3339();
@@ -52,7 +53,7 @@ pub async fn create_manual(
     sqlx::query(
         "INSERT INTO product \
          (id, source, off_barcode, name, brand, default_unit, family, image_url, fetched_at, created_by_household_id, created_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
     )
     .bind(id.to_string())
     .bind(SOURCE_MANUAL)
@@ -61,6 +62,7 @@ pub async fn create_manual(
     .bind(brand)
     .bind(unit)
     .bind(family)
+    .bind(image_url)
     .bind(household_id.to_string())
     .bind(&created_at)
     .execute(&db.pool)
@@ -74,7 +76,7 @@ pub async fn create_manual(
         brand: brand.map(str::to_owned),
         family: family.to_owned(),
         preferred_unit: unit.to_owned(),
-        image_url: None,
+        image_url: image_url.map(str::to_owned),
         fetched_at: None,
         created_by_household_id: Some(household_id),
         created_at,
@@ -338,7 +340,7 @@ mod tests {
     async fn create_and_find_manual_product() {
         let db = crate::test_db().await;
         let h = households::create(&db, "h").await.unwrap();
-        let p = create_manual(&db, h.id, "Basmati rice", None, "mass", Some("g"), None)
+        let p = create_manual(&db, h.id, "Basmati rice", None, "mass", Some("g"), None, None)
             .await
             .unwrap();
         assert_eq!(p.family, "mass");
@@ -354,11 +356,11 @@ mod tests {
     async fn default_preferred_unit_when_absent() {
         let db = crate::test_db().await;
         let h = households::create(&db, "h").await.unwrap();
-        let mass = create_manual(&db, h.id, "Flour", None, "mass", None, None).await.unwrap();
+        let mass = create_manual(&db, h.id, "Flour", None, "mass", None, None, None).await.unwrap();
         assert_eq!(mass.preferred_unit, "g");
-        let vol = create_manual(&db, h.id, "Milk", None, "volume", None, None).await.unwrap();
+        let vol = create_manual(&db, h.id, "Milk", None, "volume", None, None, None).await.unwrap();
         assert_eq!(vol.preferred_unit, "ml");
-        let count = create_manual(&db, h.id, "Eggs", None, "count", None, None).await.unwrap();
+        let count = create_manual(&db, h.id, "Eggs", None, "count", None, None, None).await.unwrap();
         assert_eq!(count.preferred_unit, "piece");
     }
 
@@ -367,8 +369,8 @@ mod tests {
         let db = crate::test_db().await;
         let a = households::create(&db, "A").await.unwrap();
         let b = households::create(&db, "B").await.unwrap();
-        create_manual(&db, a.id, "Alice-Only Product", None, "count", None, None).await.unwrap();
-        create_manual(&db, b.id, "Bob-Only Product", None, "count", None, None).await.unwrap();
+        create_manual(&db, a.id, "Alice-Only Product", None, "count", None, None, None).await.unwrap();
+        create_manual(&db, b.id, "Bob-Only Product", None, "count", None, None, None).await.unwrap();
 
         let a_results = search(&db, a.id, "only", 10).await.unwrap();
         assert_eq!(a_results.len(), 1);
@@ -407,7 +409,7 @@ mod tests {
     async fn search_with_deleted_flag_toggles_visibility() {
         let db = crate::test_db().await;
         let h = households::create(&db, "h").await.unwrap();
-        let p = create_manual(&db, h.id, "Retired widget", None, "count", None, None).await.unwrap();
+        let p = create_manual(&db, h.id, "Retired widget", None, "count", None, None, None).await.unwrap();
 
         assert_eq!(search(&db, h.id, "retired", 10).await.unwrap().len(), 1);
 
@@ -423,7 +425,7 @@ mod tests {
     async fn restore_flips_deleted_at_null() {
         let db = crate::test_db().await;
         let h = households::create(&db, "h").await.unwrap();
-        let p = create_manual(&db, h.id, "Widget", None, "count", None, None).await.unwrap();
+        let p = create_manual(&db, h.id, "Widget", None, "count", None, None, None).await.unwrap();
         soft_delete(&db, p.id).await.unwrap();
         assert!(find_by_id(&db, p.id).await.unwrap().is_none());
 
@@ -437,7 +439,7 @@ mod tests {
     async fn find_including_deleted_returns_tombstone() {
         let db = crate::test_db().await;
         let h = households::create(&db, "h").await.unwrap();
-        let p = create_manual(&db, h.id, "Widget", None, "count", None, None).await.unwrap();
+        let p = create_manual(&db, h.id, "Widget", None, "count", None, None, None).await.unwrap();
         soft_delete(&db, p.id).await.unwrap();
         let got = find_including_deleted(&db, p.id).await.unwrap().unwrap();
         assert!(got.deleted_at.is_some());

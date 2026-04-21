@@ -24,6 +24,7 @@ pub struct LocationDto {
 #[utoipa::path(
     get,
     path = "/locations",
+    operation_id = "locations_list",
     tag = "locations",
     responses(
         (status = 200, body = [LocationDto]),

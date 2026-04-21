@@ -1,358 +1,363 @@
 import Foundation
+import HTTPTypes
+import OpenAPIRuntime
+import OpenAPIURLSession
 
+/// Facade over the generated `Client`. Every feature view still calls
+/// `appState.api.listStockEvents(...)` etc. — the signatures haven't moved;
+/// the wire layer did. All JSON serialisation, URL construction, Codable
+/// key mapping, and operation dispatch now live inside the generated
+/// `Operations.*` machinery. We keep the facade so call sites stay stable
+/// and our tailored error translation (`APIError.server(status:, body:)`)
+/// remains the uniform surface for the rest of the app.
 actor APIClient {
-    private let baseURL: URL
+    private let client: Client
     private let tokenStore: TokenStore
-    private let session: URLSession
-    private var refreshTask: Task<Void, Error>?
 
     init(baseURL: URL, tokenStore: TokenStore, session: URLSession = .shared) {
-        self.baseURL = baseURL
         self.tokenStore = tokenStore
-        self.session = session
+        let auth = AuthMiddleware(
+            baseURL: baseURL,
+            tokenStore: tokenStore,
+            session: session,
+        )
+        let transport = URLSessionTransport(
+            configuration: .init(session: session),
+        )
+        self.client = Client(
+            serverURL: baseURL,
+            transport: transport,
+            middlewares: [auth],
+        )
     }
 
     // MARK: - Accounts
 
-    func register(username: String, password: String, email: String?) async throws -> TokenPair {
-        let body = RegisterRequest(
-            username: username,
-            password: password,
-            email: email,
+    func register(username: String, password: String, email: String?, inviteCode: String? = nil) async throws -> TokenPair {
+        let body = Operations.AuthRegister.Input.Body.json(.init(
             deviceLabel: Self.deviceLabel,
-        )
-        return try await post("/auth/register", body: body, authenticated: false)
+            email: email,
+            inviteCode: inviteCode,
+            password: password,
+            username: username,
+        ))
+        let response = try await client.authRegister(.init(body: body))
+        switch response {
+        case .created(let ok):
+            return try ok.body.json
+        case .badRequest(let err):
+            throw APIError.server(status: 400, body: try? err.body.json)
+        case .forbidden(let err):
+            throw APIError.server(status: 403, body: try? err.body.json)
+        case .conflict(let err):
+            throw APIError.server(status: 409, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
     func login(username: String, password: String) async throws -> TokenPair {
-        let body = LoginRequest(username: username, password: password, deviceLabel: Self.deviceLabel)
-        return try await post("/auth/login", body: body, authenticated: false)
+        let body = Operations.AuthLogin.Input.Body.json(.init(
+            deviceLabel: Self.deviceLabel,
+            password: password,
+            username: username,
+        ))
+        let response = try await client.authLogin(.init(body: body))
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .unauthorized(let err): throw APIError.server(status: 401, body: try? err.body.json)
+        case .undocumented(let statusCode, _): throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
     func logout() async throws {
-        let _: EmptyResponse = try await send(
-            method: "POST",
-            path: "/auth/logout",
-            body: Optional<EmptyBody>.none,
-            authenticated: true,
-        )
+        let response = try await client.authLogout(.init())
+        switch response {
+        case .noContent: return
+        case .unauthorized: throw APIError.unauthorized
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
     func me() async throws -> Me {
-        try await get("/auth/me", authenticated: true)
+        let response = try await client.authMe(.init())
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .unauthorized: throw APIError.unauthorized
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
     // MARK: - Locations
 
     func locations() async throws -> [Location] {
-        try await get("/locations", authenticated: true)
+        let response = try await client.locationsList(.init())
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .unauthorized: throw APIError.unauthorized
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
     // MARK: - Units
 
     func units() async throws -> [Unit] {
-        try await get("/units", authenticated: true)
+        let response = try await client.unitsList(.init())
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
     // MARK: - Products
 
     func searchProducts(query: String, limit: Int = 20, includeDeleted: Bool = false) async throws -> [Product] {
-        var components = URLComponents()
-        components.path = "/products/search"
-        var items = [
-            URLQueryItem(name: "q", value: query),
-            URLQueryItem(name: "limit", value: String(limit)),
-        ]
-        if includeDeleted {
-            items.append(URLQueryItem(name: "include_deleted", value: "true"))
+        let response = try await client.productSearch(.init(
+            query: .init(q: query, limit: Int64(limit), includeDeleted: includeDeleted),
+        ))
+        switch response {
+        case .ok(let ok):
+            let payload = try ok.body.json
+            return payload.items
+        case .unauthorized: throw APIError.unauthorized
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
         }
-        components.queryItems = items
-        let path = components.url?.absoluteString ?? "/products/search"
-        let response: ProductSearchResponse = try await get(path, authenticated: true)
-        return response.items
     }
 
     func lookupBarcode(_ barcode: String) async throws -> BarcodeLookupResponse {
-        let encoded = barcode.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? barcode
-        return try await get("/products/by-barcode/\(encoded)", authenticated: true)
+        let response = try await client.productByBarcode(.init(
+            path: .init(barcode: barcode),
+        ))
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+        case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .badGateway(let err): throw APIError.server(status: 502, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
     func createProduct(_ request: CreateProductRequest) async throws -> Product {
-        try await post("/products", body: request, authenticated: true)
+        let response = try await client.productCreate(.init(body: .json(request)))
+        switch response {
+        case .created(let ok): return try ok.body.json
+        case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
-    func getProduct(id: UUID) async throws -> Product {
-        try await get("/products/\(id.uuidString.lowercased())", authenticated: true)
+    func getProduct(id: String) async throws -> Product {
+        let response = try await client.productGet(.init(path: .init(id: id)))
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .notFound: throw APIError.server(status: 404, body: nil)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
-    func updateProduct(id: UUID, request: UpdateProductRequest) async throws -> Product {
-        try await send(
-            method: "PATCH",
-            path: "/products/\(id.uuidString.lowercased())",
-            body: request,
-            authenticated: true,
-        )
+    func updateProduct(id: String, request: UpdateProductRequest) async throws -> Product {
+        let response = try await client.productUpdate(.init(
+            path: .init(id: id),
+            body: .json(request),
+        ))
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+        case .forbidden(let err): throw APIError.server(status: 403, body: try? err.body.json)
+        case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .conflict(let err): throw APIError.server(status: 409, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
-    func deleteProduct(id: UUID) async throws {
-        let _: EmptyResponse = try await send(
-            method: "DELETE",
-            path: "/products/\(id.uuidString.lowercased())",
-            body: Optional<EmptyBody>.none,
-            authenticated: true,
-        )
+    func deleteProduct(id: String) async throws {
+        let response = try await client.productDelete(.init(path: .init(id: id)))
+        switch response {
+        case .noContent: return
+        case .forbidden(let err): throw APIError.server(status: 403, body: try? err.body.json)
+        case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .conflict(let err): throw APIError.server(status: 409, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
-    func refreshProduct(id: UUID) async throws -> Product {
-        try await post(
-            "/products/\(id.uuidString.lowercased())/refresh",
-            body: EmptyBody(),
-            authenticated: true,
-        )
+    func refreshProduct(id: String) async throws -> Product {
+        let response = try await client.productRefresh(.init(path: .init(id: id)))
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+        case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .badGateway(let err): throw APIError.server(status: 502, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
-    func restoreProduct(id: UUID) async throws -> Product {
-        try await post(
-            "/products/\(id.uuidString.lowercased())/restore",
-            body: EmptyBody(),
-            authenticated: true,
-        )
+    func restoreProduct(id: String) async throws -> Product {
+        let response = try await client.productRestore(.init(path: .init(id: id)))
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .forbidden(let err): throw APIError.server(status: 403, body: try? err.body.json)
+        case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
     // MARK: - Stock
 
     func listStock(
-        locationID: UUID? = nil,
-        productID: UUID? = nil,
+        locationID: String? = nil,
+        productID: String? = nil,
         expiringBefore: String? = nil,
     ) async throws -> [StockBatch] {
-        var components = URLComponents()
-        components.path = "/stock"
-        var items: [URLQueryItem] = []
-        if let locationID {
-            items.append(.init(name: "location_id", value: locationID.uuidString.lowercased()))
+        let response = try await client.stockList(.init(
+            query: .init(
+                locationId: locationID,
+                productId: productID,
+                expiringBefore: expiringBefore,
+            ),
+        ))
+        switch response {
+        case .ok(let ok):
+            return try ok.body.json.items
+        case .unauthorized: throw APIError.unauthorized
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
         }
-        if let productID {
-            items.append(.init(name: "product_id", value: productID.uuidString.lowercased()))
-        }
-        if let expiringBefore {
-            items.append(.init(name: "expiring_before", value: expiringBefore))
-        }
-        if !items.isEmpty { components.queryItems = items }
-        let path = components.url?.absoluteString ?? "/stock"
-        let response: StockListResponse = try await get(path, authenticated: true)
-        return response.items
     }
 
-    func getStock(id: UUID) async throws -> StockBatch {
-        try await get("/stock/\(id.uuidString.lowercased())", authenticated: true)
+    func getStock(id: String) async throws -> StockBatch {
+        let response = try await client.stockGet(.init(path: .init(id: id)))
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
     func createStock(_ request: CreateStockRequest) async throws -> StockBatch {
-        try await post("/stock", body: request, authenticated: true)
+        let response = try await client.stockCreate(.init(body: .json(request)))
+        switch response {
+        case .created(let ok): return try ok.body.json
+        case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+        case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
-    func updateStock(id: UUID, request: UpdateStockRequest) async throws -> StockBatch {
-        try await send(
-            method: "PATCH",
-            path: "/stock/\(id.uuidString.lowercased())",
-            body: request,
-            authenticated: true,
-        )
+    func updateStock(id: String, request: UpdateStockRequest) async throws -> StockBatch {
+        let response = try await client.stockUpdate(.init(
+            path: .init(id: id),
+            body: .json(request),
+        ))
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+        case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
-    func deleteStock(id: UUID) async throws {
-        let _: EmptyResponse = try await send(
-            method: "DELETE",
-            path: "/stock/\(id.uuidString.lowercased())",
-            body: Optional<EmptyBody>.none,
-            authenticated: true,
-        )
+    func deleteStock(id: String) async throws {
+        let response = try await client.stockDelete(.init(path: .init(id: id)))
+        switch response {
+        case .noContent: return
+        case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
     func consumeStock(_ request: ConsumeRequest) async throws -> ConsumeResponse {
-        try await post("/stock/consume", body: request, authenticated: true)
+        let response = try await client.stockConsume(.init(body: .json(request)))
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+        case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
     func listStockEvents(
         beforeCreatedAt: String? = nil,
-        beforeID: UUID? = nil,
+        beforeID: String? = nil,
         limit: Int = 50,
     ) async throws -> StockEventListResponse {
-        let path = buildEventsPath("/stock/events", beforeCreatedAt: beforeCreatedAt, beforeID: beforeID, limit: limit)
-        return try await get(path, authenticated: true)
+        let response = try await client.stockListEvents(.init(
+            query: .init(
+                beforeCreatedAt: beforeCreatedAt,
+                beforeId: beforeID,
+                limit: Int64(limit),
+            ),
+        ))
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .unauthorized: throw APIError.unauthorized
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
     }
 
     func listBatchEvents(
-        id: UUID,
+        id: String,
         beforeCreatedAt: String? = nil,
-        beforeID: UUID? = nil,
+        beforeID: String? = nil,
         limit: Int = 50,
     ) async throws -> StockEventListResponse {
-        let path = buildEventsPath(
-            "/stock/\(id.uuidString.lowercased())/events",
-            beforeCreatedAt: beforeCreatedAt,
-            beforeID: beforeID,
-            limit: limit,
-        )
-        return try await get(path, authenticated: true)
-    }
-
-    func restoreStock(id: UUID) async throws -> StockBatch {
-        try await post(
-            "/stock/\(id.uuidString.lowercased())/restore",
-            body: EmptyBody(),
-            authenticated: true,
-        )
-    }
-
-    func restoreManyStock(ids: [UUID]) async throws -> RestoreManyResponse {
-        try await post(
-            "/stock/restore-many",
-            body: RestoreManyRequest(ids: ids),
-            authenticated: true,
-        )
-    }
-
-    private nonisolated func buildEventsPath(
-        _ base: String,
-        beforeCreatedAt: String?,
-        beforeID: UUID?,
-        limit: Int,
-    ) -> String {
-        var components = URLComponents()
-        components.path = base
-        var items = [URLQueryItem(name: "limit", value: String(limit))]
-        if let beforeCreatedAt {
-            items.append(URLQueryItem(name: "before_created_at", value: beforeCreatedAt))
-        }
-        if let beforeID {
-            items.append(URLQueryItem(name: "before_id", value: beforeID.uuidString.lowercased()))
-        }
-        components.queryItems = items
-        return components.url?.absoluteString ?? base
-    }
-
-    // MARK: - Plumbing
-
-    private func get<T: Decodable>(_ path: String, authenticated: Bool) async throws -> T {
-        try await send(method: "GET", path: path, body: Optional<EmptyBody>.none, authenticated: authenticated)
-    }
-
-    private func post<B: Encodable, T: Decodable>(_ path: String, body: B, authenticated: Bool) async throws -> T {
-        try await send(method: "POST", path: path, body: body, authenticated: authenticated)
-    }
-
-    private func send<B: Encodable, T: Decodable>(
-        method: String,
-        path: String,
-        body: B?,
-        authenticated: Bool,
-    ) async throws -> T {
-        var attemptedRefresh = false
-        while true {
-            let url = baseURL.appendingPathComponent(path).absoluteString
-            // appendingPathComponent URL-encodes the whole thing if it has a
-            // query string, so fall back to manual URL construction when the
-            // path contains a "?".
-            let finalURL: URL
-            if path.contains("?") {
-                finalURL = URL(string: baseURL.absoluteString + path) ?? baseURL
-            } else {
-                finalURL = URL(string: url) ?? baseURL.appendingPathComponent(path)
-            }
-
-            var request = URLRequest(url: finalURL)
-            request.httpMethod = method
-            request.setValue("application/json", forHTTPHeaderField: "Accept")
-            if let body {
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.httpBody = try encoder.encode(body)
-            }
-            if authenticated, let token = await tokenStore.accessToken {
-                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            }
-
-            let data: Data
-            let response: URLResponse
-            do {
-                (data, response) = try await session.data(for: request)
-            } catch let err as URLError {
-                throw APIError.transport(err)
-            } catch {
-                throw APIError.unknown
-            }
-
-            guard let http = response as? HTTPURLResponse else {
-                throw APIError.unknown
-            }
-
-            if http.statusCode == 401, authenticated, !attemptedRefresh {
-                attemptedRefresh = true
-                do {
-                    try await refreshIfPossible()
-                } catch {
-                    await tokenStore.clear()
-                    throw APIError.unauthorized
-                }
-                continue
-            }
-
-            if !(200..<300).contains(http.statusCode) {
-                let body = try? decoder.decode(APIErrorBody.self, from: data)
-                if http.statusCode == 401 { throw APIError.unauthorized }
-                throw APIError.server(status: http.statusCode, body: body)
-            }
-
-            if T.self is EmptyResponse.Type {
-                return EmptyResponse() as! T
-            }
-            do {
-                return try decoder.decode(T.self, from: data)
-            } catch {
-                throw APIError.decoding(error)
-            }
+        let response = try await client.stockListBatchEvents(.init(
+            path: .init(id: id),
+            query: .init(
+                beforeCreatedAt: beforeCreatedAt,
+                beforeId: beforeID,
+                limit: Int64(limit),
+            ),
+        ))
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
         }
     }
 
-    private func refreshIfPossible() async throws {
-        if let existing = refreshTask {
-            try await existing.value
-            return
+    func restoreStock(id: String) async throws -> StockBatch {
+        let response = try await client.stockRestore(.init(path: .init(id: id)))
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .conflict(let err): throw APIError.server(status: 409, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
         }
-        let task = Task<Void, Error> {
-            guard let refresh = await tokenStore.refreshToken else {
-                throw APIError.unauthorized
-            }
-            let body = RefreshRequest(refreshToken: refresh)
-            var req = URLRequest(url: baseURL.appendingPathComponent("/auth/refresh"))
-            req.httpMethod = "POST"
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            req.httpBody = try encoder.encode(body)
-            let (data, resp) = try await session.data(for: req)
-            guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                throw APIError.unauthorized
-            }
-            let pair = try decoder.decode(TokenPair.self, from: data)
-            await tokenStore.store(pair)
-        }
-        refreshTask = task
-        defer { refreshTask = nil }
-        try await task.value
     }
 
-    private let encoder: JSONEncoder = {
-        let e = JSONEncoder()
-        return e
-    }()
-
-    private let decoder: JSONDecoder = {
-        let d = JSONDecoder()
-        return d
-    }()
-
-    private struct EmptyBody: Encodable {}
-    private struct EmptyResponse: Decodable {}
+    func restoreManyStock(ids: [String]) async throws -> RestoreManyResponse {
+        let response = try await client.stockRestoreMany(.init(
+            body: .json(.init(ids: ids)),
+        ))
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+        case .conflict(let err): throw APIError.server(status: 409, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
 
     private static let deviceLabel: String? = {
         #if os(iOS)
@@ -361,4 +366,123 @@ actor APIClient {
         return nil
         #endif
     }()
+}
+
+// MARK: - Auth middleware
+
+/// Attaches the bearer token from `TokenStore` on every operation that
+/// isn't itself an auth endpoint. On 401, serialises a single refresh
+/// call (concurrent 401s coalesce on the same refresh task) and retries
+/// the original request with the new token. Failure to refresh clears
+/// the stored tokens and surfaces as an unauthenticated response.
+private actor AuthMiddleware: ClientMiddleware {
+    private let baseURL: URL
+    private let tokenStore: TokenStore
+    private let session: URLSession
+    private var inFlightRefresh: Task<Void, Error>?
+
+    init(baseURL: URL, tokenStore: TokenStore, session: URLSession) {
+        self.baseURL = baseURL
+        self.tokenStore = tokenStore
+        self.session = session
+    }
+
+    nonisolated func intercept(
+        _ request: HTTPRequest,
+        body: HTTPBody?,
+        baseURL: URL,
+        operationID: String,
+        next: @Sendable (HTTPRequest, HTTPBody?, URL) async throws -> (HTTPResponse, HTTPBody?),
+    ) async throws -> (HTTPResponse, HTTPBody?) {
+        let bypasses = Self.noAuthOperations.contains(operationID)
+
+        var authedRequest = request
+        if !bypasses, let token = await tokenStore.accessToken {
+            authedRequest.headerFields[.authorization] = "Bearer \(token)"
+        }
+
+        let (response, responseBody) = try await next(authedRequest, body, baseURL)
+
+        guard !bypasses, response.status.code == 401 else {
+            return (response, responseBody)
+        }
+
+        // Try to refresh once. Concurrent 401s coalesce on the same task.
+        do {
+            try await runRefresh()
+        } catch {
+            await tokenStore.clear()
+            return (response, responseBody)
+        }
+
+        // Retry with the fresh token. Note: the request body is reused.
+        var retryRequest = request
+        if let newToken = await tokenStore.accessToken {
+            retryRequest.headerFields[.authorization] = "Bearer \(newToken)"
+        }
+        return try await next(retryRequest, body, baseURL)
+    }
+
+    private func runRefresh() async throws {
+        if let existing = inFlightRefresh {
+            try await existing.value
+            return
+        }
+        let task = Task<Void, Error> { [baseURL, tokenStore, session] in
+            guard let refreshToken = await tokenStore.refreshToken else {
+                throw APIError.unauthorized
+            }
+            var req = URLRequest(url: baseURL.appendingPathComponent("/auth/refresh"))
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try JSONEncoder().encode(RefreshBody(refreshToken: refreshToken))
+            let (data, response) = try await session.data(for: req)
+            guard
+                let http = response as? HTTPURLResponse,
+                (200..<300).contains(http.statusCode)
+            else {
+                throw APIError.unauthorized
+            }
+            let pair = try JSONDecoder().decode(StoredPair.self, from: data)
+            await tokenStore.store(TokenPair(
+                accessToken: pair.accessToken,
+                expiresIn: Int64(pair.expiresIn),
+                refreshToken: pair.refreshToken,
+                tokenType: pair.tokenType,
+            ))
+        }
+        inFlightRefresh = task
+        defer { inFlightRefresh = nil }
+        try await task.value
+    }
+
+    /// Operations that must never be retried with a bearer or rerouted
+    /// through the refresh loop — otherwise a bad refresh token would
+    /// infinitely trigger itself.
+    private static let noAuthOperations: Set<String> = [
+        "auth_login",
+        "auth_register",
+        "auth_refresh",
+    ]
+}
+
+// Intermediate types used by the refresh plumbing — mirror the wire
+// contract without going through the generated `Client` (which would
+// itself route through this middleware and recurse).
+private struct RefreshBody: Encodable {
+    let refreshToken: String
+    enum CodingKeys: String, CodingKey { case refreshToken = "refresh_token" }
+}
+
+private struct StoredPair: Decodable {
+    let accessToken: String
+    let refreshToken: String
+    let tokenType: String
+    let expiresIn: Int
+    enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case refreshToken = "refresh_token"
+        case tokenType = "token_type"
+        case expiresIn = "expires_in"
+    }
 }

@@ -8,7 +8,7 @@ struct ProductBatchesSheet: View {
     let location: Location
     let allLocations: [Location]
     @State var batches: [StockBatch]
-    var highlightBatchID: UUID? = nil
+    var highlightBatchID: String? = nil
     var onMutated: () async -> Void
 
     @State private var editing: StockBatch?
@@ -18,7 +18,7 @@ struct ProductBatchesSheet: View {
     @State private var errorMessage: String?
     /// Batch currently showing the "you came from here" flash. Cleared by a
     /// background task after ~1.5 s so the pulse feels transient.
-    @State private var flashingBatchID: UUID?
+    @State private var flashingBatchID: String?
 
     var body: some View {
         NavigationStack {
@@ -208,7 +208,7 @@ private struct EditBatchForm: View {
     var onUpdated: (StockBatch) -> Void
 
     @State private var quantity: String
-    @State private var locationID: UUID
+    @State private var locationID: String
     @State private var hasExpiry: Bool
     @State private var expiry: Date
     @State private var hadExpiryOriginally: Bool
@@ -423,8 +423,8 @@ private struct ConsumeForm: View {
         isSubmitting = true
         errorMessage = nil
         let request = ConsumeRequest(
-            productID: product.id,
-            locationID: location.id,
+            locationId: location.id,
+            productId: product.id,
             quantity: quantity,
             unit: unitCode,
         )

@@ -3,7 +3,7 @@ import SwiftUI
 struct StockHistoryView: View {
     enum Scope {
         case household
-        case batch(UUID)
+        case batch(String)
     }
 
     @Environment(AppState.self) private var appState
@@ -13,13 +13,13 @@ struct StockHistoryView: View {
 
     @State private var entries: [StockEvent] = []
     @State private var nextBefore: String?
-    @State private var nextBeforeID: UUID?
+    @State private var nextBeforeID: String?
     @State private var isLoadingInitial = true
     @State private var isLoadingMore = false
     @State private var errorMessage: String?
-    @State private var expandedGroups: Set<UUID> = []
+    @State private var expandedGroups: Set<String> = []
     @State private var selectionMode = false
-    @State private var selected: Set<UUID> = []
+    @State private var selected: Set<String> = []
     @State private var isRestoring = false
 
     var body: some View {
@@ -43,7 +43,7 @@ struct StockHistoryView: View {
             }
         }
         .navigationTitle(title)
-        .navigationDestination(for: UUID.self) { batchID in
+        .navigationDestination(for: String.self) { batchID in
             BatchDetailView(batchID: batchID)
         }
         .toolbar {
@@ -200,12 +200,12 @@ struct StockHistoryView: View {
 
     enum DisplayGroup: Identifiable {
         case single(StockEvent)
-        case consumeGroup(UUID, [StockEvent])
+        case consumeGroup(String, [StockEvent])
 
         var id: String {
             switch self {
-            case .single(let e): e.id.uuidString
-            case .consumeGroup(let rid, _): "group-\(rid.uuidString)"
+            case .single(let e): e.id
+            case .consumeGroup(let rid, _): "group-\(rid)"
             }
         }
 
@@ -309,7 +309,7 @@ struct StockHistoryView: View {
         isLoadingMore = false
     }
 
-    private func fetch(beforeCreatedAt: String?, beforeID: UUID?) async throws -> StockEventListResponse {
+    private func fetch(beforeCreatedAt: String?, beforeID: String?) async throws -> StockEventListResponse {
         switch scope {
         case .household:
             try await appState.api.listStockEvents(
@@ -343,7 +343,7 @@ struct StockHistoryView: View {
         guard !selected.isEmpty else { return }
         isRestoring = true
         defer { isRestoring = false }
-        let batchIDs: [UUID] = selected.compactMap { eventID in
+        let batchIDs: [String] = selected.compactMap { eventID in
             entries.first(where: { $0.id == eventID })?.batchID
         }
         guard !batchIDs.isEmpty else { return }

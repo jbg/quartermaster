@@ -9,7 +9,7 @@ struct AddStockView: View {
 
     @State private var quantity: String = ""
     @State private var unitCode: String = ""
-    @State private var selectedLocationID: UUID?
+    @State private var selectedLocationID: String?
     @State private var hasExpiry: Bool = false
     @State private var expiry: Date = Calendar.current.date(byAdding: .day, value: 30, to: .now) ?? .now
     @State private var hasOpened: Bool = false
@@ -148,13 +148,13 @@ struct AddStockView: View {
         isSubmitting = true
         errorMessage = nil
         let req = CreateStockRequest(
-            productID: product.id,
-            locationID: locationID,
+            expiresOn: hasExpiry ? StockBatch.yyyymmdd.string(from: expiry) : nil,
+            locationId: locationID,
+            note: note.trimmingCharacters(in: .whitespaces).isEmpty ? nil : note,
+            openedOn: hasOpened ? StockBatch.yyyymmdd.string(from: opened) : nil,
+            productId: product.id,
             quantity: quantity,
             unit: unitCode,
-            expiresOn: hasExpiry ? StockBatch.yyyymmdd.string(from: expiry) : nil,
-            openedOn: hasOpened ? StockBatch.yyyymmdd.string(from: opened) : nil,
-            note: note.trimmingCharacters(in: .whitespaces).isEmpty ? nil : note,
         )
         do {
             let created = try await appState.api.createStock(req)

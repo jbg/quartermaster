@@ -142,7 +142,7 @@ struct ProductListRow: View {
                 Text(product.displayTitle).lineLimit(2)
                 HStack(spacing: 4) {
                     Text(product.family.displayName)
-                    if product.source == "manual" {
+                    if product.isManual {
                         Text("· Manual")
                     }
                     if product.isDeleted {

@@ -11,8 +11,8 @@ struct SettingsView: View {
                     if let email = me.user.email {
                         LabeledContent("Email", value: email)
                     }
-                    if let household = me.household {
-                        LabeledContent("Household", value: household.name)
+                    if let householdName = me.householdName {
+                        LabeledContent("Household", value: householdName)
                     }
                 }
             }

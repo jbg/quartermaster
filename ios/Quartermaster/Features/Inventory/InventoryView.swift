@@ -19,7 +19,7 @@ struct InventoryView: View {
         let location: Location
         /// Passed through from a deep-link so the sheet can scroll / flash
         /// the originating batch.
-        var highlightBatchID: UUID? = nil
+        var highlightBatchID: String? = nil
         var id: String { "\(product.id)-\(location.id)" }
     }
 

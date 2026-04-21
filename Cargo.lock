@@ -1422,6 +1422,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "thiserror",
+ "utoipa",
  "uuid",
 ]
 

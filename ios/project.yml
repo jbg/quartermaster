@@ -16,6 +16,17 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     IPHONEOS_DEPLOYMENT_TARGET: "26.0"
 
+packages:
+  OpenAPIGenerator:
+    url: https://github.com/apple/swift-openapi-generator
+    from: 1.11.0
+  OpenAPIRuntime:
+    url: https://github.com/apple/swift-openapi-runtime
+    from: 1.8.0
+  OpenAPIURLSession:
+    url: https://github.com/apple/swift-openapi-urlsession
+    from: 1.1.0
+
 targets:
   Quartermaster:
     type: application
@@ -25,6 +36,14 @@ targets:
       - path: Quartermaster
         excludes:
           - Generated/**
+    dependencies:
+      - package: OpenAPIRuntime
+        product: OpenAPIRuntime
+      - package: OpenAPIURLSession
+        product: OpenAPIURLSession
+    buildToolPlugins:
+      - plugin: OpenAPIGenerator
+        package: OpenAPIGenerator
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jasperhugo.quartermaster
@@ -37,3 +56,6 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_PREVIEWS: YES
         GENERATE_INFOPLIST_FILE: YES
+        # Disable user-script sandbox for the target — the OpenAPIGenerator
+        # plugin needs to write into the build intermediate directory.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO

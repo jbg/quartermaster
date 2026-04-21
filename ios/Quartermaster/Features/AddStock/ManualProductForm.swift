@@ -96,12 +96,12 @@ struct ManualProductForm: View {
         let cleanBarcode = barcode.trimmingCharacters(in: .whitespaces)
         let cleanImageURL = imageURLText.trimmingCharacters(in: .whitespaces)
         let request = CreateProductRequest(
-            name: name.trimmingCharacters(in: .whitespaces),
+            barcode: cleanBarcode.isEmpty ? nil : cleanBarcode,
             brand: cleanBrand.isEmpty ? nil : cleanBrand,
             family: family,
+            imageUrl: cleanImageURL.isEmpty ? nil : cleanImageURL,
+            name: name.trimmingCharacters(in: .whitespaces),
             preferredUnit: preferredUnit.isEmpty ? nil : preferredUnit,
-            imageURL: cleanImageURL.isEmpty ? nil : cleanImageURL,
-            barcode: cleanBarcode.isEmpty ? nil : cleanBarcode,
         )
         do {
             let created = try await appState.api.createProduct(request)

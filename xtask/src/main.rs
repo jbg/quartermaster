@@ -37,9 +37,15 @@ fn main() -> ExitCode {
 fn export_openapi() -> anyhow::Result<()> {
     let spec = qm_api::ApiDoc::openapi();
     let json = serde_json::to_string_pretty(&spec).context("serialising openapi spec")?;
-    let out = repo_root()?.join("openapi.json");
-    std::fs::write(&out, json).with_context(|| format!("writing {}", out.display()))?;
-    println!("wrote {}", out.display());
+
+    // Write to two places: the canonical copy at the repo root (external
+    // consumers, CI drift check) and the one the swift-openapi-generator
+    // plugin actually reads when Xcode builds the iOS app.
+    let root = repo_root()?;
+    for out in [root.join("openapi.json"), root.join("ios/Quartermaster/openapi.json")] {
+        std::fs::write(&out, &json).with_context(|| format!("writing {}", out.display()))?;
+        println!("wrote {}", out.display());
+    }
     Ok(())
 }
 

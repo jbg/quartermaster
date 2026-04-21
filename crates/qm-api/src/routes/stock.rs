@@ -22,6 +22,7 @@ use crate::{
     auth::CurrentUser,
     error::{ApiError, ApiResult},
     routes::products::ProductDto,
+    types::StockEventType,
     AppState,
 };
 
@@ -80,11 +81,13 @@ pub struct StockBatchDto {
     pub created_at: String,
 }
 
-impl From<StockBatchWithProduct> for StockBatchDto {
-    fn from(j: StockBatchWithProduct) -> Self {
-        Self {
+impl TryFrom<StockBatchWithProduct> for StockBatchDto {
+    type Error = ApiError;
+
+    fn try_from(j: StockBatchWithProduct) -> Result<Self, Self::Error> {
+        Ok(Self {
             id: j.batch.id,
-            product: j.product.into(),
+            product: j.product.try_into()?,
             location_id: j.batch.location_id,
             initial_quantity: j.batch.initial_quantity,
             quantity: j.batch.quantity,
@@ -93,7 +96,7 @@ impl From<StockBatchWithProduct> for StockBatchDto {
             opened_on: j.batch.opened_on,
             note: j.batch.note,
             created_at: j.batch.created_at,
-        }
+        })
     }
 }
 
@@ -175,6 +178,7 @@ pub struct ConsumeResponse {
 #[utoipa::path(
     get,
     path = "/stock",
+    operation_id = "stock_list",
     tag = "stock",
     params(StockListQuery),
     responses(
@@ -205,14 +209,17 @@ pub async fn list(
     };
 
     let rows = qm_db::stock::list(&state.db, household_id, &filter).await?;
-    Ok(Json(StockListResponse {
-        items: rows.into_iter().map(Into::into).collect(),
-    }))
+    let items: Vec<StockBatchDto> = rows
+        .into_iter()
+        .map(StockBatchDto::try_from)
+        .collect::<ApiResult<_>>()?;
+    Ok(Json(StockListResponse { items }))
 }
 
 #[utoipa::path(
     get,
     path = "/stock/{id}",
+    operation_id = "stock_get",
     tag = "stock",
     params(("id" = Uuid, Path)),
     responses(
@@ -233,12 +240,13 @@ pub async fn get_one(
     let product = qm_db::products::find_by_id(&state.db, row.product_id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    Ok(Json(StockBatchWithProduct { batch: row, product }.into()))
+    Ok(Json(StockBatchWithProduct { batch: row, product }.try_into()?))
 }
 
 #[utoipa::path(
     post,
     path = "/stock",
+    operation_id = "stock_create",
     tag = "stock",
     request_body = CreateStockRequest,
     responses(
@@ -282,13 +290,14 @@ pub async fn create(
 
     Ok((
         StatusCode::CREATED,
-        Json(StockBatchWithProduct { batch: row, product }.into()),
+        Json(StockBatchWithProduct { batch: row, product }.try_into()?),
     ))
 }
 
 #[utoipa::path(
     patch,
     path = "/stock/{id}",
+    operation_id = "stock_update",
     tag = "stock",
     params(("id" = Uuid, Path)),
     request_body = UpdateStockRequest,
@@ -351,12 +360,13 @@ pub async fn update(
     let refreshed = qm_db::stock::get(&state.db, household_id, id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    Ok(Json(StockBatchWithProduct { batch: refreshed, product }.into()))
+    Ok(Json(StockBatchWithProduct { batch: refreshed, product }.try_into()?))
 }
 
 #[utoipa::path(
     delete,
     path = "/stock/{id}",
+    operation_id = "stock_delete",
     tag = "stock",
     params(("id" = Uuid, Path)),
     responses(
@@ -382,6 +392,7 @@ pub async fn delete_one(
 #[utoipa::path(
     post,
     path = "/stock/consume",
+    operation_id = "stock_consume",
     tag = "stock",
     request_body = ConsumeRequest,
     responses(
@@ -458,8 +469,7 @@ pub async fn consume(
 #[derive(Debug, Serialize, ToSchema)]
 pub struct StockEventDto {
     pub id: Uuid,
-    /// One of `add`, `consume`, `adjust`, `discard`, `restore`.
-    pub event_type: String,
+    pub event_type: StockEventType,
     /// Signed decimal in `unit`.
     pub quantity_delta: String,
     pub unit: String,
@@ -475,11 +485,14 @@ pub struct StockEventDto {
     pub consume_request_id: Option<Uuid>,
 }
 
-impl From<TimelineEntryRow> for StockEventDto {
-    fn from(r: TimelineEntryRow) -> Self {
-        Self {
+impl TryFrom<TimelineEntryRow> for StockEventDto {
+    type Error = ApiError;
+
+    fn try_from(r: TimelineEntryRow) -> Result<Self, Self::Error> {
+        let event_type: StockEventType = r.event.event_type.parse()?;
+        Ok(Self {
             id: r.event.id,
-            event_type: r.event.event_type,
+            event_type,
             quantity_delta: r.event.quantity_delta,
             unit: r.batch_unit,
             batch_expires_on: r.batch_expires_on,
@@ -487,9 +500,9 @@ impl From<TimelineEntryRow> for StockEventDto {
             created_at: r.event.created_at,
             created_by_username: r.created_by_username,
             batch_id: r.event.batch_id,
-            product: r.product.into(),
+            product: r.product.try_into()?,
             consume_request_id: r.event.consume_request_id,
-        }
+        })
     }
 }
 
@@ -519,6 +532,7 @@ const MAX_EVENT_LIMIT: i64 = 200;
 #[utoipa::path(
     get,
     path = "/stock/events",
+    operation_id = "stock_list_events",
     tag = "stock",
     params(EventListQuery),
     responses(
@@ -543,12 +557,13 @@ pub async fn list_events(
         limit,
     )
     .await?;
-    Ok(Json(build_event_response(rows, limit)))
+    Ok(Json(build_event_response(rows, limit)?))
 }
 
 #[utoipa::path(
     get,
     path = "/stock/{id}/events",
+    operation_id = "stock_list_batch_events",
     tag = "stock",
     params(
         ("id" = Uuid, Path),
@@ -582,10 +597,13 @@ pub async fn list_events_for_batch(
         limit,
     )
     .await?;
-    Ok(Json(build_event_response(rows, limit)))
+    Ok(Json(build_event_response(rows, limit)?))
 }
 
-fn build_event_response(rows: Vec<TimelineEntryRow>, limit: i64) -> StockEventListResponse {
+fn build_event_response(
+    rows: Vec<TimelineEntryRow>,
+    limit: i64,
+) -> ApiResult<StockEventListResponse> {
     let (next_before, next_before_id) = if (rows.len() as i64) >= limit {
         rows.last()
             .map(|r| (Some(r.event.created_at.clone()), Some(r.event.id)))
@@ -593,12 +611,15 @@ fn build_event_response(rows: Vec<TimelineEntryRow>, limit: i64) -> StockEventLi
     } else {
         (None, None)
     };
-    let items: Vec<StockEventDto> = rows.into_iter().map(Into::into).collect();
-    StockEventListResponse {
+    let items: Vec<StockEventDto> = rows
+        .into_iter()
+        .map(StockEventDto::try_from)
+        .collect::<ApiResult<_>>()?;
+    Ok(StockEventListResponse {
         items,
         next_before,
         next_before_id,
-    }
+    })
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -619,6 +640,7 @@ const MAX_RESTORE_MANY: usize = 100;
 #[utoipa::path(
     post,
     path = "/stock/restore-many",
+    operation_id = "stock_restore_many",
     tag = "stock",
     request_body = RestoreManyRequest,
     responses(
@@ -651,7 +673,7 @@ pub async fn restore_many(
         let product = qm_db::products::find_including_deleted(&state.db, row.product_id)
             .await?
             .ok_or(ApiError::NotFound)?;
-        restored.push(StockBatchWithProduct { batch: row, product }.into());
+        restored.push(StockBatchWithProduct { batch: row, product }.try_into()?);
     }
     Ok(Json(RestoreManyResponse { restored }))
 }
@@ -659,6 +681,7 @@ pub async fn restore_many(
 #[utoipa::path(
     post,
     path = "/stock/{id}/restore",
+    operation_id = "stock_restore",
     tag = "stock",
     params(("id" = Uuid, Path)),
     responses(
@@ -678,7 +701,7 @@ pub async fn restore_one(
     let product = qm_db::products::find_including_deleted(&state.db, row.product_id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    Ok(Json(StockBatchWithProduct { batch: row, product }.into()))
+    Ok(Json(StockBatchWithProduct { batch: row, product }.try_into()?))
 }
 
 // ----- helpers -----

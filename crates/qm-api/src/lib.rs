@@ -3,13 +3,17 @@
 use std::sync::Arc;
 
 use axum::{routing::get, Json, Router};
-use utoipa::OpenApi;
+use utoipa::{
+    openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
+    Modify, OpenApi,
+};
 
 pub mod auth;
 pub mod barcode;
 pub mod error;
 pub mod openfoodfacts;
 pub mod routes;
+pub mod types;
 
 pub use error::{ApiError, ApiResult};
 
@@ -64,8 +68,31 @@ impl std::str::FromStr for RegistrationMode {
     }
 }
 
+/// Registers the `bearer` security scheme referenced by every
+/// authenticated path's `security(("bearer" = []))` attribute. Without
+/// this pass, tooling that validates the spec (e.g.
+/// swift-openapi-generator) rejects the document as inconsistent.
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        if let Some(components) = openapi.components.as_mut() {
+            components.add_security_scheme(
+                "bearer",
+                SecurityScheme::Http(
+                    HttpBuilder::new()
+                        .scheme(HttpAuthScheme::Bearer)
+                        .bearer_format("opaque")
+                        .build(),
+                ),
+            );
+        }
+    }
+}
+
 #[derive(OpenApi)]
 #[openapi(
+    modifiers(&SecurityAddon),
     info(
         title = "Quartermaster API",
         description = "Self-hosted kitchen inventory management.",
@@ -100,6 +127,9 @@ impl std::str::FromStr for RegistrationMode {
         routes::stock::restore_many,
     ),
     components(schemas(
+        qm_core::units::UnitFamily,
+        types::ProductSource,
+        types::StockEventType,
         routes::health::HealthResponse,
         routes::accounts::RegisterRequest,
         routes::accounts::LoginRequest,

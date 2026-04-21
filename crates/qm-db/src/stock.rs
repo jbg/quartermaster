@@ -799,7 +799,7 @@ mod tests {
         locations::seed_defaults(&db, h.id).await.unwrap();
         let locs = locations::list_for_household(&db, h.id).await.unwrap();
         let pantry = locs.iter().find(|l| l.kind == "pantry").unwrap().id;
-        let p = products::create_manual(&db, h.id, "Flour", None, "mass", Some("g"), None)
+        let p = products::create_manual(&db, h.id, "Flour", None, "mass", Some("g"), None, None)
             .await.unwrap();
         (db, h.id, u.id, pantry, p.id)
     }

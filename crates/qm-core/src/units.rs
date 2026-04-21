@@ -1,9 +1,11 @@
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::errors::QmError;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
 pub enum UnitFamily {
     Mass,
     Volume,
@@ -16,6 +18,15 @@ impl UnitFamily {
             UnitFamily::Mass => "mass",
             UnitFamily::Volume => "volume",
             UnitFamily::Count => "count",
+        }
+    }
+
+    pub fn from_str_ci(s: &str) -> Option<Self> {
+        match s {
+            "mass" => Some(Self::Mass),
+            "volume" => Some(Self::Volume),
+            "count" => Some(Self::Count),
+            _ => None,
         }
     }
 }

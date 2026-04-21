@@ -4,6 +4,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use qm_core::units::UnitFamily;
 use qm_db::products::{ProductRow, ProductUpdate};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -14,6 +15,7 @@ use crate::{
     barcode,
     error::{ApiError, ApiResult},
     openfoodfacts::{self, OffResult, OpenFoodFactsClient},
+    types::ProductSource,
     AppState,
 };
 
@@ -49,43 +51,57 @@ pub struct ProductDto {
     pub id: Uuid,
     pub name: String,
     pub brand: Option<String>,
-    pub family: String,
+    pub family: UnitFamily,
     pub preferred_unit: String,
     pub image_url: Option<String>,
     pub barcode: Option<String>,
-    pub source: String,
+    pub source: ProductSource,
     /// RFC-3339 timestamp when the product was soft-deleted. Present only
     /// when the caller explicitly asked for deleted rows (e.g. via
     /// `/products/search?include_deleted=true` or the history timeline).
     pub deleted_at: Option<String>,
 }
 
-impl From<ProductRow> for ProductDto {
-    fn from(p: ProductRow) -> Self {
-        Self {
+impl TryFrom<ProductRow> for ProductDto {
+    type Error = ApiError;
+
+    fn try_from(p: ProductRow) -> Result<Self, Self::Error> {
+        let family = UnitFamily::from_str_ci(&p.family).ok_or_else(|| {
+            ApiError::Internal(anyhow::anyhow!(
+                "unknown family '{}' in DB row for product {}",
+                p.family,
+                p.id,
+            ))
+        })?;
+        let source: ProductSource = p.source.parse()?;
+        Ok(Self {
             id: p.id,
             name: p.name,
             brand: p.brand,
-            family: p.family,
+            family,
             preferred_unit: p.preferred_unit,
             image_url: p.image_url,
             barcode: p.off_barcode,
-            source: p.source,
+            source,
             deleted_at: p.deleted_at,
-        }
+        })
     }
+}
+
+fn products_into_dtos(rows: Vec<ProductRow>) -> ApiResult<Vec<ProductDto>> {
+    rows.into_iter().map(ProductDto::try_from).collect()
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateProductRequest {
     pub name: String,
     pub brand: Option<String>,
-    /// One of `mass`, `volume`, `count`.
-    pub family: String,
+    pub family: UnitFamily,
     /// Optional display unit override. Must belong to `family`. Defaults to
     /// the family's base unit (`g` / `ml` / `piece`) when omitted.
     pub preferred_unit: Option<String>,
     pub barcode: Option<String>,
+    pub image_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -93,7 +109,7 @@ pub struct UpdateProductRequest {
     pub name: Option<String>,
     #[serde(default, deserialize_with = "double_option::deserialize")]
     pub brand: Option<Option<String>>,
-    pub family: Option<String>,
+    pub family: Option<UnitFamily>,
     pub preferred_unit: Option<String>,
     #[serde(default, deserialize_with = "double_option::deserialize")]
     pub image_url: Option<Option<String>>,
@@ -125,6 +141,7 @@ pub struct BarcodeLookupResponse {
 #[utoipa::path(
     get,
     path = "/products/search",
+    operation_id = "product_search",
     tag = "products",
     params(SearchQuery),
     responses(
@@ -154,13 +171,14 @@ pub async fn search(
     )
     .await?;
     Ok(Json(ProductSearchResponse {
-        items: rows.into_iter().map(Into::into).collect(),
+        items: products_into_dtos(rows)?,
     }))
 }
 
 #[utoipa::path(
     get,
     path = "/products/by-barcode/{barcode}",
+    operation_id = "product_by_barcode",
     tag = "products",
     params(("barcode" = String, Path, description = "EAN-8/12/13/14; non-digits are stripped and UPC-A is zero-padded")),
     responses(
@@ -195,7 +213,7 @@ pub async fn by_barcode(
                     .await?
                     .ok_or(ApiError::NotFound)?;
                 return Ok(Json(BarcodeLookupResponse {
-                    product: product.into(),
+                    product: product.try_into()?,
                     source: "cache",
                 }));
             }
@@ -208,6 +226,7 @@ pub async fn by_barcode(
 #[utoipa::path(
     post,
     path = "/products",
+    operation_id = "product_create",
     tag = "products",
     request_body = CreateProductRequest,
     responses(
@@ -229,12 +248,11 @@ pub async fn create(
             "product name must be 1..=256 chars".into(),
         ));
     }
-    validate_family(&req.family)?;
     if let Some(pu) = req.preferred_unit.as_deref() {
         let u = qm_core::units::lookup(pu).map_err(|_| ApiError::UnknownUnit(pu.to_owned()))?;
-        if u.family.as_str() != req.family {
+        if u.family != req.family {
             return Err(ApiError::UnitFamilyMismatch {
-                product_family: req.family.clone(),
+                product_family: req.family.as_str().to_owned(),
                 unit: pu.to_owned(),
             });
         }
@@ -246,24 +264,31 @@ pub async fn create(
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
+    let image_url_trim = req
+        .image_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
 
     let row = qm_db::products::create_manual(
         &state.db,
         household_id,
         name,
         brand_trim,
-        &req.family,
+        req.family.as_str(),
         req.preferred_unit.as_deref(),
         barcode_trim,
+        image_url_trim,
     )
     .await?;
 
-    Ok((StatusCode::CREATED, Json(row.into())))
+    Ok((StatusCode::CREATED, Json(row.try_into()?)))
 }
 
 #[utoipa::path(
     get,
     path = "/products/{id}",
+    operation_id = "product_get",
     tag = "products",
     params(("id" = Uuid, Path, description = "Product ID")),
     responses(
@@ -286,12 +311,13 @@ pub async fn get_one(
     {
         return Err(ApiError::NotFound);
     }
-    Ok(Json(row.into()))
+    Ok(Json(row.try_into()?))
 }
 
 #[utoipa::path(
     patch,
     path = "/products/{id}",
+    operation_id = "product_update",
     tag = "products",
     params(("id" = Uuid, Path)),
     request_body = UpdateProductRequest,
@@ -335,13 +361,20 @@ pub async fn update(
             ));
         }
     }
-    if let Some(fam) = req.family.as_deref() {
-        validate_family(fam)?;
-        if fam != existing.family {
+    let existing_family = UnitFamily::from_str_ci(&existing.family).ok_or_else(|| {
+        ApiError::Internal(anyhow::anyhow!(
+            "unknown family '{}' in DB row for product {}",
+            existing.family,
+            existing.id,
+        ))
+    })?;
+
+    if let Some(fam) = req.family {
+        if fam != existing_family {
             let conflicts = qm_db::stock::conflicting_units_for_family_change(
                 &state.db,
                 existing.id,
-                fam,
+                fam.as_str(),
             )
             .await?;
             if !conflicts.is_empty() {
@@ -354,12 +387,12 @@ pub async fn update(
 
     // If both family and preferred_unit are changing, validate in the new
     // family; otherwise validate preferred_unit against the existing family.
-    let effective_family = req.family.as_deref().unwrap_or(&existing.family);
+    let effective_family = req.family.unwrap_or(existing_family);
     if let Some(pu) = req.preferred_unit.as_deref() {
         let u = qm_core::units::lookup(pu).map_err(|_| ApiError::UnknownUnit(pu.to_owned()))?;
-        if u.family.as_str() != effective_family {
+        if u.family != effective_family {
             return Err(ApiError::UnitFamilyMismatch {
-                product_family: effective_family.to_owned(),
+                product_family: effective_family.as_str().to_owned(),
                 unit: pu.to_owned(),
             });
         }
@@ -378,6 +411,7 @@ pub async fn update(
             .map(str::trim)
             .filter(|s| !s.is_empty())
     });
+    let family_str = req.family.map(UnitFamily::as_str);
 
     let updated = qm_db::products::update(
         &state.db,
@@ -385,19 +419,20 @@ pub async fn update(
         &ProductUpdate {
             name: name_trim,
             brand: brand_inner,
-            family: req.family.as_deref(),
+            family: family_str,
             preferred_unit: req.preferred_unit.as_deref(),
             image_url: image_inner,
         },
     )
     .await?;
 
-    Ok(Json(updated.into()))
+    Ok(Json(updated.try_into()?))
 }
 
 #[utoipa::path(
     delete,
     path = "/products/{id}",
+    operation_id = "product_delete",
     tag = "products",
     params(("id" = Uuid, Path)),
     responses(
@@ -433,6 +468,7 @@ pub async fn delete_one(
 #[utoipa::path(
     post,
     path = "/products/{id}/refresh",
+    operation_id = "product_refresh",
     tag = "products",
     params(("id" = Uuid, Path)),
     responses(
@@ -500,12 +536,13 @@ pub async fn refresh(
     .await?;
     qm_db::barcode_cache::put_hit(&state.db, &barcode, row.id).await?;
 
-    Ok(Json(row.into()))
+    Ok(Json(row.try_into()?))
 }
 
 #[utoipa::path(
     post,
     path = "/products/{id}/restore",
+    operation_id = "product_restore",
     tag = "products",
     params(("id" = Uuid, Path)),
     responses(
@@ -540,7 +577,7 @@ pub async fn restore(
     let refreshed = qm_db::products::find_by_id(&state.db, id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    Ok(Json(refreshed.into()))
+    Ok(Json(refreshed.try_into()?))
 }
 
 // ----- helpers -----
@@ -563,7 +600,7 @@ async fn fetch_and_cache(state: &AppState, barcode: &str) -> ApiResult<Json<Barc
             .await?;
             qm_db::barcode_cache::put_hit(&state.db, barcode, row.id).await?;
             Ok(Json(BarcodeLookupResponse {
-                product: row.into(),
+                product: row.try_into()?,
                 source: "openfoodfacts",
             }))
         }
@@ -572,15 +609,5 @@ async fn fetch_and_cache(state: &AppState, barcode: &str) -> ApiResult<Json<Barc
             Err(ApiError::NotFound)
         }
         OffResult::Upstream(_) => Err(ApiError::BadGateway),
-    }
-}
-
-fn validate_family(f: &str) -> ApiResult<()> {
-    if matches!(f, "mass" | "volume" | "count") {
-        Ok(())
-    } else {
-        Err(ApiError::BadRequest(format!(
-            "family must be one of mass, volume, count (got {f})",
-        )))
     }
 }

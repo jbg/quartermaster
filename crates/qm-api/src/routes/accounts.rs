@@ -72,12 +72,14 @@ pub struct HouseholdDto {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct MeResponse {
     pub user: UserDto,
-    pub household: Option<HouseholdDto>,
+    pub household_id: Option<Uuid>,
+    pub household_name: Option<String>,
 }
 
 #[utoipa::path(
     post,
     path = "/auth/register",
+    operation_id = "auth_register",
     tag = "accounts",
     request_body = RegisterRequest,
     responses(
@@ -134,6 +136,7 @@ pub async fn register(
 #[utoipa::path(
     post,
     path = "/auth/login",
+    operation_id = "auth_login",
     tag = "accounts",
     request_body = LoginRequest,
     responses(
@@ -158,6 +161,7 @@ pub async fn login(
 #[utoipa::path(
     post,
     path = "/auth/refresh",
+    operation_id = "auth_refresh",
     tag = "accounts",
     request_body = RefreshRequest,
     responses(
@@ -192,6 +196,7 @@ pub async fn refresh(
 #[utoipa::path(
     post,
     path = "/auth/logout",
+    operation_id = "auth_logout",
     tag = "accounts",
     responses((status = 204), (status = 401, body = crate::error::ApiErrorBody)),
     security(("bearer" = [])),
@@ -216,6 +221,7 @@ pub async fn logout(
 #[utoipa::path(
     get,
     path = "/auth/me",
+    operation_id = "auth_me",
     tag = "accounts",
     responses((status = 200, body = MeResponse), (status = 401, body = crate::error::ApiErrorBody)),
     security(("bearer" = [])),
@@ -231,12 +237,12 @@ pub async fn me(
         qm_db::households::find_for_user(&state.db, current.user_id)
             .await?
             .filter(|h| h.id == hid)
-            .map(|h| HouseholdDto {
-                id: h.id,
-                name: h.name,
-            })
     } else {
         None
+    };
+    let (household_id, household_name) = match household {
+        Some(h) => (Some(h.id), Some(h.name)),
+        None => (None, None),
     };
     Ok(Json(MeResponse {
         user: UserDto {
@@ -244,7 +250,8 @@ pub async fn me(
             username: user.username,
             email: user.email,
         },
-        household,
+        household_id,
+        household_name,
     }))
 }
 

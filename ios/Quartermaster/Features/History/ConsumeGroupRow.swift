@@ -5,11 +5,11 @@ import SwiftUI
 /// expand; expanded state is owned by the parent so it survives list
 /// reloads.
 struct ConsumeGroupRow: View {
-    let requestID: UUID
+    let requestID: String
     let events: [StockEvent]
     let preferredUnit: String
     let units: [Unit]
-    @Binding var expandedGroups: Set<UUID>
+    @Binding var expandedGroups: Set<String>
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

@@ -9,7 +9,7 @@ struct BatchDetailView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
 
-    let batchID: UUID
+    let batchID: String
 
     enum LoadState {
         case loading

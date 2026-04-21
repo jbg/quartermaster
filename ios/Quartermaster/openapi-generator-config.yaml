@@ -1,0 +1,14 @@
+generate:
+  - types
+  - client
+accessModifier: internal
+namingStrategy: idiomatic
+# Tri-state PATCH types — the generated output can't express the
+# distinction between an absent JSON field and an explicit null
+# (upstream issue apple/swift-openapi-generator#419), so we point at
+# hand-rolled Encodable types that serialise `clearFoo` flags as
+# explicit nulls. Read side is trivial (we never receive these).
+typeOverrides:
+  schemas:
+    UpdateStockRequest: APIOverrides.UpdateStockRequest
+    UpdateProductRequest: APIOverrides.UpdateProductRequest
