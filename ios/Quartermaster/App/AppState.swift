@@ -6,6 +6,7 @@ import Observation
 final class AppState {
     enum Phase: Equatable {
         case launching
+        case launchFailed(String)
         case unauthenticated
         case authenticated(Me)
     }
@@ -39,9 +40,18 @@ final class AppState {
             let me = try await api.me()
             phase = .authenticated(me)
             await loadUnits()
+            lastError = nil
         } catch {
-            await tokenStore.clear()
-            phase = .unauthenticated
+            let message = userMessage(for: error)
+            if let apiError = error as? APIError, case .unauthorized = apiError {
+                await tokenStore.clear()
+                phase = .unauthenticated
+                return
+            }
+            lastError = message
+            if case .launching = phase {
+                phase = .launchFailed(message)
+            }
         }
     }
 

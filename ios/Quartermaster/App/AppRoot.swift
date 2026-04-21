@@ -7,6 +7,8 @@ struct AppRoot: View {
         switch appState.phase {
         case .launching:
             LaunchView()
+        case .launchFailed(let message):
+            LaunchFailureView(message: message)
         case .unauthenticated:
             OnboardingView()
         case .authenticated:
@@ -26,6 +28,37 @@ private struct LaunchView: View {
                 .padding(.top, 24)
         }
         .foregroundStyle(.primary)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.background)
+    }
+}
+
+private struct LaunchFailureView: View {
+    @Environment(AppState.self) private var appState
+
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 56, weight: .regular))
+            Text("Couldn't Resume Session")
+                .font(.title.weight(.semibold))
+            Text(message)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Try again") {
+                appState.phase = .launching
+                Task { await appState.refreshMe() }
+            }
+            .buttonStyle(.borderedProminent)
+            Button("Sign out") {
+                Task { await appState.logout() }
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(.horizontal, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.background)
     }

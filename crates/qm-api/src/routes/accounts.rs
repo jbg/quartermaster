@@ -129,7 +129,7 @@ pub async fn register(
 
     qm_db::memberships::insert(&state.db, household_id, user.id, role).await?;
 
-    let pair = issue_token_pair(&state, user.id, req.device_label.as_deref()).await?;
+    let pair = issue_token_pair(&state, user.id, Uuid::now_v7(), req.device_label.as_deref()).await?;
     Ok((StatusCode::CREATED, Json(pair)))
 }
 
@@ -154,7 +154,7 @@ pub async fn login(
     if !auth::verify_password(&req.password, &user.password_hash) {
         return Err(ApiError::Unauthorized);
     }
-    let pair = issue_token_pair(&state, user.id, req.device_label.as_deref()).await?;
+    let pair = issue_token_pair(&state, user.id, Uuid::now_v7(), req.device_label.as_deref()).await?;
     Ok(Json(pair))
 }
 
@@ -189,7 +189,13 @@ pub async fn refresh(
 
     // Rotate: revoke the presented refresh token, mint a fresh pair.
     qm_db::tokens::revoke(&state.db, token.id).await?;
-    let pair = issue_token_pair(&state, token.user_id, token.device_label.as_deref()).await?;
+    let pair = issue_token_pair(
+        &state,
+        token.user_id,
+        token.session_id,
+        token.device_label.as_deref(),
+    )
+    .await?;
     Ok(Json(pair))
 }
 
@@ -213,7 +219,9 @@ pub async fn logout(
         .and_then(|s| s.strip_prefix("Bearer "))
     {
         let hash = auth::sha256_hex(bearer);
-        qm_db::tokens::revoke_by_hash(&state.db, &hash).await?;
+        if let Some(token) = qm_db::tokens::find_active_by_hash(&state.db, &hash).await? {
+            qm_db::tokens::revoke_session(&state.db, token.session_id).await?;
+        }
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -271,6 +279,7 @@ fn validate_credentials(username: &str, password: &str) -> ApiResult<()> {
 async fn issue_token_pair(
     state: &AppState,
     user_id: Uuid,
+    session_id: Uuid,
     device_label: Option<&str>,
 ) -> ApiResult<TokenPair> {
     let access = auth::generate_token();
@@ -282,6 +291,7 @@ async fn issue_token_pair(
     qm_db::tokens::create(
         &state.db,
         user_id,
+        session_id,
         &auth::sha256_hex(&access),
         qm_db::tokens::KIND_ACCESS,
         device_label,
@@ -291,6 +301,7 @@ async fn issue_token_pair(
     qm_db::tokens::create(
         &state.db,
         user_id,
+        session_id,
         &auth::sha256_hex(&refresh),
         qm_db::tokens::KIND_REFRESH,
         device_label,
