@@ -170,7 +170,6 @@ actor APIClient {
         switch response {
         case .noContent: return
         case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
-        case .conflict(let err): throw APIError.server(status: 409, body: try? err.body.json)
         case .undocumented(let statusCode, _):
             throw APIError.server(status: statusCode, body: nil)
         }

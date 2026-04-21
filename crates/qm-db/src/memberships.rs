@@ -19,8 +19,26 @@ pub struct MembershipWithUserRow {
     pub email: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InsertOutcome {
+    Inserted,
+    AlreadyExists,
+}
+
 pub async fn insert(
     db: &Database,
+    household_id: Uuid,
+    user_id: Uuid,
+    role: &str,
+) -> Result<(), sqlx::Error> {
+    let mut tx = db.pool.begin().await?;
+    insert_in_tx(&mut tx, household_id, user_id, role).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn insert_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
     household_id: Uuid,
     user_id: Uuid,
     role: &str,
@@ -32,9 +50,22 @@ pub async fn insert(
     .bind(user_id.to_string())
     .bind(role)
     .bind(now_utc_rfc3339())
-    .execute(&db.pool)
+    .execute(&mut **tx)
     .await?;
     Ok(())
+}
+
+pub async fn insert_if_absent_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    household_id: Uuid,
+    user_id: Uuid,
+    role: &str,
+) -> Result<InsertOutcome, sqlx::Error> {
+    match insert_in_tx(tx, household_id, user_id, role).await {
+        Ok(()) => Ok(InsertOutcome::Inserted),
+        Err(err) if is_unique_violation(&err) => Ok(InsertOutcome::AlreadyExists),
+        Err(err) => Err(err),
+    }
 }
 
 pub async fn find(
@@ -119,4 +150,10 @@ fn row_to_membership_ref(row: &sqlx::any::AnyRow) -> Result<MembershipRow, sqlx:
         role: row.try_get("role")?,
         joined_at: row.try_get("joined_at")?,
     })
+}
+
+pub fn is_unique_violation(err: &sqlx::Error) -> bool {
+    err.as_database_error()
+        .map(|db_err| db_err.is_unique_violation())
+        .unwrap_or(false)
 }

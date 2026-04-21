@@ -14,7 +14,18 @@ enum APIError: Error, LocalizedError {
         case .decoding:
             return "Unexpected response from the server."
         case .server(_, let body?):
-            return body.message
+            switch body.code {
+            case "last_admin_removal":
+                return "You can't remove the last admin from the household."
+            case "location_has_stock":
+                return "This location still has active stock. Move, consume, or discard it first."
+            case "invalid_invite":
+                return "That invite is invalid, expired, revoked, or already used up."
+            case "admin_only", "forbidden":
+                return "You need household admin access for that action."
+            default:
+                return body.message
+            }
         case .server(let status, nil):
             return "Server error (\(status))."
         case .unauthorized:

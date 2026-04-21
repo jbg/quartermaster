@@ -4,17 +4,11 @@
 //! in a single transaction, and `stock_batch.quantity` is a cache of
 //! `SUM(stock_event.quantity_delta)` for the batch.
 //!
-//! **Concurrency assumption (single writer OR SQLite).** Under SQLite's
-//! default `SERIALIZABLE` transaction isolation the "read current, write
-//! new" pattern here is safe; concurrent writers will be serialised by the
-//! engine. Under Postgres `READ COMMITTED` (the sqlx default) two concurrent
-//! `adjust` calls could each read the same pre-change quantity, each write
-//! an event based on that read, and end with `quantity` out of sync with
-//! `SUM(quantity_delta)`. Moving to Postgres requires either per-connection
-//! `SERIALIZABLE` isolation or a row-level `SELECT ... FOR UPDATE` in
-//! `adjust` / `apply_consumption` / `discard` / `restore`. See
-//! `TODO.md#cross-cutting` and `cargo xtask verify-stock-ledger` for
-//! post-facto drift detection.
+//! Under Postgres `READ COMMITTED`, quantity-changing paths take a row lock
+//! (`SELECT ... FOR UPDATE`) before reading the cached quantity so the
+//! `stock_batch.quantity` cache stays in sync with the event ledger. SQLite
+//! already serialises writers, so the same helpers fall back to a normal
+//! `SELECT` there.
 
 use std::str::FromStr;
 
@@ -29,7 +23,7 @@ use crate::products::ProductRow;
 use crate::stock_events::{
     latest_for_batch_tx, EVENT_ADD, EVENT_ADJUST, EVENT_CONSUME, EVENT_DISCARD, EVENT_RESTORE,
 };
-use crate::{now_utc_rfc3339, Database};
+use crate::{now_utc_rfc3339, Backend, Database};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct StockBatchRow {
@@ -296,14 +290,9 @@ pub async fn adjust(
 ) -> Result<StockBatchRow, sqlx::Error> {
     let mut tx = db.pool.begin().await?;
 
-    let current = sqlx::query(
-        "SELECT quantity FROM stock_batch WHERE id = ? AND household_id = ?",
-    )
-    .bind(id.to_string())
-    .bind(household_id.to_string())
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or(sqlx::Error::RowNotFound)?;
+    let current = fetch_locked_batch_row(&mut tx, db.backend(), household_id, id, "quantity")
+        .await?
+        .ok_or(sqlx::Error::RowNotFound)?;
 
     let current_quantity: String = current.try_get("quantity")?;
     let current_d = Decimal::from_str(&current_quantity)
@@ -364,12 +353,13 @@ pub async fn discard(
 ) -> Result<bool, sqlx::Error> {
     let mut tx = db.pool.begin().await?;
 
-    let current = sqlx::query(
-        "SELECT quantity, depleted_at FROM stock_batch WHERE id = ? AND household_id = ?",
+    let current = fetch_locked_batch_row(
+        &mut tx,
+        db.backend(),
+        household_id,
+        id,
+        "quantity, depleted_at",
     )
-    .bind(id.to_string())
-    .bind(household_id.to_string())
-    .fetch_optional(&mut *tx)
     .await?;
 
     let Some(row) = current else {
@@ -446,7 +436,7 @@ pub async fn restore(
     actor: Uuid,
 ) -> Result<StockBatchRow, RestoreError> {
     let mut tx = db.pool.begin().await?;
-    restore_in_tx(&mut tx, household_id, id, actor).await?;
+    restore_in_tx(&mut tx, db.backend(), household_id, id, actor).await?;
     tx.commit().await?;
     get(db, household_id, id)
         .await?
@@ -472,7 +462,7 @@ pub async fn restore_many(
     let mut unrestorable: Vec<Uuid> = Vec::new();
 
     for id in ids {
-        match restore_in_tx(&mut tx, household_id, *id, actor).await {
+        match restore_in_tx(&mut tx, db.backend(), household_id, *id, actor).await {
             Ok(()) => {}
             // `NotFound` on a bulk op is "unknown-or-not-yours" — treat it
             // like any other unrestorable so the caller gets one clean list.
@@ -506,18 +496,13 @@ pub async fn restore_many(
 /// `restore_many` can batch many IDs under a single commit boundary.
 async fn restore_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     household_id: Uuid,
     id: Uuid,
     actor: Uuid,
 ) -> Result<(), RestoreError> {
     // Verify the batch belongs to the household (mirrors `get` but inside tx).
-    let present = sqlx::query(
-        "SELECT id FROM stock_batch WHERE id = ? AND household_id = ?",
-    )
-    .bind(id.to_string())
-    .bind(household_id.to_string())
-    .fetch_optional(&mut **tx)
-    .await?;
+    let present = fetch_locked_batch_row(tx, backend, household_id, id, "id").await?;
     if present.is_none() {
         return Err(RestoreError::NotFound);
     }
@@ -602,19 +587,38 @@ pub async fn apply_consumption(
     let mut tx = db.pool.begin().await?;
     let now = now_utc_rfc3339();
     for c in consumption {
+        let row = fetch_locked_batch_row(
+            &mut tx,
+            db.backend(),
+            household_id,
+            c.batch_id,
+            "quantity",
+        )
+        .await?
+        .ok_or(sqlx::Error::RowNotFound)?;
+        let existing: String = row.try_get("quantity")?;
+        let cur = Decimal::from_str(&existing).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+        let applied = if c.quantity >= cur { cur } else { c.quantity };
+        let new_qty = cur - applied;
+        let depletes = new_qty <= Decimal::ZERO;
+
+        if applied.is_zero() {
+            continue;
+        }
+
         insert_event(
             &mut tx,
             household_id,
             c.batch_id,
             EVENT_CONSUME,
-            &(-c.quantity).to_string(),
+            &(-applied).to_string(),
             Some("consumed via POST /stock/consume"),
             actor,
             Some(consume_request_id),
         )
         .await?;
 
-        if c.depletes {
+        if depletes {
             sqlx::query(
                 "UPDATE stock_batch SET quantity = '0', depleted_at = ? \
                  WHERE id = ? AND household_id = ?",
@@ -625,18 +629,8 @@ pub async fn apply_consumption(
             .execute(&mut *tx)
             .await?;
         } else {
-            let row = sqlx::query(
-                "SELECT quantity FROM stock_batch WHERE id = ? AND household_id = ?",
-            )
-            .bind(c.batch_id.to_string())
-            .bind(household_id.to_string())
-            .fetch_one(&mut *tx)
-            .await?;
-            let existing: String = row.try_get("quantity")?;
-            let cur = Decimal::from_str(&existing).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-            let new_qty = cur - c.quantity;
             sqlx::query(
-                "UPDATE stock_batch SET quantity = ? WHERE id = ? AND household_id = ?",
+                "UPDATE stock_batch SET quantity = ?, depleted_at = NULL WHERE id = ? AND household_id = ?",
             )
             .bind(new_qty.to_string())
             .bind(c.batch_id.to_string())
@@ -719,6 +713,24 @@ async fn insert_event(
     .execute(&mut **tx)
     .await?;
     Ok(())
+}
+
+async fn fetch_locked_batch_row(
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
+    household_id: Uuid,
+    id: Uuid,
+    columns: &str,
+) -> Result<Option<sqlx::any::AnyRow>, sqlx::Error> {
+    let mut sql = format!("SELECT {columns} FROM stock_batch WHERE id = ? AND household_id = ?");
+    if backend == Backend::Postgres {
+        sql.push_str(" FOR UPDATE");
+    }
+    sqlx::query(&sql)
+        .bind(id.to_string())
+        .bind(household_id.to_string())
+        .fetch_optional(&mut **tx)
+        .await
 }
 
 fn row_to_batch(row: sqlx::any::AnyRow) -> Result<StockBatchRow, sqlx::Error> {

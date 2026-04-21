@@ -273,7 +273,7 @@ pub async fn revoke_invite(
     operation_id = "invite_redeem",
     tag = "households",
     request_body = RedeemInviteRequest,
-    responses((status = 204), (status = 400, body = crate::error::ApiErrorBody), (status = 409, body = crate::error::ApiErrorBody)),
+    responses((status = 204), (status = 400, body = crate::error::ApiErrorBody)),
     security(("bearer" = [])),
 )]
 pub async fn redeem_invite(
@@ -282,29 +282,11 @@ pub async fn redeem_invite(
     Json(req): Json<RedeemInviteRequest>,
 ) -> ApiResult<StatusCode> {
     let code = req.invite_code.trim().to_ascii_uppercase();
-    let invite = validate_invite(&state, &code).await?;
-    if qm_db::memberships::find(&state.db, invite.household_id, current.user_id)
-        .await?
-        .is_some()
-    {
-        return Err(ApiError::AlreadyMember);
+    match qm_db::invites::redeem_for_user(&state.db, &code, current.user_id).await {
+        Ok(_) => Ok(StatusCode::NO_CONTENT),
+        Err(qm_db::invites::RedeemInviteError::InvalidInvite) => Err(ApiError::InvalidInvite),
+        Err(qm_db::invites::RedeemInviteError::Database(err)) => Err(ApiError::Database(err)),
     }
-    qm_db::memberships::insert(&state.db, invite.household_id, current.user_id, &invite.role_granted)
-        .await?;
-    if !qm_db::invites::consume(&state.db, invite.id).await? {
-        return Err(ApiError::InvalidInvite);
-    }
-    Ok(StatusCode::NO_CONTENT)
-}
-
-async fn validate_invite(state: &AppState, code: &str) -> ApiResult<qm_db::invites::InviteRow> {
-    let status = qm_db::invites::status_for_code(&state.db, code).await?;
-    if status != qm_db::invites::InviteStatus::Active {
-        return Err(ApiError::InvalidInvite);
-    }
-    qm_db::invites::find_by_code(&state.db, code)
-        .await?
-        .ok_or(ApiError::InvalidInvite)
 }
 
 fn require_admin(current: &CurrentUser) -> ApiResult<()> {

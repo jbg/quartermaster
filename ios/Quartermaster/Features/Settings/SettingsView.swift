@@ -22,6 +22,10 @@ struct SettingsView: View {
     @State private var isRedeemingInvite = false
     @State private var isCreatingInvite = false
     @State private var errorMessage: String?
+    @State private var showRenameConfirmation = false
+    @State private var invitePendingRevocation: Invite?
+    @State private var memberPendingRemoval: Member?
+    @State private var locationPendingDeletion: Location?
 
     var body: some View {
         Form {
@@ -51,7 +55,7 @@ struct SettingsView: View {
                     if isAdmin {
                         TextField("Household name", text: $householdNameDraft)
                         Button {
-                            Task { await saveHouseholdName() }
+                            showRenameConfirmation = true
                         } label: {
                             if isSavingHousehold {
                                 ProgressView()
@@ -113,11 +117,14 @@ struct SettingsView: View {
                                     Text(invite.code)
                                         .font(.headline.monospaced())
                                     Spacer()
-                                    ShareLink(item: invite.code) {
+                                    ShareLink(
+                                        item: inviteShareText(invite),
+                                        preview: SharePreview("Quartermaster Invite", image: Image(systemName: "person.2.badge.plus"))
+                                    ) {
                                         Image(systemName: "square.and.arrow.up")
                                     }
                                     Button(role: .destructive) {
-                                        Task { await revokeInvite(invite) }
+                                        invitePendingRevocation = invite
                                     } label: {
                                         Image(systemName: "trash")
                                     }
@@ -154,7 +161,7 @@ struct SettingsView: View {
                                 .background(.secondary.opacity(0.12), in: Capsule())
                             if isAdmin && member.user.id != me?.user.id {
                                 Button(role: .destructive) {
-                                    Task { await removeMember(member) }
+                                    memberPendingRemoval = member
                                 } label: {
                                     Image(systemName: "person.badge.minus")
                                 }
@@ -198,7 +205,7 @@ struct SettingsView: View {
                                     Image(systemName: "pencil")
                                 }
                                 Button(role: .destructive) {
-                                    Task { await deleteLocation(location) }
+                                    locationPendingDeletion = location
                                 } label: {
                                     Image(systemName: "trash")
                                 }
@@ -269,6 +276,72 @@ struct SettingsView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage ?? "")
+        }
+        .confirmationDialog(
+            "Save household name?",
+            isPresented: $showRenameConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Save") {
+                Task { await saveHouseholdName() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Rename the household to \(householdNameDraft.trimmingCharacters(in: .whitespacesAndNewlines))?")
+        }
+        .confirmationDialog(
+            "Revoke invite?",
+            isPresented: Binding(
+                get: { invitePendingRevocation != nil },
+                set: { if !$0 { invitePendingRevocation = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Revoke Invite", role: .destructive) {
+                guard let invitePendingRevocation else { return }
+                Task { await revokeInvite(invitePendingRevocation) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let invitePendingRevocation {
+                Text("Invite \(invitePendingRevocation.code) will stop working immediately.")
+            }
+        }
+        .confirmationDialog(
+            "Remove member?",
+            isPresented: Binding(
+                get: { memberPendingRemoval != nil },
+                set: { if !$0 { memberPendingRemoval = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Remove Member", role: .destructive) {
+                guard let memberPendingRemoval else { return }
+                Task { await removeMember(memberPendingRemoval) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let memberPendingRemoval {
+                Text("\(memberPendingRemoval.user.username) will lose access to this household.")
+            }
+        }
+        .confirmationDialog(
+            "Delete location?",
+            isPresented: Binding(
+                get: { locationPendingDeletion != nil },
+                set: { if !$0 { locationPendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete Location", role: .destructive) {
+                guard let locationPendingDeletion else { return }
+                Task { await deleteLocation(locationPendingDeletion) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let locationPendingDeletion {
+                Text("\(locationPendingDeletion.name) will be removed if it has no active stock.")
+            }
         }
     }
 
@@ -362,6 +435,7 @@ struct SettingsView: View {
     }
 
     private func revokeInvite(_ invite: Invite) async {
+        defer { invitePendingRevocation = nil }
         do {
             try await appState.api.revokeInvite(id: invite.id)
             invites.removeAll { $0.id == invite.id }
@@ -373,6 +447,7 @@ struct SettingsView: View {
     }
 
     private func removeMember(_ member: Member) async {
+        defer { memberPendingRemoval = nil }
         do {
             try await appState.api.removeHouseholdMember(userID: member.user.id)
             members.removeAll { $0.user.id == member.user.id }
@@ -428,6 +503,7 @@ struct SettingsView: View {
     }
 
     private func deleteLocation(_ location: Location) async {
+        defer { locationPendingDeletion = nil }
         do {
             try await appState.api.deleteLocation(id: location.id)
             locations.removeAll { $0.id == location.id }
@@ -436,6 +512,17 @@ struct SettingsView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func inviteShareText(_ invite: Invite) -> String {
+        let householdName = household?.name ?? "your household"
+        return """
+        Join \(householdName) in Quartermaster.
+
+        Invite code: \(invite.code)
+
+        Open Quartermaster, go to Settings, and choose “Redeem invite”.
+        """
     }
 
     private static let rfc3339: ISO8601DateFormatter = {

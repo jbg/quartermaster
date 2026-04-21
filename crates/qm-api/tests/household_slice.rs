@@ -231,6 +231,161 @@ async fn revoke_invite_and_existing_user_redeem_flow() {
 }
 
 #[tokio::test]
+async fn redeeming_same_household_invite_is_idempotent() {
+    let (app, db) = start_app(ApiConfig {
+        registration_mode: RegistrationMode::InviteOnly,
+        ..ApiConfig::default()
+    })
+    .await;
+    let (target_household, _) = seed_household_admin(&db, "alice").await;
+    let alice = login(&app, "alice").await;
+
+    let (_, invite) = send(
+        &app,
+        Method::POST,
+        "/households/current/invites",
+        Some(json!({
+            "expires_at": "2999-01-01T00:00:00.000Z",
+            "max_uses": 2,
+            "role_granted": "member",
+        })),
+        Some(&alice),
+    )
+    .await;
+    let invite_id = Uuid::parse_str(invite["id"].as_str().unwrap()).unwrap();
+    let code = invite["code"].as_str().unwrap().to_owned();
+
+    let _ = seed_household_admin(&db, "bob").await;
+    let bob = login(&app, "bob").await;
+    assert_eq!(
+        send(
+            &app,
+            Method::POST,
+            "/invites/redeem",
+            Some(json!({ "invite_code": code })),
+            Some(&bob),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        send(
+            &app,
+            Method::POST,
+            "/invites/redeem",
+            Some(json!({ "invite_code": invite["code"].as_str().unwrap() })),
+            Some(&bob),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+
+    let me = send(&app, Method::GET, "/auth/me", None, Some(&bob)).await.1;
+    assert_eq!(me["household_id"].as_str().unwrap(), target_household.to_string());
+    let invite_row = qm_db::invites::find_by_id(&db, invite_id).await.unwrap().unwrap();
+    assert_eq!(invite_row.use_count, 1);
+}
+
+#[tokio::test]
+async fn invalid_invite_registration_does_not_create_orphaned_user() {
+    let (app, db) = start_app(ApiConfig {
+        registration_mode: RegistrationMode::InviteOnly,
+        ..ApiConfig::default()
+    })
+    .await;
+    let (_, _) = seed_household_admin(&db, "alice").await;
+    let alice = login(&app, "alice").await;
+
+    let (_, invite) = send(
+        &app,
+        Method::POST,
+        "/households/current/invites",
+        Some(json!({
+            "expires_at": "2999-01-01T00:00:00.000Z",
+            "max_uses": 1,
+            "role_granted": "member",
+        })),
+        Some(&alice),
+    )
+    .await;
+    let code = invite["code"].as_str().unwrap().to_owned();
+
+    assert_eq!(register(&app, "bob", Some(&code)).await.0, StatusCode::CREATED);
+    assert_eq!(register(&app, "carol", Some(&code)).await.0, StatusCode::BAD_REQUEST);
+    assert!(qm_db::users::find_by_username(&db, "carol").await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn current_household_uses_latest_joined_then_household_id_tiebreak() {
+    let (app, db) = start_app(ApiConfig {
+        registration_mode: RegistrationMode::InviteOnly,
+        ..ApiConfig::default()
+    })
+    .await;
+    let (older_household, _) = seed_household_admin(&db, "alice").await;
+    let alice = login(&app, "alice").await;
+
+    let newer_household = qm_db::households::create(&db, "Cabin").await.unwrap();
+    qm_db::locations::seed_defaults(&db, newer_household.id).await.unwrap();
+    let admin = qm_db::users::create(&db, "owner2", Some("owner2@example.com"), "hash")
+        .await
+        .unwrap();
+    qm_db::memberships::insert(&db, newer_household.id, admin.id, "admin")
+        .await
+        .unwrap();
+
+    let invite = qm_db::invites::create(
+        &db,
+        newer_household.id,
+        "JOINCABIN123",
+        admin.id,
+        "2999-01-01T00:00:00.000Z",
+        5,
+        "member",
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        send(
+            &app,
+            Method::POST,
+            "/invites/redeem",
+            Some(json!({ "invite_code": invite.code })),
+            Some(&alice),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+
+    let me = send(&app, Method::GET, "/auth/me", None, Some(&alice)).await.1;
+    assert_eq!(me["household_id"].as_str().unwrap(), newer_household.id.to_string());
+
+    sqlx::query("UPDATE membership SET joined_at = ? WHERE user_id = ?")
+        .bind("2026-01-01T00:00:00.000Z")
+        .bind(me["user"]["id"].as_str().unwrap())
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+    let me_after_tie = send(&app, Method::GET, "/auth/me", None, Some(&alice)).await.1;
+    let expected = if newer_household.id > older_household {
+        newer_household.id
+    } else {
+        older_household
+    };
+    assert_eq!(me_after_tie["household_id"].as_str().unwrap(), expected.to_string());
+
+    qm_db::memberships::remove(&db, newer_household.id, Uuid::parse_str(me["user"]["id"].as_str().unwrap()).unwrap())
+        .await
+        .unwrap();
+    let me_after_removal = send(&app, Method::GET, "/auth/me", None, Some(&alice)).await.1;
+    assert_eq!(me_after_removal["household_id"].as_str().unwrap(), older_household.to_string());
+}
+
+#[tokio::test]
 async fn member_removal_and_location_deletion_guards_work() {
     let (app, db) = start_app(ApiConfig {
         registration_mode: RegistrationMode::InviteOnly,

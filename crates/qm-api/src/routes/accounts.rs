@@ -98,12 +98,24 @@ pub async fn register(
     validate_credentials(&req.username, &req.password)?;
 
     let existing_count = qm_db::users::count(&state.db).await?;
+    let password_hash = auth::hash_password(&req.password)?;
 
-    let (household_id, role): (Uuid, String) = match (state.config.registration_mode, existing_count) {
+    let user = match (state.config.registration_mode, existing_count) {
         (RegistrationMode::FirstRunOnly, 0) => {
             let h = qm_db::households::create(&state.db, "My Household").await?;
             qm_db::locations::seed_defaults(&state.db, h.id).await?;
-            (h.id, ROLE_ADMIN.to_owned())
+            if qm_db::users::find_by_username(&state.db, &req.username).await?.is_some() {
+                return Err(ApiError::Conflict("username already taken".into()));
+            }
+            let user = qm_db::users::create(
+                &state.db,
+                &req.username,
+                req.email.as_deref(),
+                &password_hash,
+            )
+            .await?;
+            qm_db::memberships::insert(&state.db, h.id, user.id, ROLE_ADMIN).await?;
+            user
         }
         (RegistrationMode::FirstRunOnly, _) => {
             return Err(ApiError::RegistrationDisabled);
@@ -115,7 +127,18 @@ pub async fn register(
             )
             .await?;
             qm_db::locations::seed_defaults(&state.db, h.id).await?;
-            (h.id, ROLE_ADMIN.to_owned())
+            if qm_db::users::find_by_username(&state.db, &req.username).await?.is_some() {
+                return Err(ApiError::Conflict("username already taken".into()));
+            }
+            let user = qm_db::users::create(
+                &state.db,
+                &req.username,
+                req.email.as_deref(),
+                &password_hash,
+            )
+            .await?;
+            qm_db::memberships::insert(&state.db, h.id, user.id, ROLE_ADMIN).await?;
+            user
         }
         (RegistrationMode::InviteOnly, _) => {
             let code = req
@@ -125,40 +148,28 @@ pub async fn register(
                 .filter(|s| !s.is_empty())
                 .ok_or_else(|| ApiError::BadRequest("invite_code is required".into()))?
                 .to_ascii_uppercase();
-            let status = qm_db::invites::status_for_code(&state.db, &code).await?;
-            if status != qm_db::invites::InviteStatus::Active {
-                return Err(ApiError::InvalidInvite);
+            match qm_db::invites::register_user_with_invite(
+                &state.db,
+                &code,
+                &req.username,
+                req.email.as_deref(),
+                &password_hash,
+            )
+            .await
+            {
+                Ok(registered) => registered.user,
+                Err(qm_db::invites::RegisterWithInviteError::InvalidInvite) => {
+                    return Err(ApiError::InvalidInvite);
+                }
+                Err(qm_db::invites::RegisterWithInviteError::UsernameTaken) => {
+                    return Err(ApiError::Conflict("username already taken".into()));
+                }
+                Err(qm_db::invites::RegisterWithInviteError::Database(err)) => {
+                    return Err(ApiError::Database(err));
+                }
             }
-            let invite = qm_db::invites::find_by_code(&state.db, &code)
-                .await?
-                .ok_or(ApiError::InvalidInvite)?;
-            (invite.household_id, invite.role_granted)
         }
     };
-
-    if qm_db::users::find_by_username(&state.db, &req.username).await?.is_some() {
-        return Err(ApiError::Conflict("username already taken".into()));
-    }
-
-    let password_hash = auth::hash_password(&req.password)?;
-    let user = qm_db::users::create(
-        &state.db,
-        &req.username,
-        req.email.as_deref(),
-        &password_hash,
-    )
-    .await?;
-
-    qm_db::memberships::insert(&state.db, household_id, user.id, &role).await?;
-    if state.config.registration_mode == RegistrationMode::InviteOnly {
-        let code = req.invite_code.as_deref().unwrap_or_default().trim().to_ascii_uppercase();
-        let invite = qm_db::invites::find_by_code(&state.db, &code)
-            .await?
-            .ok_or(ApiError::InvalidInvite)?;
-        if !qm_db::invites::consume(&state.db, invite.id).await? {
-            return Err(ApiError::InvalidInvite);
-        }
-    }
 
     let pair = issue_token_pair(&state, user.id, Uuid::now_v7(), req.device_label.as_deref()).await?;
     Ok((StatusCode::CREATED, Json(pair)))

@@ -23,6 +23,14 @@ pub mod users;
 #[derive(Clone, Debug)]
 pub struct Database {
     pub pool: AnyPool,
+    backend: Backend,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Backend {
+    Sqlite,
+    Postgres,
+    Other,
 }
 
 impl Database {
@@ -37,22 +45,37 @@ impl Database {
             .max_connections(8)
             .connect_with(opts)
             .await?;
+        let backend = backend_from_url(url);
 
-        if url.starts_with("sqlite") {
+        if backend == Backend::Sqlite {
             // SQLite does not enforce foreign keys unless explicitly asked.
             sqlx::query("PRAGMA foreign_keys = ON").execute(&pool).await?;
         }
 
-        Ok(Self { pool })
+        Ok(Self { pool, backend })
     }
 
     pub async fn migrate(&self) -> Result<(), sqlx::migrate::MigrateError> {
         sqlx::migrate!("./migrations").run(&self.pool).await
     }
+
+    pub fn backend(&self) -> Backend {
+        self.backend
+    }
 }
 
 pub fn now_utc_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+fn backend_from_url(url: &str) -> Backend {
+    if url.starts_with("sqlite") {
+        Backend::Sqlite
+    } else if url.starts_with("postgres") || url.starts_with("postgresql") {
+        Backend::Postgres
+    } else {
+        Backend::Other
+    }
 }
 
 #[cfg(test)]
@@ -71,7 +94,10 @@ async fn test_db() -> Database {
         .execute(&pool)
         .await
         .expect("foreign_keys");
-    let db = Database { pool };
+    let db = Database {
+        pool,
+        backend: Backend::Sqlite,
+    };
     db.migrate().await.expect("migrate");
     db
 }

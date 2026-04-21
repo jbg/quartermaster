@@ -2,6 +2,7 @@ use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
 
+use crate::memberships::InsertOutcome;
 use crate::{now_utc_rfc3339, Database};
 
 #[derive(Debug, Clone, Serialize)]
@@ -25,6 +26,43 @@ pub enum InviteStatus {
     Expired,
     Revoked,
     NotFound,
+}
+
+#[derive(Debug)]
+pub enum RegisterWithInviteError {
+    InvalidInvite,
+    UsernameTaken,
+    Database(sqlx::Error),
+}
+
+impl From<sqlx::Error> for RegisterWithInviteError {
+    fn from(value: sqlx::Error) -> Self {
+        Self::Database(value)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RegisteredInviteUser {
+    pub user: crate::users::UserRow,
+    pub household_id: Uuid,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RedeemOutcome {
+    Joined,
+    AlreadyMember,
+}
+
+#[derive(Debug)]
+pub enum RedeemInviteError {
+    InvalidInvite,
+    Database(sqlx::Error),
+}
+
+impl From<sqlx::Error> for RedeemInviteError {
+    fn from(value: sqlx::Error) -> Self {
+        Self::Database(value)
+    }
 }
 
 pub async fn create(
@@ -143,6 +181,16 @@ pub async fn consume(
     db: &Database,
     id: Uuid,
 ) -> Result<bool, sqlx::Error> {
+    let mut tx = db.pool.begin().await?;
+    let consumed = consume_in_tx(&mut tx, id).await?;
+    tx.commit().await?;
+    Ok(consumed)
+}
+
+pub async fn consume_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    id: Uuid,
+) -> Result<bool, sqlx::Error> {
     let now = now_utc_rfc3339();
     let res = sqlx::query(
         "UPDATE invite SET use_count = use_count + 1 \
@@ -150,9 +198,75 @@ pub async fn consume(
     )
     .bind(id.to_string())
     .bind(now)
-    .execute(&db.pool)
+    .execute(&mut **tx)
     .await?;
     Ok(res.rows_affected() > 0)
+}
+
+pub async fn register_user_with_invite(
+    db: &Database,
+    code: &str,
+    username: &str,
+    email: Option<&str>,
+    password_hash: &str,
+) -> Result<RegisteredInviteUser, RegisterWithInviteError> {
+    let mut tx = db.pool.begin().await?;
+    let invite = find_active_by_code_in_tx(&mut tx, code)
+        .await?
+        .ok_or(RegisterWithInviteError::InvalidInvite)?;
+
+    let user = match crate::users::create_in_tx(&mut tx, username, email, password_hash).await {
+        Ok(user) => user,
+        Err(err) if crate::memberships::is_unique_violation(&err) => {
+            return Err(RegisterWithInviteError::UsernameTaken);
+        }
+        Err(err) => return Err(RegisterWithInviteError::Database(err)),
+    };
+
+    crate::memberships::insert_in_tx(&mut tx, invite.household_id, user.id, &invite.role_granted)
+        .await?;
+    if !consume_in_tx(&mut tx, invite.id).await? {
+        return Err(RegisterWithInviteError::InvalidInvite);
+    }
+
+    tx.commit().await?;
+    Ok(RegisteredInviteUser {
+        user,
+        household_id: invite.household_id,
+    })
+}
+
+pub async fn redeem_for_user(
+    db: &Database,
+    code: &str,
+    user_id: Uuid,
+) -> Result<RedeemOutcome, RedeemInviteError> {
+    let mut tx = db.pool.begin().await?;
+    let invite = find_active_by_code_in_tx(&mut tx, code)
+        .await?
+        .ok_or(RedeemInviteError::InvalidInvite)?;
+
+    let outcome = crate::memberships::insert_if_absent_in_tx(
+        &mut tx,
+        invite.household_id,
+        user_id,
+        &invite.role_granted,
+    )
+    .await?;
+
+    match outcome {
+        InsertOutcome::Inserted => {
+            if !consume_in_tx(&mut tx, invite.id).await? {
+                return Err(RedeemInviteError::InvalidInvite);
+            }
+            tx.commit().await?;
+            Ok(RedeemOutcome::Joined)
+        }
+        InsertOutcome::AlreadyExists => {
+            tx.commit().await?;
+            Ok(RedeemOutcome::AlreadyMember)
+        }
+    }
 }
 
 pub fn classify(invite: &InviteRow) -> InviteStatus {
@@ -184,6 +298,22 @@ fn row_to_invite(row: sqlx::any::AnyRow) -> Result<InviteRow, sqlx::Error> {
         created_at: row.try_get("created_at")?,
         revoked_at: row.try_get("revoked_at")?,
     })
+}
+
+async fn find_active_by_code_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    code: &str,
+) -> Result<Option<InviteRow>, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT id, household_id, code, created_by, expires_at, max_uses, use_count, role_granted, created_at, revoked_at \
+         FROM invite \
+         WHERE code = ? AND revoked_at IS NULL AND expires_at > ? AND use_count < max_uses",
+    )
+    .bind(code)
+    .bind(now_utc_rfc3339())
+    .fetch_optional(&mut **tx)
+    .await?;
+    row.map(row_to_invite).transpose()
 }
 
 #[cfg(test)]

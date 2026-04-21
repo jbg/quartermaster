@@ -19,6 +19,18 @@ pub async fn create(
     email: Option<&str>,
     password_hash: &str,
 ) -> Result<UserRow, sqlx::Error> {
+    let mut tx = db.pool.begin().await?;
+    let user = create_in_tx(&mut tx, username, email, password_hash).await?;
+    tx.commit().await?;
+    Ok(user)
+}
+
+pub async fn create_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    username: &str,
+    email: Option<&str>,
+    password_hash: &str,
+) -> Result<UserRow, sqlx::Error> {
     let id = Uuid::now_v7();
     let created_at = now_utc_rfc3339();
     sqlx::query(
@@ -30,7 +42,7 @@ pub async fn create(
     .bind(email)
     .bind(password_hash)
     .bind(&created_at)
-    .execute(&db.pool)
+    .execute(&mut **tx)
     .await?;
 
     Ok(UserRow {

@@ -37,7 +37,7 @@ pub async fn find_for_user(
          FROM household h \
          INNER JOIN membership m ON m.household_id = h.id \
          WHERE m.user_id = ? \
-         ORDER BY m.joined_at DESC \
+         ORDER BY m.joined_at DESC, h.id DESC \
          LIMIT 1",
     )
     .bind(user_id.to_string())
