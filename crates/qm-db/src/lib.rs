@@ -11,6 +11,7 @@ use sqlx::AnyPool;
 
 pub mod barcode_cache;
 pub mod households;
+pub mod invites;
 pub mod locations;
 pub mod memberships;
 pub mod products;

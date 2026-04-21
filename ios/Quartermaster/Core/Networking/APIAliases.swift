@@ -23,13 +23,36 @@ typealias TokenPair = Components.Schemas.TokenPair
 typealias User = Components.Schemas.UserDto
 typealias Household = Components.Schemas.HouseholdDto
 typealias Me = Components.Schemas.MeResponse
+typealias HouseholdDetail = Components.Schemas.HouseholdDetailDto
+typealias UpdateHouseholdRequest = Components.Schemas.UpdateHouseholdRequest
+typealias Member = Components.Schemas.MemberDto
+typealias MembershipRole = Components.Schemas.MembershipRole
+typealias Invite = Components.Schemas.InviteDto
+typealias CreateInviteRequest = Components.Schemas.CreateInviteRequest
+typealias RedeemInviteRequest = Components.Schemas.RedeemInviteRequest
 
 extension User: Identifiable {}
 extension Household: Identifiable {}
+extension HouseholdDetail: Identifiable {}
+extension Member: Identifiable {
+    var id: String { user.id }
+}
+extension Invite: Identifiable {}
+
+extension MembershipRole {
+    var displayName: String {
+        switch self {
+        case .admin: "Admin"
+        case .member: "Member"
+        }
+    }
+}
 
 // MARK: - Locations
 
 typealias Location = Components.Schemas.LocationDto
+typealias CreateLocationRequest = Components.Schemas.CreateLocationRequest
+typealias UpdateLocationRequest = Components.Schemas.UpdateLocationRequest
 
 extension Location: Identifiable {}
 

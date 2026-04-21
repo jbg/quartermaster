@@ -233,6 +233,319 @@
         }
       }
     },
+    "/households/current": {
+      "get": {
+        "tags": [
+          "households"
+        ],
+        "operationId": "household_current_get",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdDetailDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "households"
+        ],
+        "operationId": "household_current_update",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateHouseholdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdDetailDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/households/current/invites": {
+      "get": {
+        "tags": [
+          "households"
+        ],
+        "operationId": "household_invites_list",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InviteDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "households"
+        ],
+        "operationId": "household_invite_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInviteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/households/current/members": {
+      "get": {
+        "tags": [
+          "households"
+        ],
+        "operationId": "household_members_list",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemberDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/households/current/members/{user_id}": {
+      "delete": {
+        "tags": [
+          "households"
+        ],
+        "operationId": "household_member_remove",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/invites/redeem": {
+      "post": {
+        "tags": [
+          "households"
+        ],
+        "operationId": "invite_redeem",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedeemInviteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/invites/{id}": {
+      "delete": {
+        "tags": [
+          "households"
+        ],
+        "operationId": "invite_revoke",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/locations": {
       "get": {
         "tags": [
@@ -259,6 +572,122 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "locations"
+        ],
+        "operationId": "locations_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLocationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/locations/{id}": {
+      "delete": {
+        "tags": [
+          "locations"
+        ],
+        "operationId": "locations_delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "locations"
+        ],
+        "operationId": "locations_update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLocationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationDto"
                 }
               }
             }
@@ -1516,6 +1945,48 @@
           }
         }
       },
+      "CreateInviteRequest": {
+        "type": "object",
+        "required": [
+          "expires_at",
+          "max_uses",
+          "role_granted"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string"
+          },
+          "max_uses": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "role_granted": {
+            "$ref": "#/components/schemas/MembershipRole"
+          }
+        }
+      },
+      "CreateLocationRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
       "CreateProductRequest": {
         "type": "object",
         "required": [
@@ -1610,6 +2081,22 @@
           }
         }
       },
+      "HouseholdDetailDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "HouseholdDto": {
         "type": "object",
         "required": [
@@ -1623,6 +2110,44 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "InviteDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "role_granted",
+          "expires_at",
+          "max_uses",
+          "use_count",
+          "created_at"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "max_uses": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "role_granted": {
+            "$ref": "#/components/schemas/MembershipRole"
+          },
+          "use_count": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -1695,6 +2220,32 @@
             "$ref": "#/components/schemas/UserDto"
           }
         }
+      },
+      "MemberDto": {
+        "type": "object",
+        "required": [
+          "user",
+          "role",
+          "joined_at"
+        ],
+        "properties": {
+          "joined_at": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/MembershipRole"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserDto"
+          }
+        }
+      },
+      "MembershipRole": {
+        "type": "string",
+        "enum": [
+          "admin",
+          "member"
+        ]
       },
       "ProductDto": {
         "type": "object",
@@ -1769,6 +2320,17 @@
           "openfoodfacts",
           "manual"
         ]
+      },
+      "RedeemInviteRequest": {
+        "type": "object",
+        "required": [
+          "invite_code"
+        ],
+        "properties": {
+          "invite_code": {
+            "type": "string"
+          }
+        }
       },
       "RefreshRequest": {
         "type": "object",
@@ -2072,6 +2634,37 @@
           "count"
         ]
       },
+      "UpdateHouseholdRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateLocationRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "sort_order"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "UpdateProductRequest": {
         "type": "object",
         "properties": {
@@ -2188,6 +2781,10 @@
     {
       "name": "accounts",
       "description": "Authentication and session"
+    },
+    {
+      "name": "households",
+      "description": "Household administration, invites, and members"
     },
     {
       "name": "locations",

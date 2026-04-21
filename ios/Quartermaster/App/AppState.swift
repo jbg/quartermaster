@@ -55,10 +55,15 @@ final class AppState {
         }
     }
 
-    func register(username: String, password: String, email: String?) async {
+    func register(username: String, password: String, email: String?, inviteCode: String? = nil) async {
         lastError = nil
         do {
-            let pair = try await api.register(username: username, password: password, email: email)
+            let pair = try await api.register(
+                username: username,
+                password: password,
+                email: email,
+                inviteCode: inviteCode,
+            )
             await tokenStore.store(pair)
             await refreshMe()
         } catch {

@@ -52,6 +52,7 @@ pub fn sha256_hex(s: &str) -> String {
 pub struct CurrentUser {
     pub user_id: Uuid,
     pub household_id: Option<Uuid>,
+    pub role: Option<String>,
 }
 
 impl<S> FromRequestParts<S> for CurrentUser
@@ -88,12 +89,19 @@ where
 
         qm_db::tokens::touch_last_used(&app_state.db, token.id).await?;
 
-        let household =
-            qm_db::households::find_for_user(&app_state.db, token.user_id).await?;
+        let household = qm_db::households::find_for_user(&app_state.db, token.user_id).await?;
+        let role = if let Some(household) = household.as_ref() {
+            qm_db::memberships::find(&app_state.db, household.id, token.user_id)
+                .await?
+                .map(|m| m.role)
+        } else {
+            None
+        };
 
         Ok(CurrentUser {
             user_id: token.user_id,
             household_id: household.map(|h| h.id),
+            role,
         })
     }
 }

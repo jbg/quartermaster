@@ -106,7 +106,18 @@ impl Modify for SecurityAddon {
         routes::accounts::logout,
         routes::accounts::me,
         routes::locations::list_locations,
+        routes::locations::create_location,
+        routes::locations::update_location,
+        routes::locations::delete_location,
         routes::units::list_units,
+        routes::households::get_current_household,
+        routes::households::update_current_household,
+        routes::households::list_members,
+        routes::households::remove_member,
+        routes::households::create_invite,
+        routes::households::list_invites,
+        routes::households::revoke_invite,
+        routes::households::redeem_invite,
         routes::products::search,
         routes::products::by_barcode,
         routes::products::create,
@@ -130,6 +141,7 @@ impl Modify for SecurityAddon {
         qm_core::units::UnitFamily,
         types::ProductSource,
         types::StockEventType,
+        types::MembershipRole,
         routes::health::HealthResponse,
         routes::accounts::RegisterRequest,
         routes::accounts::LoginRequest,
@@ -138,7 +150,15 @@ impl Modify for SecurityAddon {
         routes::accounts::MeResponse,
         routes::accounts::UserDto,
         routes::accounts::HouseholdDto,
+        routes::households::HouseholdDetailDto,
+        routes::households::UpdateHouseholdRequest,
+        routes::households::MemberDto,
+        routes::households::InviteDto,
+        routes::households::CreateInviteRequest,
+        routes::households::RedeemInviteRequest,
         routes::locations::LocationDto,
+        routes::locations::CreateLocationRequest,
+        routes::locations::UpdateLocationRequest,
         routes::units::UnitDto,
         routes::products::ProductDto,
         routes::products::CreateProductRequest,
@@ -161,6 +181,7 @@ impl Modify for SecurityAddon {
     tags(
         (name = "health", description = "Liveness / readiness"),
         (name = "accounts", description = "Authentication and session"),
+        (name = "households", description = "Household administration, invites, and members"),
         (name = "locations", description = "Pantry / fridge / freezer"),
         (name = "units", description = "Units of measure"),
         (name = "products", description = "Product catalogue and barcode lookup"),
@@ -174,6 +195,7 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .merge(routes::health::router())
         .merge(routes::accounts::router())
+        .merge(routes::households::router())
         .merge(routes::locations::router())
         .merge(routes::units::router())
         .merge(routes::products::router())

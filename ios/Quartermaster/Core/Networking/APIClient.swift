@@ -90,6 +90,92 @@ actor APIClient {
         }
     }
 
+    // MARK: - Households
+
+    func currentHousehold() async throws -> HouseholdDetail {
+        let response = try await client.householdCurrentGet(.init())
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .unauthorized: throw APIError.unauthorized
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
+    func updateCurrentHousehold(name: String) async throws -> HouseholdDetail {
+        let response = try await client.householdCurrentUpdate(.init(
+            body: .json(.init(name: name)),
+        ))
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .forbidden(let err): throw APIError.server(status: 403, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
+    func householdMembers() async throws -> [Member] {
+        let response = try await client.householdMembersList(.init())
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
+    func removeHouseholdMember(userID: String) async throws {
+        let response = try await client.householdMemberRemove(.init(path: .init(userId: userID)))
+        switch response {
+        case .noContent: return
+        case .forbidden(let err): throw APIError.server(status: 403, body: try? err.body.json)
+        case .conflict(let err): throw APIError.server(status: 409, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
+    func householdInvites() async throws -> [Invite] {
+        let response = try await client.householdInvitesList(.init())
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
+    func createInvite(expiresAt: String, maxUses: Int, role: MembershipRole) async throws -> Invite {
+        let response = try await client.householdInviteCreate(.init(
+            body: .json(.init(expiresAt: expiresAt, maxUses: Int64(maxUses), roleGranted: role)),
+        ))
+        switch response {
+        case .created(let ok): return try ok.body.json
+        case .forbidden(let err): throw APIError.server(status: 403, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
+    func revokeInvite(id: String) async throws {
+        let response = try await client.inviteRevoke(.init(path: .init(id: id)))
+        switch response {
+        case .noContent: return
+        case .forbidden(let err): throw APIError.server(status: 403, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
+    func redeemInvite(code: String) async throws {
+        let response = try await client.inviteRedeem(.init(body: .json(.init(inviteCode: code))))
+        switch response {
+        case .noContent: return
+        case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+        case .conflict(let err): throw APIError.server(status: 409, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
     // MARK: - Locations
 
     func locations() async throws -> [Location] {
@@ -97,6 +183,39 @@ actor APIClient {
         switch response {
         case .ok(let ok): return try ok.body.json
         case .unauthorized: throw APIError.unauthorized
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
+    func createLocation(name: String, kind: String, sortOrder: Int? = nil) async throws -> Location {
+        let response = try await client.locationsCreate(.init(
+            body: .json(.init(kind: kind, name: name, sortOrder: sortOrder.map(Int64.init))),
+        ))
+        switch response {
+        case .created(let ok): return try ok.body.json
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
+    func updateLocation(id: String, name: String, kind: String, sortOrder: Int) async throws -> Location {
+        let response = try await client.locationsUpdate(.init(
+            path: .init(id: id),
+            body: .json(.init(kind: kind, name: name, sortOrder: Int64(sortOrder))),
+        ))
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
+    func deleteLocation(id: String) async throws {
+        let response = try await client.locationsDelete(.init(path: .init(id: id)))
+        switch response {
+        case .noContent: return
+        case .conflict(let err): throw APIError.server(status: 409, body: try? err.body.json)
         case .undocumented(let statusCode, _):
             throw APIError.server(status: statusCode, body: nil)
         }

@@ -80,6 +80,74 @@ pub async fn create(
     })
 }
 
+pub async fn next_sort_order(
+    db: &Database,
+    household_id: Uuid,
+) -> Result<i64, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT COALESCE(MAX(sort_order), -1) AS n FROM location WHERE household_id = ?",
+    )
+    .bind(household_id.to_string())
+    .fetch_one(&db.pool)
+    .await?;
+    let max: i64 = row.try_get("n")?;
+    Ok(max + 1)
+}
+
+pub async fn update(
+    db: &Database,
+    household_id: Uuid,
+    id: Uuid,
+    name: &str,
+    kind: &str,
+    sort_order: i64,
+) -> Result<Option<LocationRow>, sqlx::Error> {
+    let res = sqlx::query(
+        "UPDATE location SET name = ?, kind = ?, sort_order = ? \
+         WHERE id = ? AND household_id = ?",
+    )
+    .bind(name)
+    .bind(kind)
+    .bind(sort_order)
+    .bind(id.to_string())
+    .bind(household_id.to_string())
+    .execute(&db.pool)
+    .await?;
+    if res.rows_affected() == 0 {
+        return Ok(None);
+    }
+    find(db, household_id, id).await
+}
+
+pub async fn has_active_stock(
+    db: &Database,
+    household_id: Uuid,
+    id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT 1 AS x FROM stock_batch \
+         WHERE household_id = ? AND location_id = ? AND depleted_at IS NULL LIMIT 1",
+    )
+    .bind(household_id.to_string())
+    .bind(id.to_string())
+    .fetch_optional(&db.pool)
+    .await?;
+    Ok(row.is_some())
+}
+
+pub async fn delete(
+    db: &Database,
+    household_id: Uuid,
+    id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let res = sqlx::query("DELETE FROM location WHERE id = ? AND household_id = ?")
+        .bind(id.to_string())
+        .bind(household_id.to_string())
+        .execute(&db.pool)
+        .await?;
+    Ok(res.rows_affected() > 0)
+}
+
 /// Creates pantry/fridge/freezer on a new household.
 pub async fn seed_defaults(db: &Database, household_id: Uuid) -> Result<(), sqlx::Error> {
     create(db, household_id, "Pantry", "pantry", 0).await?;

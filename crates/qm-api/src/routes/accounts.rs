@@ -15,6 +15,8 @@ use crate::{
     AppState, RegistrationMode,
 };
 
+const ROLE_ADMIN: &str = "admin";
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/auth/register", post(register))
@@ -97,20 +99,40 @@ pub async fn register(
 
     let existing_count = qm_db::users::count(&state.db).await?;
 
-    let (household_id, role) = match (state.config.registration_mode, existing_count) {
+    let (household_id, role): (Uuid, String) = match (state.config.registration_mode, existing_count) {
         (RegistrationMode::FirstRunOnly, 0) => {
             let h = qm_db::households::create(&state.db, "My Household").await?;
             qm_db::locations::seed_defaults(&state.db, h.id).await?;
-            (h.id, "admin")
+            (h.id, ROLE_ADMIN.to_owned())
         }
         (RegistrationMode::FirstRunOnly, _) => {
             return Err(ApiError::RegistrationDisabled);
         }
-        (RegistrationMode::Open, _) | (RegistrationMode::InviteOnly, _) => {
-            // Slice 1: invite redemption is not yet implemented.
-            return Err(ApiError::BadRequest(
-                "invite code registration is not yet implemented".into(),
-            ));
+        (RegistrationMode::Open, _) => {
+            let h = qm_db::households::create(
+                &state.db,
+                &format!("{}'s Household", req.username),
+            )
+            .await?;
+            qm_db::locations::seed_defaults(&state.db, h.id).await?;
+            (h.id, ROLE_ADMIN.to_owned())
+        }
+        (RegistrationMode::InviteOnly, _) => {
+            let code = req
+                .invite_code
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| ApiError::BadRequest("invite_code is required".into()))?
+                .to_ascii_uppercase();
+            let status = qm_db::invites::status_for_code(&state.db, &code).await?;
+            if status != qm_db::invites::InviteStatus::Active {
+                return Err(ApiError::InvalidInvite);
+            }
+            let invite = qm_db::invites::find_by_code(&state.db, &code)
+                .await?
+                .ok_or(ApiError::InvalidInvite)?;
+            (invite.household_id, invite.role_granted)
         }
     };
 
@@ -127,7 +149,16 @@ pub async fn register(
     )
     .await?;
 
-    qm_db::memberships::insert(&state.db, household_id, user.id, role).await?;
+    qm_db::memberships::insert(&state.db, household_id, user.id, &role).await?;
+    if state.config.registration_mode == RegistrationMode::InviteOnly {
+        let code = req.invite_code.as_deref().unwrap_or_default().trim().to_ascii_uppercase();
+        let invite = qm_db::invites::find_by_code(&state.db, &code)
+            .await?
+            .ok_or(ApiError::InvalidInvite)?;
+        if !qm_db::invites::consume(&state.db, invite.id).await? {
+            return Err(ApiError::InvalidInvite);
+        }
+    }
 
     let pair = issue_token_pair(&state, user.id, Uuid::now_v7(), req.device_label.as_deref()).await?;
     Ok((StatusCode::CREATED, Json(pair)))

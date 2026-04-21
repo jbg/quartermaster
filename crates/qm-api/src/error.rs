@@ -54,6 +54,21 @@ pub enum ApiError {
     #[error("registration is disabled")]
     RegistrationDisabled,
 
+    #[error("invite code is invalid, expired, revoked, or exhausted")]
+    InvalidInvite,
+
+    #[error("you must be a household admin to do that")]
+    AdminOnly,
+
+    #[error("can't remove the last admin from the household")]
+    LastAdminRemoval,
+
+    #[error("this user is already a member of that household")]
+    AlreadyMember,
+
+    #[error("this location still has active stock")]
+    LocationHasStock,
+
     #[error("upstream service unavailable")]
     BadGateway,
 
@@ -101,6 +116,11 @@ impl IntoResponse for ApiError {
             ApiError::NotFound => (StatusCode::NOT_FOUND, "not_found"),
             ApiError::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
             ApiError::RegistrationDisabled => (StatusCode::FORBIDDEN, "registration_disabled"),
+            ApiError::InvalidInvite => (StatusCode::BAD_REQUEST, "invalid_invite"),
+            ApiError::AdminOnly => (StatusCode::FORBIDDEN, "admin_only"),
+            ApiError::LastAdminRemoval => (StatusCode::CONFLICT, "last_admin_removal"),
+            ApiError::AlreadyMember => (StatusCode::CONFLICT, "already_member"),
+            ApiError::LocationHasStock => (StatusCode::CONFLICT, "location_has_stock"),
             ApiError::BadGateway => (StatusCode::BAD_GATEWAY, "upstream"),
             ApiError::Database(err) => {
                 tracing::error!(?err, "database error");

@@ -70,6 +70,41 @@ impl StockEventType {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum MembershipRole {
+    Admin,
+    Member,
+}
+
+impl MembershipRole {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Admin => "admin",
+            Self::Member => "member",
+        }
+    }
+}
+
+impl fmt::Display for MembershipRole {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for MembershipRole {
+    type Err = ApiError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "admin" => Ok(Self::Admin),
+            "member" => Ok(Self::Member),
+            other => Err(ApiError::Internal(anyhow::anyhow!(
+                "unknown membership role in DB row: {other}",
+            ))),
+        }
+    }
+}
+
 impl fmt::Display for StockEventType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())

@@ -37,7 +37,7 @@ pub async fn find_for_user(
          FROM household h \
          INNER JOIN membership m ON m.household_id = h.id \
          WHERE m.user_id = ? \
-         ORDER BY m.joined_at ASC \
+         ORDER BY m.joined_at DESC \
          LIMIT 1",
     )
     .bind(user_id.to_string())
@@ -55,4 +55,40 @@ pub async fn find_for_user(
         })
     })
     .transpose()
+}
+
+pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<HouseholdRow>, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT id, name, created_at FROM household WHERE id = ?",
+    )
+    .bind(id.to_string())
+    .fetch_optional(&db.pool)
+    .await?;
+    row.map(|r| {
+        let id_str: String = r.try_get("id")?;
+        let id = Uuid::parse_str(&id_str)
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+        Ok::<_, sqlx::Error>(HouseholdRow {
+            id,
+            name: r.try_get("name")?,
+            created_at: r.try_get("created_at")?,
+        })
+    })
+    .transpose()
+}
+
+pub async fn rename(
+    db: &Database,
+    id: Uuid,
+    name: &str,
+) -> Result<Option<HouseholdRow>, sqlx::Error> {
+    let res = sqlx::query("UPDATE household SET name = ? WHERE id = ?")
+        .bind(name)
+        .bind(id.to_string())
+        .execute(&db.pool)
+        .await?;
+    if res.rows_affected() == 0 {
+        return Ok(None);
+    }
+    find_by_id(db, id).await
 }

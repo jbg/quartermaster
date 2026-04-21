@@ -12,6 +12,7 @@ struct OnboardingView: View {
     @State private var username: String = ""
     @State private var password: String = ""
     @State private var email: String = ""
+    @State private var inviteCode: String = ""
     @State private var serverURL: String = ""
     @State private var isSubmitting = false
 
@@ -52,6 +53,9 @@ struct OnboardingView: View {
                             .keyboardType(.emailAddress)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                        TextField("Invite code (optional)", text: $inviteCode)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
                     }
                 }
 
@@ -81,11 +85,11 @@ struct OnboardingView: View {
                 }
 
                 if mode == .createFirst {
-                    Section {
-                        Text("The first account on a fresh server becomes the household admin and can invite others later.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
+                Section {
+                    Text("On open servers this creates a new household. On invite-only servers, enter an invite code from an admin.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
                 }
             }
             .navigationTitle("Quartermaster")
@@ -128,10 +132,12 @@ struct OnboardingView: View {
             await appState.login(username: username, password: password)
         case .createFirst:
             let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
+            let trimmedInvite = inviteCode.trimmingCharacters(in: .whitespacesAndNewlines)
             await appState.register(
                 username: username,
                 password: password,
                 email: trimmedEmail.isEmpty ? nil : trimmedEmail,
+                inviteCode: trimmedInvite.isEmpty ? nil : trimmedInvite,
             )
         }
     }
