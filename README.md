@@ -46,6 +46,7 @@ The server listens on `0.0.0.0:8080` and creates `data.db` in the working direct
 |-------------------------|-----------------------------|----------------------------------------------|
 | `QM_BIND`               | `0.0.0.0:8080`              | Bind address                                 |
 | `QM_DATABASE_URL`       | `sqlite://data.db?mode=rwc` | SQLx connection string (SQLite or Postgres)  |
+| `QM_LOG_FORMAT`         | `text`                      | Log formatter: `text` or `json`              |
 | `QM_REGISTRATION_MODE`  | `first_run_only`            | `first_run_only` \| `invite_only` \| `open`  |
 | `RUST_LOG`              | `info`                      | Tracing filter                               |
 
@@ -55,6 +56,8 @@ Then probe it:
 curl http://localhost:8080/healthz
 open http://localhost:8080/docs      # Swagger UI (when built with default features)
 ```
+
+Every HTTP response includes an `X-Request-Id` header. If a client supplies one, Quartermaster propagates it; otherwise the server generates one. Authenticated request spans also record the resolved `user_id` and `household_id`, and `QM_LOG_FORMAT=json` switches logs to newline-delimited JSON for structured ingestion.
 
 ## Regenerating the OpenAPI spec
 

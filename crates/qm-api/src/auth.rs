@@ -9,6 +9,7 @@ use axum::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
+use tracing::Span;
 use uuid::Uuid;
 
 use crate::{error::ApiError, AppState};
@@ -97,6 +98,12 @@ where
         } else {
             None
         };
+
+        let span = Span::current();
+        span.record("user_id", tracing::field::display(token.user_id));
+        if let Some(household_id) = household.as_ref().map(|h| h.id) {
+            span.record("household_id", tracing::field::display(household_id));
+        }
 
         Ok(CurrentUser {
             user_id: token.user_id,

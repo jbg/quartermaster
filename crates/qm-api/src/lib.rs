@@ -3,10 +3,17 @@
 use std::sync::Arc;
 
 use axum::{routing::get, Json, Router};
+use tower::ServiceBuilder;
+use tower_http::{
+    LatencyUnit,
+    request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
+    trace::{DefaultOnFailure, DefaultOnResponse, TraceLayer},
+};
 use utoipa::{
     openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
     Modify, OpenApi,
 };
+use tracing::{field::Empty, Level};
 
 pub mod auth;
 pub mod barcode;
@@ -206,6 +213,43 @@ pub fn router(state: AppState) -> Router {
                 let spec = openapi_spec.clone();
                 async move { Json(spec) }
             }),
+        )
+        .layer(
+            ServiceBuilder::new()
+                .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
+                .layer(PropagateRequestIdLayer::x_request_id())
+                .layer(
+                    TraceLayer::new_for_http()
+                        .on_request(())
+                        .on_body_chunk(())
+                        .on_eos(())
+                        .make_span_with(|request: &axum::http::Request<_>| {
+                            let request_id = request
+                                .headers()
+                                .get("x-request-id")
+                                .and_then(|value| value.to_str().ok())
+                                .unwrap_or("-");
+
+                            tracing::info_span!(
+                                "http_request",
+                                method = %request.method(),
+                                uri = %request.uri(),
+                                request_id = %request_id,
+                                user_id = Empty,
+                                household_id = Empty,
+                            )
+                        })
+                        .on_response(
+                            DefaultOnResponse::new()
+                                .level(Level::INFO)
+                                .latency_unit(LatencyUnit::Millis),
+                        )
+                        .on_failure(
+                            DefaultOnFailure::new()
+                                .level(Level::ERROR)
+                                .latency_unit(LatencyUnit::Millis),
+                        ),
+                ),
         )
         .with_state(state)
 }

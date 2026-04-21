@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::{
     body::{to_bytes, Body},
-    http::{Method, Request, StatusCode},
+    http::{HeaderMap, Method, Request, StatusCode},
     Router,
 };
 use qm_api::{ApiConfig, AppState};
@@ -38,12 +38,29 @@ impl TestApp {
         body: Option<Value>,
         bearer: Option<&str>,
     ) -> (StatusCode, Value) {
+        let (status, _, json) = self
+            .send_with_request_id(method, path, body, bearer, None)
+            .await;
+        (status, json)
+    }
+
+    pub async fn send_with_request_id(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+        bearer: Option<&str>,
+        request_id: Option<&str>,
+    ) -> (StatusCode, HeaderMap, Value) {
         let mut req = Request::builder()
             .method(method)
             .uri(path)
             .header("content-type", "application/json");
         if let Some(token) = bearer {
             req = req.header("authorization", format!("Bearer {token}"));
+        }
+        if let Some(request_id) = request_id {
+            req = req.header("x-request-id", request_id);
         }
         let req = req
             .body(match body {
@@ -52,6 +69,7 @@ impl TestApp {
             })
             .unwrap();
         let res = self.app.clone().oneshot(req).await.unwrap();
+        let headers = res.headers().clone();
         let status = res.status();
         let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
         let json = if bytes.is_empty() {
@@ -59,7 +77,7 @@ impl TestApp {
         } else {
             serde_json::from_slice(&bytes).unwrap()
         };
-        (status, json)
+        (status, headers, json)
     }
 
     pub async fn register(&self, username: &str, invite_code: Option<&str>) -> (StatusCode, Value) {

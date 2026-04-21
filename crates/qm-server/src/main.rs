@@ -8,7 +8,6 @@ use figment::{
 use qm_api::{ApiConfig, AppState, RegistrationMode};
 use qm_db::Database;
 use serde::{Deserialize, Serialize};
-use tower_http::trace::TraceLayer;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 const USER_AGENT: &str = concat!(
@@ -21,6 +20,7 @@ const USER_AGENT: &str = concat!(
 struct RawConfig {
     bind: String,
     database_url: String,
+    log_format: String,
     registration_mode: String,
     access_token_ttl_seconds: i64,
     refresh_token_ttl_seconds: i64,
@@ -33,6 +33,7 @@ impl Default for RawConfig {
         Self {
             bind: "0.0.0.0:8080".into(),
             database_url: "sqlite://data.db?mode=rwc".into(),
+            log_format: "text".into(),
             registration_mode: "first_run_only".into(),
             access_token_ttl_seconds: 30 * 60,
             refresh_token_ttl_seconds: 60 * 24 * 60 * 60,
@@ -49,14 +50,44 @@ fn load_config() -> anyhow::Result<RawConfig> {
         .context("loading config")
 }
 
+#[derive(Clone, Copy, Debug)]
+enum LogFormat {
+    Text,
+    Json,
+}
+
+impl FromStr for LogFormat {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "text" => Ok(Self::Text),
+            "json" => Ok(Self::Json),
+            other => Err(format!("unknown log_format: {other}")),
+        }
+    }
+}
+
+fn init_tracing(log_format: LogFormat) {
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn"));
+
+    match log_format {
+        LogFormat::Text => tracing_subscriber::registry()
+            .with(filter)
+            .with(fmt::layer())
+            .init(),
+        LogFormat::Json => tracing_subscriber::registry()
+            .with(filter)
+            .with(fmt::layer().json())
+            .init(),
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn")))
-        .with(fmt::layer())
-        .init();
-
     let raw = load_config()?;
+    init_tracing(LogFormat::from_str(&raw.log_format).map_err(anyhow::Error::msg)?);
     tracing::info!(bind = %raw.bind, database_url = %raw.database_url, "starting qm-server");
 
     let db = Database::connect(&raw.database_url)
@@ -85,7 +116,7 @@ async fn main() -> anyhow::Result<()> {
         http,
     };
 
-    let app = qm_api::router(state).layer(TraceLayer::new_for_http());
+    let app = qm_api::router(state);
 
     let addr: SocketAddr = raw.bind.parse().context("parsing bind address")?;
     let listener = tokio::net::TcpListener::bind(addr)
