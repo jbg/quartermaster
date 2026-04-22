@@ -1,5 +1,5 @@
 use axum::{
-    extract::Query,
+    extract::{Query, State},
     http::{header, StatusCode},
     response::{Html, IntoResponse},
     routing::get,
@@ -11,9 +11,6 @@ use serde_json::json;
 use utoipa::{IntoParams, ToSchema};
 
 use crate::AppState;
-
-pub const IOS_TEAM_ID: &str = "42J2SSX5SM";
-pub const IOS_BUNDLE_ID: &str = "com.jasperhugo.quartermaster";
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/join", get(join_landing)).route(
@@ -109,31 +106,41 @@ pub async fn join_landing(Query(q): Query<JoinQuery>) -> impl IntoResponse {
     ))
 }
 
-pub async fn apple_app_site_association() -> impl IntoResponse {
-    let body = apple_app_site_association_body();
+pub async fn apple_app_site_association(State(state): State<AppState>) -> impl IntoResponse {
+    let Some(body) = apple_app_site_association_body(state.config.ios_release_identity.as_ref())
+    else {
+        return (StatusCode::NOT_FOUND, [(header::CONTENT_TYPE, "text/plain")], String::new())
+            .into_response();
+    };
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/json")],
         body.to_string(),
     )
+        .into_response()
 }
 
-pub fn apple_app_site_association_app_id() -> String {
-    format!("{IOS_TEAM_ID}.{IOS_BUNDLE_ID}")
+pub fn apple_app_site_association_app_id(
+    identity: Option<&crate::IosReleaseIdentity>,
+) -> Option<String> {
+    identity.map(crate::IosReleaseIdentity::app_id)
 }
 
-pub fn apple_app_site_association_body() -> serde_json::Value {
-    json!({
+pub fn apple_app_site_association_body(
+    identity: Option<&crate::IosReleaseIdentity>,
+) -> Option<serde_json::Value> {
+    let app_id = apple_app_site_association_app_id(identity)?;
+    Some(json!({
         "applinks": {
             "apps": [],
             "details": [
                 {
-                    "appID": apple_app_site_association_app_id(),
+                    "appID": app_id,
                     "paths": ["/join", "/join*"]
                 }
             ]
         }
-    })
+    }))
 }
 
 fn html_escape(raw: &str) -> String {

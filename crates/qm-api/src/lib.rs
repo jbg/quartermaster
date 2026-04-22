@@ -2,7 +2,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use axum::{routing::get, Json, Router};
+use axum::{extract::MatchedPath, routing::get, Json, Router};
 use tower::ServiceBuilder;
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
@@ -60,9 +60,62 @@ pub struct ApiConfig {
     pub off_retry_base_delay: Duration,
     pub off_circuit_breaker_failure_threshold: u32,
     pub off_circuit_breaker_open_for: Duration,
+    pub ios_release_identity: Option<IosReleaseIdentity>,
     pub auth_session_sweep_trigger_secret: Option<String>,
     pub expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy,
     pub expiry_reminder_trigger_secret: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IosReleaseIdentity {
+    team_id: String,
+    bundle_id: String,
+}
+
+impl IosReleaseIdentity {
+    pub fn new(team_id: String, bundle_id: String) -> Result<Self, String> {
+        validate_team_id(&team_id)?;
+        validate_bundle_id(&bundle_id)?;
+        Ok(Self { team_id, bundle_id })
+    }
+
+    pub fn team_id(&self) -> &str {
+        &self.team_id
+    }
+
+    pub fn bundle_id(&self) -> &str {
+        &self.bundle_id
+    }
+
+    pub fn app_id(&self) -> String {
+        format!("{}.{}", self.team_id, self.bundle_id)
+    }
+}
+
+fn validate_team_id(value: &str) -> Result<(), String> {
+    if value.is_empty() {
+        return Err("iOS team ID must not be blank".into());
+    }
+    if !value.chars().all(|ch| ch.is_ascii_alphanumeric()) {
+        return Err("iOS team ID must be ASCII alphanumeric".into());
+    }
+    Ok(())
+}
+
+fn validate_bundle_id(value: &str) -> Result<(), String> {
+    if value.is_empty() {
+        return Err("iOS bundle ID must not be blank".into());
+    }
+    if value.starts_with('.') || value.ends_with('.') || value.contains("..") {
+        return Err("iOS bundle ID must be dot-separated".into());
+    }
+    if !value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '-')
+    {
+        return Err("iOS bundle ID must contain only ASCII alphanumeric characters, dots, or hyphens".into());
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -100,6 +153,7 @@ impl Default for ApiConfig {
             off_retry_base_delay: Duration::from_millis(200),
             off_circuit_breaker_failure_threshold: 5,
             off_circuit_breaker_open_for: Duration::from_secs(60),
+            ios_release_identity: None,
             auth_session_sweep_trigger_secret: None,
             expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy::default(),
             expiry_reminder_trigger_secret: None,
@@ -319,11 +373,16 @@ pub fn router(state: AppState) -> Router {
                                 .get("x-request-id")
                                 .and_then(|value| value.to_str().ok())
                                 .unwrap_or("-");
+                            let route = request
+                                .extensions()
+                                .get::<MatchedPath>()
+                                .map(MatchedPath::as_str)
+                                .unwrap_or_else(|| request.uri().path());
 
                             tracing::info_span!(
                                 "http_request",
                                 method = %request.method(),
-                                uri = %request.uri(),
+                                route = %route,
                                 request_id = %request_id,
                                 user_id = Empty,
                                 household_id = Empty,
@@ -342,4 +401,31 @@ pub fn router(state: AppState) -> Router {
                 ),
         )
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IosReleaseIdentity;
+
+    #[test]
+    fn creates_app_id_from_valid_ios_identity() {
+        let identity =
+            IosReleaseIdentity::new("42J2SSX5SM".into(), "com.example.quartermaster".into())
+                .unwrap();
+        assert_eq!(identity.app_id(), "42J2SSX5SM.com.example.quartermaster");
+    }
+
+    #[test]
+    fn rejects_invalid_ios_team_id() {
+        let err = IosReleaseIdentity::new("TEAM ID".into(), "com.example.quartermaster".into())
+            .unwrap_err();
+        assert!(err.contains("ASCII alphanumeric"));
+    }
+
+    #[test]
+    fn rejects_invalid_ios_bundle_id() {
+        let err = IosReleaseIdentity::new("42J2SSX5SM".into(), "com example".into())
+            .unwrap_err();
+        assert!(err.contains("dots, or hyphens"));
+    }
 }

@@ -145,8 +145,8 @@ Keep these aligned:
 
 - `QM_PUBLIC_BASE_URL=https://quartermaster.example.com`
 - backend AASA route serves that host
-- iOS associated domain uses `applinks:quartermaster.example.com`
-- the checked-in team ID and bundle ID match the AASA payload
+- iOS release config resolves `QUARTERMASTER_ASSOCIATED_DOMAIN=quartermaster.example.com`
+- `QM_IOS_TEAM_ID` + `QM_IOS_BUNDLE_ID` match `QUARTERMASTER_IOS_DEVELOPMENT_TEAM` + `QUARTERMASTER_IOS_BUNDLE_ID`
 
 After touching any of those values, run:
 

@@ -5,20 +5,29 @@
 //! manual entry) lives in the products route handler, not here.
 
 use std::{
+    collections::HashMap,
     sync::Arc,
+    sync::OnceLock,
     time::{Duration, Instant},
 };
 
 use backoff::{backoff::Backoff, ExponentialBackoffBuilder};
+use metrics::counter;
 use qm_core::units::UnitFamily;
 use reqwest::{Client, StatusCode};
 use serde::Deserialize;
+use serde_json::{json, Value};
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
 use crate::ApiConfig;
 
 const FIELDS: &str = "code,product_name,product_name_en,brands,image_url,product_quantity_unit";
+const MOCK_OFF_BASE_URL_PREFIX: &str = "mock://off/";
+
+type MockOffHits = Arc<Mutex<HashMap<String, usize>>>;
+
+static MOCK_OFF_SESSIONS: OnceLock<Mutex<HashMap<String, MockOffHits>>> = OnceLock::new();
 
 #[derive(Debug, Clone)]
 pub struct OpenFoodFactsClient {
@@ -58,6 +67,7 @@ impl OpenFoodFactsClient {
             Some(permit) => permit,
             None => {
                 warn!(%barcode, breaker_state = "open", "OFF circuit breaker is open");
+                counter!("qm_off_lookups_total", "outcome" => "circuit_breaker_open").increment(1);
                 return OffResult::Upstream("circuit breaker open".into());
             }
         };
@@ -107,11 +117,13 @@ impl OpenFoodFactsClient {
             Ok(FetchSuccess::Found(product)) => {
                 self.breaker.record_non_transient_success(permit).await;
                 info!(%barcode, attempt_count = attempts, breaker_state = "closed", outcome = "found", "OFF lookup succeeded");
+                counter!("qm_off_lookups_total", "outcome" => "found").increment(1);
                 OffResult::Found(product)
             }
             Ok(FetchSuccess::NotFound) => {
                 self.breaker.record_non_transient_success(permit).await;
                 info!(%barcode, attempt_count = attempts, breaker_state = "closed", outcome = "not_found", "OFF lookup finished");
+                counter!("qm_off_lookups_total", "outcome" => "not_found").increment(1);
                 OffResult::NotFound
             }
             Err(FetchError {
@@ -127,6 +139,7 @@ impl OpenFoodFactsClient {
                     error = %message,
                     "OFF lookup failed without retry"
                 );
+                counter!("qm_off_lookups_total", "outcome" => "permanent_error").increment(1);
                 OffResult::Upstream(message)
             }
             Err(FetchError {
@@ -149,12 +162,18 @@ impl OpenFoodFactsClient {
                     error = %err,
                     "OFF lookup exhausted retries"
                 );
+                counter!("qm_off_lookups_total", "outcome" => "transient_error").increment(1);
                 OffResult::Upstream(err)
             }
         }
     }
 
     async fn fetch_once(&self, barcode: &str) -> FetchOutcome {
+        if let Some(session_id) = self.config.off_api_base_url.strip_prefix(MOCK_OFF_BASE_URL_PREFIX)
+        {
+            return mock_fetch_once(session_id, barcode).await;
+        }
+
         let url = format!(
             "{}/{barcode}.json?fields={FIELDS}",
             self.config.off_api_base_url
@@ -217,6 +236,101 @@ impl OpenFoodFactsClient {
                 .filter(|s| !s.trim().is_empty()),
         })
     }
+}
+
+fn mock_off_sessions() -> &'static Mutex<HashMap<String, MockOffHits>> {
+    MOCK_OFF_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub async fn register_mock_session(session_id: &str) {
+    mock_off_sessions().lock().await.insert(
+        session_id.to_owned(),
+        Arc::new(Mutex::new(HashMap::new())),
+    );
+}
+
+pub async fn unregister_mock_session(session_id: &str) {
+    mock_off_sessions().lock().await.remove(session_id);
+}
+
+pub async fn mock_session_hit_count(session_id: &str, barcode: &str) -> usize {
+    let hits = {
+        let sessions = mock_off_sessions().lock().await;
+        sessions.get(session_id).cloned()
+    };
+    let Some(hits) = hits else {
+        return 0;
+    };
+    let count = hits.lock().await.get(barcode).copied().unwrap_or_default();
+    count
+}
+
+async fn mock_fetch_once(session_id: &str, barcode: &str) -> FetchOutcome {
+    let hits = {
+        let sessions = mock_off_sessions().lock().await;
+        sessions.get(session_id).cloned()
+    };
+    let Some(hits) = hits else {
+        return FetchOutcome::PermanentUpstream("mock OFF session missing".into());
+    };
+
+    let attempt = {
+        let mut hits = hits.lock().await;
+        let count = hits.entry(barcode.to_owned()).or_insert(0);
+        *count += 1;
+        *count
+    };
+
+    match barcode {
+        "1111111111111" if attempt < 3 => {
+            FetchOutcome::TransientUpstream("OFF returned 503 Service Unavailable".into())
+        }
+        "1111111111111" => {
+            let payload = json!({
+                "code": barcode,
+                "status": 1,
+                "product": {
+                    "product_name": "Retry Beans",
+                    "brands": "Acme",
+                    "image_url": Value::Null,
+                    "product_quantity_unit": "g",
+                }
+            });
+            let product: OffResponse = serde_json::from_value(payload).expect("mock OFF payload");
+            decode_mock_payload(barcode, product)
+        }
+        "2222222222222" => FetchOutcome::NotFound,
+        "3333333333333" => {
+            FetchOutcome::TransientUpstream("OFF returned 503 Service Unavailable".into())
+        }
+        _ => FetchOutcome::NotFound,
+    }
+}
+
+fn decode_mock_payload(barcode: &str, payload: OffResponse) -> FetchOutcome {
+    if payload.status != 1 {
+        return FetchOutcome::NotFound;
+    }
+    let Some(product) = payload.product else {
+        return FetchOutcome::NotFound;
+    };
+
+    let name = product
+        .product_name_en
+        .filter(|s| !s.trim().is_empty())
+        .or(product.product_name)
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| format!("Barcode {barcode}"));
+
+    FetchOutcome::Found(OffProduct {
+        barcode: barcode.to_owned(),
+        name,
+        brand: product.brands.filter(|s| !s.trim().is_empty()),
+        image_url: product.image_url.filter(|s| !s.trim().is_empty()),
+        quantity_unit: product
+            .product_quantity_unit
+            .filter(|s| !s.trim().is_empty()),
+    })
 }
 
 #[derive(Debug)]

@@ -50,6 +50,8 @@ The server listens on `0.0.0.0:8080` and creates `data.db` in the working direct
 | `QM_LOG_FORMAT`         | `text`                      | Log formatter: `text` or `json`              |
 | `QM_REGISTRATION_MODE`  | `first_run_only`            | `first_run_only` \| `invite_only` \| `open`  |
 | `QM_PUBLIC_BASE_URL`    | unset                       | Public HTTPS origin used in invite/share links |
+| `QM_IOS_TEAM_ID`        | unset                       | Optional Apple Team ID for serving the AASA payload; required only when publishing universal-link identity |
+| `QM_IOS_BUNDLE_ID`      | unset                       | Optional iOS bundle identifier for serving the AASA payload; required only when publishing universal-link identity |
 | `RUST_LOG`              | `info`                      | Tracing filter                               |
 
 Then probe it:
@@ -216,7 +218,7 @@ The sweeper endpoints repair drift. They do not replace the running push worker.
 
 `cargo test --workspace` is the default fast verification pass.
 
-`cargo xtask verify-release-config` checks that the backend's Apple App Site Association payload matches the checked-in iOS team ID and bundle identifier.
+`cargo xtask verify-release-config` checks that the env-driven backend AASA identity matches the env-driven iOS release identity and associated-domain host.
 
 Use `cargo xtask verify-release-config` after any change to:
 
@@ -285,15 +287,15 @@ Invite-backed registration and `POST /invites/redeem` are transactional: creatin
 
 HTTPS invite links are built from `QM_PUBLIC_BASE_URL` when it is set. For direct app-opening on iOS, that public HTTPS origin must also serve `/.well-known/apple-app-site-association`, and the app build must include a matching `applinks:` associated domain. Quartermaster keeps `/join` as the browser fallback so shared links still work when the app is not installed.
 
-Release builds of the iOS app fail if `QUARTERMASTER_ASSOCIATED_DOMAIN` is still the placeholder `quartermaster.example.com` or is not a bare hostname. Local development can keep using the custom `quartermaster://` scheme without setting `QM_PUBLIC_BASE_URL`.
+Release builds of the iOS app fail if `DEVELOPMENT_TEAM`, `PRODUCT_BUNDLE_IDENTIFIER`, or `QUARTERMASTER_ASSOCIATED_DOMAIN` are missing or malformed. Local development can keep using the custom `quartermaster://` scheme without setting `QM_PUBLIC_BASE_URL`, and the backend only serves the AASA payload when `QM_IOS_TEAM_ID` plus `QM_IOS_BUNDLE_ID` are configured.
 
 Quartermaster supports one explicit v1 release identity story:
 
 - one production `QM_PUBLIC_BASE_URL`
 - one associated-domain host
-- one iOS team ID + bundle ID pairing
+- one env-driven iOS team ID + bundle ID pairing
 
-Keep those aligned and use `cargo xtask verify-release-config` as the drift check rather than maintaining separate environment-specific identity rules in the repo.
+Keep those aligned and use `cargo xtask verify-release-config` as the drift check rather than checking Apple release identity into the repo.
 
 ## Contributing
 

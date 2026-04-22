@@ -57,24 +57,48 @@ fn export_openapi() -> anyhow::Result<()> {
 }
 
 fn verify_release_config() -> anyhow::Result<()> {
-    let root = repo_root()?;
-    let project_yml =
-        std::fs::read_to_string(root.join("ios/project.yml")).context("reading ios/project.yml")?;
-    let development_team = read_project_setting(&project_yml, "DEVELOPMENT_TEAM")
-        .context("reading DEVELOPMENT_TEAM from ios/project.yml")?;
-    let product_bundle_identifier = read_project_setting(&project_yml, "PRODUCT_BUNDLE_IDENTIFIER")
-        .context("reading PRODUCT_BUNDLE_IDENTIFIER from ios/project.yml")?;
+    let backend_team = required_env("QM_IOS_TEAM_ID")?;
+    let backend_bundle = required_env("QM_IOS_BUNDLE_ID")?;
+    let ios_team = required_env("QUARTERMASTER_IOS_DEVELOPMENT_TEAM")?;
+    let ios_bundle = required_env("QUARTERMASTER_IOS_BUNDLE_ID")?;
+    let associated_domain = required_env("QUARTERMASTER_ASSOCIATED_DOMAIN")?;
 
-    let expected_app_id = format!("{development_team}.{product_bundle_identifier}");
-    let actual_app_id = qm_api::routes::join::apple_app_site_association_app_id();
+    validate_bare_hostname(&associated_domain, "QUARTERMASTER_ASSOCIATED_DOMAIN")?;
 
-    if expected_app_id != actual_app_id {
+    let backend_identity = qm_api::IosReleaseIdentity::new(backend_team, backend_bundle)
+        .map_err(anyhow::Error::msg)?;
+    let ios_identity =
+        qm_api::IosReleaseIdentity::new(ios_team, ios_bundle).map_err(anyhow::Error::msg)?;
+
+    if backend_identity != ios_identity {
         bail!(
-            "AASA app ID drift: backend serves {actual_app_id}, but ios/project.yml implies {expected_app_id}"
+            "AASA app ID drift: backend serves {}, but iOS release identity implies {}",
+            backend_identity.app_id(),
+            ios_identity.app_id()
         );
     }
 
-    println!("verified release config: {actual_app_id}");
+    if let Some(public_base_url) = env::var_os("QM_PUBLIC_BASE_URL") {
+        let url = reqwest::Url::parse(
+            &public_base_url
+                .into_string()
+                .map_err(|_| anyhow::anyhow!("QM_PUBLIC_BASE_URL must be valid UTF-8"))?,
+        )
+        .context("parsing QM_PUBLIC_BASE_URL")?;
+        let public_host = url
+            .host_str()
+            .context("QM_PUBLIC_BASE_URL must be an origin URL")?;
+        if public_host != associated_domain {
+            bail!(
+                "QM_PUBLIC_BASE_URL host {public_host} does not match QUARTERMASTER_ASSOCIATED_DOMAIN {associated_domain}"
+            );
+        }
+    }
+
+    println!(
+        "verified release config: app_id={} domain={associated_domain}",
+        backend_identity.app_id()
+    );
     Ok(())
 }
 
@@ -225,15 +249,31 @@ fn repo_root() -> anyhow::Result<PathBuf> {
         .context("locating repo root")
 }
 
-fn read_project_setting(contents: &str, key: &str) -> anyhow::Result<String> {
-    let prefix = format!("{key}:");
-    let value = contents
-        .lines()
-        .map(str::trim)
-        .find_map(|line| line.strip_prefix(&prefix).map(str::trim))
-        .context(format!("missing {key}"))?;
+fn required_env(name: &str) -> anyhow::Result<String> {
+    let value = env::var(name).with_context(|| format!("missing required env var {name}"))?;
+    if value.trim().is_empty() {
+        bail!("{name} must not be blank");
+    }
+    Ok(value)
+}
 
-    Ok(value.trim_matches('"').to_owned())
+fn validate_bare_hostname(value: &str, env_name: &str) -> anyhow::Result<()> {
+    if value.contains("://")
+        || value.contains('/')
+        || value.contains('?')
+        || value.contains('#')
+        || value.contains(':')
+        || value.contains(' ')
+    {
+        bail!("{env_name} must be a bare hostname");
+    }
+    if !value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '-')
+    {
+        bail!("{env_name} must be a bare hostname");
+    }
+    Ok(())
 }
 
 fn print_help() {
@@ -242,7 +282,7 @@ fn print_help() {
     println!("subcommands:");
     println!("  export-openapi          write openapi.json to the repo root");
     println!("  seed-ledger-fixture     seed a small DB fixture for ledger verification");
-    println!("  verify-release-config   assert backend AASA app ID matches ios/project.yml");
+    println!("  verify-release-config   assert env-driven backend and iOS release identity stay aligned");
     println!("  verify-stock-ledger     assert cached quantities match the event log");
 }
 
@@ -251,24 +291,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_project_settings_from_project_yml() {
-        let contents = r#"
-settings:
-  base:
-    DEVELOPMENT_TEAM: "42J2SSX5SM"
-targets:
-  Quartermaster:
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.jasperhugo.quartermaster
-"#;
-        assert_eq!(
-            read_project_setting(contents, "DEVELOPMENT_TEAM").unwrap(),
-            "42J2SSX5SM"
-        );
-        assert_eq!(
-            read_project_setting(contents, "PRODUCT_BUNDLE_IDENTIFIER").unwrap(),
-            "com.jasperhugo.quartermaster"
-        );
+    fn accepts_bare_hostname() {
+        validate_bare_hostname("quartermaster.example.com", "QUARTERMASTER_ASSOCIATED_DOMAIN")
+            .unwrap();
+    }
+
+    #[test]
+    fn rejects_non_hostname_domain() {
+        let err =
+            validate_bare_hostname("https://quartermaster.example.com", "DOMAIN").unwrap_err();
+        assert!(err.to_string().contains("bare hostname"));
     }
 }

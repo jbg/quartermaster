@@ -1,7 +1,7 @@
 mod support;
 
 use axum::http::{Method, StatusCode};
-use qm_api::{ApiConfig, RegistrationMode};
+use qm_api::{ApiConfig, IosReleaseIdentity, RegistrationMode};
 use serde_json::Value;
 use support::TestApp;
 
@@ -32,8 +32,15 @@ async fn join_landing_renders_invite_and_server() {
 }
 
 #[tokio::test]
-async fn apple_app_site_association_is_served_from_well_known_path() {
-    let app = TestApp::start(ApiConfig::default()).await;
+async fn apple_app_site_association_is_served_from_well_known_path_when_ios_identity_is_present() {
+    let app = TestApp::start(ApiConfig {
+        ios_release_identity: Some(
+            IosReleaseIdentity::new("42J2SSX5SM".into(), "com.example.quartermaster".into())
+                .unwrap(),
+        ),
+        ..ApiConfig::default()
+    })
+    .await;
 
     let (status, headers, raw) = app
         .raw(Method::GET, "/.well-known/apple-app-site-association")
@@ -44,7 +51,7 @@ async fn apple_app_site_association_is_served_from_well_known_path() {
     let body: Value = serde_json::from_str(&raw).unwrap();
     assert_eq!(
         body["applinks"]["details"][0]["appID"].as_str().unwrap(),
-        qm_api::routes::join::apple_app_site_association_app_id()
+        "42J2SSX5SM.com.example.quartermaster"
     );
     assert_eq!(
         body["applinks"]["details"][0]["paths"]
@@ -55,4 +62,16 @@ async fn apple_app_site_association_is_served_from_well_known_path() {
             .collect::<Vec<_>>(),
         vec!["/join", "/join*"]
     );
+}
+
+#[tokio::test]
+async fn apple_app_site_association_is_not_served_without_ios_identity() {
+    let app = TestApp::start(ApiConfig::default()).await;
+
+    let (status, _, raw) = app
+        .raw(Method::GET, "/.well-known/apple-app-site-association")
+        .await;
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(raw.is_empty());
 }

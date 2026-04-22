@@ -5,6 +5,7 @@ use figment::{
     providers::{Env, Serialized},
     Figment,
 };
+use ::metrics::counter;
 use qm_api::{
     rate_limit::{parse_trusted_proxy_cidrs, ClientIpMode},
     ApiConfig, AppState, RegistrationMode,
@@ -47,6 +48,8 @@ struct RawConfig {
     off_retry_base_delay_ms: u64,
     off_circuit_breaker_failure_threshold: u32,
     off_circuit_breaker_open_seconds: u64,
+    ios_team_id: Option<String>,
+    ios_bundle_id: Option<String>,
     auth_session_sweep_interval_seconds: u64,
     auth_session_sweep_trigger_secret: Option<String>,
     expiry_reminders_enabled: bool,
@@ -96,6 +99,8 @@ impl Default for RawConfig {
             off_retry_base_delay_ms: 200,
             off_circuit_breaker_failure_threshold: 5,
             off_circuit_breaker_open_seconds: 60,
+            ios_team_id: None,
+            ios_bundle_id: None,
             auth_session_sweep_interval_seconds: 0,
             auth_session_sweep_trigger_secret: None,
             expiry_reminders_enabled: false,
@@ -238,6 +243,8 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         raw.auth_session_sweep_trigger_secret,
         "QM_AUTH_SESSION_SWEEP_TRIGGER_SECRET",
     )?;
+    let ios_release_identity =
+        normalize_ios_release_identity(raw.ios_team_id, raw.ios_bundle_id)?;
     let expiry_reminder_trigger_secret = normalize_optional_secret(
         raw.expiry_reminder_trigger_secret,
         "QM_EXPIRY_REMINDER_TRIGGER_SECRET",
@@ -309,6 +316,7 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         off_retry_base_delay: Duration::from_millis(raw.off_retry_base_delay_ms),
         off_circuit_breaker_failure_threshold: raw.off_circuit_breaker_failure_threshold,
         off_circuit_breaker_open_for: Duration::from_secs(raw.off_circuit_breaker_open_seconds),
+        ios_release_identity,
         auth_session_sweep_trigger_secret,
         expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy {
             enabled: raw.expiry_reminders_enabled,
@@ -372,6 +380,24 @@ fn normalize_public_base_url(raw: Option<String>) -> anyhow::Result<Option<Strin
     }
 
     Ok(Some(url.origin().ascii_serialization()))
+}
+
+fn normalize_ios_release_identity(
+    team_id: Option<String>,
+    bundle_id: Option<String>,
+) -> anyhow::Result<Option<qm_api::IosReleaseIdentity>> {
+    match (
+        normalize_optional_secret(team_id, "QM_IOS_TEAM_ID")?,
+        normalize_optional_secret(bundle_id, "QM_IOS_BUNDLE_ID")?,
+    ) {
+        (None, None) => Ok(None),
+        (Some(_), None) | (None, Some(_)) => {
+            anyhow::bail!("QM_IOS_TEAM_ID and QM_IOS_BUNDLE_ID must be set together")
+        }
+        (Some(team_id), Some(bundle_id)) => qm_api::IosReleaseIdentity::new(team_id, bundle_id)
+            .map(Some)
+            .map_err(anyhow::Error::msg),
+    }
 }
 
 fn normalize_optional_secret(
@@ -566,9 +592,17 @@ async fn spawn_auth_session_sweeper(
                 .await
                 {
                     Ok(deleted) => {
+                        counter!("qm_auth_session_sweeps_total", "surface" => "scheduled", "outcome" => "success")
+                            .increment(1);
+                        counter!("qm_auth_session_swept_sessions_total", "surface" => "scheduled")
+                            .increment(deleted);
                         tracing::info!(deleted_sessions = deleted, "completed auth session sweep")
                     }
-                    Err(err) => tracing::error!(?err, "auth session sweep failed"),
+                    Err(err) => {
+                        counter!("qm_auth_session_sweeps_total", "surface" => "scheduled", "outcome" => "failure")
+                            .increment(1);
+                        tracing::error!(?err, "auth session sweep failed")
+                    }
                 }
             }
             changed = shutdown.changed() => {
@@ -594,12 +628,24 @@ async fn spawn_expiry_reminder_sweeper(
         tokio::select! {
             _ = ticker.tick() => {
                 match qm_db::reminders::reconcile_all(&db, &policy).await {
-                    Ok(stats) => tracing::info!(
-                        inserted = stats.inserted,
-                        deleted = stats.deleted,
-                        "completed expiry reminder sweep"
-                    ),
-                    Err(err) => tracing::error!(?err, "expiry reminder sweep failed"),
+                    Ok(stats) => {
+                        counter!("qm_expiry_reminder_sweeps_total", "surface" => "scheduled", "outcome" => "success")
+                            .increment(1);
+                        counter!("qm_expiry_reminder_sweep_inserted_total", "surface" => "scheduled")
+                            .increment(stats.inserted);
+                        counter!("qm_expiry_reminder_sweep_deleted_total", "surface" => "scheduled")
+                            .increment(stats.deleted);
+                        tracing::info!(
+                            inserted = stats.inserted,
+                            deleted = stats.deleted,
+                            "completed expiry reminder sweep"
+                        )
+                    }
+                    Err(err) => {
+                        counter!("qm_expiry_reminder_sweeps_total", "surface" => "scheduled", "outcome" => "failure")
+                            .increment(1);
+                        tracing::error!(?err, "expiry reminder sweep failed")
+                    }
                 }
             }
             changed = shutdown.changed() => {
@@ -714,5 +760,30 @@ mod tests {
         assert!(err
             .to_string()
             .contains("QM_METRICS_TRIGGER_SECRET is required"));
+    }
+
+    #[test]
+    fn requires_complete_ios_identity_pair() {
+        let err = build_config(RawConfig {
+            ios_team_id: Some("42J2SSX5SM".into()),
+            ..RawConfig::default()
+        })
+        .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("QM_IOS_TEAM_ID and QM_IOS_BUNDLE_ID must be set together"));
+    }
+
+    #[test]
+    fn parses_ios_release_identity() {
+        let loaded = build_config(RawConfig {
+            ios_team_id: Some("42J2SSX5SM".into()),
+            ios_bundle_id: Some("com.example.quartermaster".into()),
+            ..RawConfig::default()
+        })
+        .unwrap();
+        let identity = loaded.api_config.ios_release_identity.as_ref().unwrap();
+        assert_eq!(identity.team_id(), "42J2SSX5SM");
+        assert_eq!(identity.bundle_id(), "com.example.quartermaster");
     }
 }

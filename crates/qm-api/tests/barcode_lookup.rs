@@ -1,18 +1,11 @@
 mod support;
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::time::Duration;
 
-use axum::{
-    extract::{Path, State},
-    http::StatusCode,
-    response::IntoResponse,
-    routing::get,
-    Json, Router,
-};
+use axum::http::StatusCode;
 use qm_api::ApiConfig;
-use serde_json::{json, Value};
+use support::off_http::MockOffServer;
 use support::TestApp;
-use tokio::sync::Mutex;
 
 #[tokio::test]
 async fn barcode_lookup_retries_transient_off_failures_then_succeeds() {
@@ -110,93 +103,4 @@ async fn breaker_open_failures_do_not_write_cache_misses_and_fail_fast() {
         .await
         .unwrap()
         .is_none());
-}
-
-struct MockOffServer {
-    addr: std::net::SocketAddr,
-    hits: Arc<Mutex<HashMap<String, usize>>>,
-}
-
-impl MockOffServer {
-    async fn start() -> Self {
-        let hits = Arc::new(Mutex::new(HashMap::new()));
-        let state = MockOffState { hits: hits.clone() };
-        let app = Router::new()
-            .route("/api/v2/product/{barcode}", get(mock_off_product))
-            .with_state(state);
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
-        });
-        Self { addr, hits }
-    }
-
-    fn base_url(&self) -> String {
-        format!("http://{}/api/v2/product", self.addr)
-    }
-
-    async fn hit_count(&self, barcode: &str) -> usize {
-        self.hits
-            .lock()
-            .await
-            .get(barcode)
-            .copied()
-            .unwrap_or_default()
-    }
-}
-
-#[derive(Clone)]
-struct MockOffState {
-    hits: Arc<Mutex<HashMap<String, usize>>>,
-}
-
-async fn mock_off_product(
-    State(state): State<MockOffState>,
-    Path(barcode): Path<String>,
-) -> impl IntoResponse {
-    let barcode = barcode.trim_end_matches(".json").to_owned();
-    let attempt = {
-        let mut hits = state.hits.lock().await;
-        let count = hits.entry(barcode.clone()).or_insert(0);
-        *count += 1;
-        *count
-    };
-
-    match barcode.as_str() {
-        "1111111111111" if attempt < 3 => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({"status": 0, "status_verbose": "temporary"})),
-        )
-            .into_response(),
-        "1111111111111" => (
-            StatusCode::OK,
-            Json(json!({
-                "code": barcode,
-                "status": 1,
-                "product": {
-                    "product_name": "Retry Beans",
-                    "brands": "Acme",
-                    "image_front_url": Value::Null,
-                    "quantity": "500 g",
-                }
-            })),
-        )
-            .into_response(),
-        "2222222222222" => (
-            StatusCode::NOT_FOUND,
-            Json(json!({"status": 0, "status_verbose": "not found"})),
-        )
-            .into_response(),
-        "3333333333333" => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({"status": 0, "status_verbose": "down"})),
-        )
-            .into_response(),
-        _ => (
-            StatusCode::NOT_FOUND,
-            Json(json!({"status": 0, "status_verbose": "not found"})),
-        )
-            .into_response(),
-    }
 }

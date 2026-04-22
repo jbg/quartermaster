@@ -1,6 +1,6 @@
 name: Quartermaster
 options:
-  bundleIdPrefix: com.jasperhugo
+  bundleIdPrefix: com.example
   deploymentTarget:
     iOS: "26.0"
   defaultConfig: Debug
@@ -10,7 +10,6 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
-    DEVELOPMENT_TEAM: "42J2SSX5SM"
     CODE_SIGN_STYLE: Automatic
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
@@ -32,6 +31,9 @@ targets:
     type: application
     platform: iOS
     deploymentTarget: "26.0"
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
     sources:
       - path: Quartermaster
         excludes:
@@ -51,19 +53,21 @@ targets:
           /bin/sh "${PROJECT_DIR}/scripts/validate-release-config.sh"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.jasperhugo.quartermaster
-        CODE_SIGN_ENTITLEMENTS: Quartermaster/Quartermaster.entitlements
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_CFBundleDisplayName: Quartermaster
-        INFOPLIST_KEY_CFBundleURLTypes: '[{"CFBundleURLName":"com.jasperhugo.quartermaster","CFBundleURLSchemes":["quartermaster"]}]'
+        INFOPLIST_KEY_CFBundleURLTypes: '[{"CFBundleURLName":"$(PRODUCT_BUNDLE_IDENTIFIER)","CFBundleURLSchemes":["quartermaster"]}]'
         INFOPLIST_KEY_NSCameraUsageDescription: "Quartermaster scans barcodes to look up products when you add items to your inventory."
-        QUARTERMASTER_ASSOCIATED_DOMAIN: quartermaster.example.com
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_PREVIEWS: YES
         GENERATE_INFOPLIST_FILE: YES
         # Disable user-script sandbox for the target — the OpenAPIGenerator
         # plugin needs to write into the build intermediate directory.
         ENABLE_USER_SCRIPT_SANDBOXING: NO
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: Quartermaster/QuartermasterDebug.entitlements
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Quartermaster/QuartermasterRelease.entitlements

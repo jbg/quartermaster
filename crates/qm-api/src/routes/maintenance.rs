@@ -4,6 +4,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
+use metrics::counter;
 use serde::Serialize;
 
 use crate::{ApiError, ApiResult, AppState};
@@ -50,12 +51,24 @@ async fn sweep_auth_sessions(
         return Err(ApiError::Unauthorized);
     }
 
-    let deleted_sessions = qm_db::auth_sessions::delete_stale_sessions(
+    let deleted_sessions = match qm_db::auth_sessions::delete_stale_sessions(
         &state.db,
         &qm_db::now_utc_rfc3339(),
         qm_db::auth_sessions::STALE_SESSION_SWEEP_BATCH_SIZE,
     )
-    .await?;
+    .await
+    {
+        Ok(deleted_sessions) => deleted_sessions,
+        Err(err) => {
+            counter!("qm_auth_session_sweeps_total", "surface" => "manual", "outcome" => "failure")
+                .increment(1);
+            return Err(err.into());
+        }
+    };
+    counter!("qm_auth_session_sweeps_total", "surface" => "manual", "outcome" => "success")
+        .increment(1);
+    counter!("qm_auth_session_swept_sessions_total", "surface" => "manual")
+        .increment(deleted_sessions);
 
     Ok((
         StatusCode::OK,
@@ -80,8 +93,20 @@ async fn sweep_expiry_reminders(
         return Err(ApiError::Unauthorized);
     }
 
-    let stats =
-        qm_db::reminders::reconcile_all(&state.db, &state.config.expiry_reminder_policy).await?;
+    let stats = match qm_db::reminders::reconcile_all(&state.db, &state.config.expiry_reminder_policy).await {
+        Ok(stats) => stats,
+        Err(err) => {
+            counter!("qm_expiry_reminder_sweeps_total", "surface" => "manual", "outcome" => "failure")
+                .increment(1);
+            return Err(err.into());
+        }
+    };
+    counter!("qm_expiry_reminder_sweeps_total", "surface" => "manual", "outcome" => "success")
+        .increment(1);
+    counter!("qm_expiry_reminder_sweep_inserted_total", "surface" => "manual")
+        .increment(stats.inserted);
+    counter!("qm_expiry_reminder_sweep_deleted_total", "surface" => "manual")
+        .increment(stats.deleted);
     Ok((
         StatusCode::OK,
         Json(SweepExpiryRemindersResponse {

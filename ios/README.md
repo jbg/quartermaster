@@ -19,7 +19,7 @@ The checked-in CI build uses:
 
 - simulator destination `platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2`
 - `-skipPackagePluginValidation` because `swift-openapi-generator` runs as an Xcode build-tool plugin during the build
-- Release configuration with `QUARTERMASTER_ASSOCIATED_DOMAIN` overridden to a non-placeholder hostname so the release validation script exercises the real contract
+- Release configuration generated from CI environment variables rather than checked-in Apple identity
 
 If GitHub-hosted macOS images drift and that simulator runtime disappears, update the workflow and this note together.
 
@@ -42,11 +42,19 @@ If the server rejects registration (`registration_disabled`), the backend has al
 Quartermaster keeps the custom `quartermaster://` scheme as a fallback, but iOS can also open invite links directly from HTTPS when the build has a matching Associated Domains entitlement.
 
 1. Set `QM_PUBLIC_BASE_URL` on the server to the public HTTPS origin users will tap.
-2. Serve the backend route at `/.well-known/apple-app-site-association` from that same origin.
-3. Change `QUARTERMASTER_ASSOCIATED_DOMAIN` in `project.yml` from the placeholder `quartermaster.example.com` to that public host, then run `xcodegen generate`.
-4. Build/install the app again so the entitlement matches the deployed host.
+2. Set `QM_IOS_TEAM_ID` and `QM_IOS_BUNDLE_ID` on the server so the backend can serve `/.well-known/apple-app-site-association` for the matching app build.
+3. Export `QUARTERMASTER_IOS_DEVELOPMENT_TEAM`, `QUARTERMASTER_IOS_BUNDLE_ID`, and `QUARTERMASTER_ASSOCIATED_DOMAIN`, then run:
 
-Release builds fail if `QUARTERMASTER_ASSOCIATED_DOMAIN` is still the placeholder host or is not a bare hostname. That guard is intentionally skipped for Debug builds so local development can keep using the custom scheme without a public HTTPS domain.
+   ```sh
+   /bin/sh scripts/generate-release-config.sh
+   xcodegen generate
+   ```
+
+4. Build/install the Release app again so the entitlement matches the deployed host.
+
+Release builds fail if `DEVELOPMENT_TEAM`, `PRODUCT_BUNDLE_IDENTIFIER`, or `QUARTERMASTER_ASSOCIATED_DOMAIN` are missing or malformed. That guard is intentionally skipped for Debug builds so local development can keep using the custom scheme without a public HTTPS domain.
+
+If the server does not have `QM_IOS_TEAM_ID` and `QM_IOS_BUNDLE_ID` configured, the backend returns `404` for `/.well-known/apple-app-site-association` and the app falls back to the custom `quartermaster://` scheme plus manual invite entry.
 
 Do not point the associated-domain entitlement at `localhost`; keep local development on the custom scheme and use a real HTTPS host for universal links.
 
