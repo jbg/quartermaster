@@ -18,6 +18,7 @@ pub mod invites;
 pub mod locations;
 pub mod memberships;
 pub mod products;
+pub mod reminders;
 pub mod stock;
 pub mod stock_events;
 #[cfg(any(test, feature = "test-support"))]

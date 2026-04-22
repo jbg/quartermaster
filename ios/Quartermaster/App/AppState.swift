@@ -21,6 +21,7 @@ final class AppState {
     var serverURL: URL = ServerConfig.defaultURL
     var lastError: String?
     var units: [Unit] = []
+    var activeReminder: Reminder?
     /// Deep-link target set by history → "Open in Inventory". MainTabView
     /// observes this to switch tabs; InventoryView observes it to present
     /// the batches sheet for the named product+location, then clears it.
@@ -29,6 +30,8 @@ final class AppState {
 
     private let tokenStore = TokenStore()
     private(set) var api: APIClient
+    private var queuedReminders: [Reminder] = []
+    private var isSyncingReminders = false
 
     init() {
         self.api = APIClient(baseURL: ServerConfig.defaultURL, tokenStore: tokenStore)
@@ -62,7 +65,10 @@ final class AppState {
 
     func applyAuthenticated(_ me: Me) {
         phase = .authenticated(me)
-        Task { await loadUnits() }
+        Task {
+            await loadUnits()
+            await syncDueReminders()
+        }
         lastError = nil
     }
 
@@ -104,6 +110,8 @@ final class AppState {
         _ = try? await api.logout()
         await tokenStore.clear()
         units = []
+        queuedReminders = []
+        activeReminder = nil
         phase = .unauthenticated
     }
 
@@ -165,6 +173,54 @@ final class AppState {
         return updatedMe
     }
 
+    func syncDueReminders(limit: Int = 20) async {
+        guard !isSyncingReminders else { return }
+        guard let me, me.householdId != nil else {
+            queuedReminders = []
+            activeReminder = nil
+            return
+        }
+
+        isSyncingReminders = true
+        defer { isSyncingReminders = false }
+
+        do {
+            let response = try await api.listReminders(limit: limit)
+            let existingIDs = Set(queuedReminders.map(\.id) + (activeReminder.map { [$0.id] } ?? []))
+            for reminder in response.items where !existingIDs.contains(reminder.id) {
+                try? await api.ackReminder(id: reminder.id)
+                queuedReminders.append(reminder)
+            }
+            presentNextReminderIfNeeded()
+        } catch let apiError as APIError {
+            if case .unauthorized = apiError {
+                await tokenStore.clear()
+                units = []
+                queuedReminders = []
+                activeReminder = nil
+                phase = .unauthenticated
+            }
+        } catch {
+            // Reminder polling is best-effort; ignore transient failures.
+        }
+    }
+
+    func dismissActiveReminder() {
+        activeReminder = nil
+        presentNextReminderIfNeeded()
+    }
+
+    func openActiveReminder() {
+        guard let reminder = activeReminder else { return }
+        pendingInventoryTarget = InventoryTarget(
+            productID: reminder.productID,
+            locationID: reminder.locationID,
+            highlightBatchID: reminder.batchID,
+        )
+        activeReminder = nil
+        presentNextReminderIfNeeded()
+    }
+
     func redeemInvite(_ code: String) async throws -> Me {
         try await api.redeemInvite(code: code)
         let me = try await authenticatedMe()
@@ -205,6 +261,11 @@ final class AppState {
         if let fresh = try? await api.units() {
             units = fresh
         }
+    }
+
+    private func presentNextReminderIfNeeded() {
+        guard activeReminder == nil, !queuedReminders.isEmpty else { return }
+        activeReminder = queuedReminders.removeFirst()
     }
 
     private func authenticatedMe() async throws -> Me {

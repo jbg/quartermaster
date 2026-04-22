@@ -143,6 +143,9 @@ typealias ConsumedBatch = Components.Schemas.ConsumedBatchDto
 typealias ConsumeResponse = Components.Schemas.ConsumeResponse
 typealias RestoreManyRequest = Components.Schemas.RestoreManyRequest
 typealias RestoreManyResponse = Components.Schemas.RestoreManyResponse
+typealias Reminder = Components.Schemas.ReminderDto
+typealias ReminderKind = Components.Schemas.ReminderKind
+typealias ReminderListResponse = Components.Schemas.ReminderListResponse
 
 extension StockBatch: Identifiable {
     /// Legacy alias for the camelCased `locationId` the generator emits.
@@ -170,6 +173,18 @@ extension ConsumedBatch {
 
 extension ConsumeResponse {
     var consumeRequestID: String { consumeRequestId }
+}
+
+// MARK: - Reminders
+
+extension Reminder: Identifiable {
+    var batchID: String { batchId }
+    var productID: String { productId }
+    var locationID: String { locationId }
+}
+
+extension ReminderListResponse {
+    var nextAfterID: String? { nextAfterId }
 }
 
 // MARK: - Stock events

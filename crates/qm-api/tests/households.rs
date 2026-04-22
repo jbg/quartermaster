@@ -219,6 +219,7 @@ async fn switch_household_is_session_scoped_and_rejects_non_members() {
         None,
         None,
         home_admin,
+        None,
     )
     .await
     .unwrap();
@@ -689,6 +690,7 @@ async fn member_removal_and_location_deletion_guards_work() {
         None,
         None,
         alice_id,
+        None,
     )
     .await
     .unwrap();
@@ -765,6 +767,7 @@ async fn stale_tokens_follow_current_household_and_cannot_access_prior_household
         None,
         None,
         alice_id,
+        None,
     )
     .await
     .unwrap();

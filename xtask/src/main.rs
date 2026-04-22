@@ -179,6 +179,7 @@ async fn seed_ledger_fixture() -> anyhow::Result<()> {
         None,
         Some("fixture batch"),
         user.id,
+        None,
     )
     .await
     .context("creating stock")?;
@@ -189,6 +190,7 @@ async fn seed_ledger_fixture() -> anyhow::Result<()> {
         "450",
         user.id,
         Some("fixture adjust"),
+        None,
     )
     .await
     .context("adjusting stock")?;

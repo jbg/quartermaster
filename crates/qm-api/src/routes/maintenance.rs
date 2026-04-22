@@ -15,11 +15,22 @@ pub struct SweepAuthSessionsResponse {
     pub deleted_sessions: u64,
 }
 
+#[derive(Debug, Serialize)]
+pub struct SweepExpiryRemindersResponse {
+    pub inserted: u64,
+    pub deleted: u64,
+}
+
 pub fn router() -> Router<AppState> {
-    Router::new().route(
-        "/internal/maintenance/sweep-auth-sessions",
-        post(sweep_auth_sessions),
-    )
+    Router::new()
+        .route(
+            "/internal/maintenance/sweep-auth-sessions",
+            post(sweep_auth_sessions),
+        )
+        .route(
+            "/internal/maintenance/sweep-expiry-reminders",
+            post(sweep_expiry_reminders),
+        )
 }
 
 async fn sweep_auth_sessions(
@@ -49,5 +60,33 @@ async fn sweep_auth_sessions(
     Ok((
         StatusCode::OK,
         Json(SweepAuthSessionsResponse { deleted_sessions }),
+    ))
+}
+
+async fn sweep_expiry_reminders(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> ApiResult<(StatusCode, Json<SweepExpiryRemindersResponse>)> {
+    let provided = headers
+        .get(MAINTENANCE_TOKEN_HEADER)
+        .and_then(|value| value.to_str().ok());
+    let expected = state
+        .config
+        .expiry_reminder_trigger_secret
+        .as_deref()
+        .ok_or(ApiError::NotFound)?;
+
+    if provided != Some(expected) {
+        return Err(ApiError::Unauthorized);
+    }
+
+    let stats = qm_db::reminders::reconcile_all(&state.db, &state.config.expiry_reminder_policy)
+        .await?;
+    Ok((
+        StatusCode::OK,
+        Json(SweepExpiryRemindersResponse {
+            inserted: stats.inserted,
+            deleted: stats.deleted,
+        }),
     ))
 }

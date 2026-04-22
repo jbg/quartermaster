@@ -105,6 +105,38 @@ impl FromStr for MembershipRole {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ReminderKind {
+    Expiry,
+}
+
+impl ReminderKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Expiry => "expiry",
+        }
+    }
+}
+
+impl fmt::Display for ReminderKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for ReminderKind {
+    type Err = ApiError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "expiry" => Ok(Self::Expiry),
+            other => Err(ApiError::Internal(anyhow::anyhow!(
+                "unknown reminder kind in DB row: {other}",
+            ))),
+        }
+    }
+}
+
 impl fmt::Display for StockEventType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())

@@ -87,4 +87,89 @@ async fn maintenance_route_is_unmounted_without_secret() {
         )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = app
+        .send(
+            Method::POST,
+            "/internal/maintenance/sweep-expiry-reminders",
+            None,
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn sweep_expiry_reminders_reconciles_rows_with_valid_secret() {
+    let app = TestApp::start(ApiConfig {
+        expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy {
+            enabled: true,
+            ..Default::default()
+        },
+        expiry_reminder_trigger_secret: Some("reminder-secret".into()),
+        ..ApiConfig::default()
+    })
+    .await;
+    let household = qm_db::households::create(&app.db, "Home").await.unwrap();
+    qm_db::locations::seed_defaults(&app.db, household.id)
+        .await
+        .unwrap();
+    let pantry = qm_db::locations::list_for_household(&app.db, household.id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|row| row.kind == "pantry")
+        .unwrap()
+        .id;
+    let user = qm_db::users::create(&app.db, "alice", None, "hash")
+        .await
+        .unwrap();
+    qm_db::memberships::insert(&app.db, household.id, user.id, "admin")
+        .await
+        .unwrap();
+    let product = qm_db::products::create_manual(
+        &app.db,
+        household.id,
+        "Milk",
+        None,
+        "volume",
+        Some("ml"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    qm_db::stock::create(
+        &app.db,
+        household.id,
+        product.id,
+        pantry,
+        "1000",
+        "ml",
+        Some("2999-01-03"),
+        None,
+        None,
+        user.id,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        qm_api::routes::maintenance::MAINTENANCE_TOKEN_HEADER,
+        "reminder-secret".parse().unwrap(),
+    );
+
+    let (status, body) = app
+        .send_with_headers(
+            Method::POST,
+            "/internal/maintenance/sweep-expiry-reminders",
+            None,
+            None,
+            headers,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["inserted"], 1);
+    assert_eq!(body["deleted"], 0);
 }

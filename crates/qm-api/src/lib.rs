@@ -61,6 +61,8 @@ pub struct ApiConfig {
     pub off_circuit_breaker_failure_threshold: u32,
     pub off_circuit_breaker_open_for: Duration,
     pub auth_session_sweep_trigger_secret: Option<String>,
+    pub expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy,
+    pub expiry_reminder_trigger_secret: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -99,6 +101,8 @@ impl Default for ApiConfig {
             off_circuit_breaker_failure_threshold: 5,
             off_circuit_breaker_open_for: Duration::from_secs(60),
             auth_session_sweep_trigger_secret: None,
+            expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy::default(),
+            expiry_reminder_trigger_secret: None,
         }
     }
 }
@@ -183,6 +187,8 @@ impl Modify for SecurityAddon {
         routes::products::delete_one,
         routes::products::refresh,
         routes::products::restore,
+        routes::reminders::list,
+        routes::reminders::ack,
         routes::stock::list,
         routes::stock::get_one,
         routes::stock::create,
@@ -199,6 +205,7 @@ impl Modify for SecurityAddon {
         types::ProductSource,
         types::StockEventType,
         types::MembershipRole,
+        types::ReminderKind,
         routes::health::HealthResponse,
         routes::accounts::RegisterRequest,
         routes::accounts::LoginRequest,
@@ -225,6 +232,8 @@ impl Modify for SecurityAddon {
         routes::products::UpdateProductRequest,
         routes::products::ProductSearchResponse,
         routes::products::BarcodeLookupResponse,
+        routes::reminders::ReminderDto,
+        routes::reminders::ReminderListResponse,
         routes::stock::StockBatchDto,
         routes::stock::StockListResponse,
         routes::stock::CreateStockRequest,
@@ -245,6 +254,7 @@ impl Modify for SecurityAddon {
         (name = "locations", description = "Pantry / fridge / freezer"),
         (name = "units", description = "Units of measure"),
         (name = "products", description = "Product catalogue and barcode lookup"),
+        (name = "reminders", description = "Backend-owned household reminders"),
         (name = "stock", description = "Batches of stock and FIFO consumption"),
     ),
 )]
@@ -266,12 +276,15 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             RateLimitTarget::Barcode,
         )))
+        .merge(routes::reminders::router())
         .merge(routes::stock::router(RateLimitLayerState::new(
             state.clone(),
             RateLimitTarget::History,
         )))
         .merge(
-            if state.config.auth_session_sweep_trigger_secret.is_some() {
+            if state.config.auth_session_sweep_trigger_secret.is_some()
+                || state.config.expiry_reminder_trigger_secret.is_some()
+            {
                 routes::maintenance::router()
             } else {
                 Router::new()

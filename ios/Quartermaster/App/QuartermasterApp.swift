@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct QuartermasterApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var appState = AppState()
 
     var body: some Scene {
@@ -14,6 +15,10 @@ struct QuartermasterApp: App {
                 }
                 .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
                     appState.handleIncomingUserActivity(activity)
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    guard phase == .active else { return }
+                    Task { await appState.syncDueReminders() }
                 }
         }
     }

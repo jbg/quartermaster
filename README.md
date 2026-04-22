@@ -84,12 +84,20 @@ Quartermaster also supports a few self-hosting hardening knobs:
 | `QM_OFF_CIRCUIT_BREAKER_OPEN_SECONDS`      | `60`                                              | How long OFF stays fail-fast once the breaker opens |
 | `QM_AUTH_SESSION_SWEEP_INTERVAL_SECONDS`   | `0`                                               | Periodic stale-session sweep interval in seconds; `0` disables the in-process timer |
 | `QM_AUTH_SESSION_SWEEP_TRIGGER_SECRET`     | unset                                             | Enables `POST /internal/maintenance/sweep-auth-sessions` when set; callers must supply the shared secret in `X-QM-Maintenance-Token` |
+| `QM_EXPIRY_REMINDERS_ENABLED`              | `false`                                           | Enables backend-owned expiry reminder generation |
+| `QM_EXPIRY_REMINDER_LEAD_DAYS`             | `1`                                               | How many days before expiry a reminder should fire |
+| `QM_EXPIRY_REMINDER_FIRE_HOUR`             | `9`                                               | UTC hour when expiry reminders should fire |
+| `QM_EXPIRY_REMINDER_FIRE_MINUTE`           | `0`                                               | UTC minute when expiry reminders should fire |
+| `QM_EXPIRY_REMINDER_SWEEP_INTERVAL_SECONDS`| `0`                                               | Periodic reminder reconciliation interval in seconds; `0` disables the in-process timer |
+| `QM_EXPIRY_REMINDER_TRIGGER_SECRET`        | unset                                             | Enables `POST /internal/maintenance/sweep-expiry-reminders` when set; callers must supply the shared secret in `X-QM-Maintenance-Token` |
 
 When `QM_PUBLIC_BASE_URL` is set, Quartermaster validates it strictly at startup: it must be an `https://` origin with no path, query, or fragment. The server normalizes a trailing slash away before exposing it to clients.
 
 Keep `QM_RATE_LIMIT_CLIENT_IP_MODE=socket` for direct deployments or simple local setups. Switch to `x-forwarded-for` only when Quartermaster sits behind a trusted reverse proxy that overwrites `X-Forwarded-For`, and set `QM_RATE_LIMIT_TRUSTED_PROXY_CIDRS` to the proxy subnet(s). Quartermaster ignores `X-Forwarded-For` unless the connecting peer IP matches one of those trusted CIDRs.
 
 Stale `auth_session` rows are still cleaned up opportunistically during auth flows. For long-lived deployments you can also opt into a periodic in-process sweep with `QM_AUTH_SESSION_SWEEP_INTERVAL_SECONDS`, or keep the timer disabled and trigger `POST /internal/maintenance/sweep-auth-sessions` from external automation. That maintenance route is intentionally not part of the public OpenAPI surface.
+
+Expiry reminders are also backend-owned in the current v1 design: the server computes reminder timing and wording once, stores pending reminder rows, and clients poll `GET /reminders` rather than reimplementing the policy locally. `QM_EXPIRY_REMINDER_FIRE_HOUR` and `QM_EXPIRY_REMINDER_FIRE_MINUTE` are interpreted in UTC.
 
 ## Tests
 

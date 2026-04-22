@@ -279,10 +279,11 @@ mod tests {
             None,
             None,
             uid,
+            None,
         )
         .await
         .unwrap();
-        stock::create(&db, hid, pid, lid, "200", "g", None, None, None, uid)
+        stock::create(&db, hid, pid, lid, "200", "g", None, None, None, uid, None)
             .await
             .unwrap();
 
@@ -301,7 +302,7 @@ mod tests {
     async fn list_timeline_cursor_respects_id_tiebreak() {
         let (db, hid, uid, lid, pid) = setup().await;
         // Seed a single batch so we can hang hand-crafted events off it.
-        let b = stock::create(&db, hid, pid, lid, "1", "g", None, None, None, uid)
+        let b = stock::create(&db, hid, pid, lid, "1", "g", None, None, None, uid, None)
             .await
             .unwrap();
         // Drop the create's `add` event so the fixture contains only the pair

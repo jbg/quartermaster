@@ -305,6 +305,7 @@ pub async fn create(
         req.opened_on.as_deref(),
         req.note.as_deref(),
         current.user_id,
+        Some(&state.config.expiry_reminder_policy),
     )
     .await?;
 
@@ -367,7 +368,16 @@ pub async fn update(
     // changes go through `update_metadata` (no event). Both can appear in
     // the same PATCH call.
     if let Some(qty) = req.quantity.as_deref() {
-        qm_db::stock::adjust(&state.db, household_id, id, qty, current.user_id, None).await?;
+        qm_db::stock::adjust(
+            &state.db,
+            household_id,
+            id,
+            qty,
+            current.user_id,
+            None,
+            Some(&state.config.expiry_reminder_policy),
+        )
+        .await?;
     }
 
     let metadata = StockMetadataUpdate {
@@ -381,7 +391,14 @@ pub async fn update(
         || req.opened_on.is_some()
         || req.note.is_some();
     if has_metadata {
-        qm_db::stock::update_metadata(&state.db, household_id, id, &metadata).await?;
+        qm_db::stock::update_metadata(
+            &state.db,
+            household_id,
+            id,
+            &metadata,
+            Some(&state.config.expiry_reminder_policy),
+        )
+        .await?;
     }
 
     let refreshed = qm_db::stock::get(&state.db, household_id, id)
@@ -414,7 +431,15 @@ pub async fn delete_one(
     Path(id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    let found = qm_db::stock::discard(&state.db, household_id, id, current.user_id, None).await?;
+    let found = qm_db::stock::discard(
+        &state.db,
+        household_id,
+        id,
+        current.user_id,
+        None,
+        Some(&state.config.expiry_reminder_policy),
+    )
+    .await?;
     if found {
         Ok(StatusCode::NO_CONTENT)
     } else {
@@ -470,8 +495,14 @@ pub async fn consume(
         Err(err) => return Err(ApiError::Domain(err)),
     };
 
-    let consume_request_id =
-        qm_db::stock::apply_consumption(&state.db, household_id, &plan, current.user_id).await?;
+    let consume_request_id = qm_db::stock::apply_consumption(
+        &state.db,
+        household_id,
+        &plan,
+        current.user_id,
+        Some(&state.config.expiry_reminder_policy),
+    )
+    .await?;
 
     // Zip the plan back with the batches so we can report the consumption
     // in both the batch's unit and the user's requested unit.
@@ -705,8 +736,14 @@ pub async fn restore_many(
         )));
     }
 
-    let rows =
-        qm_db::stock::restore_many(&state.db, household_id, &req.ids, current.user_id).await?;
+    let rows = qm_db::stock::restore_many(
+        &state.db,
+        household_id,
+        &req.ids,
+        current.user_id,
+        Some(&state.config.expiry_reminder_policy),
+    )
+    .await?;
 
     // Join each batch with its product for the response DTO.
     let mut restored = Vec::with_capacity(rows.len());
@@ -744,7 +781,14 @@ pub async fn restore_one(
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<StockBatchDto>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    let row = qm_db::stock::restore(&state.db, household_id, id, current.user_id).await?;
+    let row = qm_db::stock::restore(
+        &state.db,
+        household_id,
+        id,
+        current.user_id,
+        Some(&state.config.expiry_reminder_policy),
+    )
+    .await?;
     let product = qm_db::products::find_including_deleted(&state.db, row.product_id)
         .await?
         .ok_or(ApiError::NotFound)?;

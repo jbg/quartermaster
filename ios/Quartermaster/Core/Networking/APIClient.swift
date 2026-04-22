@@ -508,6 +508,38 @@ actor APIClient {
         }
     }
 
+    func listReminders(
+        afterFireAt: String? = nil,
+        afterID: String? = nil,
+        limit: Int = 50,
+    ) async throws -> ReminderListResponse {
+        let response = try await client.remindersList(.init(
+            query: .init(
+                afterFireAt: afterFireAt,
+                afterId: afterID,
+                limit: Int64(limit),
+            ),
+        ))
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+        case .unauthorized: throw APIError.unauthorized
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
+    func ackReminder(id: String) async throws {
+        let response = try await client.remindersAck(.init(path: .init(id: id)))
+        switch response {
+        case .noContent: return
+        case .unauthorized: throw APIError.unauthorized
+        case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
     private static let deviceLabel: String? = {
         #if os(iOS)
         return "iOS"

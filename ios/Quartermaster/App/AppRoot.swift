@@ -4,21 +4,36 @@ struct AppRoot: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
-        switch appState.phase {
-        case .launching:
-            LaunchView()
-        case .launchFailed(let message):
-            LaunchFailureView(message: message)
-        case .unauthenticated:
-            OnboardingView()
-        case .authenticated(let me):
-            if me.householdId != nil {
-                MainTabView()
-            } else {
-                NavigationStack {
-                    NoHouseholdView(me: me)
+        Group {
+            switch appState.phase {
+            case .launching:
+                LaunchView()
+            case .launchFailed(let message):
+                LaunchFailureView(message: message)
+            case .unauthenticated:
+                OnboardingView()
+            case .authenticated(let me):
+                if me.householdId != nil {
+                    MainTabView()
+                } else {
+                    NavigationStack {
+                        NoHouseholdView(me: me)
+                    }
                 }
             }
+        }
+        .alert(
+            appState.activeReminder?.title ?? "Reminder",
+            isPresented: Binding(
+                get: { appState.activeReminder != nil },
+                set: { _ in }
+            ),
+            presenting: appState.activeReminder
+        ) { _ in
+            Button("Open") { appState.openActiveReminder() }
+            Button("Dismiss", role: .cancel) { appState.dismissActiveReminder() }
+        } message: { reminder in
+            Text(reminder.body)
         }
     }
 }

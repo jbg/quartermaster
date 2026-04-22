@@ -46,6 +46,12 @@ struct RawConfig {
     off_circuit_breaker_open_seconds: u64,
     auth_session_sweep_interval_seconds: u64,
     auth_session_sweep_trigger_secret: Option<String>,
+    expiry_reminders_enabled: bool,
+    expiry_reminder_lead_days: i64,
+    expiry_reminder_fire_hour: u32,
+    expiry_reminder_fire_minute: u32,
+    expiry_reminder_sweep_interval_seconds: u64,
+    expiry_reminder_trigger_secret: Option<String>,
 }
 
 impl Default for RawConfig {
@@ -76,6 +82,12 @@ impl Default for RawConfig {
             off_circuit_breaker_open_seconds: 60,
             auth_session_sweep_interval_seconds: 0,
             auth_session_sweep_trigger_secret: None,
+            expiry_reminders_enabled: false,
+            expiry_reminder_lead_days: 1,
+            expiry_reminder_fire_hour: 9,
+            expiry_reminder_fire_minute: 0,
+            expiry_reminder_sweep_interval_seconds: 0,
+            expiry_reminder_trigger_secret: None,
         }
     }
 }
@@ -87,6 +99,7 @@ struct LoadedConfig {
     log_format: LogFormat,
     api_config: Arc<ApiConfig>,
     auth_session_sweep_interval: Option<Duration>,
+    expiry_reminder_sweep_interval: Option<Duration>,
 }
 
 fn load_config() -> anyhow::Result<RawConfig> {
@@ -150,6 +163,20 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         raw.auth_session_sweep_trigger_secret,
         "QM_AUTH_SESSION_SWEEP_TRIGGER_SECRET",
     )?;
+    let expiry_reminder_trigger_secret = normalize_optional_secret(
+        raw.expiry_reminder_trigger_secret,
+        "QM_EXPIRY_REMINDER_TRIGGER_SECRET",
+    )?;
+
+    if raw.expiry_reminder_fire_hour > 23 {
+        anyhow::bail!("QM_EXPIRY_REMINDER_FIRE_HOUR must be between 0 and 23");
+    }
+    if raw.expiry_reminder_fire_minute > 59 {
+        anyhow::bail!("QM_EXPIRY_REMINDER_FIRE_MINUTE must be between 0 and 59");
+    }
+    if raw.expiry_reminder_lead_days < 0 {
+        anyhow::bail!("QM_EXPIRY_REMINDER_LEAD_DAYS must be >= 0");
+    }
 
     let api_config = Arc::new(ApiConfig {
         registration_mode: RegistrationMode::from_str(&raw.registration_mode)
@@ -180,6 +207,13 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         off_circuit_breaker_failure_threshold: raw.off_circuit_breaker_failure_threshold,
         off_circuit_breaker_open_for: Duration::from_secs(raw.off_circuit_breaker_open_seconds),
         auth_session_sweep_trigger_secret,
+        expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy {
+            enabled: raw.expiry_reminders_enabled,
+            lead_days: raw.expiry_reminder_lead_days,
+            fire_hour: raw.expiry_reminder_fire_hour,
+            fire_minute: raw.expiry_reminder_fire_minute,
+        },
+        expiry_reminder_trigger_secret,
     });
 
     Ok(LoadedConfig {
@@ -189,6 +223,8 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         api_config,
         auth_session_sweep_interval: (raw.auth_session_sweep_interval_seconds > 0)
             .then(|| Duration::from_secs(raw.auth_session_sweep_interval_seconds)),
+        expiry_reminder_sweep_interval: (raw.expiry_reminder_sweep_interval_seconds > 0)
+            .then(|| Duration::from_secs(raw.expiry_reminder_sweep_interval_seconds)),
     })
 }
 
@@ -262,6 +298,13 @@ async fn main() -> anyhow::Result<()> {
     if let Some(interval) = loaded.auth_session_sweep_interval {
         tokio::spawn(spawn_auth_session_sweeper(state.db.clone(), interval));
     }
+    if let Some(interval) = loaded.expiry_reminder_sweep_interval {
+        tokio::spawn(spawn_expiry_reminder_sweeper(
+            state.db.clone(),
+            loaded.api_config.expiry_reminder_policy.clone(),
+            interval,
+        ));
+    }
 
     let app = qm_api::router(state);
 
@@ -298,6 +341,27 @@ async fn spawn_auth_session_sweeper(db: Database, interval: Duration) {
                 tracing::info!(deleted_sessions = deleted, "completed auth session sweep")
             }
             Err(err) => tracing::error!(?err, "auth session sweep failed"),
+        }
+    }
+}
+
+async fn spawn_expiry_reminder_sweeper(
+    db: Database,
+    policy: qm_db::reminders::ExpiryReminderPolicy,
+    interval: Duration,
+) {
+    let mut ticker = tokio::time::interval(interval);
+    ticker.tick().await;
+
+    loop {
+        ticker.tick().await;
+        match qm_db::reminders::reconcile_all(&db, &policy).await {
+            Ok(stats) => tracing::info!(
+                inserted = stats.inserted,
+                deleted = stats.deleted,
+                "completed expiry reminder sweep"
+            ),
+            Err(err) => tracing::error!(?err, "expiry reminder sweep failed"),
         }
     }
 }

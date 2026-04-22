@@ -5,5 +5,6 @@ pub mod join;
 pub mod locations;
 pub mod maintenance;
 pub mod products;
+pub mod reminders;
 pub mod stock;
 pub mod units;
