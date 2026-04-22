@@ -38,7 +38,6 @@ pub struct ReminderDto {
     pub location_id: Uuid,
     pub presented_on_device_at: Option<String>,
     pub opened_on_device_at: Option<String>,
-    pub acked_at: Option<String>,
 }
 
 impl TryFrom<qm_db::reminders::ReminderRow> for ReminderDto {
@@ -59,7 +58,6 @@ impl TryFrom<qm_db::reminders::ReminderRow> for ReminderDto {
             location_id: value.location_id,
             presented_on_device_at: value.presented_on_device_at,
             opened_on_device_at: value.opened_on_device_at,
-            acked_at: value.acked_at,
         })
     }
 }

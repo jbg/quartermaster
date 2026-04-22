@@ -48,7 +48,6 @@ pub struct ReminderRow {
     pub created_at: String,
     pub presented_on_device_at: Option<String>,
     pub opened_on_device_at: Option<String>,
-    pub acked_at: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -151,8 +150,7 @@ pub async fn list_due(
                         r.fire_at, r.household_timezone, r.household_fire_local_at, \
                         r.expires_on, r.title, r.body, r.created_at, \
                         s.first_presented_at AS presented_on_device_at, \
-                        s.opened_at AS opened_on_device_at, \
-                        r.acked_at \
+                        s.opened_at AS opened_on_device_at \
                  FROM stock_reminder r \
                  LEFT JOIN reminder_device_state s \
                    ON s.reminder_id = r.id AND s.device_id = ? \
@@ -167,8 +165,7 @@ pub async fn list_due(
                         r.fire_at, r.household_timezone, r.household_fire_local_at, \
                         r.expires_on, r.title, r.body, r.created_at, \
                         NULL AS presented_on_device_at, \
-                        NULL AS opened_on_device_at, \
-                        r.acked_at \
+                        NULL AS opened_on_device_at \
                  FROM stock_reminder r \
                  WHERE r.household_id = ? AND r.acked_at IS NULL AND r.fire_at <= ? ",
             ),
@@ -697,8 +694,8 @@ async fn insert_draft_tx(
     sqlx::query(
         "INSERT INTO stock_reminder \
          (id, household_id, batch_id, product_id, location_id, kind, fire_at, household_timezone, \
-          household_fire_local_at, expires_on, title, body, created_at, presented_at, acked_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)",
+          household_fire_local_at, expires_on, title, body, created_at, acked_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
     )
     .bind(Uuid::now_v7().to_string())
     .bind(draft.household_id.to_string())
@@ -955,7 +952,6 @@ fn row_to_reminder(row: sqlx::any::AnyRow) -> Result<ReminderRow, sqlx::Error> {
         created_at: row.try_get("created_at")?,
         presented_on_device_at: row.try_get("presented_on_device_at")?,
         opened_on_device_at: row.try_get("opened_on_device_at")?,
-        acked_at: row.try_get("acked_at")?,
     })
 }
 

@@ -8,12 +8,11 @@ CREATE TABLE IF NOT EXISTS stock_reminder (
     fire_at       TEXT NOT NULL,
     title         TEXT NOT NULL,
     body          TEXT NOT NULL,
-    created_at    TEXT NOT NULL,
-    presented_at  TEXT
+    created_at    TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_stock_reminder_due
-    ON stock_reminder(household_id, kind, presented_at, fire_at, id);
+    ON stock_reminder(household_id, kind, fire_at, id);
 
 CREATE INDEX IF NOT EXISTS idx_stock_reminder_batch_kind
-    ON stock_reminder(batch_id, kind, presented_at);
+    ON stock_reminder(batch_id, kind);

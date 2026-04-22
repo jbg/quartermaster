@@ -234,6 +234,7 @@ async fn present_open_and_ack_are_device_aware() {
     let reminder_id = body["items"][0]["id"].as_str().unwrap().to_owned();
     assert!(body["items"][0]["presented_on_device_at"].is_null());
     assert!(body["items"][0]["opened_on_device_at"].is_null());
+    assert!(body["items"][0].get("acked_at").is_none());
 
     let (status, body) = app
         .send(

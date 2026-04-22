@@ -13,9 +13,6 @@ DROP INDEX IF EXISTS idx_stock_reminder_batch_kind;
 CREATE INDEX IF NOT EXISTS idx_stock_reminder_batch_kind
     ON stock_reminder(batch_id, kind, acked_at);
 
-CREATE INDEX IF NOT EXISTS idx_stock_reminder_presented
-    ON stock_reminder(household_id, presented_at, acked_at, fire_at, id);
-
 UPDATE stock_reminder
 SET household_timezone = 'UTC'
 WHERE household_timezone = '';

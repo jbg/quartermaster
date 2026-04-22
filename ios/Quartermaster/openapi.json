@@ -2948,12 +2948,6 @@
           "location_id"
         ],
         "properties": {
-          "acked_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "batch_id": {
             "type": "string",
             "format": "uuid"
