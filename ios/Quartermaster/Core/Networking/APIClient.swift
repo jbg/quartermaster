@@ -108,6 +108,18 @@ actor APIClient {
 
     // MARK: - Households
 
+    func createHousehold(name: String) async throws -> Me {
+        let response = try await client.householdCreate(.init(
+            body: .json(.init(name: name)),
+        ))
+        switch response {
+        case .created(let ok): return try ok.body.json
+        case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
     func currentHousehold() async throws -> HouseholdDetail {
         let response = try await client.householdCurrentGet(.init())
         switch response {

@@ -25,6 +25,7 @@ typealias Household = Components.Schemas.HouseholdDto
 typealias Me = Components.Schemas.MeResponse
 typealias MeHousehold = Components.Schemas.MeHouseholdDto
 typealias HouseholdDetail = Components.Schemas.HouseholdDetailDto
+typealias CreateHouseholdRequest = Components.Schemas.CreateHouseholdRequest
 typealias UpdateHouseholdRequest = Components.Schemas.UpdateHouseholdRequest
 typealias Member = Components.Schemas.MemberDto
 typealias MembershipRole = Components.Schemas.MembershipRole

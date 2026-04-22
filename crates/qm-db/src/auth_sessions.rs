@@ -63,6 +63,14 @@ pub async fn upsert(
     Ok(())
 }
 
+pub async fn delete(db: &Database, session_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM auth_session WHERE session_id = ?")
+        .bind(session_id.to_string())
+        .execute(&db.pool)
+        .await?;
+    Ok(())
+}
+
 fn row_to_auth_session(row: sqlx::any::AnyRow) -> Result<AuthSessionRow, sqlx::Error> {
     let session_id: String = row.try_get("session_id")?;
     let user_id: String = row.try_get("user_id")?;

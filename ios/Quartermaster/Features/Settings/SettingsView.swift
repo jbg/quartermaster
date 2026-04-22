@@ -377,12 +377,7 @@ struct SettingsView: View {
         }
     }
 
-    private var me: Me? {
-        if case .authenticated(let me) = appState.phase {
-            return me
-        }
-        return nil
-    }
+    private var me: Me? { appState.me }
 
     private var currentRole: MembershipRole? {
         guard let me else { return nil }
@@ -396,7 +391,7 @@ struct SettingsView: View {
         currentRole == .admin
     }
 
-    private func load() async {
+    private func load(retryOnForbidden: Bool = true) async {
         guard let me else { return }
         guard me.householdId != nil else {
             household = nil
@@ -424,6 +419,20 @@ struct SettingsView: View {
                 invites = []
             }
         } catch let err as APIError {
+            if case .server(status: 403, _) = err, retryOnForbidden {
+                if let refreshed = await appState.refreshHouseholdContextAfterForbidden(),
+                   refreshed.householdId != nil {
+                    await load(retryOnForbidden: false)
+                    return
+                }
+                household = nil
+                householdNameDraft = ""
+                members = []
+                invites = []
+                locations = []
+                isLoading = false
+                return
+            }
             errorMessage = err.userFacingMessage
         } catch {
             errorMessage = error.localizedDescription

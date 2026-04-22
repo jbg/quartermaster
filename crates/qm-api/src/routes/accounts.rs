@@ -320,7 +320,7 @@ pub async fn logout(
     current: CurrentUser,
     header: axum::http::HeaderMap,
 ) -> ApiResult<StatusCode> {
-    let _ = current; // presence enforces auth
+    let session_id = current.session_id;
     if let Some(bearer) = header
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -331,6 +331,7 @@ pub async fn logout(
             qm_db::tokens::revoke_session(&state.db, token.session_id).await?;
         }
     }
+    qm_db::auth_sessions::delete(&state.db, session_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -446,7 +447,7 @@ async fn issue_token_pair(
     })
 }
 
-async fn build_me_response(
+pub(crate) async fn build_me_response(
     state: &AppState,
     user_id: Uuid,
     active_household_id: Option<Uuid>,

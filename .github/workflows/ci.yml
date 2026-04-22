@@ -43,6 +43,13 @@ jobs:
           QM_POSTGRES_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
         run: cargo test -p qm-db -- --nocapture
 
+      - name: Run compact qm-api Postgres household/auth suite
+        if: matrix.backend == 'postgres'
+        env:
+          QM_REQUIRE_POSTGRES_TESTS: "1"
+          QM_POSTGRES_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: cargo test -p qm-api --test households -- --nocapture
+
   openapi-and-ledger:
     runs-on: ubuntu-latest
     steps:

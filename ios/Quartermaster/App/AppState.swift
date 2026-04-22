@@ -60,6 +60,13 @@ final class AppState {
         lastError = nil
     }
 
+    var me: Me? {
+        if case .authenticated(let me) = phase {
+            return me
+        }
+        return nil
+    }
+
     func register(username: String, password: String, email: String?, inviteCode: String? = nil) async {
         lastError = nil
         do {
@@ -135,6 +142,11 @@ final class AppState {
 
     func unitsFor(family: ProductFamily) -> [Unit] {
         units.filter { $0.family == family }
+    }
+
+    func refreshHouseholdContextAfterForbidden() async -> Me? {
+        await refreshMe()
+        return me
     }
 
     private func loadUnits() async {

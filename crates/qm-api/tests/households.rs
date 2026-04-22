@@ -326,6 +326,158 @@ async fn removing_active_membership_falls_back_and_last_membership_clears_active
 }
 
 #[tokio::test]
+async fn authenticated_user_without_memberships_can_create_household_and_become_active_admin() {
+    let app = TestApp::start(ApiConfig {
+        registration_mode: RegistrationMode::InviteOnly,
+        ..ApiConfig::default()
+    })
+    .await;
+    let user_id = app.seed_user_without_household("orphaned").await;
+    let session_a = app.login("orphaned").await;
+    let session_b = app.login("orphaned").await;
+
+    let me_before = app.me(&session_a).await;
+    assert!(me_before["household_id"].is_null());
+    assert!(me_before["households"].as_array().unwrap().is_empty());
+
+    let (status, created) = app
+        .send(
+            Method::POST,
+            "/households",
+            Some(json!({ "name": "Fresh Start" })),
+            Some(&session_a),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let household_id = Uuid::parse_str(created["household_id"].as_str().unwrap()).unwrap();
+    assert_eq!(created["household_name"].as_str().unwrap(), "Fresh Start");
+    assert_eq!(created["households"].as_array().unwrap().len(), 1);
+    assert_eq!(created["households"][0]["role"].as_str().unwrap(), "admin");
+
+    let locations = qm_db::locations::list_for_household(&app.db, household_id)
+        .await
+        .unwrap();
+    let location_kinds: Vec<_> = locations.into_iter().map(|row| row.kind).collect();
+    assert_eq!(location_kinds, vec!["pantry", "fridge", "freezer"]);
+
+    let membership = qm_db::memberships::find(&app.db, household_id, user_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(membership.role, "admin");
+
+    let me_session_a = app.me(&session_a).await;
+    assert_eq!(
+        me_session_a["household_id"].as_str().unwrap(),
+        household_id.to_string()
+    );
+
+    let session_a_id = qm_db::tokens::find_active_by_hash(&app.db, &qm_api::auth::sha256_hex(&session_a))
+        .await
+        .unwrap()
+        .unwrap()
+        .session_id;
+    let session_b_id = qm_db::tokens::find_active_by_hash(&app.db, &qm_api::auth::sha256_hex(&session_b))
+        .await
+        .unwrap()
+        .unwrap()
+        .session_id;
+    assert_eq!(
+        qm_db::auth_sessions::find(&app.db, session_a_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .active_household_id,
+        Some(household_id)
+    );
+    assert_eq!(
+        qm_db::auth_sessions::find(&app.db, session_b_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .active_household_id,
+        None
+    );
+}
+
+#[tokio::test]
+async fn create_household_restores_active_context_after_last_membership_is_removed() {
+    let app = TestApp::start(ApiConfig {
+        registration_mode: RegistrationMode::InviteOnly,
+        ..ApiConfig::default()
+    })
+    .await;
+    let (household_id, _) = app.seed_household_admin("alice").await;
+    let alice = app.login("alice").await;
+
+    let alice_id = Uuid::parse_str(app.me(&alice).await["user"]["id"].as_str().unwrap()).unwrap();
+    qm_db::memberships::remove(&app.db, household_id, alice_id)
+        .await
+        .unwrap();
+
+    let me_after_removal = app.me(&alice).await;
+    assert!(me_after_removal["household_id"].is_null());
+
+    let (status, created) = app
+        .send(
+            Method::POST,
+            "/households",
+            Some(json!({ "name": "Replacement Home" })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(
+        created["household_name"].as_str().unwrap(),
+        "Replacement Home"
+    );
+    assert_eq!(created["households"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn logout_revokes_tokens_and_deletes_auth_session_row() {
+    let app = TestApp::start(ApiConfig::default()).await;
+    let _ = app.register("alice", None).await;
+    let (status, body) = app
+        .send(
+            Method::POST,
+            "/auth/login",
+            Some(json!({
+                "username": "alice",
+                "password": "password123",
+            })),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let access = body["access_token"].as_str().unwrap();
+    let hash = qm_api::auth::sha256_hex(access);
+    let token = qm_db::tokens::find_active_by_hash(&app.db, &hash)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        qm_db::auth_sessions::find(&app.db, token.session_id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+
+    assert_eq!(
+        app.send(Method::POST, "/auth/logout", None, Some(access)).await.0,
+        StatusCode::NO_CONTENT
+    );
+    assert!(
+        qm_db::auth_sessions::find(&app.db, token.session_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
 async fn member_removal_and_location_deletion_guards_work() {
     let app = TestApp::start(ApiConfig {
         registration_mode: RegistrationMode::InviteOnly,

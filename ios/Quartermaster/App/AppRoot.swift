@@ -11,8 +11,14 @@ struct AppRoot: View {
             LaunchFailureView(message: message)
         case .unauthenticated:
             OnboardingView()
-        case .authenticated:
-            MainTabView()
+        case .authenticated(let me):
+            if me.householdId != nil {
+                MainTabView()
+            } else {
+                NavigationStack {
+                    NoHouseholdView(me: me)
+                }
+            }
         }
     }
 }

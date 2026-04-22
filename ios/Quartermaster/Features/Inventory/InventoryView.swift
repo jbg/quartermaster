@@ -13,6 +13,7 @@ struct InventoryView: View {
     @State private var batchesSheet: BatchesSheetTarget?
     @State private var pendingProduct: Product?
     @State private var resolvingDeepLink = false
+    @State private var isSwitchingHousehold = false
 
     struct BatchesSheetTarget: Identifiable {
         let product: Product
@@ -43,6 +44,15 @@ struct InventoryView: View {
         }
         .navigationTitle("Inventory")
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                if let me = appState.me {
+                    HouseholdSwitcherMenu(
+                        me: me,
+                        isSwitching: isSwitchingHousehold,
+                        onSwitch: switchHousehold
+                    )
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     showSearchSheet = true
@@ -204,7 +214,7 @@ struct InventoryView: View {
         }
     }
 
-    private func load() async {
+    private func load(retryOnForbidden: Bool = true) async {
         isLoading = true
         loadError = nil
         async let locs = appState.api.locations()
@@ -214,11 +224,37 @@ struct InventoryView: View {
             locations = l.sorted { $0.sortOrder < $1.sortOrder }
             batches = s
         } catch let err as APIError {
+            if case .server(status: 403, _) = err, retryOnForbidden {
+                if let refreshed = await appState.refreshHouseholdContextAfterForbidden(),
+                   refreshed.householdId != nil {
+                    await load(retryOnForbidden: false)
+                    return
+                }
+                locations = []
+                batches = []
+                isLoading = false
+                return
+            }
             loadError = err.userFacingMessage
         } catch {
             loadError = error.localizedDescription
         }
         isLoading = false
+    }
+
+    private func switchHousehold(to householdID: String) {
+        guard !isSwitchingHousehold else { return }
+        isSwitchingHousehold = true
+        Task {
+            defer { isSwitchingHousehold = false }
+            do {
+                let updatedMe = try await appState.api.switchHousehold(householdID: householdID)
+                appState.applyAuthenticated(updatedMe)
+                await load(retryOnForbidden: false)
+            } catch {
+                loadError = (error as? APIError)?.userFacingMessage ?? error.localizedDescription
+            }
+        }
     }
 
     private func resolveDeepLink(_ target: InventoryTarget) async {

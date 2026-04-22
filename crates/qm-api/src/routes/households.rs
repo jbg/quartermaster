@@ -14,7 +14,7 @@ use uuid::Uuid;
 use crate::{
     auth::CurrentUser,
     error::{ApiError, ApiResult},
-    routes::accounts::UserDto,
+    routes::accounts::{self, MeResponse, UserDto},
     types::MembershipRole,
     AppState,
 };
@@ -23,6 +23,7 @@ const ROLE_ADMIN: &str = "admin";
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/households", post(create_household))
         .route(
             "/households/current",
             get(get_current_household).patch(update_current_household),
@@ -43,6 +44,11 @@ pub fn router() -> Router<AppState> {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct HouseholdDetailDto {
     pub id: Uuid,
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateHouseholdRequest {
     pub name: String,
 }
 
@@ -79,6 +85,38 @@ pub struct CreateInviteRequest {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct RedeemInviteRequest {
     pub invite_code: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/households",
+    operation_id = "household_create",
+    tag = "households",
+    request_body = CreateHouseholdRequest,
+    responses((status = 201, body = MeResponse), (status = 400, body = crate::error::ApiErrorBody)),
+    security(("bearer" = [])),
+)]
+pub async fn create_household(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Json(req): Json<CreateHouseholdRequest>,
+) -> ApiResult<(StatusCode, Json<MeResponse>)> {
+    let name = validate_household_name(&req.name)?;
+    let household = qm_db::households::create(&state.db, name).await?;
+    qm_db::locations::seed_defaults(&state.db, household.id).await?;
+    qm_db::memberships::insert(&state.db, household.id, current.user_id, ROLE_ADMIN).await?;
+    qm_db::auth_sessions::upsert(
+        &state.db,
+        current.session_id,
+        current.user_id,
+        Some(household.id),
+    )
+    .await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(accounts::build_me_response(&state, current.user_id, Some(household.id)).await?),
+    ))
 }
 
 #[utoipa::path(
@@ -119,12 +157,7 @@ pub async fn update_current_household(
 ) -> ApiResult<Json<HouseholdDetailDto>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
     require_admin(&current)?;
-    let name = req.name.trim();
-    if name.is_empty() || name.len() > 128 {
-        return Err(ApiError::BadRequest(
-            "household name must be 1..=128 chars".into(),
-        ));
-    }
+    let name = validate_household_name(&req.name)?;
     let household = qm_db::households::rename(&state.db, household_id, name)
         .await?
         .ok_or(ApiError::NotFound)?;
@@ -320,6 +353,16 @@ fn require_admin(current: &CurrentUser) -> ApiResult<()> {
     } else {
         Err(ApiError::AdminOnly)
     }
+}
+
+fn validate_household_name(name: &str) -> ApiResult<&str> {
+    let name = name.trim();
+    if name.is_empty() || name.len() > 128 {
+        return Err(ApiError::BadRequest(
+            "household name must be 1..=128 chars".into(),
+        ));
+    }
+    Ok(name)
 }
 
 fn invite_to_dto(row: qm_db::invites::InviteRow) -> ApiResult<InviteDto> {

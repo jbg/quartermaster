@@ -58,6 +58,7 @@ struct ScanScreen: View {
     @State private var sheet: Route?
     @State private var errorMessage: String?
     @State private var isLooking = false
+    @State private var isSwitchingHousehold = false
 
     enum Route: Identifiable, Hashable {
         case addStock(Product)
@@ -91,6 +92,17 @@ struct ScanScreen: View {
             }
         }
         .navigationTitle("Scan")
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                if let me = appState.me {
+                    HouseholdSwitcherMenu(
+                        me: me,
+                        isSwitching: isSwitchingHousehold,
+                        onSwitch: switchHousehold
+                    )
+                }
+            }
+        }
         .alert("Couldn't look up barcode", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -135,6 +147,22 @@ struct ScanScreen: View {
             } catch {
                 errorMessage = error.localizedDescription
                 lastHandled = ""
+            }
+        }
+    }
+
+    private func switchHousehold(to householdID: String) {
+        guard !isSwitchingHousehold else { return }
+        isSwitchingHousehold = true
+        Task {
+            defer { isSwitchingHousehold = false }
+            do {
+                let updatedMe = try await appState.api.switchHousehold(householdID: householdID)
+                appState.applyAuthenticated(updatedMe)
+                sheet = nil
+                lastHandled = ""
+            } catch {
+                errorMessage = (error as? APIError)?.userFacingMessage ?? error.localizedDescription
             }
         }
     }
