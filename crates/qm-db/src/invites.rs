@@ -2,7 +2,7 @@ use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::memberships::InsertOutcome;
+use crate::{Backend, memberships::InsertOutcome};
 use crate::{now_utc_rfc3339, Database};
 
 #[derive(Debug, Clone, Serialize)]
@@ -165,7 +165,7 @@ pub async fn status_for_code(db: &Database, code: &str) -> Result<InviteStatus, 
 }
 
 pub async fn consume(db: &Database, id: Uuid) -> Result<bool, sqlx::Error> {
-    let mut tx = db.pool.begin().await?;
+    let mut tx = begin_invite_tx(db).await?;
     let consumed = consume_in_tx(&mut tx, id).await?;
     tx.commit().await?;
     Ok(consumed)
@@ -194,10 +194,11 @@ pub async fn register_user_with_invite(
     email: Option<&str>,
     password_hash: &str,
 ) -> Result<RegisteredInviteUser, RegisterWithInviteError> {
-    let mut tx = db.pool.begin().await?;
+    let mut tx = begin_invite_tx(db).await?;
     let invite = find_active_by_code_in_tx(&mut tx, code)
         .await?
         .ok_or(RegisterWithInviteError::InvalidInvite)?;
+    maybe_synchronize_invite_race(db, invite.id).await;
 
     let user = match crate::users::create_in_tx(&mut tx, username, email, password_hash).await {
         Ok(user) => user,
@@ -225,10 +226,11 @@ pub async fn redeem_for_user(
     code: &str,
     user_id: Uuid,
 ) -> Result<RedeemOutcome, RedeemInviteError> {
-    let mut tx = db.pool.begin().await?;
+    let mut tx = begin_invite_tx(db).await?;
     let invite = find_active_by_code_in_tx(&mut tx, code)
         .await?
         .ok_or(RedeemInviteError::InvalidInvite)?;
+    maybe_synchronize_invite_race(db, invite.id).await;
 
     let outcome = crate::memberships::insert_if_absent_in_tx(
         &mut tx,
@@ -254,6 +256,29 @@ pub async fn redeem_for_user(
                 household_id: invite.household_id,
             })
         }
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+async fn maybe_synchronize_invite_race(db: &Database, invite_id: Uuid) {
+    if let Some(gate) = db.invite_race_gate().await {
+        gate.synchronize(invite_id).await;
+    }
+}
+
+#[cfg(not(any(test, feature = "test-support")))]
+async fn maybe_synchronize_invite_race(_db: &Database, _invite_id: Uuid) {}
+
+async fn begin_invite_tx(
+    db: &Database,
+) -> Result<sqlx::Transaction<'static, sqlx::Any>, sqlx::Error> {
+    if db.backend() == Backend::Sqlite {
+        // Claim writer intent up front on SQLite so concurrent invite
+        // transactions serialize at BEGIN time instead of deadlocking while
+        // trying to promote shared read locks into a writer later on.
+        db.pool.begin_with("BEGIN IMMEDIATE").await
+    } else {
+        db.pool.begin().await
     }
 }
 

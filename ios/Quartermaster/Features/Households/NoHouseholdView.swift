@@ -5,12 +5,7 @@ struct NoHouseholdView: View {
 
     let me: Me
 
-    @State private var redeemCode: String = ""
-    @State private var householdNameDraft: String = ""
-    @State private var isSwitchingHousehold = false
-    @State private var isRedeemingInvite = false
-    @State private var isCreatingHousehold = false
-    @State private var errorMessage: String?
+    @State private var householdEntry = HouseholdEntryController()
 
     var body: some View {
         Form {
@@ -31,60 +26,15 @@ struct NoHouseholdView: View {
                 }
             }
 
-            if !me.households.isEmpty {
-                Section("Switch households") {
-                    ForEach(me.households) { membership in
-                        Button {
-                            Task { await switchHousehold(to: membership.household.id) }
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(membership.household.name)
-                                    Text(membership.role.displayName)
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                if isSwitchingHousehold {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                }
-                            }
-                        }
-                        .disabled(isSwitchingHousehold)
-                    }
-                }
-            }
-
-            Section("Redeem invite") {
-                TextField("Invite code", text: $redeemCode)
-                    .textInputAutocapitalization(.characters)
-                    .autocorrectionDisabled()
-                Button {
-                    Task { await redeemInvite() }
-                } label: {
-                    if isRedeemingInvite {
-                        ProgressView()
-                    } else {
-                        Text("Join household")
-                    }
-                }
-                .disabled(redeemCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isRedeemingInvite)
-            }
-
-            Section("Create household") {
-                TextField("Household name", text: $householdNameDraft)
-                Button {
-                    Task { await createHousehold() }
-                } label: {
-                    if isCreatingHousehold {
-                        ProgressView()
-                    } else {
-                        Text("Create household")
-                    }
-                }
-                .disabled(householdNameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isCreatingHousehold)
-            }
+            HouseholdEntrySections(
+                controller: householdEntry,
+                me: me,
+                switchSectionTitle: "Switch households",
+                redeemSectionTitle: "Redeem invite",
+                redeemActionTitle: "Join household",
+                showsCreateHousehold: true,
+                onChanged: nil,
+            )
 
             Section("Server") {
                 LabeledContent("URL", value: appState.serverURL.absoluteString)
@@ -105,63 +55,12 @@ struct NoHouseholdView: View {
         .onChange(of: appState.pendingInviteContext) { _, _ in
             applyPendingInviteContext()
         }
-        .alert("Couldn't complete that action", isPresented: Binding(
-            get: { errorMessage != nil },
-            set: { if !$0 { errorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(errorMessage ?? "")
-        }
-    }
-
-    private func switchHousehold(to householdID: String) async {
-        isSwitchingHousehold = true
-        defer { isSwitchingHousehold = false }
-        do {
-            let updatedMe = try await appState.api.switchHousehold(householdID: householdID)
-            appState.applyAuthenticated(updatedMe)
-        } catch let err as APIError {
-            errorMessage = err.userFacingMessage
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func redeemInvite() async {
-        isRedeemingInvite = true
-        defer { isRedeemingInvite = false }
-        do {
-            try await appState.api.redeemInvite(code: redeemCode.trimmingCharacters(in: .whitespacesAndNewlines))
-            redeemCode = ""
-            await appState.refreshMe()
-        } catch let err as APIError {
-            errorMessage = err.userFacingMessage
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func createHousehold() async {
-        isCreatingHousehold = true
-        defer { isCreatingHousehold = false }
-        do {
-            let updatedMe = try await appState.api.createHousehold(
-                name: householdNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-            )
-            householdNameDraft = ""
-            appState.applyAuthenticated(updatedMe)
-        } catch let err as APIError {
-            errorMessage = err.userFacingMessage
-        } catch {
-            errorMessage = error.localizedDescription
-        }
     }
 
     private func applyPendingInviteContext() {
         guard let context = appState.takePendingInviteContext() else { return }
         if let inviteCode = context.inviteCode {
-            redeemCode = inviteCode
+            householdEntry.redeemCode = inviteCode
         }
     }
 }

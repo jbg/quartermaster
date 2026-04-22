@@ -8,6 +8,8 @@ use std::str::FromStr;
 
 use sqlx::any::AnyPoolOptions;
 use sqlx::AnyPool;
+#[cfg(any(test, feature = "test-support"))]
+use std::sync::Arc;
 
 pub mod auth_sessions;
 pub mod barcode_cache;
@@ -18,7 +20,7 @@ pub mod memberships;
 pub mod products;
 pub mod stock;
 pub mod stock_events;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 pub mod tokens;
 pub mod users;
@@ -27,6 +29,8 @@ pub mod users;
 pub struct Database {
     pub pool: AnyPool,
     backend: Backend,
+    #[cfg(any(test, feature = "test-support"))]
+    test_hooks: Arc<test_support::TestHooks>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,7 +71,12 @@ impl Database {
             .connect_with(opts)
             .await?;
 
-        Ok(Self { pool, backend })
+        Ok(Self {
+            pool,
+            backend,
+            #[cfg(any(test, feature = "test-support"))]
+            test_hooks: Arc::new(test_support::TestHooks::default()),
+        })
     }
 
     pub async fn migrate(&self) -> Result<(), sqlx::migrate::MigrateError> {
@@ -81,6 +90,21 @@ impl Database {
 
 pub fn now_utc_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl Database {
+    pub async fn install_invite_race_gate(&self, gate: Arc<test_support::InviteRaceGate>) {
+        self.test_hooks.install_invite_race_gate(gate).await;
+    }
+
+    pub async fn clear_invite_race_gate(&self) {
+        self.test_hooks.clear_invite_race_gate().await;
+    }
+
+    pub(crate) async fn invite_race_gate(&self) -> Option<Arc<test_support::InviteRaceGate>> {
+        self.test_hooks.invite_race_gate().await
+    }
 }
 
 fn backend_from_url(url: &str) -> Backend {

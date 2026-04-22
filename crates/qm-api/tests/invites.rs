@@ -1,7 +1,10 @@
 mod support;
 
+use std::sync::Arc;
+
 use axum::http::{Method, StatusCode};
 use qm_api::{ApiConfig, RegistrationMode};
+use qm_db::{Backend, test_support::InviteRaceGate};
 use serde_json::json;
 use support::TestApp;
 use uuid::Uuid;
@@ -220,11 +223,11 @@ async fn invalid_invite_registration_does_not_create_orphaned_user() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_redeem_for_same_user_consumes_invite_once() {
-    let app = TestApp::start(ApiConfig {
+    let app = Arc::new(TestApp::start(ApiConfig {
         registration_mode: RegistrationMode::InviteOnly,
         ..ApiConfig::default()
     })
-    .await;
+    .await);
     let (target_household, _) = app.seed_household_admin("alice").await;
     let alice = app.login("alice").await;
     let (_, invite) = app
@@ -237,24 +240,68 @@ async fn concurrent_redeem_for_same_user_consumes_invite_once() {
         .await;
     let code = invite["code"].as_str().unwrap().to_owned();
     let invite_id = Uuid::parse_str(invite["id"].as_str().unwrap()).unwrap();
-
     let _ = app.seed_household_admin("bob").await;
     let bob = app.login("bob").await;
-
-    let (first, second) = tokio::join!(
-        app.send(
-            Method::POST,
-            "/invites/redeem",
-            Some(json!({ "invite_code": code.clone() })),
-            Some(&bob),
-        ),
-        app.send(
-            Method::POST,
-            "/invites/redeem",
-            Some(json!({ "invite_code": code })),
-            Some(&bob),
-        )
+    let gate = InviteRaceGate::new(
+        invite_id,
+        if app.db.backend() == Backend::Postgres { 2 } else { 1 },
     );
+    app.db.install_invite_race_gate(gate.clone()).await;
+
+    let app_first = app.clone();
+    let bob_first = bob.clone();
+    let code_first = code.clone();
+    let first = tokio::spawn(async move {
+        app_first
+            .send(
+                Method::POST,
+                "/invites/redeem",
+                Some(json!({ "invite_code": code_first })),
+                Some(&bob_first),
+            )
+            .await
+    });
+
+    let second = if app.db.backend() == Backend::Postgres {
+        let app_second = app.clone();
+        let bob_second = bob.clone();
+        tokio::spawn(async move {
+            app_second
+                .send(
+                    Method::POST,
+                    "/invites/redeem",
+                    Some(json!({ "invite_code": code })),
+                    Some(&bob_second),
+                )
+                .await
+        })
+    } else {
+        gate.wait_until_ready().await;
+        app.db.clear_invite_race_gate().await;
+        let app_second = app.clone();
+        let bob_second = bob.clone();
+        let second = tokio::spawn(async move {
+            app_second
+                .send(
+                    Method::POST,
+                    "/invites/redeem",
+                    Some(json!({ "invite_code": code })),
+                    Some(&bob_second),
+                )
+                .await
+        });
+        gate.release().await;
+        second
+    };
+
+    if app.db.backend() == Backend::Postgres {
+        gate.wait_until_ready().await;
+        gate.release().await;
+    }
+
+    let first = first.await.unwrap();
+    let second = second.await.unwrap();
+    app.db.clear_invite_race_gate().await;
     assert_eq!(first.0, StatusCode::NO_CONTENT);
     assert_eq!(second.0, StatusCode::NO_CONTENT);
 
@@ -280,11 +327,11 @@ async fn concurrent_redeem_for_same_user_consumes_invite_once() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_single_use_registration_creates_no_orphaned_user() {
-    let app = TestApp::start(ApiConfig {
+    let app = Arc::new(TestApp::start(ApiConfig {
         registration_mode: RegistrationMode::InviteOnly,
         ..ApiConfig::default()
     })
-    .await;
+    .await);
     let _ = app.seed_household_admin("alice").await;
     let alice = app.login("alice").await;
     let (_, invite) = app
@@ -297,12 +344,35 @@ async fn concurrent_single_use_registration_creates_no_orphaned_user() {
         .await;
     let code = invite["code"].as_str().unwrap().to_owned();
     let invite_id = Uuid::parse_str(invite["id"].as_str().unwrap()).unwrap();
-
-    let results = tokio::join!(
-        app.register("bob", Some(&code)),
-        app.register("carol", Some(&code))
+    let gate = InviteRaceGate::new(
+        invite_id,
+        if app.db.backend() == Backend::Postgres { 2 } else { 1 },
     );
-    let statuses = [results.0 .0, results.1 .0];
+    app.db.install_invite_race_gate(gate.clone()).await;
+
+    let app_bob = app.clone();
+    let code_bob = code.clone();
+    let bob = tokio::spawn(async move { app_bob.register("bob", Some(&code_bob)).await });
+
+    let carol = if app.db.backend() == Backend::Postgres {
+        let app_carol = app.clone();
+        tokio::spawn(async move { app_carol.register("carol", Some(&code)).await })
+    } else {
+        gate.wait_until_ready().await;
+        app.db.clear_invite_race_gate().await;
+        let app_carol = app.clone();
+        let carol = tokio::spawn(async move { app_carol.register("carol", Some(&code)).await });
+        gate.release().await;
+        carol
+    };
+
+    if app.db.backend() == Backend::Postgres {
+        gate.wait_until_ready().await;
+        gate.release().await;
+    }
+
+    app.db.clear_invite_race_gate().await;
+    let statuses = [bob.await.unwrap().0, carol.await.unwrap().0];
     assert_eq!(
         statuses
             .iter()
@@ -337,11 +407,11 @@ async fn concurrent_single_use_registration_creates_no_orphaned_user() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_multi_use_redeems_do_not_exceed_max_uses() {
-    let app = TestApp::start(ApiConfig {
+    let app = Arc::new(TestApp::start(ApiConfig {
         registration_mode: RegistrationMode::InviteOnly,
         ..ApiConfig::default()
     })
-    .await;
+    .await);
     let (target_household, _) = app.seed_household_admin("alice").await;
     let alice = app.login("alice").await;
     let (_, invite) = app
@@ -354,7 +424,6 @@ async fn concurrent_multi_use_redeems_do_not_exceed_max_uses() {
         .await;
     let code = invite["code"].as_str().unwrap().to_owned();
     let invite_id = Uuid::parse_str(invite["id"].as_str().unwrap()).unwrap();
-
     for username in ["bob", "carol", "dave"] {
         let _ = app.seed_household_admin(username).await;
     }
@@ -362,26 +431,97 @@ async fn concurrent_multi_use_redeems_do_not_exceed_max_uses() {
     let carol = app.login("carol").await;
     let dave = app.login("dave").await;
 
-    let (r1, r2, r3) = tokio::join!(
-        app.send(
-            Method::POST,
-            "/invites/redeem",
-            Some(json!({ "invite_code": code.clone() })),
-            Some(&bob),
-        ),
-        app.send(
-            Method::POST,
-            "/invites/redeem",
-            Some(json!({ "invite_code": code.clone() })),
-            Some(&carol),
-        ),
-        app.send(
-            Method::POST,
-            "/invites/redeem",
-            Some(json!({ "invite_code": code })),
-            Some(&dave),
-        ),
+    let gate = InviteRaceGate::new(
+        invite_id,
+        if app.db.backend() == Backend::Postgres { 3 } else { 1 },
     );
+    app.db.install_invite_race_gate(gate.clone()).await;
+
+    let app_r1 = app.clone();
+    let bob_r1 = bob.clone();
+    let code_r1 = code.clone();
+    let r1 = tokio::spawn(async move {
+        app_r1
+            .send(
+                Method::POST,
+                "/invites/redeem",
+                Some(json!({ "invite_code": code_r1 })),
+                Some(&bob_r1),
+            )
+            .await
+    });
+
+    let r2 = if app.db.backend() == Backend::Postgres {
+        let app_r2 = app.clone();
+        let carol_r2 = carol.clone();
+        let code_r2 = code.clone();
+        tokio::spawn(async move {
+            app_r2
+                .send(
+                    Method::POST,
+                    "/invites/redeem",
+                    Some(json!({ "invite_code": code_r2 })),
+                    Some(&carol_r2),
+                )
+                .await
+        })
+    } else {
+        gate.wait_until_ready().await;
+        app.db.clear_invite_race_gate().await;
+        let app_r2 = app.clone();
+        let carol_r2 = carol.clone();
+        let code_r2 = code.clone();
+        tokio::spawn(async move {
+            app_r2
+                .send(
+                    Method::POST,
+                    "/invites/redeem",
+                    Some(json!({ "invite_code": code_r2 })),
+                    Some(&carol_r2),
+                )
+                .await
+        })
+    };
+
+    let r3 = if app.db.backend() == Backend::Postgres {
+        let app_r3 = app.clone();
+        let dave_r3 = dave.clone();
+        tokio::spawn(async move {
+            app_r3
+                .send(
+                    Method::POST,
+                    "/invites/redeem",
+                    Some(json!({ "invite_code": code })),
+                    Some(&dave_r3),
+                )
+                .await
+        })
+    } else {
+        let app_r3 = app.clone();
+        let dave_r3 = dave.clone();
+        let r3 = tokio::spawn(async move {
+            app_r3
+                .send(
+                    Method::POST,
+                    "/invites/redeem",
+                    Some(json!({ "invite_code": code })),
+                    Some(&dave_r3),
+                )
+                .await
+        });
+        gate.release().await;
+        r3
+    };
+
+    if app.db.backend() == Backend::Postgres {
+        gate.wait_until_ready().await;
+        gate.release().await;
+    }
+
+    let r1 = r1.await.unwrap();
+    let r2 = r2.await.unwrap();
+    let r3 = r3.await.unwrap();
+    app.db.clear_invite_race_gate().await;
     let statuses = [r1.0, r2.0, r3.0];
     let success_count = statuses
         .iter()

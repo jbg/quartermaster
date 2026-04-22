@@ -289,14 +289,18 @@ struct StockHistoryView: View {
             nextBeforeID = page.nextBeforeID
         } catch let err as APIError {
             if case .server(status: 403, _) = err, isHouseholdScope {
-                if let refreshed = await appState.refreshHouseholdContextAfterForbidden(),
-                   refreshed.householdId != nil {
+                switch await appState.resolveHouseholdScopedForbidden() {
+                case .retry:
                     await loadInitial()
                     return
+                case .fallbackToNoHousehold:
+                    entries = []
+                    isLoadingInitial = false
+                    return
+                case .failed(let message):
+                    errorMessage = message
+                    return
                 }
-                entries = []
-                isLoadingInitial = false
-                return
             }
             errorMessage = err.userFacingMessage
         } catch {

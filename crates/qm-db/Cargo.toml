@@ -5,15 +5,22 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+default = []
+test-support = ["dep:anyhow", "dep:testcontainers", "dep:testcontainers-modules"]
+
 [dependencies]
 qm-core = { path = "../qm-core" }
 
+anyhow = { workspace = true, optional = true }
 chrono.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+testcontainers = { version = "0.23", optional = true }
+testcontainers-modules = { version = "0.11", features = ["postgres"], optional = true }
 tracing.workspace = true
 uuid.workspace = true
 

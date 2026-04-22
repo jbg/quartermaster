@@ -24,7 +24,7 @@ These are enforced in code, but the *why* lives here. Respect them.
 - **iOS types + `Client` are generated** from that second copy by [swift-openapi-generator](https://github.com/apple/swift-openapi-generator). Don't hand-edit `Components.Schemas.*`; don't add DTO structs to a Swift file. Extensions on generated types live in `ios/Quartermaster/Core/Networking/APIAliases.swift`; the two tri-state PATCH bodies that the generator can't express natively live in `APIOverrides.swift`.
 - **After regenerating the spec, rebuild iOS** — the plugin runs during `xcodebuild` / Xcode builds, so changes flow through automatically. First build after a package change may need `-skipPackagePluginValidation`.
 - **`TODO.md` is gitignored by design.** Treat it as a personal scratchpad for the current working session. Don't refer to it from tracked code or docs.
-- **`xcodegen generate`** (in `ios/`) regenerates the `.xcodeproj` from `project.yml`. Re-run after any `project.yml` edit.
+- **`xcodegen generate`** (in `ios/`) regenerates the `.xcodeproj` from `project.yml`. Re-run after any `project.yml` edit, and also after adding new Swift source files or source-group structure that Xcode needs to see.
 
 ## Verification
 

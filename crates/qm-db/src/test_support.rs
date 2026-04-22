@@ -1,6 +1,11 @@
-use std::{any::Any, str::FromStr};
+use std::{
+    any::Any,
+    str::FromStr,
+    sync::Arc,
+};
 
 use sqlx::{any::AnyPoolOptions, postgres::PgConnection, Connection, Executor};
+use tokio::sync::{Barrier, Mutex};
 use testcontainers::ContainerAsync;
 use testcontainers_modules::{postgres::Postgres, testcontainers::runners::AsyncRunner};
 use uuid::Uuid;
@@ -30,6 +35,69 @@ impl TestDatabase {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct TestHooks {
+    invite_race_gate: Mutex<Option<Arc<InviteRaceGate>>>,
+}
+
+#[derive(Debug)]
+pub struct InviteRaceGate {
+    invite_id: Uuid,
+    arrive: Barrier,
+    release: Barrier,
+}
+
+impl InviteRaceGate {
+    pub fn new(invite_id: Uuid, participants: usize) -> Arc<Self> {
+        let parties = participants + 1;
+        Arc::new(Self {
+            invite_id,
+            arrive: Barrier::new(parties),
+            release: Barrier::new(parties),
+        })
+    }
+
+    pub async fn wait_until_ready(&self) {
+        self.arrive.wait().await;
+    }
+
+    pub async fn release(&self) {
+        self.release.wait().await;
+    }
+
+    pub async fn synchronize(&self, invite_id: Uuid) {
+        if self.invite_id != invite_id {
+            return;
+        }
+        self.arrive.wait().await;
+        self.release.wait().await;
+    }
+}
+
+impl TestHooks {
+    pub async fn install_invite_race_gate(&self, gate: Arc<InviteRaceGate>) {
+        *self.invite_race_gate.lock().await = Some(gate);
+    }
+
+    pub async fn clear_invite_race_gate(&self) {
+        *self.invite_race_gate.lock().await = None;
+    }
+
+    pub async fn invite_race_gate(&self) -> Option<Arc<InviteRaceGate>> {
+        self.invite_race_gate.lock().await.clone()
+    }
+}
+
+pub async fn default_test_database() -> TestDatabase {
+    if postgres_test_enabled() {
+        postgres()
+            .await
+            .expect("postgres test database required when Postgres tests are enabled")
+    } else {
+        sqlite_file().await
+    }
+}
+
 pub async fn sqlite() -> TestDatabase {
     sqlx::any::install_default_drivers();
     // SQLite's private in-memory databases are per-connection, so force a
@@ -52,7 +120,17 @@ pub async fn sqlite() -> TestDatabase {
     let db = Database {
         pool,
         backend: Backend::Sqlite,
+        test_hooks: Arc::new(TestHooks::default()),
     };
+    db.migrate().await.expect("migrate");
+    TestDatabase { db, _guard: None }
+}
+
+pub async fn sqlite_file() -> TestDatabase {
+    let path = format!("/tmp/qm-test-{}.db", Uuid::now_v7());
+    let db = Database::connect(&format!("sqlite://{path}?mode=rwc"))
+        .await
+        .expect("connect file sqlite");
     db.migrate().await.expect("migrate");
     TestDatabase { db, _guard: None }
 }

@@ -7,8 +7,8 @@ use axum::{
 };
 use qm_api::{ApiConfig, AppState};
 use qm_db::Database;
+use qm_db::test_support;
 use serde_json::{json, Value};
-use sqlx::Connection;
 use tower::util::ServiceExt;
 use uuid::Uuid;
 
@@ -212,49 +212,5 @@ impl TestApp {
 }
 
 async fn test_db() -> Database {
-    if postgres_test_enabled() {
-        postgres_db().await
-    } else {
-        let db = Database::connect(&temp_sqlite_db_url()).await.unwrap();
-        db.migrate().await.unwrap();
-        db
-    }
-}
-
-async fn postgres_db() -> Database {
-    let admin_url = std::env::var("QM_POSTGRES_TEST_URL")
-        .expect("QM_POSTGRES_TEST_URL must be set when Postgres tests are enabled");
-    let db_name = format!("qm_api_test_{}", Uuid::now_v7().simple());
-    let pool = reqwest::Url::parse(&admin_url).expect("valid Postgres URL");
-    let admin_db_name = pool
-        .path_segments()
-        .and_then(|segments| segments.last())
-        .filter(|segment| !segment.is_empty())
-        .expect("postgres url should include database")
-        .to_owned();
-
-    let mut admin = sqlx::postgres::PgConnection::connect(&admin_url)
-        .await
-        .expect("connect postgres admin");
-    sqlx::query(format!(r#"CREATE DATABASE "{db_name}""#).as_str())
-        .execute(&mut admin)
-        .await
-        .expect("create isolated postgres database");
-    admin.close().await.expect("close postgres admin");
-
-    let db_url = admin_url.replacen(&format!("/{admin_db_name}"), &format!("/{db_name}"), 1);
-    let db = Database::connect(&db_url).await.unwrap();
-    db.migrate().await.unwrap();
-    db
-}
-
-fn postgres_test_enabled() -> bool {
-    matches!(
-        std::env::var("QM_REQUIRE_POSTGRES_TESTS").ok().as_deref(),
-        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
-    ) || std::env::var("QM_POSTGRES_TEST_URL").is_ok()
-}
-
-fn temp_sqlite_db_url() -> String {
-    format!("sqlite:///tmp/qm-api-{}.db?mode=rwc", Uuid::now_v7())
+    test_support::default_test_database().await.into_db()
 }

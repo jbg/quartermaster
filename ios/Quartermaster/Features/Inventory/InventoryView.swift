@@ -225,15 +225,19 @@ struct InventoryView: View {
             batches = s
         } catch let err as APIError {
             if case .server(status: 403, _) = err, retryOnForbidden {
-                if let refreshed = await appState.refreshHouseholdContextAfterForbidden(),
-                   refreshed.householdId != nil {
+                switch await appState.resolveHouseholdScopedForbidden() {
+                case .retry:
                     await load(retryOnForbidden: false)
                     return
+                case .fallbackToNoHousehold:
+                    locations = []
+                    batches = []
+                    isLoading = false
+                    return
+                case .failed(let message):
+                    loadError = message
+                    return
                 }
-                locations = []
-                batches = []
-                isLoading = false
-                return
             }
             loadError = err.userFacingMessage
         } catch {
@@ -248,8 +252,7 @@ struct InventoryView: View {
         Task {
             defer { isSwitchingHousehold = false }
             do {
-                let updatedMe = try await appState.api.switchHousehold(householdID: householdID)
-                appState.applyAuthenticated(updatedMe)
+                _ = try await appState.switchHousehold(to: householdID)
                 await load(retryOnForbidden: false)
             } catch {
                 loadError = (error as? APIError)?.userFacingMessage ?? error.localizedDescription

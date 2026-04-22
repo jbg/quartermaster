@@ -157,8 +157,7 @@ struct ScanScreen: View {
         Task {
             defer { isSwitchingHousehold = false }
             do {
-                let updatedMe = try await appState.api.switchHousehold(householdID: householdID)
-                appState.applyAuthenticated(updatedMe)
+                _ = try await appState.switchHousehold(to: householdID)
                 sheet = nil
                 lastHandled = ""
             } catch {

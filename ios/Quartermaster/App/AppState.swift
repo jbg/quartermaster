@@ -4,6 +4,12 @@ import Observation
 @Observable
 @MainActor
 final class AppState {
+    enum HouseholdScopedForbiddenResolution: Equatable {
+        case retry
+        case fallbackToNoHousehold
+        case failed(String)
+    }
+
     enum Phase: Equatable {
         case launching
         case launchFailed(String)
@@ -144,9 +150,45 @@ final class AppState {
         units.filter { $0.family == family }
     }
 
-    func refreshHouseholdContextAfterForbidden() async -> Me? {
-        await refreshMe()
+    func switchHousehold(to householdID: String) async throws -> Me {
+        let updatedMe = try await api.switchHousehold(householdID: householdID)
+        applyAuthenticated(updatedMe)
+        return updatedMe
+    }
+
+    func redeemInvite(_ code: String) async throws -> Me {
+        try await api.redeemInvite(code: code)
+        let me = try await authenticatedMe()
+        applyAuthenticated(me)
         return me
+    }
+
+    func createHousehold(named name: String) async throws -> Me {
+        let updatedMe = try await api.createHousehold(name: name)
+        applyAuthenticated(updatedMe)
+        return updatedMe
+    }
+
+    func resolveHouseholdScopedForbidden() async -> HouseholdScopedForbiddenResolution {
+        do {
+            let me = try await authenticatedMe()
+            applyAuthenticated(me)
+            return me.householdId != nil ? .retry : .fallbackToNoHousehold
+        } catch let apiError as APIError {
+            if case .unauthorized = apiError {
+                await tokenStore.clear()
+                units = []
+                phase = .unauthenticated
+                return .fallbackToNoHousehold
+            }
+            let message = apiError.userFacingMessage
+            lastError = message
+            return .failed(message)
+        } catch {
+            let message = error.localizedDescription
+            lastError = message
+            return .failed(message)
+        }
     }
 
     private func loadUnits() async {
@@ -154,6 +196,10 @@ final class AppState {
         if let fresh = try? await api.units() {
             units = fresh
         }
+    }
+
+    private func authenticatedMe() async throws -> Me {
+        try await api.me()
     }
 
     private func userMessage(for error: Error) -> String {
