@@ -34,6 +34,7 @@ impl TestDatabase {
 #[derive(Debug, Default)]
 pub struct TestHooks {
     invite_race_gate: Mutex<Option<Arc<InviteRaceGate>>>,
+    reminder_delivery_race_gate: Mutex<Option<Arc<ReminderDeliveryRaceGate>>>,
 }
 
 #[derive(Debug)]
@@ -70,6 +71,40 @@ impl InviteRaceGate {
     }
 }
 
+#[derive(Debug)]
+pub struct ReminderDeliveryRaceGate {
+    reminder_id: Uuid,
+    arrive: Barrier,
+    release: Barrier,
+}
+
+impl ReminderDeliveryRaceGate {
+    pub fn new(reminder_id: Uuid, participants: usize) -> Arc<Self> {
+        let parties = participants + 1;
+        Arc::new(Self {
+            reminder_id,
+            arrive: Barrier::new(parties),
+            release: Barrier::new(parties),
+        })
+    }
+
+    pub async fn wait_until_ready(&self) {
+        self.arrive.wait().await;
+    }
+
+    pub async fn release(&self) {
+        self.release.wait().await;
+    }
+
+    pub async fn synchronize(&self, reminder_id: Uuid) {
+        if self.reminder_id != reminder_id {
+            return;
+        }
+        self.arrive.wait().await;
+        self.release.wait().await;
+    }
+}
+
 impl TestHooks {
     pub async fn install_invite_race_gate(&self, gate: Arc<InviteRaceGate>) {
         *self.invite_race_gate.lock().await = Some(gate);
@@ -81,6 +116,18 @@ impl TestHooks {
 
     pub async fn invite_race_gate(&self) -> Option<Arc<InviteRaceGate>> {
         self.invite_race_gate.lock().await.clone()
+    }
+
+    pub async fn install_reminder_delivery_race_gate(&self, gate: Arc<ReminderDeliveryRaceGate>) {
+        *self.reminder_delivery_race_gate.lock().await = Some(gate);
+    }
+
+    pub async fn clear_reminder_delivery_race_gate(&self) {
+        *self.reminder_delivery_race_gate.lock().await = None;
+    }
+
+    pub async fn reminder_delivery_race_gate(&self) -> Option<Arc<ReminderDeliveryRaceGate>> {
+        self.reminder_delivery_race_gate.lock().await.clone()
     }
 }
 

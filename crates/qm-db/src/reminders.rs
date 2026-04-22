@@ -106,6 +106,12 @@ pub struct PushWorkItem {
     pub device_token: String,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct PushClaimResult {
+    pub items: Vec<PushWorkItem>,
+    pub claim_conflicts: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct PushDeliveryResult {
     pub status: &'static str,
@@ -114,6 +120,17 @@ pub struct PushDeliveryResult {
     pub provider_message_id: Option<String>,
     pub error_code: Option<String>,
     pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PushDeliveryMetricsSummary {
+    pub due_count: u64,
+    pub oldest_due_at: Option<String>,
+    pub retry_due_count: u64,
+    pub active_claim_count: u64,
+    pub failed_retryable_count: u64,
+    pub failed_permanent_count: u64,
+    pub invalid_token_count: u64,
 }
 
 pub async fn sync_expiry_for_batch_tx(
@@ -346,7 +363,7 @@ pub async fn claim_due_push_work(
     now_rfc3339: &str,
     limit: i64,
     claim_until_rfc3339: &str,
-) -> Result<Vec<PushWorkItem>, sqlx::Error> {
+) -> Result<PushClaimResult, sqlx::Error> {
     let rows = sqlx::query(
         "SELECT r.id AS reminder_id, r.household_id, r.batch_id, r.product_id, r.location_id, \
                 r.kind, r.title, r.body, d.id AS device_row_id, d.push_token \
@@ -361,7 +378,11 @@ pub async fn claim_due_push_work(
            AND d.push_token <> '' \
            AND d.push_authorization IN ('authorized', 'provisional') \
            AND (s.last_push_status IS NULL OR s.last_push_status <> ?) \
-           AND NOT (s.last_push_status = ? AND s.last_push_token = d.push_token) \
+           AND NOT ( \
+               s.last_push_status = ? \
+               AND s.last_push_token IS NOT NULL \
+               AND s.last_push_token = d.push_token \
+           ) \
            AND (s.next_retry_at IS NULL OR s.next_retry_at <= ?) \
            AND NOT EXISTS ( \
                SELECT 1 FROM reminder_delivery rd \
@@ -386,6 +407,7 @@ pub async fn claim_due_push_work(
     .await?;
 
     let mut claimed = Vec::new();
+    let mut claim_conflicts = 0;
     for row in rows {
         let reminder_id = uuid_from(&row, "reminder_id")?;
         let device_row_id = uuid_from(&row, "device_row_id")?;
@@ -393,6 +415,7 @@ pub async fn claim_due_push_work(
         let Some(push_token) = push_token.filter(|value| !value.is_empty()) else {
             continue;
         };
+        maybe_synchronize_reminder_delivery_race(db, reminder_id).await;
         let attempt_id = Uuid::now_v7();
         let inserted = sqlx::query(
             "INSERT INTO reminder_delivery \
@@ -437,11 +460,17 @@ pub async fn claim_due_push_work(
                     device_token: push_token,
                 });
             }
-            Err(err) if is_unique_constraint_error(&err) => continue,
+            Err(err) if is_unique_constraint_error(&err) => {
+                claim_conflicts += 1;
+                continue;
+            }
             Err(err) => return Err(err),
         }
     }
-    Ok(claimed)
+    Ok(PushClaimResult {
+        items: claimed,
+        claim_conflicts,
+    })
 }
 
 pub async fn complete_push_attempt(
@@ -516,6 +545,56 @@ pub async fn reconcile_all(
         total.deleted += stats.deleted;
     }
     Ok(total)
+}
+
+pub async fn push_delivery_metrics_summary(
+    db: &Database,
+    now_rfc3339: &str,
+) -> Result<PushDeliveryMetricsSummary, sqlx::Error> {
+    let due_row = sqlx::query(
+        "SELECT COUNT(*) AS due_count, MIN(fire_at) AS oldest_due_at \
+         FROM stock_reminder \
+         WHERE acked_at IS NULL AND fire_at <= ?",
+    )
+    .bind(now_rfc3339)
+    .fetch_one(&db.pool)
+    .await?;
+
+    let delivery_row = sqlx::query(
+        "SELECT \
+            COALESCE(SUM(CASE WHEN last_push_status = ? AND next_retry_at IS NOT NULL AND next_retry_at <= ? THEN 1 ELSE 0 END), 0) AS retry_due_count, \
+            COALESCE(SUM(CASE WHEN last_push_status = ? THEN 1 ELSE 0 END), 0) AS active_claim_count, \
+            COALESCE(SUM(CASE WHEN last_push_status = ? THEN 1 ELSE 0 END), 0) AS failed_retryable_count, \
+            COALESCE(SUM(CASE WHEN last_push_status = ? THEN 1 ELSE 0 END), 0) AS failed_permanent_count \
+         FROM reminder_device_state",
+    )
+    .bind(DELIVERY_STATUS_FAILED_RETRYABLE)
+    .bind(now_rfc3339)
+    .bind(DELIVERY_STATUS_SENDING)
+    .bind(DELIVERY_STATUS_FAILED_RETRYABLE)
+    .bind(DELIVERY_STATUS_FAILED_PERMANENT)
+    .fetch_one(&db.pool)
+    .await?;
+
+    let invalid_token_row = sqlx::query(
+        "SELECT COUNT(*) AS invalid_token_count \
+         FROM reminder_device_state \
+         WHERE last_push_status = ? \
+           AND last_error_code IN ('BadDeviceToken', 'Unregistered', 'DeviceTokenNotForTopic', 'http_404', 'http_410')",
+    )
+    .bind(DELIVERY_STATUS_FAILED_PERMANENT)
+    .fetch_one(&db.pool)
+    .await?;
+
+    Ok(PushDeliveryMetricsSummary {
+        due_count: i64_to_u64(due_row.try_get("due_count")?),
+        oldest_due_at: due_row.try_get("oldest_due_at")?,
+        retry_due_count: i64_to_u64(delivery_row.try_get("retry_due_count")?),
+        active_claim_count: i64_to_u64(delivery_row.try_get("active_claim_count")?),
+        failed_retryable_count: i64_to_u64(delivery_row.try_get("failed_retryable_count")?),
+        failed_permanent_count: i64_to_u64(delivery_row.try_get("failed_permanent_count")?),
+        invalid_token_count: i64_to_u64(invalid_token_row.try_get("invalid_token_count")?),
+    })
 }
 
 pub fn build_expiry_reminder(
@@ -902,6 +981,16 @@ fn is_unique_constraint_error(err: &sqlx::Error) -> bool {
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
+async fn maybe_synchronize_reminder_delivery_race(db: &Database, reminder_id: Uuid) {
+    if let Some(gate) = db.reminder_delivery_race_gate().await {
+        gate.synchronize(reminder_id).await;
+    }
+}
+
+#[cfg(not(any(test, feature = "test-support")))]
+async fn maybe_synchronize_reminder_delivery_race(_db: &Database, _reminder_id: Uuid) {}
+
 fn page_from_rows(rows: Vec<sqlx::any::AnyRow>, limit: i64) -> Result<ReminderPage, sqlx::Error> {
     let mut items = Vec::with_capacity(rows.len());
     for row in rows {
@@ -960,13 +1049,25 @@ fn uuid_from(row: &sqlx::any::AnyRow, col: &str) -> Result<Uuid, sqlx::Error> {
     Uuid::parse_str(&s).map_err(|e| sqlx::Error::Decode(Box::new(e)))
 }
 
+fn i64_to_u64(value: i64) -> u64 {
+    value.max(0) as u64
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{households, locations, memberships, products, stock, users};
+    use crate::{
+        auth_sessions,
+        devices::{self, DeviceUpsert},
+        households, locations, memberships, products, stock, test_support, users,
+    };
 
     async fn setup() -> (Database, Uuid, Uuid, Uuid, Uuid) {
         let db = crate::test_db().await;
+        setup_with_db(&db).await
+    }
+
+    async fn setup_with_db(db: &Database) -> (Database, Uuid, Uuid, Uuid, Uuid) {
         let household = households::create(&db, "Home", "Europe/Madrid")
             .await
             .unwrap();
@@ -994,7 +1095,7 @@ mod tests {
         )
         .await
         .unwrap();
-        (db, household.id, user.id, pantry, product.id)
+        (db.clone(), household.id, user.id, pantry, product.id)
     }
 
     fn enabled_policy() -> ExpiryReminderPolicy {
@@ -1165,5 +1266,440 @@ mod tests {
         .await
         .unwrap();
         assert!(page.items.is_empty());
+    }
+
+    async fn seed_due_reminder_with_device(
+        db: &Database,
+        household_id: Uuid,
+        user_id: Uuid,
+        pantry: Uuid,
+        product_id: Uuid,
+        push_token: &str,
+    ) -> (Uuid, Uuid, Uuid) {
+        let batch = stock::create(
+            db,
+            household_id,
+            product_id,
+            pantry,
+            "1",
+            "ml",
+            Some("2999-01-03"),
+            None,
+            None,
+            user_id,
+            Some(&enabled_policy()),
+        )
+        .await
+        .unwrap();
+        sqlx::query("UPDATE stock_reminder SET fire_at = ? WHERE batch_id = ?")
+            .bind("2000-01-01T00:00:00.000Z")
+            .bind(batch.id.to_string())
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        let row = sqlx::query("SELECT id FROM stock_reminder WHERE batch_id = ?")
+            .bind(batch.id.to_string())
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        let reminder_id = uuid_from(&row, "id").unwrap();
+
+        let session_id = Uuid::now_v7();
+        auth_sessions::upsert(db, session_id, user_id, Some(household_id))
+            .await
+            .unwrap();
+        let device = devices::upsert(
+            db,
+            &DeviceUpsert {
+                user_id,
+                session_id,
+                device_id: "ios-main".into(),
+                platform: "ios".into(),
+                push_token: Some(push_token.into()),
+                push_authorization: "authorized".into(),
+                app_version: Some("0.1".into()),
+            },
+        )
+        .await
+        .unwrap();
+
+        (reminder_id, device.id, batch.id)
+    }
+
+    #[tokio::test]
+    async fn postgres_concurrent_claims_create_only_one_active_delivery() {
+        let Some(test_db) = test_support::postgres().await else {
+            return;
+        };
+        let db = test_db.db().clone();
+        let (_, household_id, user_id, pantry, product_id) = setup_with_db(&db).await;
+        let (reminder_id, device_id, _) = seed_due_reminder_with_device(
+            &db,
+            household_id,
+            user_id,
+            pantry,
+            product_id,
+            "token-1",
+        )
+        .await;
+
+        let gate = test_support::ReminderDeliveryRaceGate::new(reminder_id, 2);
+        db.install_reminder_delivery_race_gate(gate.clone()).await;
+
+        let db1 = db.clone();
+        let db2 = db.clone();
+        let t1 = tokio::spawn(async move {
+            claim_due_push_work(
+                &db1,
+                "2000-01-01T00:00:00.000Z",
+                10,
+                "2000-01-01T00:01:00.000Z",
+            )
+            .await
+            .unwrap()
+        });
+        let t2 = tokio::spawn(async move {
+            claim_due_push_work(
+                &db2,
+                "2000-01-01T00:00:00.000Z",
+                10,
+                "2000-01-01T00:01:00.000Z",
+            )
+            .await
+            .unwrap()
+        });
+
+        gate.wait_until_ready().await;
+        gate.release().await;
+
+        let r1 = t1.await.unwrap();
+        let r2 = t2.await.unwrap();
+        db.clear_reminder_delivery_race_gate().await;
+
+        assert_eq!(r1.items.len() + r2.items.len(), 1);
+        assert_eq!(r1.claim_conflicts + r2.claim_conflicts, 1);
+
+        let row = sqlx::query(
+            "SELECT COUNT(*) AS active_count \
+             FROM reminder_delivery \
+             WHERE reminder_id = ? AND device_id = ? AND channel = ? AND status = ?",
+        )
+        .bind(reminder_id.to_string())
+        .bind(device_id.to_string())
+        .bind(CHANNEL_APNS)
+        .bind(DELIVERY_STATUS_SENDING)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        let active_count: i64 = row.try_get("active_count").unwrap();
+        assert_eq!(active_count, 1);
+    }
+
+    #[tokio::test]
+    async fn retryable_failure_reclaims_only_after_next_retry_at() {
+        let (db, household_id, user_id, pantry, product_id) = setup().await;
+        let (_reminder_id, _device_id, _) = seed_due_reminder_with_device(
+            &db,
+            household_id,
+            user_id,
+            pantry,
+            product_id,
+            "token-1",
+        )
+        .await;
+
+        let first = claim_due_push_work(
+            &db,
+            "2000-01-01T00:00:00.000Z",
+            10,
+            "2000-01-01T00:01:00.000Z",
+        )
+        .await
+        .unwrap();
+        let work = &first.items[0];
+        complete_push_attempt(
+            &db,
+            work,
+            &PushDeliveryResult {
+                status: DELIVERY_STATUS_FAILED_RETRYABLE,
+                finished_at: "2000-01-01T00:00:10.000Z".into(),
+                next_retry_at: Some("2000-01-01T01:00:00.000Z".into()),
+                provider_message_id: None,
+                error_code: Some("http_500".into()),
+                error_message: Some("retry later".into()),
+            },
+        )
+        .await
+        .unwrap();
+
+        let before_retry = claim_due_push_work(
+            &db,
+            "2000-01-01T00:30:00.000Z",
+            10,
+            "2000-01-01T00:31:00.000Z",
+        )
+        .await
+        .unwrap();
+        assert!(before_retry.items.is_empty());
+
+        let after_retry = claim_due_push_work(
+            &db,
+            "2000-01-01T01:00:00.000Z",
+            10,
+            "2000-01-01T01:01:00.000Z",
+        )
+        .await
+        .unwrap();
+        assert_eq!(after_retry.items.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn expired_claims_become_retryable_and_claimable_again() {
+        let (db, household_id, user_id, pantry, product_id) = setup().await;
+        let (_reminder_id, _device_id, _) = seed_due_reminder_with_device(
+            &db,
+            household_id,
+            user_id,
+            pantry,
+            product_id,
+            "token-1",
+        )
+        .await;
+
+        let first = claim_due_push_work(
+            &db,
+            "2000-01-01T00:00:00.000Z",
+            10,
+            "2000-01-01T00:01:00.000Z",
+        )
+        .await
+        .unwrap();
+        assert_eq!(first.items.len(), 1);
+        let expired =
+            expire_stale_push_claims(&db, "2000-01-01T00:02:00.000Z", "2000-01-01T00:05:00.000Z")
+                .await
+                .unwrap();
+        assert_eq!(expired, 1);
+
+        let reclaimed = claim_due_push_work(
+            &db,
+            "2000-01-01T00:05:00.000Z",
+            10,
+            "2000-01-01T00:06:00.000Z",
+        )
+        .await
+        .unwrap();
+        assert_eq!(reclaimed.items.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn permanent_failure_blocks_resend_for_same_token() {
+        let (db, household_id, user_id, pantry, product_id) = setup().await;
+        let (_reminder_id, _device_id, _) = seed_due_reminder_with_device(
+            &db,
+            household_id,
+            user_id,
+            pantry,
+            product_id,
+            "token-1",
+        )
+        .await;
+
+        let first = claim_due_push_work(
+            &db,
+            "2000-01-01T00:00:00.000Z",
+            10,
+            "2000-01-01T00:01:00.000Z",
+        )
+        .await
+        .unwrap();
+        complete_push_attempt(
+            &db,
+            &first.items[0],
+            &PushDeliveryResult {
+                status: DELIVERY_STATUS_FAILED_PERMANENT,
+                finished_at: "2000-01-01T00:00:10.000Z".into(),
+                next_retry_at: None,
+                provider_message_id: None,
+                error_code: Some("BadDeviceToken".into()),
+                error_message: Some("invalid token".into()),
+            },
+        )
+        .await
+        .unwrap();
+
+        let next = claim_due_push_work(
+            &db,
+            "2000-01-02T00:00:00.000Z",
+            10,
+            "2000-01-02T00:01:00.000Z",
+        )
+        .await
+        .unwrap();
+        assert!(next.items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn success_prevents_duplicate_resend_for_same_token() {
+        let (db, household_id, user_id, pantry, product_id) = setup().await;
+        let (_reminder_id, _device_id, _) = seed_due_reminder_with_device(
+            &db,
+            household_id,
+            user_id,
+            pantry,
+            product_id,
+            "token-1",
+        )
+        .await;
+
+        let first = claim_due_push_work(
+            &db,
+            "2000-01-01T00:00:00.000Z",
+            10,
+            "2000-01-01T00:01:00.000Z",
+        )
+        .await
+        .unwrap();
+        complete_push_attempt(
+            &db,
+            &first.items[0],
+            &PushDeliveryResult {
+                status: DELIVERY_STATUS_SUCCEEDED,
+                finished_at: "2000-01-01T00:00:05.000Z".into(),
+                next_retry_at: None,
+                provider_message_id: Some("apns-1".into()),
+                error_code: None,
+                error_message: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let next = claim_due_push_work(
+            &db,
+            "2000-01-02T00:00:00.000Z",
+            10,
+            "2000-01-02T00:01:00.000Z",
+        )
+        .await
+        .unwrap();
+        assert!(next.items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn new_token_can_be_claimed_after_permanent_failure() {
+        let (db, household_id, user_id, pantry, product_id) = setup().await;
+        let (_reminder_id, _device_id, _) = seed_due_reminder_with_device(
+            &db,
+            household_id,
+            user_id,
+            pantry,
+            product_id,
+            "token-1",
+        )
+        .await;
+
+        let first = claim_due_push_work(
+            &db,
+            "2000-01-01T00:00:00.000Z",
+            10,
+            "2000-01-01T00:01:00.000Z",
+        )
+        .await
+        .unwrap();
+        let work = &first.items[0];
+        complete_push_attempt(
+            &db,
+            work,
+            &PushDeliveryResult {
+                status: DELIVERY_STATUS_FAILED_PERMANENT,
+                finished_at: "2000-01-01T00:00:10.000Z".into(),
+                next_retry_at: None,
+                provider_message_id: None,
+                error_code: Some("BadDeviceToken".into()),
+                error_message: Some("invalid token".into()),
+            },
+        )
+        .await
+        .unwrap();
+
+        let session_id = sqlx::query("SELECT session_id FROM notification_device WHERE id = ?")
+            .bind(work.device_row_id.to_string())
+            .fetch_one(&db.pool)
+            .await
+            .unwrap()
+            .try_get::<String, _>("session_id")
+            .unwrap();
+        devices::upsert(
+            &db,
+            &DeviceUpsert {
+                user_id,
+                session_id: Uuid::parse_str(&session_id).unwrap(),
+                device_id: "ios-main".into(),
+                platform: "ios".into(),
+                push_token: Some("token-2".into()),
+                push_authorization: "authorized".into(),
+                app_version: Some("0.2".into()),
+            },
+        )
+        .await
+        .unwrap();
+
+        let next = claim_due_push_work(
+            &db,
+            "2000-01-02T00:00:00.000Z",
+            10,
+            "2000-01-02T00:01:00.000Z",
+        )
+        .await
+        .unwrap();
+        assert_eq!(next.items.len(), 1);
+        assert_eq!(next.items[0].device_token, "token-2");
+    }
+
+    #[tokio::test]
+    async fn metrics_summary_reports_due_retry_and_invalid_token_counts() {
+        let (db, household_id, user_id, pantry, product_id) = setup().await;
+        let (_reminder_id, _device_id, _) = seed_due_reminder_with_device(
+            &db,
+            household_id,
+            user_id,
+            pantry,
+            product_id,
+            "token-1",
+        )
+        .await;
+
+        let first = claim_due_push_work(
+            &db,
+            "2000-01-01T00:00:00.000Z",
+            10,
+            "2000-01-01T00:01:00.000Z",
+        )
+        .await
+        .unwrap();
+        complete_push_attempt(
+            &db,
+            &first.items[0],
+            &PushDeliveryResult {
+                status: DELIVERY_STATUS_FAILED_PERMANENT,
+                finished_at: "2000-01-01T00:00:10.000Z".into(),
+                next_retry_at: None,
+                provider_message_id: None,
+                error_code: Some("BadDeviceToken".into()),
+                error_message: Some("invalid token".into()),
+            },
+        )
+        .await
+        .unwrap();
+
+        let summary = push_delivery_metrics_summary(&db, "2000-01-01T00:00:00.000Z")
+            .await
+            .unwrap();
+        assert_eq!(summary.due_count, 1);
+        assert_eq!(summary.failed_permanent_count, 1);
+        assert_eq!(summary.invalid_token_count, 1);
+        assert_eq!(summary.failed_retryable_count, 0);
+        assert!(summary.oldest_due_at.is_some());
     }
 }

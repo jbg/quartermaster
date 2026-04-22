@@ -108,6 +108,25 @@ impl Database {
     pub(crate) async fn invite_race_gate(&self) -> Option<Arc<test_support::InviteRaceGate>> {
         self.test_hooks.invite_race_gate().await
     }
+
+    pub async fn install_reminder_delivery_race_gate(
+        &self,
+        gate: Arc<test_support::ReminderDeliveryRaceGate>,
+    ) {
+        self.test_hooks
+            .install_reminder_delivery_race_gate(gate)
+            .await;
+    }
+
+    pub async fn clear_reminder_delivery_race_gate(&self) {
+        self.test_hooks.clear_reminder_delivery_race_gate().await;
+    }
+
+    pub(crate) async fn reminder_delivery_race_gate(
+        &self,
+    ) -> Option<Arc<test_support::ReminderDeliveryRaceGate>> {
+        self.test_hooks.reminder_delivery_race_gate().await
+    }
 }
 
 fn backend_from_url(url: &str) -> Backend {

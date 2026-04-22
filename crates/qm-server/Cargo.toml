@@ -19,6 +19,8 @@ axum.workspace = true
 backoff.workspace = true
 figment.workspace = true
 jiff.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -29,3 +31,10 @@ tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 utoipa.workspace = true
+
+[dev-dependencies]
+qm-db = { path = "../qm-db", features = ["test-support"] }
+serde_json.workspace = true
+sqlx.workspace = true
+tower.workspace = true
+uuid.workspace = true

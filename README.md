@@ -86,10 +86,23 @@ Quartermaster also supports a few self-hosting hardening knobs:
 | `QM_AUTH_SESSION_SWEEP_TRIGGER_SECRET`     | unset                                             | Enables `POST /internal/maintenance/sweep-auth-sessions` when set; callers must supply the shared secret in `X-QM-Maintenance-Token` |
 | `QM_EXPIRY_REMINDERS_ENABLED`              | `false`                                           | Enables backend-owned expiry reminder generation |
 | `QM_EXPIRY_REMINDER_LEAD_DAYS`             | `1`                                               | How many days before expiry a reminder should fire |
-| `QM_EXPIRY_REMINDER_FIRE_HOUR`             | `9`                                               | UTC hour when expiry reminders should fire |
-| `QM_EXPIRY_REMINDER_FIRE_MINUTE`           | `0`                                               | UTC minute when expiry reminders should fire |
+| `QM_EXPIRY_REMINDER_FIRE_HOUR`             | `9`                                               | Household-local hour when expiry reminders should fire |
+| `QM_EXPIRY_REMINDER_FIRE_MINUTE`           | `0`                                               | Household-local minute when expiry reminders should fire |
 | `QM_EXPIRY_REMINDER_SWEEP_INTERVAL_SECONDS`| `0`                                               | Periodic reminder reconciliation interval in seconds; `0` disables the in-process timer |
 | `QM_EXPIRY_REMINDER_TRIGGER_SECRET`        | unset                                             | Enables `POST /internal/maintenance/sweep-expiry-reminders` when set; callers must supply the shared secret in `X-QM-Maintenance-Token` |
+| `QM_PUSH_WORKER_ENABLED`                   | `false`                                           | Runs the APNs delivery worker inside the main API process when `true` and APNs is configured |
+| `QM_PUSH_WORKER_POLL_INTERVAL_SECONDS`     | `30`                                              | How often the worker scans for due reminder deliveries |
+| `QM_PUSH_WORKER_BATCH_SIZE`                | `25`                                              | Maximum reminder/device deliveries to claim in one cycle |
+| `QM_PUSH_WORKER_CLAIM_TTL_SECONDS`         | `60`                                              | How long a claimed delivery stays reserved before it is considered stale |
+| `QM_PUSH_WORKER_RETRY_BACKOFF_SECONDS`     | `300`                                             | Retry delay after a retryable push failure or expired claim |
+| `QM_APNS_ENABLED`                          | `false`                                           | Enables APNs delivery support |
+| `QM_APNS_ENVIRONMENT`                      | `sandbox`                                         | APNs environment: `sandbox` or `production` |
+| `QM_APNS_TOPIC`                            | unset                                             | APNs topic / bundle identifier used for reminder notifications |
+| `QM_APNS_AUTH_TOKEN`                       | unset                                             | APNs bearer token; must be supplied when APNs is enabled |
+| `QM_APNS_BASE_URL`                         | unset                                             | Optional APNs base URL override for local development or testing |
+| `QM_METRICS_ENABLED`                       | `false`                                           | Enables internal Prometheus metrics exposure |
+| `QM_METRICS_BIND`                          | `127.0.0.1:9091`                                  | Bind address for the dedicated `push-worker` metrics/health server |
+| `QM_METRICS_TRIGGER_SECRET`                | unset                                             | Required when metrics are enabled; callers must supply it in `X-QM-Maintenance-Token` for `GET /internal/metrics` |
 
 When `QM_PUBLIC_BASE_URL` is set, Quartermaster validates it strictly at startup: it must be an `https://` origin with no path, query, or fragment. The server normalizes a trailing slash away before exposing it to clients.
 
@@ -97,7 +110,82 @@ Keep `QM_RATE_LIMIT_CLIENT_IP_MODE=socket` for direct deployments or simple loca
 
 Stale `auth_session` rows are still cleaned up opportunistically during auth flows. For long-lived deployments you can also opt into a periodic in-process sweep with `QM_AUTH_SESSION_SWEEP_INTERVAL_SECONDS`, or keep the timer disabled and trigger `POST /internal/maintenance/sweep-auth-sessions` from external automation. That maintenance route is intentionally not part of the public OpenAPI surface.
 
-Expiry reminders are also backend-owned in the current v1 design: the server computes reminder timing and wording once, stores pending reminder rows, and clients poll `GET /reminders` rather than reimplementing the policy locally. `QM_EXPIRY_REMINDER_FIRE_HOUR` and `QM_EXPIRY_REMINDER_FIRE_MINUTE` are interpreted in UTC.
+Expiry reminders are also backend-owned in the current v1 design: the server computes reminder timing and wording once, stores pending reminder rows, and clients poll `GET /reminders` rather than reimplementing the policy locally. `QM_EXPIRY_REMINDER_FIRE_HOUR` and `QM_EXPIRY_REMINDER_FIRE_MINUTE` are interpreted in each household's configured timezone, then stored canonically in UTC.
+
+## Reminder Delivery
+
+Quartermaster's reminder delivery pipeline has two pieces:
+
+- the main API process, which owns stock mutations, reminder reconciliation, and the reminder inbox API
+- the APNs worker, which claims due reminder/device deliveries, sends push requests, and writes durable delivery attempts
+
+You can run the worker in either deployment shape:
+
+- integrated mode: run `cargo run -p qm-server` with `QM_PUSH_WORKER_ENABLED=true`
+- split mode: run the API normally and start a second process with `cargo run -p qm-server -- push-worker`
+
+`push-worker` mode requires `QM_APNS_ENABLED=true` and `QM_APNS_TOPIC` to be configured. In split deployments, the sweeper remains a repair tool for drift; the worker is still the primary delivery path.
+
+### Metrics and Health
+
+When `QM_METRICS_ENABLED=true`, Quartermaster exposes an internal Prometheus scrape surface protected by `X-QM-Maintenance-Token`:
+
+- API process: `GET /internal/metrics` on the normal API bind address
+- dedicated worker: `GET /internal/metrics` and `GET /healthz` on `QM_METRICS_BIND`
+
+These routes are intentionally internal-only and are not part of the public OpenAPI contract.
+
+The worker publishes counters and gauges for:
+
+- cycle count and cycle failures
+- claimed deliveries, claim conflicts, and expired claims
+- push attempts by outcome (`succeeded`, `failed_retryable`, `failed_permanent`)
+- transport failures before any APNs response
+- send/cycle latency histograms
+- due reminder count, retry-due count, active claim count, permanent/retryable failure counts, invalid-token count, and oldest due reminder age
+
+Healthy delivery usually looks like:
+
+- `qm_push_worker_last_cycle_completed_timestamp_seconds` continuing to advance
+- `qm_reminders_oldest_due_age_seconds` staying low
+- `qm_push_deliveries_active_claim_count` briefly rising during sends and then draining
+- `qm_push_devices_with_invalid_token_count` staying near zero
+
+Potential trouble signs are:
+
+- oldest-due age growing steadily
+- retry-due count or active-claim count staying elevated for long periods
+- frequent claim conflicts across multiple workers
+- permanent token failures accumulating faster than devices refresh their push tokens
+
+An APNs permanent token failure means the server has stopped retrying that reminder for that exact device token. Delivery resumes automatically if the client later re-registers the device with a new token.
+
+Example Prometheus scrape config:
+
+```yaml
+scrape_configs:
+  - job_name: quartermaster-api
+    metrics_path: /internal/metrics
+    static_configs:
+      - targets: ["quartermaster.example.com:8080"]
+    headers:
+      X-QM-Maintenance-Token: "${QM_METRICS_TRIGGER_SECRET}"
+
+  - job_name: quartermaster-push-worker
+    metrics_path: /internal/metrics
+    static_configs:
+      - targets: ["127.0.0.1:9091"]
+    headers:
+      X-QM-Maintenance-Token: "${QM_METRICS_TRIGGER_SECRET}"
+```
+
+For small hosted deployments, the default worker timings are intentionally conservative:
+
+- `QM_PUSH_WORKER_POLL_INTERVAL_SECONDS=30`
+- `QM_PUSH_WORKER_CLAIM_TTL_SECONDS=60`
+- `QM_PUSH_WORKER_RETRY_BACKOFF_SECONDS=300`
+
+Those defaults are a good starting point unless backlog age or retry volume shows they need tuning.
 
 ## Tests
 

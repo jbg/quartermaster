@@ -13,6 +13,7 @@ use qm_db::Database;
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
+mod metrics;
 mod push;
 
 const USER_AGENT: &str = concat!(
@@ -64,6 +65,9 @@ struct RawConfig {
     apns_topic: Option<String>,
     apns_auth_token: Option<String>,
     apns_base_url: Option<String>,
+    metrics_enabled: bool,
+    metrics_bind: String,
+    metrics_trigger_secret: Option<String>,
 }
 
 impl Default for RawConfig {
@@ -110,8 +114,19 @@ impl Default for RawConfig {
             apns_topic: None,
             apns_auth_token: None,
             apns_base_url: None,
+            metrics_enabled: false,
+            metrics_bind: "127.0.0.1:9091".into(),
+            metrics_trigger_secret: None,
         }
     }
+}
+
+#[derive(Clone, Debug)]
+struct MetricsConfig {
+    enabled: bool,
+    bind: SocketAddr,
+    trigger_secret: Option<Arc<String>>,
+    handle: Option<metrics_exporter_prometheus::PrometheusHandle>,
 }
 
 #[derive(Debug)]
@@ -125,6 +140,7 @@ struct LoadedConfig {
     push_worker_enabled: bool,
     push_worker_config: push::PushWorkerConfig,
     apns_config: push::ApnsConfig,
+    metrics_config: MetricsConfig,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -250,6 +266,20 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         None => None,
     };
     let apns_auth_token = normalize_optional_secret(raw.apns_auth_token, "QM_APNS_AUTH_TOKEN")?;
+    let metrics_trigger_secret =
+        normalize_optional_secret(raw.metrics_trigger_secret, "QM_METRICS_TRIGGER_SECRET")?;
+    let metrics_bind = raw
+        .metrics_bind
+        .parse()
+        .context("parsing QM_METRICS_BIND")?;
+    if raw.metrics_enabled && metrics_trigger_secret.is_none() {
+        anyhow::bail!("QM_METRICS_TRIGGER_SECRET is required when QM_METRICS_ENABLED=true");
+    }
+    let metrics_handle = if raw.metrics_enabled {
+        Some(metrics::init_recorder()?)
+    } else {
+        None
+    };
 
     let api_config = Arc::new(ApiConfig {
         registration_mode: RegistrationMode::from_str(&raw.registration_mode)
@@ -311,6 +341,12 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
             topic: apns_topic,
             auth_token: apns_auth_token,
             base_url: raw.apns_base_url,
+        },
+        metrics_config: MetricsConfig {
+            enabled: raw.metrics_enabled,
+            bind: metrics_bind,
+            trigger_secret: metrics_trigger_secret.map(Arc::new),
+            handle: metrics_handle,
         },
     })
 }
@@ -415,11 +451,27 @@ async fn main() -> anyhow::Result<()> {
                 http.clone(),
                 loaded.apns_config.clone(),
                 loaded.push_worker_config.clone(),
+                loaded.metrics_config.handle.clone(),
                 shutdown_rx.clone(),
             )));
         }
 
-        let app = qm_api::router(state);
+        let mut app = qm_api::router(state);
+        if loaded.metrics_config.enabled {
+            app = app.merge(metrics::internal_router(
+                loaded
+                    .metrics_config
+                    .handle
+                    .clone()
+                    .expect("metrics handle"),
+                loaded
+                    .metrics_config
+                    .trigger_secret
+                    .clone()
+                    .expect("metrics secret"),
+                false,
+            ));
+        }
         let listener = tokio::net::TcpListener::bind(loaded.bind)
             .await
             .with_context(|| format!("binding {}", loaded.bind))?;
@@ -438,11 +490,29 @@ async fn main() -> anyhow::Result<()> {
             http.clone(),
             loaded.apns_config.clone(),
             loaded.push_worker_config.clone(),
+            loaded.metrics_config.handle.clone(),
             shutdown_rx.clone(),
         ));
+        let worker_http = if loaded.metrics_config.enabled {
+            Some(tokio::spawn(run_worker_http_server(
+                loaded.metrics_config.clone(),
+                shutdown_rx.clone(),
+            )))
+        } else {
+            None
+        };
         tokio::select! {
             result = worker => {
                 result.context("joining push worker task")?;
+            }
+            result = async {
+                if let Some(task) = worker_http {
+                    task.await.context("joining worker HTTP task")?
+                } else {
+                    Ok(())
+                }
+            } => {
+                result?;
             }
             _ = shutdown_signal() => {}
         }
@@ -454,6 +524,27 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+async fn run_worker_http_server(
+    metrics_config: MetricsConfig,
+    shutdown: tokio::sync::watch::Receiver<bool>,
+) -> anyhow::Result<()> {
+    let router = metrics::internal_router(
+        metrics_config.handle.expect("metrics handle"),
+        metrics_config
+            .trigger_secret
+            .expect("metrics trigger secret"),
+        true,
+    );
+    let listener = tokio::net::TcpListener::bind(metrics_config.bind)
+        .await
+        .with_context(|| format!("binding {}", metrics_config.bind))?;
+    tracing::info!(addr = %metrics_config.bind, "worker metrics HTTP listening");
+    axum::serve(listener, router.into_make_service())
+        .with_graceful_shutdown(wait_for_shutdown(shutdown))
+        .await
+        .context("serving worker metrics HTTP")
 }
 
 async fn spawn_auth_session_sweeper(
@@ -544,6 +635,17 @@ async fn shutdown_signal() {
     tracing::info!("shutdown signal received");
 }
 
+async fn wait_for_shutdown(mut shutdown: tokio::sync::watch::Receiver<bool>) {
+    loop {
+        if *shutdown.borrow() {
+            return;
+        }
+        if shutdown.changed().await.is_err() {
+            return;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -600,5 +702,17 @@ mod tests {
                 .as_deref(),
             Some("secret")
         );
+    }
+
+    #[test]
+    fn requires_metrics_secret_when_metrics_are_enabled() {
+        let err = build_config(RawConfig {
+            metrics_enabled: true,
+            ..RawConfig::default()
+        })
+        .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("QM_METRICS_TRIGGER_SECRET is required"));
     }
 }
