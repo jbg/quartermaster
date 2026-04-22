@@ -132,7 +132,10 @@ where
             return Err(ApiError::Unauthorized);
         }
 
-        let expires: Timestamp = token.expires_at.parse().map_err(|_| ApiError::Unauthorized)?;
+        let expires: Timestamp = token
+            .expires_at
+            .parse()
+            .map_err(|_| ApiError::Unauthorized)?;
         if expires < Timestamp::now() {
             cleanup_session_if_unused(&app_state.db, token.session_id).await?;
             return Err(ApiError::Unauthorized);

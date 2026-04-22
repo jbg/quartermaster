@@ -292,7 +292,10 @@ pub async fn refresh(
         auth::cleanup_session_if_unused(&state.db, token.session_id).await?;
         return Err(ApiError::Unauthorized);
     }
-    let expires: Timestamp = token.expires_at.parse().map_err(|_| ApiError::Unauthorized)?;
+    let expires: Timestamp = token
+        .expires_at
+        .parse()
+        .map_err(|_| ApiError::Unauthorized)?;
     if expires < Timestamp::now() {
         auth::cleanup_session_if_unused(&state.db, token.session_id).await?;
         return Err(ApiError::Unauthorized);

@@ -95,6 +95,23 @@ pub async fn find_by_session_device(
     row.map(row_to_device).transpose()
 }
 
+pub async fn find_latest_for_session(
+    db: &Database,
+    session_id: Uuid,
+) -> Result<Option<DeviceRow>, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT id, user_id, session_id, device_id, platform, push_token, push_authorization, \
+                app_version, last_seen_at, created_at, updated_at \
+         FROM notification_device \
+         WHERE session_id = ? \
+         ORDER BY updated_at DESC, id DESC",
+    )
+    .bind(session_id.to_string())
+    .fetch_optional(&db.pool)
+    .await?;
+    row.map(row_to_device).transpose()
+}
+
 fn row_to_device(row: sqlx::any::AnyRow) -> Result<DeviceRow, sqlx::Error> {
     let id: String = row.try_get("id")?;
     let user_id: String = row.try_get("user_id")?;

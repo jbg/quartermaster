@@ -19,6 +19,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/reminders", get(list))
         .route("/reminders/{id}/present", post(present))
+        .route("/reminders/{id}/open", post(open))
         .route("/reminders/{id}/ack", post(ack))
 }
 
@@ -35,7 +36,8 @@ pub struct ReminderDto {
     pub batch_id: Uuid,
     pub product_id: Uuid,
     pub location_id: Uuid,
-    pub presented_at: Option<String>,
+    pub presented_on_device_at: Option<String>,
+    pub opened_on_device_at: Option<String>,
     pub acked_at: Option<String>,
 }
 
@@ -55,7 +57,8 @@ impl TryFrom<qm_db::reminders::ReminderRow> for ReminderDto {
             batch_id: value.batch_id,
             product_id: value.product_id,
             location_id: value.location_id,
-            presented_at: value.presented_at,
+            presented_on_device_at: value.presented_on_device_at,
+            opened_on_device_at: value.opened_on_device_at,
             acked_at: value.acked_at,
         })
     }
@@ -110,6 +113,7 @@ pub async fn list(
     let page = qm_db::reminders::list_due(
         &state.db,
         household_id,
+        current.session_id,
         &qm_db::now_utc_rfc3339(),
         q.after_fire_at.as_deref(),
         q.after_id,
@@ -150,6 +154,41 @@ pub async fn present(
     let found = qm_db::reminders::mark_presented(
         &state.db,
         household_id,
+        current.session_id,
+        id,
+        &qm_db::now_utc_rfc3339(),
+    )
+    .await?;
+    if found {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError::NotFound)
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/reminders/{id}/open",
+    operation_id = "reminders_open",
+    tag = "reminders",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 204),
+        (status = 401, body = crate::error::ApiErrorBody),
+        (status = 404, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn open(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<StatusCode> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    let found = qm_db::reminders::mark_opened(
+        &state.db,
+        household_id,
+        current.session_id,
         id,
         &qm_db::now_utc_rfc3339(),
     )
@@ -180,13 +219,8 @@ pub async fn ack(
     Path(id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    let found = qm_db::reminders::ack(
-        &state.db,
-        household_id,
-        id,
-        &qm_db::now_utc_rfc3339(),
-    )
-    .await?;
+    let found =
+        qm_db::reminders::ack(&state.db, household_id, id, &qm_db::now_utc_rfc3339()).await?;
     if found {
         Ok(StatusCode::NO_CONTENT)
     } else {

@@ -551,6 +551,17 @@ actor APIClient {
         }
     }
 
+    func openReminder(id: String) async throws {
+        let response = try await client.remindersOpen(.init(path: .init(id: id)))
+        switch response {
+        case .noContent: return
+        case .unauthorized: throw APIError.unauthorized
+        case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
     func registerDevice(
         deviceID: String,
         pushToken: String?,

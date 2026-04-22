@@ -459,7 +459,15 @@ pub async fn restore(
     reminder_policy: Option<&ExpiryReminderPolicy>,
 ) -> Result<StockBatchRow, RestoreError> {
     let mut tx = db.pool.begin().await?;
-    restore_in_tx(&mut tx, db.backend(), household_id, id, actor, reminder_policy).await?;
+    restore_in_tx(
+        &mut tx,
+        db.backend(),
+        household_id,
+        id,
+        actor,
+        reminder_policy,
+    )
+    .await?;
     tx.commit().await?;
     get(db, household_id, id)
         .await?
@@ -958,9 +966,7 @@ mod tests {
         let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid, None)
             .await
             .unwrap();
-        let after = adjust(&db, hid, b.id, "0", uid, None, None)
-            .await
-            .unwrap();
+        let after = adjust(&db, hid, b.id, "0", uid, None, None).await.unwrap();
         assert_eq!(after.quantity, "0");
         assert!(after.depleted_at.is_some());
     }
@@ -1034,7 +1040,9 @@ mod tests {
             .await
             .unwrap();
         discard(&db, hid, b.id, uid, None, None).await.unwrap();
-        restore(&db, hid, b.id, uid, None).await.expect("first restore");
+        restore(&db, hid, b.id, uid, None)
+            .await
+            .expect("first restore");
 
         let err = restore(&db, hid, b.id, uid, None)
             .await
@@ -1172,9 +1180,7 @@ mod tests {
         let batches = list_active_batches(&db, hid, pid, None).await.unwrap();
         let refs: Vec<_> = batches.iter().map(|b| b.to_batch_ref().unwrap()).collect();
         let plan = qm_core::batch::plan_consumption(refs, Decimal::from(750), "g").unwrap();
-        let request_id = apply_consumption(&db, hid, &plan, uid, None)
-            .await
-            .unwrap();
+        let request_id = apply_consumption(&db, hid, &plan, uid, None).await.unwrap();
 
         let events_b1 = stock_events::list_for_batch(&db, b1.id).await.unwrap();
         let events_b2 = stock_events::list_for_batch(&db, b2.id).await.unwrap();

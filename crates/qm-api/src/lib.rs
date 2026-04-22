@@ -190,6 +190,7 @@ impl Modify for SecurityAddon {
         routes::products::restore,
         routes::reminders::list,
         routes::reminders::present,
+        routes::reminders::open,
         routes::reminders::ack,
         routes::stock::list,
         routes::stock::get_one,

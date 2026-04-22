@@ -103,16 +103,20 @@ async fn list_returns_due_reminders_for_active_household_only() {
     .await
     .unwrap();
 
-    sqlx::query("UPDATE stock_reminder SET fire_at = '2000-01-01T00:00:00.000Z' WHERE batch_id = ?")
-        .bind(batch_a.id.to_string())
-        .execute(&app.db.pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE stock_reminder SET fire_at = '2000-01-01T00:00:00.000Z' WHERE batch_id = ?")
-        .bind(batch_b.id.to_string())
-        .execute(&app.db.pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE stock_reminder SET fire_at = '2000-01-01T00:00:00.000Z' WHERE batch_id = ?",
+    )
+    .bind(batch_a.id.to_string())
+    .execute(&app.db.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE stock_reminder SET fire_at = '2000-01-01T00:00:00.000Z' WHERE batch_id = ?",
+    )
+    .bind(batch_b.id.to_string())
+    .execute(&app.db.pool)
+    .await
+    .unwrap();
 
     let alice = app.login("alice").await;
     let switched = app
@@ -125,7 +129,9 @@ async fn list_returns_due_reminders_for_active_household_only() {
         .await;
     assert_eq!(switched.0, StatusCode::OK);
 
-    let (status, body) = app.send(Method::GET, "/reminders", None, Some(&alice)).await;
+    let (status, body) = app
+        .send(Method::GET, "/reminders", None, Some(&alice))
+        .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 1);
     assert_eq!(
@@ -143,7 +149,9 @@ async fn list_returns_due_reminders_for_active_household_only() {
         .await;
     assert_eq!(switched.0, StatusCode::OK);
 
-    let (status, body) = app.send(Method::GET, "/reminders", None, Some(&alice)).await;
+    let (status, body) = app
+        .send(Method::GET, "/reminders", None, Some(&alice))
+        .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 1);
     assert_eq!(
@@ -153,7 +161,7 @@ async fn list_returns_due_reminders_for_active_household_only() {
 }
 
 #[tokio::test]
-async fn present_and_ack_are_idempotent() {
+async fn present_open_and_ack_are_device_aware() {
     let app = TestApp::start(ApiConfig {
         expiry_reminder_policy: enabled_policy(),
         ..ApiConfig::default()
@@ -203,9 +211,29 @@ async fn present_and_ack_are_idempotent() {
         .unwrap();
 
     let alice = app.login("alice").await;
-    let (status, body) = app.send(Method::GET, "/reminders", None, Some(&alice)).await;
+    let (status, _) = app
+        .send(
+            Method::POST,
+            "/devices/register",
+            Some(json!({
+                "device_id": "ios-main",
+                "platform": "ios",
+                "push_authorization": "authorized",
+                "push_token": "token-1",
+                "app_version": "0.1",
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, body) = app
+        .send(Method::GET, "/reminders", None, Some(&alice))
+        .await;
     assert_eq!(status, StatusCode::OK);
     let reminder_id = body["items"][0]["id"].as_str().unwrap().to_owned();
+    assert!(body["items"][0]["presented_on_device_at"].is_null());
+    assert!(body["items"][0]["opened_on_device_at"].is_null());
 
     let (status, body) = app
         .send(
@@ -217,6 +245,30 @@ async fn present_and_ack_are_idempotent() {
         .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert!(body.is_null());
+
+    let (status, body) = app
+        .send(Method::GET, "/reminders", None, Some(&alice))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["items"][0]["presented_on_device_at"].is_string());
+    assert!(body["items"][0]["opened_on_device_at"].is_null());
+
+    let (status, body) = app
+        .send(
+            Method::POST,
+            &format!("/reminders/{reminder_id}/open"),
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(body.is_null());
+
+    let (status, body) = app
+        .send(Method::GET, "/reminders", None, Some(&alice))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["items"][0]["opened_on_device_at"].is_string());
 
     let (status, body) = app
         .send(
@@ -239,7 +291,9 @@ async fn present_and_ack_are_idempotent() {
         .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 
-    let (status, body) = app.send(Method::GET, "/reminders", None, Some(&alice)).await;
+    let (status, body) = app
+        .send(Method::GET, "/reminders", None, Some(&alice))
+        .await;
     assert_eq!(status, StatusCode::OK);
     assert!(body["items"].as_array().unwrap().is_empty());
 }

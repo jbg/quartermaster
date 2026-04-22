@@ -1,16 +1,8 @@
-use axum::{
-    http::StatusCode,
-    routing::post,
-    Json, Router,
-};
+use axum::{http::StatusCode, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{
-    auth::CurrentUser,
-    error::ApiResult,
-    AppState,
-};
+use crate::{auth::CurrentUser, error::ApiResult, AppState};
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/devices/register", post(register))

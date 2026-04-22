@@ -3,9 +3,14 @@ use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{now_utc_rfc3339, time, Database};
+use crate::{devices, now_utc_rfc3339, time, Database};
 
 pub const KIND_EXPIRY: &str = "expiry";
+pub const CHANNEL_APNS: &str = "apns";
+pub const DELIVERY_STATUS_SENDING: &str = "sending";
+pub const DELIVERY_STATUS_SUCCEEDED: &str = "succeeded";
+pub const DELIVERY_STATUS_FAILED_RETRYABLE: &str = "failed_retryable";
+pub const DELIVERY_STATUS_FAILED_PERMANENT: &str = "failed_permanent";
 
 #[derive(Clone, Debug)]
 pub struct ExpiryReminderPolicy {
@@ -41,7 +46,8 @@ pub struct ReminderRow {
     pub title: String,
     pub body: String,
     pub created_at: String,
-    pub presented_at: Option<String>,
+    pub presented_on_device_at: Option<String>,
+    pub opened_on_device_at: Option<String>,
     pub acked_at: Option<String>,
 }
 
@@ -86,6 +92,31 @@ struct BatchReminderContext {
     location_name: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct PushWorkItem {
+    pub attempt_id: Uuid,
+    pub reminder_id: Uuid,
+    pub household_id: Uuid,
+    pub batch_id: Uuid,
+    pub product_id: Uuid,
+    pub location_id: Uuid,
+    pub kind: String,
+    pub title: String,
+    pub body: String,
+    pub device_row_id: Uuid,
+    pub device_token: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct PushDeliveryResult {
+    pub status: &'static str,
+    pub finished_at: String,
+    pub next_retry_at: Option<String>,
+    pub provider_message_id: Option<String>,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
+}
+
 pub async fn sync_expiry_for_batch_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
     batch_id: Uuid,
@@ -106,23 +137,53 @@ pub async fn sync_expiry_for_batch_tx(
 pub async fn list_due(
     db: &Database,
     household_id: Uuid,
+    session_id: Uuid,
     now_rfc3339: &str,
     after_fire_at: Option<&str>,
     after_id: Option<Uuid>,
     limit: i64,
 ) -> Result<ReminderPage, sqlx::Error> {
-    let mut sql = String::from(
-        "SELECT id, household_id, batch_id, product_id, location_id, kind, fire_at, \
-                household_timezone, household_fire_local_at, expires_on, title, body, \
-                created_at, presented_at, acked_at \
-         FROM stock_reminder \
-         WHERE household_id = ? AND acked_at IS NULL AND fire_at <= ? ",
-    );
+    let current_device = devices::find_latest_for_session(db, session_id).await?;
+    let (mut sql, bind_device_id) = if let Some(device) = current_device {
+        (
+            String::from(
+                "SELECT r.id, r.household_id, r.batch_id, r.product_id, r.location_id, r.kind, \
+                        r.fire_at, r.household_timezone, r.household_fire_local_at, \
+                        r.expires_on, r.title, r.body, r.created_at, \
+                        s.first_presented_at AS presented_on_device_at, \
+                        s.opened_at AS opened_on_device_at, \
+                        r.acked_at \
+                 FROM stock_reminder r \
+                 LEFT JOIN reminder_device_state s \
+                   ON s.reminder_id = r.id AND s.device_id = ? \
+                 WHERE r.household_id = ? AND r.acked_at IS NULL AND r.fire_at <= ? ",
+            ),
+            Some(device.id.to_string()),
+        )
+    } else {
+        (
+            String::from(
+                "SELECT r.id, r.household_id, r.batch_id, r.product_id, r.location_id, r.kind, \
+                        r.fire_at, r.household_timezone, r.household_fire_local_at, \
+                        r.expires_on, r.title, r.body, r.created_at, \
+                        NULL AS presented_on_device_at, \
+                        NULL AS opened_on_device_at, \
+                        r.acked_at \
+                 FROM stock_reminder r \
+                 WHERE r.household_id = ? AND r.acked_at IS NULL AND r.fire_at <= ? ",
+            ),
+            None,
+        )
+    };
     match (after_fire_at, after_id) {
         (Some(fire_at), Some(id)) => {
             sql.push_str("AND (fire_at > ? OR (fire_at = ? AND id > ?)) ");
             sql.push_str("ORDER BY fire_at ASC, id ASC LIMIT ?");
-            let rows = sqlx::query(&sql)
+            let mut query = sqlx::query(&sql);
+            if let Some(device_id) = &bind_device_id {
+                query = query.bind(device_id);
+            }
+            let rows = query
                 .bind(household_id.to_string())
                 .bind(now_rfc3339)
                 .bind(fire_at)
@@ -136,7 +197,11 @@ pub async fn list_due(
         (Some(fire_at), None) => {
             sql.push_str("AND fire_at > ? ");
             sql.push_str("ORDER BY fire_at ASC, id ASC LIMIT ?");
-            let rows = sqlx::query(&sql)
+            let mut query = sqlx::query(&sql);
+            if let Some(device_id) = &bind_device_id {
+                query = query.bind(device_id);
+            }
+            let rows = query
                 .bind(household_id.to_string())
                 .bind(now_rfc3339)
                 .bind(fire_at)
@@ -154,7 +219,11 @@ pub async fn list_due(
     }
 
     sql.push_str("ORDER BY fire_at ASC, id ASC LIMIT ?");
-    let rows = sqlx::query(&sql)
+    let mut query = sqlx::query(&sql);
+    if let Some(device_id) = &bind_device_id {
+        query = query.bind(device_id);
+    }
+    let rows = query
         .bind(household_id.to_string())
         .bind(now_rfc3339)
         .bind(limit)
@@ -166,32 +235,33 @@ pub async fn list_due(
 pub async fn mark_presented(
     db: &Database,
     household_id: Uuid,
+    session_id: Uuid,
     id: Uuid,
     presented_at: &str,
 ) -> Result<bool, sqlx::Error> {
-    let updated = sqlx::query(
-        "UPDATE stock_reminder SET presented_at = ? \
-         WHERE id = ? AND household_id = ? AND acked_at IS NULL AND presented_at IS NULL",
-    )
-    .bind(presented_at)
-    .bind(id.to_string())
-    .bind(household_id.to_string())
-    .execute(&db.pool)
-    .await?
-    .rows_affected();
-
-    if updated > 0 {
-        return Ok(true);
+    if !pending_exists(db, household_id, id).await? {
+        return Ok(false);
     }
+    if let Some(device) = devices::find_latest_for_session(db, session_id).await? {
+        upsert_device_state_seen(db, id, device.id, Some(presented_at), None).await?;
+    }
+    Ok(true)
+}
 
-    let exists = sqlx::query(
-        "SELECT 1 AS x FROM stock_reminder WHERE id = ? AND household_id = ? AND acked_at IS NULL",
-    )
-    .bind(id.to_string())
-    .bind(household_id.to_string())
-    .fetch_optional(&db.pool)
-    .await?;
-    Ok(exists.is_some())
+pub async fn mark_opened(
+    db: &Database,
+    household_id: Uuid,
+    session_id: Uuid,
+    id: Uuid,
+    opened_at: &str,
+) -> Result<bool, sqlx::Error> {
+    if !pending_exists(db, household_id, id).await? {
+        return Ok(false);
+    }
+    if let Some(device) = devices::find_latest_for_session(db, session_id).await? {
+        upsert_device_state_seen(db, id, device.id, Some(opened_at), Some(opened_at)).await?;
+    }
+    Ok(true)
 }
 
 pub async fn ack(
@@ -221,6 +291,193 @@ pub async fn ack(
         .fetch_optional(&db.pool)
         .await?;
     Ok(exists.is_some())
+}
+
+pub async fn expire_stale_push_claims(
+    db: &Database,
+    now_rfc3339: &str,
+    retry_at_rfc3339: &str,
+) -> Result<u64, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT id, reminder_id, device_id \
+         FROM reminder_delivery \
+         WHERE channel = ? AND status = ? AND claim_until IS NOT NULL AND claim_until <= ?",
+    )
+    .bind(CHANNEL_APNS)
+    .bind(DELIVERY_STATUS_SENDING)
+    .bind(now_rfc3339)
+    .fetch_all(&db.pool)
+    .await?;
+
+    let mut expired = 0;
+    for row in rows {
+        let attempt_id = uuid_from(&row, "id")?;
+        let reminder_id = uuid_from(&row, "reminder_id")?;
+        let device_id = uuid_from(&row, "device_id")?;
+        sqlx::query(
+            "UPDATE reminder_delivery \
+             SET status = ?, finished_at = ?, claim_until = NULL, error_code = ?, error_message = ? \
+             WHERE id = ? AND status = ?",
+        )
+        .bind(DELIVERY_STATUS_FAILED_RETRYABLE)
+        .bind(now_rfc3339)
+        .bind("claim_expired")
+        .bind("push delivery claim expired before completion")
+        .bind(attempt_id.to_string())
+        .bind(DELIVERY_STATUS_SENDING)
+        .execute(&db.pool)
+        .await?;
+        upsert_device_state_delivery(
+            db,
+            reminder_id,
+            device_id,
+            None,
+            now_rfc3339,
+            DELIVERY_STATUS_FAILED_RETRYABLE,
+            retry_at_rfc3339,
+            Some("claim_expired"),
+            Some("push delivery claim expired before completion"),
+        )
+        .await?;
+        expired += 1;
+    }
+    Ok(expired)
+}
+
+pub async fn claim_due_push_work(
+    db: &Database,
+    now_rfc3339: &str,
+    limit: i64,
+    claim_until_rfc3339: &str,
+) -> Result<Vec<PushWorkItem>, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT r.id AS reminder_id, r.household_id, r.batch_id, r.product_id, r.location_id, \
+                r.kind, r.title, r.body, d.id AS device_row_id, d.push_token \
+         FROM stock_reminder r \
+         INNER JOIN membership m ON m.household_id = r.household_id \
+         INNER JOIN notification_device d ON d.user_id = m.user_id \
+         LEFT JOIN reminder_device_state s \
+           ON s.reminder_id = r.id AND s.device_id = d.id \
+         WHERE r.acked_at IS NULL \
+           AND r.fire_at <= ? \
+           AND d.push_token IS NOT NULL \
+           AND d.push_token <> '' \
+           AND d.push_authorization IN ('authorized', 'provisional') \
+           AND (s.last_push_status IS NULL OR s.last_push_status <> ?) \
+           AND NOT (s.last_push_status = ? AND s.last_push_token = d.push_token) \
+           AND (s.next_retry_at IS NULL OR s.next_retry_at <= ?) \
+           AND NOT EXISTS ( \
+               SELECT 1 FROM reminder_delivery rd \
+               WHERE rd.reminder_id = r.id \
+                 AND rd.device_id = d.id \
+                 AND rd.channel = ? \
+                 AND rd.status = ? \
+                 AND (rd.claim_until IS NULL OR rd.claim_until > ?) \
+           ) \
+         ORDER BY r.fire_at ASC, r.id ASC, d.updated_at DESC, d.id ASC \
+         LIMIT ?",
+    )
+    .bind(now_rfc3339)
+    .bind(DELIVERY_STATUS_SUCCEEDED)
+    .bind(DELIVERY_STATUS_FAILED_PERMANENT)
+    .bind(now_rfc3339)
+    .bind(CHANNEL_APNS)
+    .bind(DELIVERY_STATUS_SENDING)
+    .bind(now_rfc3339)
+    .bind(limit)
+    .fetch_all(&db.pool)
+    .await?;
+
+    let mut claimed = Vec::new();
+    for row in rows {
+        let reminder_id = uuid_from(&row, "reminder_id")?;
+        let device_row_id = uuid_from(&row, "device_row_id")?;
+        let push_token: Option<String> = row.try_get("push_token")?;
+        let Some(push_token) = push_token.filter(|value| !value.is_empty()) else {
+            continue;
+        };
+        let attempt_id = Uuid::now_v7();
+        let inserted = sqlx::query(
+            "INSERT INTO reminder_delivery \
+             (id, reminder_id, device_id, channel, status, created_at, attempted_at, claim_until) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(attempt_id.to_string())
+        .bind(reminder_id.to_string())
+        .bind(device_row_id.to_string())
+        .bind(CHANNEL_APNS)
+        .bind(DELIVERY_STATUS_SENDING)
+        .bind(now_rfc3339)
+        .bind(now_rfc3339)
+        .bind(claim_until_rfc3339)
+        .execute(&db.pool)
+        .await;
+        match inserted {
+            Ok(_) => {
+                upsert_device_state_delivery(
+                    db,
+                    reminder_id,
+                    device_row_id,
+                    Some(&push_token),
+                    now_rfc3339,
+                    DELIVERY_STATUS_SENDING,
+                    "",
+                    None,
+                    None,
+                )
+                .await?;
+                claimed.push(PushWorkItem {
+                    attempt_id,
+                    reminder_id,
+                    household_id: uuid_from(&row, "household_id")?,
+                    batch_id: uuid_from(&row, "batch_id")?,
+                    product_id: uuid_from(&row, "product_id")?,
+                    location_id: uuid_from(&row, "location_id")?,
+                    kind: row.try_get("kind")?,
+                    title: row.try_get("title")?,
+                    body: row.try_get("body")?,
+                    device_row_id,
+                    device_token: push_token,
+                });
+            }
+            Err(err) if is_unique_constraint_error(&err) => continue,
+            Err(err) => return Err(err),
+        }
+    }
+    Ok(claimed)
+}
+
+pub async fn complete_push_attempt(
+    db: &Database,
+    work: &PushWorkItem,
+    outcome: &PushDeliveryResult,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE reminder_delivery \
+         SET status = ?, finished_at = ?, claim_until = NULL, provider_message_id = ?, \
+             error_code = ?, error_message = ? \
+         WHERE id = ?",
+    )
+    .bind(outcome.status)
+    .bind(&outcome.finished_at)
+    .bind(&outcome.provider_message_id)
+    .bind(&outcome.error_code)
+    .bind(&outcome.error_message)
+    .bind(work.attempt_id.to_string())
+    .execute(&db.pool)
+    .await?;
+    upsert_device_state_delivery(
+        db,
+        work.reminder_id,
+        work.device_row_id,
+        Some(&work.device_token),
+        &outcome.finished_at,
+        outcome.status,
+        outcome.next_retry_at.as_deref().unwrap_or(""),
+        outcome.error_code.as_deref(),
+        outcome.error_message.as_deref(),
+    )
+    .await
 }
 
 pub async fn reconcile_household(
@@ -461,13 +718,202 @@ async fn insert_draft_tx(
     Ok(())
 }
 
+async fn pending_exists(db: &Database, household_id: Uuid, id: Uuid) -> Result<bool, sqlx::Error> {
+    let exists = sqlx::query(
+        "SELECT 1 AS x FROM stock_reminder WHERE id = ? AND household_id = ? AND acked_at IS NULL",
+    )
+    .bind(id.to_string())
+    .bind(household_id.to_string())
+    .fetch_optional(&db.pool)
+    .await?;
+    Ok(exists.is_some())
+}
+
+async fn upsert_device_state_seen(
+    db: &Database,
+    reminder_id: Uuid,
+    device_id: Uuid,
+    presented_at: Option<&str>,
+    opened_at: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    let now = match opened_at.or(presented_at) {
+        Some(value) => value.to_owned(),
+        None => now_utc_rfc3339(),
+    };
+    let updated = sqlx::query(
+        "UPDATE reminder_device_state \
+         SET first_presented_at = COALESCE(first_presented_at, ?), \
+             opened_at = COALESCE(opened_at, ?), \
+             updated_at = ? \
+         WHERE reminder_id = ? AND device_id = ?",
+    )
+    .bind(presented_at)
+    .bind(opened_at)
+    .bind(&now)
+    .bind(reminder_id.to_string())
+    .bind(device_id.to_string())
+    .execute(&db.pool)
+    .await?
+    .rows_affected();
+    if updated > 0 {
+        return Ok(());
+    }
+
+    let inserted = sqlx::query(
+        "INSERT INTO reminder_device_state \
+         (reminder_id, device_id, first_push_attempted_at, last_push_attempted_at, last_push_status, \
+          last_push_token, next_retry_at, last_error_code, last_error_message, first_presented_at, \
+          opened_at, created_at, updated_at) \
+         VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?)",
+    )
+    .bind(reminder_id.to_string())
+    .bind(device_id.to_string())
+    .bind(presented_at)
+    .bind(opened_at)
+    .bind(&now)
+    .bind(&now)
+    .execute(&db.pool)
+    .await;
+    match inserted {
+        Ok(_) => Ok(()),
+        Err(err) if is_unique_constraint_error(&err) => {
+            sqlx::query(
+                "UPDATE reminder_device_state \
+                 SET first_presented_at = COALESCE(first_presented_at, ?), \
+                     opened_at = COALESCE(opened_at, ?), \
+                     updated_at = ? \
+                 WHERE reminder_id = ? AND device_id = ?",
+            )
+            .bind(presented_at)
+            .bind(opened_at)
+            .bind(&now)
+            .bind(reminder_id.to_string())
+            .bind(device_id.to_string())
+            .execute(&db.pool)
+            .await?;
+            Ok(())
+        }
+        Err(err) => Err(err),
+    }
+}
+
+async fn upsert_device_state_delivery(
+    db: &Database,
+    reminder_id: Uuid,
+    device_id: Uuid,
+    push_token: Option<&str>,
+    attempted_at: &str,
+    status: &str,
+    next_retry_at: &str,
+    error_code: Option<&str>,
+    error_message: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    let next_retry = if next_retry_at.is_empty() {
+        None
+    } else {
+        Some(next_retry_at)
+    };
+    let updated = sqlx::query(
+        "UPDATE reminder_device_state \
+         SET first_push_attempted_at = COALESCE(first_push_attempted_at, ?), \
+             last_push_attempted_at = ?, \
+             last_push_status = ?, \
+             last_push_token = ?, \
+             next_retry_at = ?, \
+             last_error_code = ?, \
+             last_error_message = ?, \
+             updated_at = ? \
+         WHERE reminder_id = ? AND device_id = ?",
+    )
+    .bind(attempted_at)
+    .bind(attempted_at)
+    .bind(status)
+    .bind(push_token)
+    .bind(next_retry)
+    .bind(error_code)
+    .bind(error_message)
+    .bind(attempted_at)
+    .bind(reminder_id.to_string())
+    .bind(device_id.to_string())
+    .execute(&db.pool)
+    .await?
+    .rows_affected();
+    if updated > 0 {
+        return Ok(());
+    }
+
+    let inserted = sqlx::query(
+        "INSERT INTO reminder_device_state \
+         (reminder_id, device_id, first_push_attempted_at, last_push_attempted_at, last_push_status, \
+          last_push_token, next_retry_at, last_error_code, last_error_message, first_presented_at, \
+          opened_at, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
+    )
+    .bind(reminder_id.to_string())
+    .bind(device_id.to_string())
+    .bind(attempted_at)
+    .bind(attempted_at)
+    .bind(status)
+    .bind(push_token)
+    .bind(next_retry)
+    .bind(error_code)
+    .bind(error_message)
+    .bind(attempted_at)
+    .bind(attempted_at)
+    .execute(&db.pool)
+    .await;
+    match inserted {
+        Ok(_) => Ok(()),
+        Err(err) if is_unique_constraint_error(&err) => {
+            sqlx::query(
+                "UPDATE reminder_device_state \
+                 SET first_push_attempted_at = COALESCE(first_push_attempted_at, ?), \
+                     last_push_attempted_at = ?, \
+                     last_push_status = ?, \
+                     last_push_token = ?, \
+                     next_retry_at = ?, \
+                     last_error_code = ?, \
+                     last_error_message = ?, \
+                     updated_at = ? \
+                 WHERE reminder_id = ? AND device_id = ?",
+            )
+            .bind(attempted_at)
+            .bind(attempted_at)
+            .bind(status)
+            .bind(push_token)
+            .bind(next_retry)
+            .bind(error_code)
+            .bind(error_message)
+            .bind(attempted_at)
+            .bind(reminder_id.to_string())
+            .bind(device_id.to_string())
+            .execute(&db.pool)
+            .await?;
+            Ok(())
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn is_unique_constraint_error(err: &sqlx::Error) -> bool {
+    match err {
+        sqlx::Error::Database(db_err) => {
+            let message = db_err.message().to_ascii_lowercase();
+            message.contains("unique") || message.contains("duplicate")
+        }
+        _ => false,
+    }
+}
+
 fn page_from_rows(rows: Vec<sqlx::any::AnyRow>, limit: i64) -> Result<ReminderPage, sqlx::Error> {
     let mut items = Vec::with_capacity(rows.len());
     for row in rows {
         items.push(row_to_reminder(row)?);
     }
     let next = if items.len() as i64 == limit {
-        items.last().map(|row| (Some(row.fire_at.clone()), Some(row.id)))
+        items
+            .last()
+            .map(|row| (Some(row.fire_at.clone()), Some(row.id)))
     } else {
         None
     };
@@ -507,7 +953,8 @@ fn row_to_reminder(row: sqlx::any::AnyRow) -> Result<ReminderRow, sqlx::Error> {
         title: row.try_get("title")?,
         body: row.try_get("body")?,
         created_at: row.try_get("created_at")?,
-        presented_at: row.try_get("presented_at")?,
+        presented_on_device_at: row.try_get("presented_on_device_at")?,
+        opened_on_device_at: row.try_get("opened_on_device_at")?,
         acked_at: row.try_get("acked_at")?,
     })
 }
@@ -524,7 +971,9 @@ mod tests {
 
     async fn setup() -> (Database, Uuid, Uuid, Uuid, Uuid) {
         let db = crate::test_db().await;
-        let household = households::create(&db, "Home", "Europe/Madrid").await.unwrap();
+        let household = households::create(&db, "Home", "Europe/Madrid")
+            .await
+            .unwrap();
         locations::seed_defaults(&db, household.id).await.unwrap();
         let pantry = locations::list_for_household(&db, household.id)
             .await
@@ -604,9 +1053,17 @@ mod tests {
         .await
         .unwrap();
 
-        let page = list_due(&db, household_id, "3000-01-01T00:00:00.000Z", None, None, 10)
-            .await
-            .unwrap();
+        let page = list_due(
+            &db,
+            household_id,
+            Uuid::nil(),
+            "3000-01-01T00:00:00.000Z",
+            None,
+            None,
+            10,
+        )
+        .await
+        .unwrap();
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].batch_id, batch.id);
         assert_eq!(page.items[0].title, "Milk expires tomorrow");
@@ -644,9 +1101,17 @@ mod tests {
         .await
         .unwrap();
 
-        let page = list_due(&db, household_id, "4000-01-01T00:00:00.000Z", None, None, 10)
-            .await
-            .unwrap();
+        let page = list_due(
+            &db,
+            household_id,
+            Uuid::nil(),
+            "4000-01-01T00:00:00.000Z",
+            None,
+            None,
+            10,
+        )
+        .await
+        .unwrap();
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].batch_id, batch.id);
         assert_eq!(page.items[0].expires_on.as_deref(), Some("2999-01-06"));
@@ -692,9 +1157,17 @@ mod tests {
             .unwrap();
         assert!(stats.deleted <= 1);
 
-        let page = list_due(&db, household_id, "4000-01-01T00:00:00.000Z", None, None, 10)
-            .await
-            .unwrap();
+        let page = list_due(
+            &db,
+            household_id,
+            Uuid::nil(),
+            "4000-01-01T00:00:00.000Z",
+            None,
+            None,
+            10,
+        )
+        .await
+        .unwrap();
         assert!(page.items.is_empty());
     }
 }

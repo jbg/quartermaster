@@ -191,6 +191,14 @@ extension Reminder: Identifiable {
     var locationID: String { locationId }
     var fireAtDate: Date? { Self.iso.date(from: fireAt) }
     var householdFireLocalAtDate: Date? { Self.iso.date(from: householdFireLocalAt) }
+    var presentedOnDeviceDate: Date? {
+        guard let presentedOnDeviceAt else { return nil }
+        return Self.iso.date(from: presentedOnDeviceAt)
+    }
+    var openedOnDeviceDate: Date? {
+        guard let openedOnDeviceAt else { return nil }
+        return Self.iso.date(from: openedOnDeviceAt)
+    }
     nonisolated(unsafe) private static let iso: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

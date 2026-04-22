@@ -1,5 +1,7 @@
 import Foundation
 import Observation
+import UIKit
+import UserNotifications
 
 @Observable
 @MainActor
@@ -33,6 +35,7 @@ final class AppState {
     private(set) var api: APIClient
     private var queuedReminders: [Reminder] = []
     private var pushToken: String?
+    private var pushAuthorization: PushAuthorizationStatus = .notDetermined
     private var isSyncingReminders = false
 
     init() {
@@ -69,6 +72,8 @@ final class AppState {
         phase = .authenticated(me)
         Task {
             await loadUnits()
+            await refreshNotificationAuthorization()
+            await requestNotificationAuthorizationIfNeeded()
             await registerCurrentDevice()
             await syncDueReminders()
         }
@@ -210,7 +215,7 @@ final class AppState {
             let response = try await api.listReminders(limit: limit)
             reminders = response.items
             let existingIDs = Set(queuedReminders.map(\.id) + (activeReminder.map { [$0.id] } ?? []))
-            for reminder in response.items where reminder.presentedAt == nil && !existingIDs.contains(reminder.id) {
+            for reminder in response.items where reminder.presentedOnDeviceAt == nil && !existingIDs.contains(reminder.id) {
                 try? await api.presentReminder(id: reminder.id)
                 queuedReminders.append(reminder)
             }
@@ -252,13 +257,7 @@ final class AppState {
 
     func openActiveReminder() {
         guard let reminder = activeReminder else { return }
-        pendingInventoryTarget = InventoryTarget(
-            productID: reminder.productID,
-            locationID: reminder.locationID,
-            highlightBatchID: reminder.batchID,
-        )
-        activeReminder = nil
-        presentNextReminderIfNeeded()
+        Task { await openReminder(reminder) }
     }
 
     func redeemInvite(_ code: String) async throws -> Me {
@@ -309,12 +308,58 @@ final class AppState {
             try await api.registerDevice(
                 deviceID: Self.stableDeviceID,
                 pushToken: pushToken,
-                pushAuthorization: .notDetermined,
+                pushAuthorization: pushAuthorization,
                 appVersion: Self.appVersion,
             )
         } catch {
             // Best effort. Device registration should not block the app.
         }
+    }
+
+    func refreshNotificationAuthorization() async {
+        pushAuthorization = await notificationAuthorizationStatus()
+        if pushAuthorization == .authorized || pushAuthorization == .provisional {
+            UIApplication.shared.registerForRemoteNotifications()
+        }
+    }
+
+    func requestNotificationAuthorizationIfNeeded() async {
+        pushAuthorization = await notificationAuthorizationStatus()
+        guard pushAuthorization == .notDetermined else { return }
+        do {
+            let granted = try await UNUserNotificationCenter.current()
+                .requestAuthorization(options: [.badge, .sound, .alert])
+            pushAuthorization = granted ? .authorized : .denied
+            await registerCurrentDevice()
+            if granted {
+                UIApplication.shared.registerForRemoteNotifications()
+            }
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func updatePushToken(_ tokenData: Data) async {
+        let token = tokenData.map { String(format: "%02x", $0) }.joined()
+        guard pushToken != token else { return }
+        pushToken = token
+        await registerCurrentDevice()
+    }
+
+    func handlePushRegistrationFailure(_ error: Error) {
+        lastError = error.localizedDescription
+    }
+
+    func handleRemoteNotification(_ payload: ReminderPushPayload, opened: Bool) async {
+        if opened {
+            try? await api.openReminder(id: payload.reminderID)
+            pendingInventoryTarget = InventoryTarget(
+                productID: payload.productID,
+                locationID: payload.locationID,
+                highlightBatchID: payload.batchID,
+            )
+        }
+        await syncDueReminders(limit: 50)
     }
 
     func householdDayDifference(for isoDate: String?) -> Int? {
@@ -342,8 +387,28 @@ final class AppState {
         activeReminder = queuedReminders.removeFirst()
     }
 
+    private func openReminder(_ reminder: Reminder) async {
+        try? await api.openReminder(id: reminder.id)
+        pendingInventoryTarget = InventoryTarget(
+            productID: reminder.productID,
+            locationID: reminder.locationID,
+            highlightBatchID: reminder.batchID,
+        )
+        activeReminder = nil
+        presentNextReminderIfNeeded()
+        await syncDueReminders(limit: 50)
+    }
+
     private func authenticatedMe() async throws -> Me {
         try await api.me()
+    }
+
+    private func notificationAuthorizationStatus() async -> PushAuthorizationStatus {
+        await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                continuation.resume(returning: Self.mapAuthorization(settings.authorizationStatus))
+            }
+        }
     }
 
     private func userMessage(for error: Error) -> String {
@@ -351,6 +416,21 @@ final class AppState {
             return apiError.userFacingMessage
         }
         return error.localizedDescription
+    }
+
+    private static func mapAuthorization(_ status: UNAuthorizationStatus) -> PushAuthorizationStatus {
+        switch status {
+        case .authorized:
+            return .authorized
+        case .provisional, .ephemeral:
+            return .provisional
+        case .denied:
+            return .denied
+        case .notDetermined:
+            return .notDetermined
+        @unknown default:
+            return .notDetermined
+        }
     }
 
     private static let yyyymmdd: DateFormatter = {
@@ -407,4 +487,26 @@ struct InventoryTarget: Equatable, Hashable, Sendable {
 struct InviteContext: Equatable, Sendable {
     let inviteCode: String?
     let serverURL: URL?
+}
+
+struct ReminderPushPayload: Equatable, Sendable {
+    let reminderID: String
+    let batchID: String
+    let productID: String
+    let locationID: String
+
+    init?(userInfo: [AnyHashable: Any]) {
+        guard
+            let reminderID = userInfo["reminder_id"] as? String,
+            let batchID = userInfo["batch_id"] as? String,
+            let productID = userInfo["product_id"] as? String,
+            let locationID = userInfo["location_id"] as? String
+        else {
+            return nil
+        }
+        self.reminderID = reminderID
+        self.batchID = batchID
+        self.productID = productID
+        self.locationID = locationID
+    }
 }

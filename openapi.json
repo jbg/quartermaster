@@ -1526,6 +1526,55 @@
         ]
       }
     },
+    "/reminders/{id}/open": {
+      "post": {
+        "tags": [
+          "reminders"
+        ],
+        "operationId": "reminders_open",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/reminders/{id}/present": {
       "post": {
         "tags": [
@@ -2938,7 +2987,13 @@
             "type": "string",
             "format": "uuid"
           },
-          "presented_at": {
+          "opened_on_device_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "presented_on_device_at": {
             "type": [
               "string",
               "null"

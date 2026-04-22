@@ -13,12 +13,7 @@ pub struct CacheEntry {
 }
 
 impl CacheEntry {
-    pub fn is_fresh(
-        &self,
-        now: Timestamp,
-        positive_ttl_days: i64,
-        negative_ttl_days: i64,
-    ) -> bool {
+    pub fn is_fresh(&self, now: Timestamp, positive_ttl_days: i64, negative_ttl_days: i64) -> bool {
         let Ok(fetched) = crate::time::parse_timestamp(&self.fetched_at) else {
             return false;
         };
@@ -149,7 +144,8 @@ mod tests {
             barcode: "x".into(),
             product_id: None,
             fetched_at: crate::time::format_timestamp(
-                now.checked_sub(SignedDuration::from_hours(24 * 31)).unwrap(),
+                now.checked_sub(SignedDuration::from_hours(24 * 31))
+                    .unwrap(),
             ),
             miss: false,
         };

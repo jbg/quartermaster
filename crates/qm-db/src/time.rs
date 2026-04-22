@@ -27,5 +27,8 @@ pub fn format_date(date: Date) -> String {
 }
 
 pub fn format_zoned_with_offset(zoned: &Zoned) -> String {
-    zoned.timestamp().display_with_offset(zoned.offset()).to_string()
+    zoned
+        .timestamp()
+        .display_with_offset(zoned.offset())
+        .to_string()
 }

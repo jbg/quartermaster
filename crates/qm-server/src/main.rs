@@ -13,6 +13,8 @@ use qm_db::Database;
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
+mod push;
+
 const USER_AGENT: &str = concat!(
     "Quartermaster/",
     env!("CARGO_PKG_VERSION"),
@@ -52,6 +54,16 @@ struct RawConfig {
     expiry_reminder_fire_minute: u32,
     expiry_reminder_sweep_interval_seconds: u64,
     expiry_reminder_trigger_secret: Option<String>,
+    push_worker_enabled: bool,
+    push_worker_poll_interval_seconds: u64,
+    push_worker_batch_size: i64,
+    push_worker_claim_ttl_seconds: u64,
+    push_worker_retry_backoff_seconds: u64,
+    apns_enabled: bool,
+    apns_environment: String,
+    apns_topic: Option<String>,
+    apns_auth_token: Option<String>,
+    apns_base_url: Option<String>,
 }
 
 impl Default for RawConfig {
@@ -88,6 +100,16 @@ impl Default for RawConfig {
             expiry_reminder_fire_minute: 0,
             expiry_reminder_sweep_interval_seconds: 0,
             expiry_reminder_trigger_secret: None,
+            push_worker_enabled: false,
+            push_worker_poll_interval_seconds: 30,
+            push_worker_batch_size: 25,
+            push_worker_claim_ttl_seconds: 60,
+            push_worker_retry_backoff_seconds: 300,
+            apns_enabled: false,
+            apns_environment: "sandbox".into(),
+            apns_topic: None,
+            apns_auth_token: None,
+            apns_base_url: None,
         }
     }
 }
@@ -100,6 +122,15 @@ struct LoadedConfig {
     api_config: Arc<ApiConfig>,
     auth_session_sweep_interval: Option<Duration>,
     expiry_reminder_sweep_interval: Option<Duration>,
+    push_worker_enabled: bool,
+    push_worker_config: push::PushWorkerConfig,
+    apns_config: push::ApnsConfig,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProcessMode {
+    Serve,
+    PushWorker,
 }
 
 fn load_config() -> anyhow::Result<RawConfig> {
@@ -125,6 +156,34 @@ impl FromStr for LogFormat {
             other => Err(format!("unknown log_format: {other}")),
         }
     }
+}
+
+impl FromStr for ProcessMode {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "serve" => Ok(Self::Serve),
+            "push-worker" => Ok(Self::PushWorker),
+            other => Err(format!("unknown process mode: {other}")),
+        }
+    }
+}
+
+fn parse_process_mode(args: &[String]) -> anyhow::Result<ProcessMode> {
+    let mut iter = args.iter().skip(1);
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--mode" => {
+                let value = iter.next().context("missing value after --mode")?;
+                return ProcessMode::from_str(value).map_err(anyhow::Error::msg);
+            }
+            "serve" => return Ok(ProcessMode::Serve),
+            "push-worker" => return Ok(ProcessMode::PushWorker),
+            _ => {}
+        }
+    }
+    Ok(ProcessMode::Serve)
 }
 
 fn init_tracing(log_format: LogFormat) {
@@ -177,6 +236,20 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
     if raw.expiry_reminder_lead_days < 0 {
         anyhow::bail!("QM_EXPIRY_REMINDER_LEAD_DAYS must be >= 0");
     }
+    if raw.push_worker_batch_size <= 0 {
+        anyhow::bail!("QM_PUSH_WORKER_BATCH_SIZE must be >= 1");
+    }
+
+    let apns_environment =
+        push::ApnsEnvironment::from_str(&raw.apns_environment).map_err(anyhow::Error::msg)?;
+    let apns_topic = match raw.apns_topic {
+        Some(value) if value.trim().is_empty() => {
+            anyhow::bail!("QM_APNS_TOPIC must not be blank when set")
+        }
+        Some(value) => Some(value),
+        None => None,
+    };
+    let apns_auth_token = normalize_optional_secret(raw.apns_auth_token, "QM_APNS_AUTH_TOKEN")?;
 
     let api_config = Arc::new(ApiConfig {
         registration_mode: RegistrationMode::from_str(&raw.registration_mode)
@@ -225,6 +298,20 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
             .then(|| Duration::from_secs(raw.auth_session_sweep_interval_seconds)),
         expiry_reminder_sweep_interval: (raw.expiry_reminder_sweep_interval_seconds > 0)
             .then(|| Duration::from_secs(raw.expiry_reminder_sweep_interval_seconds)),
+        push_worker_enabled: raw.push_worker_enabled,
+        push_worker_config: push::PushWorkerConfig {
+            poll_interval: Duration::from_secs(raw.push_worker_poll_interval_seconds.max(1)),
+            batch_size: raw.push_worker_batch_size,
+            claim_ttl: Duration::from_secs(raw.push_worker_claim_ttl_seconds.max(1)),
+            retry_backoff: Duration::from_secs(raw.push_worker_retry_backoff_seconds.max(1)),
+        },
+        apns_config: push::ApnsConfig {
+            enabled: raw.apns_enabled,
+            environment: apns_environment,
+            topic: apns_topic,
+            auth_token: apns_auth_token,
+            base_url: raw.apns_base_url,
+        },
     })
 }
 
@@ -266,10 +353,13 @@ fn normalize_optional_secret(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let args = std::env::args().collect::<Vec<_>>();
+    let process_mode = parse_process_mode(&args)?;
     let raw = load_config()?;
     let loaded = build_config(raw)?;
     init_tracing(loaded.log_format);
     tracing::info!(
+        mode = ?process_mode,
         bind = %loaded.bind,
         database_url = %loaded.database_url,
         rate_limit_client_ip_mode = %loaded.api_config.rate_limit_client_ip_mode.as_str(),
@@ -287,60 +377,115 @@ async fn main() -> anyhow::Result<()> {
         .build()
         .context("building HTTP client")?;
 
+    if process_mode == ProcessMode::PushWorker && !loaded.apns_config.is_ready() {
+        anyhow::bail!(
+            "push-worker mode requires QM_APNS_ENABLED=true and QM_APNS_TOPIC to be configured"
+        );
+    }
+
     let state = AppState {
-        db,
+        db: db.clone(),
         config: loaded.api_config.clone(),
-        http,
+        http: http.clone(),
         off_breaker: Arc::new(qm_api::openfoodfacts::OffCircuitBreaker::default()),
         rate_limiters: Arc::new(qm_api::rate_limit::RateLimiters::new(&loaded.api_config)),
     };
 
-    if let Some(interval) = loaded.auth_session_sweep_interval {
-        tokio::spawn(spawn_auth_session_sweeper(state.db.clone(), interval));
-    }
-    if let Some(interval) = loaded.expiry_reminder_sweep_interval {
-        tokio::spawn(spawn_expiry_reminder_sweeper(
-            state.db.clone(),
-            loaded.api_config.expiry_reminder_policy.clone(),
-            interval,
-        ));
-    }
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let mut tasks = Vec::new();
+    if process_mode == ProcessMode::Serve {
+        if let Some(interval) = loaded.auth_session_sweep_interval {
+            tasks.push(tokio::spawn(spawn_auth_session_sweeper(
+                state.db.clone(),
+                interval,
+                shutdown_rx.clone(),
+            )));
+        }
+        if let Some(interval) = loaded.expiry_reminder_sweep_interval {
+            tasks.push(tokio::spawn(spawn_expiry_reminder_sweeper(
+                state.db.clone(),
+                loaded.api_config.expiry_reminder_policy.clone(),
+                interval,
+                shutdown_rx.clone(),
+            )));
+        }
+        if loaded.push_worker_enabled && loaded.apns_config.is_ready() {
+            tasks.push(tokio::spawn(push::run_push_worker(
+                state.db.clone(),
+                http.clone(),
+                loaded.apns_config.clone(),
+                loaded.push_worker_config.clone(),
+                shutdown_rx.clone(),
+            )));
+        }
 
-    let app = qm_api::router(state);
+        let app = qm_api::router(state);
+        let listener = tokio::net::TcpListener::bind(loaded.bind)
+            .await
+            .with_context(|| format!("binding {}", loaded.bind))?;
+        tracing::info!(addr = %loaded.bind, "listening");
 
-    let listener = tokio::net::TcpListener::bind(loaded.bind)
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown_signal())
         .await
-        .with_context(|| format!("binding {}", loaded.bind))?;
-    tracing::info!(addr = %loaded.bind, "listening");
+        .context("serving HTTP")?;
+    } else {
+        let worker = tokio::spawn(push::run_push_worker(
+            db.clone(),
+            http.clone(),
+            loaded.apns_config.clone(),
+            loaded.push_worker_config.clone(),
+            shutdown_rx.clone(),
+        ));
+        tokio::select! {
+            result = worker => {
+                result.context("joining push worker task")?;
+            }
+            _ = shutdown_signal() => {}
+        }
+    }
 
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown_signal())
-    .await
-    .context("serving HTTP")?;
+    let _ = shutdown_tx.send(true);
+    for task in tasks {
+        let _ = task.await;
+    }
 
     Ok(())
 }
 
-async fn spawn_auth_session_sweeper(db: Database, interval: Duration) {
+async fn spawn_auth_session_sweeper(
+    db: Database,
+    interval: Duration,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) {
     let mut ticker = tokio::time::interval(interval);
     ticker.tick().await;
 
     loop {
-        ticker.tick().await;
-        match qm_db::auth_sessions::delete_stale_sessions(
-            &db,
-            &qm_db::now_utc_rfc3339(),
-            qm_db::auth_sessions::STALE_SESSION_SWEEP_BATCH_SIZE,
-        )
-        .await
-        {
-            Ok(deleted) => {
-                tracing::info!(deleted_sessions = deleted, "completed auth session sweep")
+        tokio::select! {
+            _ = ticker.tick() => {
+                match qm_db::auth_sessions::delete_stale_sessions(
+                    &db,
+                    &qm_db::now_utc_rfc3339(),
+                    qm_db::auth_sessions::STALE_SESSION_SWEEP_BATCH_SIZE,
+                )
+                .await
+                {
+                    Ok(deleted) => {
+                        tracing::info!(deleted_sessions = deleted, "completed auth session sweep")
+                    }
+                    Err(err) => tracing::error!(?err, "auth session sweep failed"),
+                }
             }
-            Err(err) => tracing::error!(?err, "auth session sweep failed"),
+            changed = shutdown.changed() => {
+                if changed.is_ok() && *shutdown.borrow() {
+                    tracing::info!("auth session sweeper shutting down");
+                    break;
+                }
+            }
         }
     }
 }
@@ -349,19 +494,29 @@ async fn spawn_expiry_reminder_sweeper(
     db: Database,
     policy: qm_db::reminders::ExpiryReminderPolicy,
     interval: Duration,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
     let mut ticker = tokio::time::interval(interval);
     ticker.tick().await;
 
     loop {
-        ticker.tick().await;
-        match qm_db::reminders::reconcile_all(&db, &policy).await {
-            Ok(stats) => tracing::info!(
-                inserted = stats.inserted,
-                deleted = stats.deleted,
-                "completed expiry reminder sweep"
-            ),
-            Err(err) => tracing::error!(?err, "expiry reminder sweep failed"),
+        tokio::select! {
+            _ = ticker.tick() => {
+                match qm_db::reminders::reconcile_all(&db, &policy).await {
+                    Ok(stats) => tracing::info!(
+                        inserted = stats.inserted,
+                        deleted = stats.deleted,
+                        "completed expiry reminder sweep"
+                    ),
+                    Err(err) => tracing::error!(?err, "expiry reminder sweep failed"),
+                }
+            }
+            changed = shutdown.changed() => {
+                if changed.is_ok() && *shutdown.borrow() {
+                    tracing::info!("expiry reminder sweeper shutting down");
+                    break;
+                }
+            }
         }
     }
 }
