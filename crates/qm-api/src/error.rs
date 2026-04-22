@@ -20,7 +20,10 @@ pub enum ApiError {
     },
 
     #[error("insufficient stock: requested {requested}, have {available}")]
-    InsufficientStock { requested: String, available: String },
+    InsufficientStock {
+        requested: String,
+        available: String,
+    },
 
     #[error("this product has active stock (delete or consume it first)")]
     ProductHasStock,
@@ -103,7 +106,9 @@ impl IntoResponse for ApiError {
         let (status, code) = match &self {
             ApiError::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
             ApiError::UnknownUnit(_) => (StatusCode::BAD_REQUEST, "unknown_unit"),
-            ApiError::UnitFamilyMismatch { .. } => (StatusCode::BAD_REQUEST, "unit_family_mismatch"),
+            ApiError::UnitFamilyMismatch { .. } => {
+                (StatusCode::BAD_REQUEST, "unit_family_mismatch")
+            }
             ApiError::InsufficientStock { .. } => (StatusCode::BAD_REQUEST, "insufficient_stock"),
             ApiError::ProductHasStock => (StatusCode::CONFLICT, "product_has_stock"),
             ApiError::ProductHasIncompatibleStock { .. } => {

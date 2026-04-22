@@ -13,12 +13,21 @@ pub struct CacheEntry {
 }
 
 impl CacheEntry {
-    pub fn is_fresh(&self, now: DateTime<Utc>, positive_ttl_days: i64, negative_ttl_days: i64) -> bool {
+    pub fn is_fresh(
+        &self,
+        now: DateTime<Utc>,
+        positive_ttl_days: i64,
+        negative_ttl_days: i64,
+    ) -> bool {
         let Ok(fetched) = DateTime::parse_from_rfc3339(&self.fetched_at) else {
             return false;
         };
         let fetched_utc = fetched.with_timezone(&Utc);
-        let ttl_days = if self.miss { negative_ttl_days } else { positive_ttl_days };
+        let ttl_days = if self.miss {
+            negative_ttl_days
+        } else {
+            positive_ttl_days
+        };
         (now - fetched_utc).num_days() < ttl_days
     }
 }
@@ -93,7 +102,9 @@ mod tests {
     async fn hit_then_lookup() {
         let db = crate::test_db().await;
         let h = households::create(&db, "h").await.unwrap();
-        let p = products::create_manual(&db, h.id, "Test", None, "count", None, None, None).await.unwrap();
+        let p = products::create_manual(&db, h.id, "Test", None, "count", None, None, None)
+            .await
+            .unwrap();
         put_hit(&db, "1234567890123", p.id).await.unwrap();
         let got = get(&db, "1234567890123").await.unwrap().unwrap();
         assert!(!got.miss);
@@ -113,7 +124,9 @@ mod tests {
     async fn miss_overwrites_hit() {
         let db = crate::test_db().await;
         let h = households::create(&db, "h").await.unwrap();
-        let p = products::create_manual(&db, h.id, "Test", None, "count", None, None, None).await.unwrap();
+        let p = products::create_manual(&db, h.id, "Test", None, "count", None, None, None)
+            .await
+            .unwrap();
         put_hit(&db, "1111111111111", p.id).await.unwrap();
         put_miss(&db, "1111111111111").await.unwrap();
         let got = get(&db, "1111111111111").await.unwrap().unwrap();

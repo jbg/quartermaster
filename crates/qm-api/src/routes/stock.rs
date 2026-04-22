@@ -254,7 +254,13 @@ pub async fn get_one(
     let product = qm_db::products::find_by_id(&state.db, row.product_id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    Ok(Json(StockBatchWithProduct { batch: row, product }.try_into()?))
+    Ok(Json(
+        StockBatchWithProduct {
+            batch: row,
+            product,
+        }
+        .try_into()?,
+    ))
 }
 
 #[utoipa::path(
@@ -304,7 +310,13 @@ pub async fn create(
 
     Ok((
         StatusCode::CREATED,
-        Json(StockBatchWithProduct { batch: row, product }.try_into()?),
+        Json(
+            StockBatchWithProduct {
+                batch: row,
+                product,
+            }
+            .try_into()?,
+        ),
     ))
 }
 
@@ -338,7 +350,8 @@ pub async fn update(
     if let Some(q) = req.quantity.as_deref() {
         // Allow quantity=0 via adjust (same as discard semantically). The
         // stricter `validate_positive_decimal` only applies at create time.
-        Decimal::from_str(q).map_err(|_| ApiError::BadRequest("quantity not a valid decimal".into()))?;
+        Decimal::from_str(q)
+            .map_err(|_| ApiError::BadRequest("quantity not a valid decimal".into()))?;
     }
     if let Some(loc) = req.location_id {
         validate_location(&state, household_id, loc).await?;
@@ -374,7 +387,13 @@ pub async fn update(
     let refreshed = qm_db::stock::get(&state.db, household_id, id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    Ok(Json(StockBatchWithProduct { batch: refreshed, product }.try_into()?))
+    Ok(Json(
+        StockBatchWithProduct {
+            batch: refreshed,
+            product,
+        }
+        .try_into()?,
+    ))
 }
 
 #[utoipa::path(
@@ -426,13 +445,9 @@ pub async fn consume(
     validate_unit_family(&req.unit, &product.family)?;
     validate_positive_decimal(&req.quantity)?;
 
-    let batches = qm_db::stock::list_active_batches(
-        &state.db,
-        household_id,
-        product.id,
-        req.location_id,
-    )
-    .await?;
+    let batches =
+        qm_db::stock::list_active_batches(&state.db, household_id, product.id, req.location_id)
+            .await?;
     let refs = batches
         .iter()
         .map(|b| b.to_batch_ref())
@@ -443,7 +458,10 @@ pub async fn consume(
 
     let plan = match plan_consumption(refs, quantity, &req.unit) {
         Ok(p) => p,
-        Err(qm_core::QmError::InsufficientStock { requested, available }) => {
+        Err(qm_core::QmError::InsufficientStock {
+            requested,
+            available,
+        }) => {
             return Err(ApiError::InsufficientStock {
                 requested: requested.to_string(),
                 available: available.to_string(),
@@ -460,8 +478,8 @@ pub async fn consume(
     let mut consumed = Vec::with_capacity(plan.len());
     for (c, batch) in plan.into_iter().zip(batches.iter()) {
         // qm_core::units::convert returns quantity in the `to` unit.
-        let in_requested = qm_core::units::convert(c.quantity, &batch.unit, &req.unit)
-            .unwrap_or(c.quantity);
+        let in_requested =
+            qm_core::units::convert(c.quantity, &batch.unit, &req.unit).unwrap_or(c.quantity);
         consumed.push(ConsumedBatchDto {
             batch_id: c.batch_id,
             quantity: c.quantity.to_string(),
@@ -562,7 +580,10 @@ pub async fn list_events(
     Query(q): Query<EventListQuery>,
 ) -> ApiResult<Json<StockEventListResponse>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    let limit = q.limit.unwrap_or(DEFAULT_EVENT_LIMIT).clamp(1, MAX_EVENT_LIMIT);
+    let limit = q
+        .limit
+        .unwrap_or(DEFAULT_EVENT_LIMIT)
+        .clamp(1, MAX_EVENT_LIMIT);
     let rows = qm_db::stock_events::list_timeline(
         &state.db,
         household_id,
@@ -603,7 +624,10 @@ pub async fn list_events_for_batch(
         .await?
         .ok_or(ApiError::NotFound)?;
 
-    let limit = q.limit.unwrap_or(DEFAULT_EVENT_LIMIT).clamp(1, MAX_EVENT_LIMIT);
+    let limit = q
+        .limit
+        .unwrap_or(DEFAULT_EVENT_LIMIT)
+        .clamp(1, MAX_EVENT_LIMIT);
     let rows = qm_db::stock_events::list_timeline(
         &state.db,
         household_id,
@@ -681,7 +705,8 @@ pub async fn restore_many(
         )));
     }
 
-    let rows = qm_db::stock::restore_many(&state.db, household_id, &req.ids, current.user_id).await?;
+    let rows =
+        qm_db::stock::restore_many(&state.db, household_id, &req.ids, current.user_id).await?;
 
     // Join each batch with its product for the response DTO.
     let mut restored = Vec::with_capacity(rows.len());
@@ -689,7 +714,13 @@ pub async fn restore_many(
         let product = qm_db::products::find_including_deleted(&state.db, row.product_id)
             .await?
             .ok_or(ApiError::NotFound)?;
-        restored.push(StockBatchWithProduct { batch: row, product }.try_into()?);
+        restored.push(
+            StockBatchWithProduct {
+                batch: row,
+                product,
+            }
+            .try_into()?,
+        );
     }
     Ok(Json(RestoreManyResponse { restored }))
 }
@@ -717,15 +748,24 @@ pub async fn restore_one(
     let product = qm_db::products::find_including_deleted(&state.db, row.product_id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    Ok(Json(StockBatchWithProduct { batch: row, product }.try_into()?))
+    Ok(Json(
+        StockBatchWithProduct {
+            batch: row,
+            product,
+        }
+        .try_into()?,
+    ))
 }
 
 // ----- helpers -----
 
 fn validate_positive_decimal(s: &str) -> ApiResult<()> {
-    let q = Decimal::from_str(s).map_err(|_| ApiError::BadRequest("quantity not a valid decimal".into()))?;
+    let q = Decimal::from_str(s)
+        .map_err(|_| ApiError::BadRequest("quantity not a valid decimal".into()))?;
     if q <= Decimal::ZERO {
-        return Err(ApiError::BadRequest("quantity must be greater than zero".into()));
+        return Err(ApiError::BadRequest(
+            "quantity must be greater than zero".into(),
+        ));
     }
     Ok(())
 }
@@ -747,7 +787,11 @@ fn validate_unit_family(unit: &str, product_family: &str) -> ApiResult<()> {
     Ok(())
 }
 
-async fn validate_location(state: &AppState, household_id: Uuid, location_id: Uuid) -> ApiResult<()> {
+async fn validate_location(
+    state: &AppState,
+    household_id: Uuid,
+    location_id: Uuid,
+) -> ApiResult<()> {
     qm_db::locations::find(&state.db, household_id, location_id)
         .await?
         .ok_or(ApiError::NotFound)?;

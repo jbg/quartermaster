@@ -27,6 +27,7 @@ Early work in progress. v1 is being built toward an "empty pantry" first vertica
 │   ├── qm-core/            domain logic (units, batches, errors) — no I/O
 │   ├── qm-db/              SQLx repos + migrations
 │   ├── qm-api/             Axum handlers, middleware, OpenAPI
+│   │   └── tests/          integration tests grouped by behavior (auth, invites, households, stock, products, request IDs, barcode lookup)
 │   └── qm-server/          the shipped binary
 ├── xtask/                  developer tasks (export-openapi, …)
 ├── openapi.json            generated spec (canonical copy, for external consumers + CI drift check)
@@ -76,6 +77,12 @@ Quartermaster also supports a few self-hosting hardening knobs:
 | `QM_OFF_RETRY_BASE_DELAY_MS`               | `200`                                             | Base backoff delay for OFF retries |
 | `QM_OFF_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `5`                                               | Consecutive transient OFF failures before opening the breaker |
 | `QM_OFF_CIRCUIT_BREAKER_OPEN_SECONDS`      | `60`                                              | How long OFF stays fail-fast once the breaker opens |
+
+## Tests
+
+`cargo test --workspace` is the default fast verification pass.
+
+The `qm-api` integration tests live under `crates/qm-api/tests/` and are organized by what they cover, not by implementation milestone. Keep new test files behavior-oriented too: for example `invites.rs`, `households.rs`, and `stock_lifecycle.rs`, not `phase7.rs` or `*_slice.rs`.
 
 ## Container image
 

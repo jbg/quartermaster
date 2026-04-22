@@ -46,8 +46,8 @@ pub struct StockBatchRow {
 
 impl StockBatchRow {
     pub fn to_batch_ref(&self) -> Result<BatchRef, sqlx::Error> {
-        let qty = Decimal::from_str(&self.quantity)
-            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+        let qty =
+            Decimal::from_str(&self.quantity).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
         let expires = match &self.expires_on {
             Some(s) => Some(
                 NaiveDate::parse_from_str(s, "%Y-%m-%d")
@@ -274,7 +274,9 @@ pub async fn update_metadata(
     .execute(&db.pool)
     .await?;
 
-    get(db, household_id, id).await?.ok_or(sqlx::Error::RowNotFound)
+    get(db, household_id, id)
+        .await?
+        .ok_or(sqlx::Error::RowNotFound)
 }
 
 /// Correct a batch's quantity. Writes an `adjust` event with `delta = new - current`
@@ -295,10 +297,9 @@ pub async fn adjust(
         .ok_or(sqlx::Error::RowNotFound)?;
 
     let current_quantity: String = current.try_get("quantity")?;
-    let current_d = Decimal::from_str(&current_quantity)
-        .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-    let new_d = Decimal::from_str(new_quantity)
-        .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+    let current_d =
+        Decimal::from_str(&current_quantity).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+    let new_d = Decimal::from_str(new_quantity).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
     let delta = new_d - current_d;
     let depletes = new_d <= Decimal::ZERO;
 
@@ -337,7 +338,9 @@ pub async fn adjust(
     }
 
     tx.commit().await?;
-    get(db, household_id, id).await?.ok_or(sqlx::Error::RowNotFound)
+    get(db, household_id, id)
+        .await?
+        .ok_or(sqlx::Error::RowNotFound)
 }
 
 /// Close the batch's account: write a `discard` event that zeroes the balance,
@@ -372,8 +375,8 @@ pub async fn discard(
         return Ok(true);
     }
     let current_quantity: String = row.try_get("quantity")?;
-    let current_d = Decimal::from_str(&current_quantity)
-        .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+    let current_d =
+        Decimal::from_str(&current_quantity).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
 
     // Only record an event for a non-zero balance. Closing an already-empty
     // batch would be a no-op delta.
@@ -517,8 +520,8 @@ async fn restore_in_tx(
 
     // The discard event's delta is negative (e.g. -500). The restore is its
     // inverse (+500). Parse, negate, serialise back.
-    let discard_delta = Decimal::from_str(&latest.quantity_delta)
-        .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+    let discard_delta =
+        Decimal::from_str(&latest.quantity_delta).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
     let restored_delta = -discard_delta;
     let new_quantity = restored_delta; // since batch was at zero post-discard
 
@@ -562,7 +565,9 @@ pub async fn list_active_batches(
     if location_id.is_some() {
         sql.push_str("AND location_id = ? ");
     }
-    sql.push_str("ORDER BY CASE WHEN expires_on IS NULL THEN 1 ELSE 0 END, expires_on ASC, created_at ASC");
+    sql.push_str(
+        "ORDER BY CASE WHEN expires_on IS NULL THEN 1 ELSE 0 END, expires_on ASC, created_at ASC",
+    );
 
     let mut q = sqlx::query(&sql)
         .bind(household_id.to_string())
@@ -587,15 +592,10 @@ pub async fn apply_consumption(
     let mut tx = db.pool.begin().await?;
     let now = now_utc_rfc3339();
     for c in consumption {
-        let row = fetch_locked_batch_row(
-            &mut tx,
-            db.backend(),
-            household_id,
-            c.batch_id,
-            "quantity",
-        )
-        .await?
-        .ok_or(sqlx::Error::RowNotFound)?;
+        let row =
+            fetch_locked_batch_row(&mut tx, db.backend(), household_id, c.batch_id, "quantity")
+                .await?
+                .ok_or(sqlx::Error::RowNotFound)?;
         let existing: String = row.try_get("quantity")?;
         let cur = Decimal::from_str(&existing).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
         let applied = if c.quantity >= cur { cur } else { c.quantity };
@@ -741,7 +741,8 @@ fn row_to_batch(row: sqlx::any::AnyRow) -> Result<StockBatchRow, sqlx::Error> {
     let created_by: String = row.try_get("created_by")?;
     Ok(StockBatchRow {
         id: Uuid::parse_str(&id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
-        household_id: Uuid::parse_str(&household_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+        household_id: Uuid::parse_str(&household_id)
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         product_id: Uuid::parse_str(&product_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         location_id: Uuid::parse_str(&location_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         initial_quantity: row.try_get("initial_quantity")?,
@@ -817,7 +818,8 @@ mod tests {
         let locs = locations::list_for_household(db, h.id).await.unwrap();
         let pantry = locs.iter().find(|l| l.kind == "pantry").unwrap().id;
         let p = products::create_manual(db, h.id, "Flour", None, "mass", Some("g"), None, None)
-            .await.unwrap();
+            .await
+            .unwrap();
         (h.id, u.id, pantry, p.id)
     }
 
@@ -838,7 +840,9 @@ mod tests {
 
     async fn assert_stock_ledger_parity(db: &Database) {
         let (hid, uid, lid, pid) = setup_with_db(db).await;
-        let batch = create(db, hid, pid, lid, "500", "g", None, None, None, uid).await.unwrap();
+        let batch = create(db, hid, pid, lid, "500", "g", None, None, None, uid)
+            .await
+            .unwrap();
 
         assert_eq!(balance_from_events(db, batch.id).await, Decimal::from(500));
 
@@ -858,10 +862,14 @@ mod tests {
         assert_eq!(restored.quantity, "200");
         assert_eq!(balance_from_events(db, batch.id).await, Decimal::from(200));
 
-        let other = create(db, hid, pid, lid, "125", "g", None, None, None, uid).await.unwrap();
+        let other = create(db, hid, pid, lid, "125", "g", None, None, None, uid)
+            .await
+            .unwrap();
         discard(db, hid, batch.id, uid, None).await.unwrap();
         discard(db, hid, other.id, uid, None).await.unwrap();
-        let restored_many = restore_many(db, hid, &[batch.id, other.id], uid).await.unwrap();
+        let restored_many = restore_many(db, hid, &[batch.id, other.id], uid)
+            .await
+            .unwrap();
         assert_eq!(restored_many.len(), 2);
         assert_eq!(balance_from_events(db, batch.id).await, Decimal::from(200));
         assert_eq!(balance_from_events(db, other.id).await, Decimal::from(125));
@@ -870,7 +878,9 @@ mod tests {
     #[tokio::test]
     async fn create_writes_add_event() {
         let (db, hid, uid, lid, pid) = setup().await;
-        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid).await.unwrap();
+        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid)
+            .await
+            .unwrap();
         let events = stock_events::list_for_batch(&db, b.id).await.unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].event_type, "add");
@@ -882,7 +892,9 @@ mod tests {
     #[tokio::test]
     async fn adjust_writes_adjust_event_and_updates_cache() {
         let (db, hid, uid, lid, pid) = setup().await;
-        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid).await.unwrap();
+        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid)
+            .await
+            .unwrap();
 
         let after = adjust(&db, hid, b.id, "300", uid, None).await.unwrap();
         assert_eq!(after.quantity, "300");
@@ -899,7 +911,9 @@ mod tests {
     #[tokio::test]
     async fn adjust_to_zero_depletes_batch() {
         let (db, hid, uid, lid, pid) = setup().await;
-        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid).await.unwrap();
+        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid)
+            .await
+            .unwrap();
         let after = adjust(&db, hid, b.id, "0", uid, None).await.unwrap();
         assert_eq!(after.quantity, "0");
         assert!(after.depleted_at.is_some());
@@ -908,7 +922,9 @@ mod tests {
     #[tokio::test]
     async fn discard_writes_event_and_marks_depleted_without_deleting_row() {
         let (db, hid, uid, lid, pid) = setup().await;
-        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid).await.unwrap();
+        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid)
+            .await
+            .unwrap();
         let removed = discard(&db, hid, b.id, uid, None).await.unwrap();
         assert!(removed);
 
@@ -927,7 +943,9 @@ mod tests {
     #[tokio::test]
     async fn restore_after_discard() {
         let (db, hid, uid, lid, pid) = setup().await;
-        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid).await.unwrap();
+        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid)
+            .await
+            .unwrap();
         discard(&db, hid, b.id, uid, None).await.unwrap();
 
         let restored = restore(&db, hid, b.id, uid).await.expect("restore");
@@ -948,36 +966,52 @@ mod tests {
     #[tokio::test]
     async fn restore_rejects_when_last_event_isnt_discard() {
         let (db, hid, uid, lid, pid) = setup().await;
-        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid).await.unwrap();
+        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid)
+            .await
+            .unwrap();
         // Fully consume the batch via apply_consumption.
         let refs = vec![b.to_batch_ref().unwrap()];
         let plan = qm_core::batch::plan_consumption(refs, Decimal::from(500), "g").unwrap();
         apply_consumption(&db, hid, &plan, uid).await.unwrap();
 
-        let err = restore(&db, hid, b.id, uid).await.err().expect("should fail");
+        let err = restore(&db, hid, b.id, uid)
+            .await
+            .err()
+            .expect("should fail");
         assert!(matches!(err, RestoreError::NotRestorable));
     }
 
     #[tokio::test]
     async fn restore_rejects_after_double_restore() {
         let (db, hid, uid, lid, pid) = setup().await;
-        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid).await.unwrap();
+        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid)
+            .await
+            .unwrap();
         discard(&db, hid, b.id, uid, None).await.unwrap();
         restore(&db, hid, b.id, uid).await.expect("first restore");
 
-        let err = restore(&db, hid, b.id, uid).await.err().expect("should fail");
+        let err = restore(&db, hid, b.id, uid)
+            .await
+            .err()
+            .expect("should fail");
         assert!(matches!(err, RestoreError::NotRestorable));
     }
 
     #[tokio::test]
     async fn restore_many_atomic_success() {
         let (db, hid, uid, lid, pid) = setup().await;
-        let a = create(&db, hid, pid, lid, "100", "g", None, None, None, uid).await.unwrap();
-        let b = create(&db, hid, pid, lid, "200", "g", None, None, None, uid).await.unwrap();
+        let a = create(&db, hid, pid, lid, "100", "g", None, None, None, uid)
+            .await
+            .unwrap();
+        let b = create(&db, hid, pid, lid, "200", "g", None, None, None, uid)
+            .await
+            .unwrap();
         discard(&db, hid, a.id, uid, None).await.unwrap();
         discard(&db, hid, b.id, uid, None).await.unwrap();
 
-        let restored = restore_many(&db, hid, &[a.id, b.id], uid).await.expect("restore_many");
+        let restored = restore_many(&db, hid, &[a.id, b.id], uid)
+            .await
+            .expect("restore_many");
         assert_eq!(restored.len(), 2);
         for row in restored {
             assert!(row.depleted_at.is_none());
@@ -993,11 +1027,18 @@ mod tests {
         let (db, hid, uid, lid, pid) = setup().await;
         // Batch A has been discarded (restorable). Batch B is still active
         // (not restorable). Asking for both should leave both untouched.
-        let a = create(&db, hid, pid, lid, "100", "g", None, None, None, uid).await.unwrap();
-        let b = create(&db, hid, pid, lid, "200", "g", None, None, None, uid).await.unwrap();
+        let a = create(&db, hid, pid, lid, "100", "g", None, None, None, uid)
+            .await
+            .unwrap();
+        let b = create(&db, hid, pid, lid, "200", "g", None, None, None, uid)
+            .await
+            .unwrap();
         discard(&db, hid, a.id, uid, None).await.unwrap();
 
-        let err = restore_many(&db, hid, &[a.id, b.id], uid).await.err().expect("should fail");
+        let err = restore_many(&db, hid, &[a.id, b.id], uid)
+            .await
+            .err()
+            .expect("should fail");
         match err {
             RestoreError::NotRestorableMany(ids) => {
                 // Only B is unrestorable; A is, but we rolled back because of B.
@@ -1010,7 +1051,11 @@ mod tests {
         let a_after = get(&db, hid, a.id).await.unwrap().unwrap();
         assert!(a_after.depleted_at.is_some(), "A should still be discarded");
         let a_events = stock_events::list_for_batch(&db, a.id).await.unwrap();
-        assert_eq!(a_events.len(), 2, "A should have only add + discard, no restore");
+        assert_eq!(
+            a_events.len(),
+            2,
+            "A should have only add + discard, no restore"
+        );
 
         // B untouched.
         let b_after = get(&db, hid, b.id).await.unwrap().unwrap();
@@ -1023,10 +1068,17 @@ mod tests {
         let (db, hid, uid, lid, pid) = setup().await;
         // Two active batches (neither discarded) — both should show up in
         // the unrestorable list, not just the first.
-        let a = create(&db, hid, pid, lid, "100", "g", None, None, None, uid).await.unwrap();
-        let b = create(&db, hid, pid, lid, "200", "g", None, None, None, uid).await.unwrap();
+        let a = create(&db, hid, pid, lid, "100", "g", None, None, None, uid)
+            .await
+            .unwrap();
+        let b = create(&db, hid, pid, lid, "200", "g", None, None, None, uid)
+            .await
+            .unwrap();
 
-        let err = restore_many(&db, hid, &[a.id, b.id], uid).await.err().expect("should fail");
+        let err = restore_many(&db, hid, &[a.id, b.id], uid)
+            .await
+            .err()
+            .expect("should fail");
         match err {
             RestoreError::NotRestorableMany(ids) => {
                 assert_eq!(ids.len(), 2);
@@ -1040,8 +1092,34 @@ mod tests {
     #[tokio::test]
     async fn apply_consumption_correlates_events() {
         let (db, hid, uid, lid, pid) = setup().await;
-        let b1 = create(&db, hid, pid, lid, "500", "g", Some("2026-05-01"), None, None, uid).await.unwrap();
-        let b2 = create(&db, hid, pid, lid, "500", "g", Some("2026-06-01"), None, None, uid).await.unwrap();
+        let b1 = create(
+            &db,
+            hid,
+            pid,
+            lid,
+            "500",
+            "g",
+            Some("2026-05-01"),
+            None,
+            None,
+            uid,
+        )
+        .await
+        .unwrap();
+        let b2 = create(
+            &db,
+            hid,
+            pid,
+            lid,
+            "500",
+            "g",
+            Some("2026-06-01"),
+            None,
+            None,
+            uid,
+        )
+        .await
+        .unwrap();
 
         let batches = list_active_batches(&db, hid, pid, None).await.unwrap();
         let refs: Vec<_> = batches.iter().map(|b| b.to_batch_ref().unwrap()).collect();
@@ -1068,20 +1146,58 @@ mod tests {
         let locs = locations::list_for_household(&db, hid).await.unwrap();
         let fridge = locs.iter().find(|l| l.kind == "fridge").unwrap().id;
 
-        create(&db, hid, pid, pantry, "100", "g", Some("2026-05-01"), None, None, uid).await.unwrap();
-        create(&db, hid, pid, fridge, "200", "g", Some("2026-07-01"), None, None, uid).await.unwrap();
+        create(
+            &db,
+            hid,
+            pid,
+            pantry,
+            "100",
+            "g",
+            Some("2026-05-01"),
+            None,
+            None,
+            uid,
+        )
+        .await
+        .unwrap();
+        create(
+            &db,
+            hid,
+            pid,
+            fridge,
+            "200",
+            "g",
+            Some("2026-07-01"),
+            None,
+            None,
+            uid,
+        )
+        .await
+        .unwrap();
 
-        let in_pantry = list(&db, hid, &StockFilter { location_id: Some(pantry), ..Default::default() }).await.unwrap();
+        let in_pantry = list(
+            &db,
+            hid,
+            &StockFilter {
+                location_id: Some(pantry),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         assert_eq!(in_pantry.len(), 1);
         assert_eq!(in_pantry[0].batch.location_id, pantry);
 
         let expiring = list(
-            &db, hid,
+            &db,
+            hid,
             &StockFilter {
                 expiring_before: Some(NaiveDate::from_ymd_opt(2026, 6, 1).unwrap()),
                 ..Default::default()
             },
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
         assert_eq!(expiring.len(), 1);
         assert_eq!(expiring[0].batch.location_id, pantry);
     }
@@ -1089,18 +1205,24 @@ mod tests {
     #[tokio::test]
     async fn metadata_update_does_not_write_events() {
         let (db, hid, uid, lid, pid) = setup().await;
-        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid).await.unwrap();
+        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid)
+            .await
+            .unwrap();
         let locs = locations::list_for_household(&db, hid).await.unwrap();
         let fridge = locs.iter().find(|l| l.kind == "fridge").unwrap().id;
 
         let after = update_metadata(
-            &db, hid, b.id,
+            &db,
+            hid,
+            b.id,
             &StockMetadataUpdate {
                 location_id: Some(fridge),
                 note: Some(Some("moved to fridge")),
                 ..Default::default()
             },
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
         assert_eq!(after.location_id, fridge);
         assert_eq!(after.note.as_deref(), Some("moved to fridge"));
 
@@ -1114,13 +1236,19 @@ mod tests {
         let (db, hid, uid, lid, pid) = setup().await;
         assert!(!has_active_stock_for_product(&db, pid).await.unwrap());
 
-        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid).await.unwrap();
+        let b = create(&db, hid, pid, lid, "500", "g", None, None, None, uid)
+            .await
+            .unwrap();
         assert!(has_active_stock_for_product(&db, pid).await.unwrap());
 
-        let conflicts = conflicting_units_for_family_change(&db, pid, "volume").await.unwrap();
+        let conflicts = conflicting_units_for_family_change(&db, pid, "volume")
+            .await
+            .unwrap();
         assert_eq!(conflicts, vec!["g".to_string()]);
 
-        let none = conflicting_units_for_family_change(&db, pid, "mass").await.unwrap();
+        let none = conflicting_units_for_family_change(&db, pid, "mass")
+            .await
+            .unwrap();
         assert!(none.is_empty());
 
         discard(&db, hid, b.id, uid, None).await.unwrap();
@@ -1148,11 +1276,18 @@ mod tests {
         };
         let db = test_db.db();
         let (hid, uid, lid, pid) = setup_with_db(db).await;
-        let a = create(db, hid, pid, lid, "100", "g", None, None, None, uid).await.unwrap();
-        let b = create(db, hid, pid, lid, "200", "g", None, None, None, uid).await.unwrap();
+        let a = create(db, hid, pid, lid, "100", "g", None, None, None, uid)
+            .await
+            .unwrap();
+        let b = create(db, hid, pid, lid, "200", "g", None, None, None, uid)
+            .await
+            .unwrap();
         discard(db, hid, a.id, uid, None).await.unwrap();
 
-        let err = restore_many(db, hid, &[a.id, b.id], uid).await.err().unwrap();
+        let err = restore_many(db, hid, &[a.id, b.id], uid)
+            .await
+            .err()
+            .unwrap();
         match err {
             RestoreError::NotRestorableMany(ids) => assert_eq!(ids, vec![b.id]),
             other => panic!("expected NotRestorableMany, got {other:?}"),
@@ -1168,7 +1303,9 @@ mod tests {
         };
         let db = test_db.db().clone();
         let (hid, uid, lid, pid) = setup_with_db(&db).await;
-        let batch = create(&db, hid, pid, lid, "500", "g", None, None, None, uid).await.unwrap();
+        let batch = create(&db, hid, pid, lid, "500", "g", None, None, None, uid)
+            .await
+            .unwrap();
 
         let locked = Arc::new(Barrier::new(2));
         let release = Arc::new(Notify::new());
@@ -1182,7 +1319,8 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap();
-            let current_qty = Decimal::from_str(&current.try_get::<String, _>("quantity").unwrap()).unwrap();
+            let current_qty =
+                Decimal::from_str(&current.try_get::<String, _>("quantity").unwrap()).unwrap();
             locked1.wait().await;
             release1.notified().await;
 
@@ -1201,9 +1339,18 @@ mod tests {
                 .execute(&mut *tx)
                 .await
                 .unwrap();
-            insert_event(&mut tx, hid, batch.id, EVENT_ADJUST, &delta.to_string(), None, uid, None)
-                .await
-                .unwrap();
+            insert_event(
+                &mut tx,
+                hid,
+                batch.id,
+                EVENT_ADJUST,
+                &delta.to_string(),
+                None,
+                uid,
+                None,
+            )
+            .await
+            .unwrap();
             tx.commit().await.unwrap();
         });
 

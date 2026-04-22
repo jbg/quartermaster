@@ -168,18 +168,26 @@ impl TestApp {
 
     #[allow(dead_code)]
     pub async fn me(&self, bearer: &str) -> Value {
-        self.send(Method::GET, "/auth/me", None, Some(bearer)).await.1
+        self.send(Method::GET, "/auth/me", None, Some(bearer))
+            .await
+            .1
     }
 
     #[allow(dead_code)]
     pub async fn seed_household_admin(&self, username: &str) -> (Uuid, Uuid) {
         let household = qm_db::households::create(&self.db, "Home").await.unwrap();
-        qm_db::locations::seed_defaults(&self.db, household.id).await.unwrap();
+        qm_db::locations::seed_defaults(&self.db, household.id)
+            .await
+            .unwrap();
         let hash = qm_api::auth::hash_password("password123").unwrap();
-        let user =
-            qm_db::users::create(&self.db, username, Some(&format!("{username}@example.com")), &hash)
-                .await
-                .unwrap();
+        let user = qm_db::users::create(
+            &self.db,
+            username,
+            Some(&format!("{username}@example.com")),
+            &hash,
+        )
+        .await
+        .unwrap();
         qm_db::memberships::insert(&self.db, household.id, user.id, "admin")
             .await
             .unwrap();

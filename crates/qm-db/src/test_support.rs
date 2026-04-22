@@ -1,10 +1,6 @@
 use std::{any::Any, str::FromStr};
 
-use sqlx::{
-    any::AnyPoolOptions,
-    postgres::PgConnection,
-    Connection, Executor,
-};
+use sqlx::{any::AnyPoolOptions, postgres::PgConnection, Connection, Executor};
 use testcontainers::ContainerAsync;
 use testcontainers_modules::{postgres::Postgres, testcontainers::runners::AsyncRunner};
 use uuid::Uuid;
@@ -81,7 +77,9 @@ async fn postgres_inner() -> anyhow::Result<Option<TestDatabase>> {
         let host = container.get_host().await?;
         let port = container.get_host_port_ipv4(5432).await?;
         let url = format!("postgres://postgres:postgres@{host}:{port}/postgres");
-        return connect_isolated_postgres(url, Some(Box::new(container))).await.map(Some);
+        return connect_isolated_postgres(url, Some(Box::new(container)))
+            .await
+            .map(Some);
     } else {
         return Ok(None);
     };
@@ -110,8 +108,12 @@ async fn connect_isolated_postgres(
 }
 
 fn db_url_with_database(admin_url: &str, db_name: &str) -> String {
-    let (head, query) = admin_url.split_once('?').map_or((admin_url, ""), |(h, q)| (h, q));
-    let (prefix, _) = head.rsplit_once('/').expect("postgres url should include database");
+    let (head, query) = admin_url
+        .split_once('?')
+        .map_or((admin_url, ""), |(h, q)| (h, q));
+    let (prefix, _) = head
+        .rsplit_once('/')
+        .expect("postgres url should include database");
     if query.is_empty() {
         format!("{prefix}/{db_name}")
     } else {

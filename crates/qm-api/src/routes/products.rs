@@ -267,7 +267,11 @@ pub async fn create(
         }
     }
 
-    let brand_trim = req.brand.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let brand_trim = req
+        .brand
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
     let barcode_trim = req
         .barcode
         .as_deref()
@@ -408,18 +412,14 @@ pub async fn update(
     }
 
     let name_trim = req.name.as_deref().map(str::trim);
-    let brand_inner: Option<Option<&str>> = req.brand.as_ref().map(|inner| {
-        inner
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-    });
-    let image_inner: Option<Option<&str>> = req.image_url.as_ref().map(|inner| {
-        inner
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-    });
+    let brand_inner: Option<Option<&str>> = req
+        .brand
+        .as_ref()
+        .map(|inner| inner.as_deref().map(str::trim).filter(|s| !s.is_empty()));
+    let image_inner: Option<Option<&str>> = req
+        .image_url
+        .as_ref()
+        .map(|inner| inner.as_deref().map(str::trim).filter(|s| !s.is_empty()));
     let family_str = req.family.map(UnitFamily::as_str);
 
     let updated = qm_db::products::update(
@@ -505,7 +505,11 @@ pub async fn refresh(
 
     // Fetch OFF first so we can check for family conflicts before
     // touching local state.
-    let off = OpenFoodFactsClient::new(state.http.clone(), state.off_breaker.clone(), state.config.clone());
+    let off = OpenFoodFactsClient::new(
+        state.http.clone(),
+        state.off_breaker.clone(),
+        state.config.clone(),
+    );
     let off_product = match off.fetch(&barcode).await {
         OffResult::Found(p) => p,
         OffResult::NotFound => return Err(ApiError::NotFound),
@@ -577,9 +581,7 @@ pub async fn restore(
         return Err(ApiError::NotFound);
     }
     if existing.deleted_at.is_none() {
-        return Err(ApiError::Conflict(
-            "product is not deleted".into(),
-        ));
+        return Err(ApiError::Conflict("product is not deleted".into()));
     }
 
     qm_db::products::restore(&state.db, id).await?;
@@ -591,7 +593,10 @@ pub async fn restore(
 
 // ----- helpers -----
 
-async fn fetch_and_cache(state: &AppState, barcode: &str) -> ApiResult<Json<BarcodeLookupResponse>> {
+async fn fetch_and_cache(
+    state: &AppState,
+    barcode: &str,
+) -> ApiResult<Json<BarcodeLookupResponse>> {
     let off = OpenFoodFactsClient::new(
         state.http.clone(),
         state.off_breaker.clone(),

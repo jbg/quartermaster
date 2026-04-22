@@ -29,6 +29,7 @@ These are enforced in code, but the *why* lives here. Respect them.
 ## Verification
 
 - **Rust:** `cargo test --workspace` — fast. Exercises the router, repo layer, unit conversions, and OpenFoodFacts parsing.
+- **`qm-api` integration tests are behavior-grouped.** Keep files in `crates/qm-api/tests/` named for the surface they cover (`invites.rs`, `households.rs`, `stock_lifecycle.rs`, …), not for implementation phases or generic "slice" buckets.
 - **Stock-ledger integrity:** `cargo xtask verify-stock-ledger` checks that every `stock_batch.quantity` equals `SUM(stock_event.quantity_delta)` for that batch. Useful after any change in `qm-db/src/stock.rs`.
 - **iOS build:** `xcodebuild -project ios/Quartermaster.xcodeproj -scheme Quartermaster -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' -skipPackagePluginValidation build`. A warning about `try` on `ok.body.json` accessors is compiler flow analysis noticing the single-case enum never throws — harmless, generator-side.
 - **End-to-end smoke test:** start `cargo run -p qm-server`, register + login via `curl`, verify `GET /auth/me` returns `household_id` + `household_name`. The iOS app against the running backend is the real integration test.

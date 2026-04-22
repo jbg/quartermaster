@@ -125,7 +125,10 @@ pub async fn register(
         (RegistrationMode::FirstRunOnly, 0) => {
             let h = qm_db::households::create(&state.db, "My Household").await?;
             qm_db::locations::seed_defaults(&state.db, h.id).await?;
-            if qm_db::users::find_by_username(&state.db, &req.username).await?.is_some() {
+            if qm_db::users::find_by_username(&state.db, &req.username)
+                .await?
+                .is_some()
+            {
                 return Err(ApiError::Conflict("username already taken".into()));
             }
             let user = qm_db::users::create(
@@ -142,13 +145,13 @@ pub async fn register(
             return Err(ApiError::RegistrationDisabled);
         }
         (RegistrationMode::Open, _) => {
-            let h = qm_db::households::create(
-                &state.db,
-                &format!("{}'s Household", req.username),
-            )
-            .await?;
+            let h = qm_db::households::create(&state.db, &format!("{}'s Household", req.username))
+                .await?;
             qm_db::locations::seed_defaults(&state.db, h.id).await?;
-            if qm_db::users::find_by_username(&state.db, &req.username).await?.is_some() {
+            if qm_db::users::find_by_username(&state.db, &req.username)
+                .await?
+                .is_some()
+            {
                 return Err(ApiError::Conflict("username already taken".into()));
             }
             let user = qm_db::users::create(
@@ -192,7 +195,8 @@ pub async fn register(
         }
     };
 
-    let pair = issue_token_pair(&state, user.id, Uuid::now_v7(), req.device_label.as_deref()).await?;
+    let pair =
+        issue_token_pair(&state, user.id, Uuid::now_v7(), req.device_label.as_deref()).await?;
     Ok((StatusCode::CREATED, Json(pair)))
 }
 
@@ -218,7 +222,8 @@ pub async fn login(
     if !auth::verify_password(&req.password, &user.password_hash) {
         return Err(ApiError::Unauthorized);
     }
-    let pair = issue_token_pair(&state, user.id, Uuid::now_v7(), req.device_label.as_deref()).await?;
+    let pair =
+        issue_token_pair(&state, user.id, Uuid::now_v7(), req.device_label.as_deref()).await?;
     Ok(Json(pair))
 }
 
@@ -333,7 +338,9 @@ fn validate_credentials(username: &str, password: &str) -> ApiResult<()> {
         return Err(ApiError::BadRequest("username must be 1..=64 chars".into()));
     }
     if password.len() < 8 {
-        return Err(ApiError::BadRequest("password must be at least 8 chars".into()));
+        return Err(ApiError::BadRequest(
+            "password must be at least 8 chars".into(),
+        ));
     }
     if password.len() > 256 {
         return Err(ApiError::BadRequest("password too long".into()));

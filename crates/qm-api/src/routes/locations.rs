@@ -17,7 +17,10 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/locations", get(list_locations).post(create_location))
-        .route("/locations/{id}", patch(update_location).delete(delete_location))
+        .route(
+            "/locations/{id}",
+            patch(update_location).delete(delete_location),
+        )
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -88,14 +91,17 @@ pub async fn create_location(
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
     let name = req.name.trim();
     if name.is_empty() || name.len() > 64 {
-        return Err(ApiError::BadRequest("location name must be 1..=64 chars".into()));
+        return Err(ApiError::BadRequest(
+            "location name must be 1..=64 chars".into(),
+        ));
     }
     validate_kind(&req.kind)?;
     let sort_order = match req.sort_order {
         Some(v) => v,
         None => qm_db::locations::next_sort_order(&state.db, household_id).await?,
     };
-    let row = qm_db::locations::create(&state.db, household_id, name, &req.kind, sort_order).await?;
+    let row =
+        qm_db::locations::create(&state.db, household_id, name, &req.kind, sort_order).await?;
     Ok((StatusCode::CREATED, Json(to_dto(row))))
 }
 
@@ -118,12 +124,15 @@ pub async fn update_location(
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
     let name = req.name.trim();
     if name.is_empty() || name.len() > 64 {
-        return Err(ApiError::BadRequest("location name must be 1..=64 chars".into()));
+        return Err(ApiError::BadRequest(
+            "location name must be 1..=64 chars".into(),
+        ));
     }
     validate_kind(&req.kind)?;
-    let row = qm_db::locations::update(&state.db, household_id, id, name, &req.kind, req.sort_order)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+    let row =
+        qm_db::locations::update(&state.db, household_id, id, name, &req.kind, req.sort_order)
+            .await?
+            .ok_or(ApiError::NotFound)?;
     Ok(Json(to_dto(row)))
 }
 
@@ -164,6 +173,8 @@ fn to_dto(l: qm_db::locations::LocationRow) -> LocationDto {
 fn validate_kind(kind: &str) -> ApiResult<()> {
     match kind {
         "pantry" | "fridge" | "freezer" => Ok(()),
-        _ => Err(ApiError::BadRequest("location kind must be pantry, fridge, or freezer".into())),
+        _ => Err(ApiError::BadRequest(
+            "location kind must be pantry, fridge, or freezer".into(),
+        )),
     }
 }

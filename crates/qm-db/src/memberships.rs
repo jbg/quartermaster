@@ -109,10 +109,7 @@ pub async fn list_members(
         .collect()
 }
 
-pub async fn count_admins(
-    db: &Database,
-    household_id: Uuid,
-) -> Result<i64, sqlx::Error> {
+pub async fn count_admins(db: &Database, household_id: Uuid) -> Result<i64, sqlx::Error> {
     let row = sqlx::query(
         "SELECT COUNT(*) AS n FROM membership WHERE household_id = ? AND role = 'admin'",
     )
@@ -122,11 +119,7 @@ pub async fn count_admins(
     row.try_get("n")
 }
 
-pub async fn remove(
-    db: &Database,
-    household_id: Uuid,
-    user_id: Uuid,
-) -> Result<bool, sqlx::Error> {
+pub async fn remove(db: &Database, household_id: Uuid, user_id: Uuid) -> Result<bool, sqlx::Error> {
     let res = sqlx::query("DELETE FROM membership WHERE household_id = ? AND user_id = ?")
         .bind(household_id.to_string())
         .bind(user_id.to_string())
@@ -145,8 +138,7 @@ fn row_to_membership_ref(row: &sqlx::any::AnyRow) -> Result<MembershipRow, sqlx:
     Ok(MembershipRow {
         household_id: Uuid::parse_str(&household_id)
             .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
-        user_id: Uuid::parse_str(&user_id)
-            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+        user_id: Uuid::parse_str(&user_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         role: row.try_get("role")?,
         joined_at: row.try_get("joined_at")?,
     })

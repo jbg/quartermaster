@@ -23,10 +23,19 @@ const ROLE_ADMIN: &str = "admin";
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/households/current", get(get_current_household).patch(update_current_household))
+        .route(
+            "/households/current",
+            get(get_current_household).patch(update_current_household),
+        )
         .route("/households/current/members", get(list_members))
-        .route("/households/current/members/{user_id}", delete(remove_member))
-        .route("/households/current/invites", get(list_invites).post(create_invite))
+        .route(
+            "/households/current/members/{user_id}",
+            delete(remove_member),
+        )
+        .route(
+            "/households/current/invites",
+            get(list_invites).post(create_invite),
+        )
         .route("/invites/{id}", delete(revoke_invite))
         .route("/invites/redeem", post(redeem_invite))
 }
@@ -112,7 +121,9 @@ pub async fn update_current_household(
     require_admin(&current)?;
     let name = req.name.trim();
     if name.is_empty() || name.len() > 128 {
-        return Err(ApiError::BadRequest("household name must be 1..=128 chars".into()));
+        return Err(ApiError::BadRequest(
+            "household name must be 1..=128 chars".into(),
+        ));
     }
     let household = qm_db::households::rename(&state.db, household_id, name)
         .await?
@@ -173,7 +184,9 @@ pub async fn remove_member(
     let membership = qm_db::memberships::find(&state.db, household_id, user_id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    if membership.role == ROLE_ADMIN && qm_db::memberships::count_admins(&state.db, household_id).await? <= 1 {
+    if membership.role == ROLE_ADMIN
+        && qm_db::memberships::count_admins(&state.db, household_id).await? <= 1
+    {
         return Err(ApiError::LastAdminRemoval);
     }
     let removed = qm_db::memberships::remove(&state.db, household_id, user_id).await?;
@@ -206,7 +219,9 @@ pub async fn create_invite(
         .map_err(|_| ApiError::BadRequest("expires_at must be RFC-3339".into()))?
         .with_timezone(&Utc);
     if expires <= Utc::now() {
-        return Err(ApiError::BadRequest("expires_at must be in the future".into()));
+        return Err(ApiError::BadRequest(
+            "expires_at must be in the future".into(),
+        ));
     }
     let code = Uuid::now_v7().simple().to_string()[..12].to_ascii_uppercase();
     let row = qm_db::invites::create(

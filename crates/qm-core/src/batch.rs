@@ -64,7 +64,11 @@ pub fn plan_consumption(
             let depletes = taken_in_batch_unit >= batch.quantity;
             plan.push(BatchConsumption {
                 batch_id: batch.id,
-                quantity: if depletes { batch.quantity } else { taken_in_batch_unit },
+                quantity: if depletes {
+                    batch.quantity
+                } else {
+                    taken_in_batch_unit
+                },
                 depletes,
             });
             remaining_requested = Decimal::ZERO;
@@ -173,23 +177,15 @@ mod tests {
 
     #[test]
     fn cross_family_errors() {
-        let err = plan_consumption(
-            vec![batch(1, "500", "g", None, 1)],
-            dec("250"),
-            "ml",
-        )
-        .unwrap_err();
+        let err =
+            plan_consumption(vec![batch(1, "500", "g", None, 1)], dec("250"), "ml").unwrap_err();
         assert!(matches!(err, QmError::IncompatibleUnits { .. }));
     }
 
     #[test]
     fn insufficient_stock_errors() {
-        let err = plan_consumption(
-            vec![batch(1, "100", "g", None, 1)],
-            dec("250"),
-            "g",
-        )
-        .unwrap_err();
+        let err =
+            plan_consumption(vec![batch(1, "100", "g", None, 1)], dec("250"), "g").unwrap_err();
         assert!(matches!(err, QmError::InsufficientStock { .. }));
     }
 

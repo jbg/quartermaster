@@ -178,7 +178,8 @@ fn row_to_event(row: sqlx::any::AnyRow) -> Result<StockEventRow, sqlx::Error> {
     let consume_request_id: Option<String> = row.try_get("consume_request_id")?;
     Ok(StockEventRow {
         id: Uuid::parse_str(&id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
-        household_id: Uuid::parse_str(&household_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+        household_id: Uuid::parse_str(&household_id)
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         batch_id: Uuid::parse_str(&batch_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         event_type: row.try_get("event_type")?,
         quantity_delta: row.try_get("quantity_delta")?,
@@ -201,7 +202,8 @@ fn row_to_timeline_entry(row: sqlx::any::AnyRow) -> Result<TimelineEntryRow, sql
 
     let event = StockEventRow {
         id: Uuid::parse_str(&e_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
-        household_id: Uuid::parse_str(&e_household).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+        household_id: Uuid::parse_str(&e_household)
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         batch_id: Uuid::parse_str(&e_batch).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         event_type: row.try_get("e_event_type")?,
         quantity_delta: row.try_get("e_quantity_delta")?,
@@ -266,9 +268,20 @@ mod tests {
     #[tokio::test]
     async fn list_timeline_includes_batch_expiry() {
         let (db, hid, uid, lid, pid) = setup().await;
-        stock::create(&db, hid, pid, lid, "500", "g", Some("2026-06-01"), None, None, uid)
-            .await
-            .unwrap();
+        stock::create(
+            &db,
+            hid,
+            pid,
+            lid,
+            "500",
+            "g",
+            Some("2026-06-01"),
+            None,
+            None,
+            uid,
+        )
+        .await
+        .unwrap();
         stock::create(&db, hid, pid, lid, "200", "g", None, None, None, uid)
             .await
             .unwrap();
@@ -278,7 +291,9 @@ mod tests {
         assert_eq!(rows.len(), 2);
         // One carries the expiry; the other is None. Order depends on which was
         // inserted second (that one is newest and has no expiry).
-        assert!(rows.iter().any(|r| r.batch_expires_on.as_deref() == Some("2026-06-01")));
+        assert!(rows
+            .iter()
+            .any(|r| r.batch_expires_on.as_deref() == Some("2026-06-01")));
         assert!(rows.iter().any(|r| r.batch_expires_on.is_none()));
     }
 
@@ -314,7 +329,11 @@ mod tests {
         let page2 = list_timeline(&db, hid, None, Some(shared_ts), Some(id_b), 1)
             .await
             .unwrap();
-        assert_eq!(page2.len(), 1, "tiebreak should surface the remaining event, not drop it");
+        assert_eq!(
+            page2.len(),
+            1,
+            "tiebreak should surface the remaining event, not drop it"
+        );
         assert_eq!(page2[0].event.id, id_a);
 
         // One more hop returns empty.

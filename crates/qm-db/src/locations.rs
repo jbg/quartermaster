@@ -80,10 +80,7 @@ pub async fn create(
     })
 }
 
-pub async fn next_sort_order(
-    db: &Database,
-    household_id: Uuid,
-) -> Result<i64, sqlx::Error> {
+pub async fn next_sort_order(db: &Database, household_id: Uuid) -> Result<i64, sqlx::Error> {
     let row = sqlx::query(
         "SELECT COALESCE(MAX(sort_order), -1) AS n FROM location WHERE household_id = ?",
     )
@@ -135,11 +132,7 @@ pub async fn has_active_stock(
     Ok(row.is_some())
 }
 
-pub async fn delete(
-    db: &Database,
-    household_id: Uuid,
-    id: Uuid,
-) -> Result<bool, sqlx::Error> {
+pub async fn delete(db: &Database, household_id: Uuid, id: Uuid) -> Result<bool, sqlx::Error> {
     let res = sqlx::query("DELETE FROM location WHERE id = ? AND household_id = ?")
         .bind(id.to_string())
         .bind(household_id.to_string())

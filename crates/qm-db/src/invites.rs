@@ -122,10 +122,7 @@ pub async fn list_for_household(
     rows.into_iter().map(row_to_invite).collect()
 }
 
-pub async fn find_by_id(
-    db: &Database,
-    id: Uuid,
-) -> Result<Option<InviteRow>, sqlx::Error> {
+pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<InviteRow>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT id, household_id, code, created_by, expires_at, max_uses, use_count, role_granted, created_at, revoked_at \
          FROM invite WHERE id = ?",
@@ -136,10 +133,7 @@ pub async fn find_by_id(
     row.map(row_to_invite).transpose()
 }
 
-pub async fn find_by_code(
-    db: &Database,
-    code: &str,
-) -> Result<Option<InviteRow>, sqlx::Error> {
+pub async fn find_by_code(db: &Database, code: &str) -> Result<Option<InviteRow>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT id, household_id, code, created_by, expires_at, max_uses, use_count, role_granted, created_at, revoked_at \
          FROM invite WHERE code = ?",
@@ -150,11 +144,7 @@ pub async fn find_by_code(
     row.map(row_to_invite).transpose()
 }
 
-pub async fn revoke(
-    db: &Database,
-    id: Uuid,
-    household_id: Uuid,
-) -> Result<bool, sqlx::Error> {
+pub async fn revoke(db: &Database, id: Uuid, household_id: Uuid) -> Result<bool, sqlx::Error> {
     let res = sqlx::query(
         "UPDATE invite SET revoked_at = ? \
          WHERE id = ? AND household_id = ? AND revoked_at IS NULL",
@@ -167,20 +157,14 @@ pub async fn revoke(
     Ok(res.rows_affected() > 0)
 }
 
-pub async fn status_for_code(
-    db: &Database,
-    code: &str,
-) -> Result<InviteStatus, sqlx::Error> {
+pub async fn status_for_code(db: &Database, code: &str) -> Result<InviteStatus, sqlx::Error> {
     let Some(invite) = find_by_code(db, code).await? else {
         return Ok(InviteStatus::NotFound);
     };
     Ok(classify(&invite))
 }
 
-pub async fn consume(
-    db: &Database,
-    id: Uuid,
-) -> Result<bool, sqlx::Error> {
+pub async fn consume(db: &Database, id: Uuid) -> Result<bool, sqlx::Error> {
     let mut tx = db.pool.begin().await?;
     let consumed = consume_in_tx(&mut tx, id).await?;
     tx.commit().await?;
@@ -337,12 +321,21 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(status_for_code(&db, "ABC123").await.unwrap(), InviteStatus::Active);
+        assert_eq!(
+            status_for_code(&db, "ABC123").await.unwrap(),
+            InviteStatus::Active
+        );
         assert!(consume(&db, invite.id).await.unwrap());
         assert!(consume(&db, invite.id).await.unwrap());
         assert!(!consume(&db, invite.id).await.unwrap());
-        assert_eq!(status_for_code(&db, "ABC123").await.unwrap(), InviteStatus::Exhausted);
-        assert_eq!(list_for_household(&db, household.id).await.unwrap().len(), 1);
+        assert_eq!(
+            status_for_code(&db, "ABC123").await.unwrap(),
+            InviteStatus::Exhausted
+        );
+        assert_eq!(
+            list_for_household(&db, household.id).await.unwrap().len(),
+            1
+        );
         assert!(revoke(&db, invite.id, household.id).await.unwrap());
     }
 }

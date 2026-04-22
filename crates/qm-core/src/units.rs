@@ -42,7 +42,11 @@ pub struct Unit {
 
 impl Unit {
     const fn new(code: &'static str, family: UnitFamily, to_base_milli: u64) -> Self {
-        Self { code, family, to_base_milli }
+        Self {
+            code,
+            family,
+            to_base_milli,
+        }
     }
 
     fn to_base_factor(self) -> Decimal {
@@ -52,18 +56,18 @@ impl Unit {
 
 const UNITS: &[Unit] = &[
     // Mass — base is gram (g)
-    Unit::new("mg", UnitFamily::Mass, 1),                  // 0.001 g
-    Unit::new("g", UnitFamily::Mass, 1_000),               // 1 g
-    Unit::new("kg", UnitFamily::Mass, 1_000_000),          // 1000 g
-    Unit::new("oz", UnitFamily::Mass, 28_349),             // 28.349 g
-    Unit::new("lb", UnitFamily::Mass, 453_592),            // 453.592 g
+    Unit::new("mg", UnitFamily::Mass, 1),         // 0.001 g
+    Unit::new("g", UnitFamily::Mass, 1_000),      // 1 g
+    Unit::new("kg", UnitFamily::Mass, 1_000_000), // 1000 g
+    Unit::new("oz", UnitFamily::Mass, 28_349),    // 28.349 g
+    Unit::new("lb", UnitFamily::Mass, 453_592),   // 453.592 g
     // Volume — base is millilitre (ml)
-    Unit::new("ml", UnitFamily::Volume, 1_000),            // 1 ml
-    Unit::new("l", UnitFamily::Volume, 1_000_000),         // 1000 ml
-    Unit::new("tsp", UnitFamily::Volume, 4_929),           // 4.929 ml
-    Unit::new("tbsp", UnitFamily::Volume, 14_787),         // 14.787 ml
-    Unit::new("cup", UnitFamily::Volume, 236_588),         // 236.588 ml (US customary)
-    Unit::new("fl_oz", UnitFamily::Volume, 29_574),        // 29.574 ml (US customary)
+    Unit::new("ml", UnitFamily::Volume, 1_000),     // 1 ml
+    Unit::new("l", UnitFamily::Volume, 1_000_000),  // 1000 ml
+    Unit::new("tsp", UnitFamily::Volume, 4_929),    // 4.929 ml
+    Unit::new("tbsp", UnitFamily::Volume, 14_787),  // 14.787 ml
+    Unit::new("cup", UnitFamily::Volume, 236_588),  // 236.588 ml (US customary)
+    Unit::new("fl_oz", UnitFamily::Volume, 29_574), // 29.574 ml (US customary)
     // Count — base is piece
     Unit::new("piece", UnitFamily::Count, 1_000),
 ];
@@ -129,7 +133,10 @@ mod tests {
 
     #[test]
     fn unknown_unit_errors() {
-        assert!(matches!(convert(d("1"), "stone", "g"), Err(QmError::UnknownUnit(_))));
+        assert!(matches!(
+            convert(d("1"), "stone", "g"),
+            Err(QmError::UnknownUnit(_))
+        ));
     }
 
     #[test]

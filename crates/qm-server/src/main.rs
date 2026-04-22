@@ -172,10 +172,13 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("binding {addr}"))?;
     tracing::info!(%addr, "listening");
 
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .context("serving HTTP")?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .context("serving HTTP")?;
 
     Ok(())
 }

@@ -63,7 +63,10 @@ impl OpenFoodFactsClient {
         };
 
         let mut attempts = 0usize;
-        let retry_budget = self.config.off_timeout.mul_f64((self.config.off_max_retries + 1) as f64 + 1.0);
+        let retry_budget = self
+            .config
+            .off_timeout
+            .mul_f64((self.config.off_max_retries + 1) as f64 + 1.0);
         let policy = ExponentialBackoffBuilder::new()
             .with_initial_interval(self.config.off_retry_base_delay)
             .with_randomization_factor(0.5)
@@ -152,7 +155,10 @@ impl OpenFoodFactsClient {
     }
 
     async fn fetch_once(&self, barcode: &str) -> FetchOutcome {
-        let url = format!("{}/{barcode}.json?fields={FIELDS}", self.config.off_api_base_url);
+        let url = format!(
+            "{}/{barcode}.json?fields={FIELDS}",
+            self.config.off_api_base_url
+        );
         debug!(%url, "OFF lookup");
 
         let response = match self.http.get(&url).send().await {
@@ -206,7 +212,9 @@ impl OpenFoodFactsClient {
             name,
             brand: product.brands.filter(|s| !s.trim().is_empty()),
             image_url: product.image_url.filter(|s| !s.trim().is_empty()),
-            quantity_unit: product.product_quantity_unit.filter(|s| !s.trim().is_empty()),
+            quantity_unit: product
+                .product_quantity_unit
+                .filter(|s| !s.trim().is_empty()),
         })
     }
 }
@@ -334,7 +342,9 @@ impl OffCircuitBreaker {
 /// hints fall back to `Count` — the least-wrong default given that a mass or
 /// volume guess would be silently wrong.
 pub fn infer_family(hint: Option<&str>) -> UnitFamily {
-    let Some(raw) = hint else { return UnitFamily::Count };
+    let Some(raw) = hint else {
+        return UnitFamily::Count;
+    };
     let lowered = raw.trim().to_ascii_lowercase();
     if lowered.is_empty() {
         return UnitFamily::Count;

@@ -9,20 +9,16 @@ fn main() -> ExitCode {
     let cmd = env::args().nth(1).unwrap_or_default();
     let result = match cmd.as_str() {
         "export-openapi" => export_openapi(),
-        "verify-stock-ledger" => {
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("runtime")
-                .block_on(verify_stock_ledger())
-        }
-        "seed-ledger-fixture" => {
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("runtime")
-                .block_on(seed_ledger_fixture())
-        }
+        "verify-stock-ledger" => tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime")
+            .block_on(verify_stock_ledger()),
+        "seed-ledger-fixture" => tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime")
+            .block_on(seed_ledger_fixture()),
         "" | "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -49,7 +45,10 @@ fn export_openapi() -> anyhow::Result<()> {
     // consumers, CI drift check) and the one the swift-openapi-generator
     // plugin actually reads when Xcode builds the iOS app.
     let root = repo_root()?;
-    for out in [root.join("openapi.json"), root.join("ios/Quartermaster/openapi.json")] {
+    for out in [
+        root.join("openapi.json"),
+        root.join("ios/Quartermaster/openapi.json"),
+    ] {
         std::fs::write(&out, &json).with_context(|| format!("writing {}", out.display()))?;
         println!("wrote {}", out.display());
     }
@@ -89,8 +88,9 @@ async fn verify_stock_ledger() -> anyhow::Result<()> {
         total += 1;
         let batch_id: String = row.try_get("batch_id")?;
         let cached_str: String = row.try_get("cached")?;
-        let cached = Decimal::from_str(&cached_str)
-            .with_context(|| format!("parsing cached quantity '{cached_str}' for batch {batch_id}"))?;
+        let cached = Decimal::from_str(&cached_str).with_context(|| {
+            format!("parsing cached quantity '{cached_str}' for batch {batch_id}")
+        })?;
 
         let ledger = sum_ledger_for_batch(&db, &batch_id).await?;
         if cached != ledger {
@@ -159,27 +159,34 @@ async fn seed_ledger_fixture() -> anyhow::Result<()> {
     )
     .await
     .context("creating stock")?;
-    qm_db::stock::adjust(&db, household.id, batch.id, "450", user.id, Some("fixture adjust"))
-        .await
-        .context("adjusting stock")?;
+    qm_db::stock::adjust(
+        &db,
+        household.id,
+        batch.id,
+        "450",
+        user.id,
+        Some("fixture adjust"),
+    )
+    .await
+    .context("adjusting stock")?;
 
-    println!("seeded fixture household={} batch={}", household.id, batch.id);
+    println!(
+        "seeded fixture household={} batch={}",
+        household.id, batch.id
+    );
     Ok(())
 }
 
 async fn sum_ledger_for_batch(db: &qm_db::Database, batch_id: &str) -> anyhow::Result<Decimal> {
-    let rows = sqlx::query(
-        "SELECT quantity_delta FROM stock_event WHERE batch_id = ?",
-    )
-    .bind(batch_id)
-    .fetch_all(&db.pool)
-    .await
-    .context("reading event log")?;
+    let rows = sqlx::query("SELECT quantity_delta FROM stock_event WHERE batch_id = ?")
+        .bind(batch_id)
+        .fetch_all(&db.pool)
+        .await
+        .context("reading event log")?;
     let mut sum = Decimal::ZERO;
     for row in rows {
         let s: String = row.try_get("quantity_delta")?;
-        let d = Decimal::from_str(&s)
-            .with_context(|| format!("parsing event delta '{s}'"))?;
+        let d = Decimal::from_str(&s).with_context(|| format!("parsing event delta '{s}'"))?;
         sum += d;
     }
     Ok(sum)

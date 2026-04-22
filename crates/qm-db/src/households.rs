@@ -46,8 +46,7 @@ pub async fn find_for_user(
 
     row.map(|r| {
         let id_str: String = r.try_get("id")?;
-        let id = Uuid::parse_str(&id_str)
-            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+        let id = Uuid::parse_str(&id_str).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
         Ok::<_, sqlx::Error>(HouseholdRow {
             id,
             name: r.try_get("name")?,
@@ -58,16 +57,13 @@ pub async fn find_for_user(
 }
 
 pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<HouseholdRow>, sqlx::Error> {
-    let row = sqlx::query(
-        "SELECT id, name, created_at FROM household WHERE id = ?",
-    )
-    .bind(id.to_string())
-    .fetch_optional(&db.pool)
-    .await?;
+    let row = sqlx::query("SELECT id, name, created_at FROM household WHERE id = ?")
+        .bind(id.to_string())
+        .fetch_optional(&db.pool)
+        .await?;
     row.map(|r| {
         let id_str: String = r.try_get("id")?;
-        let id = Uuid::parse_str(&id_str)
-            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+        let id = Uuid::parse_str(&id_str).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
         Ok::<_, sqlx::Error>(HouseholdRow {
             id,
             name: r.try_get("name")?,
@@ -103,8 +99,12 @@ mod tests {
         let older = create(db, "Older").await.unwrap();
         let newer = create(db, "Newer").await.unwrap();
 
-        memberships::insert(db, older.id, user.id, "member").await.unwrap();
-        memberships::insert(db, newer.id, user.id, "member").await.unwrap();
+        memberships::insert(db, older.id, user.id, "member")
+            .await
+            .unwrap();
+        memberships::insert(db, newer.id, user.id, "member")
+            .await
+            .unwrap();
 
         let current = find_for_user(db, user.id).await.unwrap().unwrap();
         assert_eq!(current.id, newer.id);

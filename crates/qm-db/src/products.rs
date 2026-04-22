@@ -269,33 +269,27 @@ pub async fn update(
 /// Soft-delete a product. The row stays so depleted stock_batches keep
 /// resolving their product for history views; finds / searches hide it.
 pub async fn soft_delete(db: &Database, id: Uuid) -> Result<bool, sqlx::Error> {
-    let res = sqlx::query(
-        "UPDATE product SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
-    )
-    .bind(now_utc_rfc3339())
-    .bind(id.to_string())
-    .execute(&db.pool)
-    .await?;
+    let res = sqlx::query("UPDATE product SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL")
+        .bind(now_utc_rfc3339())
+        .bind(id.to_string())
+        .execute(&db.pool)
+        .await?;
     Ok(res.rows_affected() > 0)
 }
 
 /// Undo a previous soft-delete.
 pub async fn restore(db: &Database, id: Uuid) -> Result<bool, sqlx::Error> {
-    let res = sqlx::query(
-        "UPDATE product SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL",
-    )
-    .bind(id.to_string())
-    .execute(&db.pool)
-    .await?;
+    let res =
+        sqlx::query("UPDATE product SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL")
+            .bind(id.to_string())
+            .execute(&db.pool)
+            .await?;
     Ok(res.rows_affected() > 0)
 }
 
 /// Drop the barcode_cache row for this OFF product's barcode. Used by the
 /// "Refresh from OpenFoodFacts" endpoint.
-pub async fn invalidate_barcode_cache_for(
-    db: &Database,
-    id: Uuid,
-) -> Result<bool, sqlx::Error> {
+pub async fn invalidate_barcode_cache_for(db: &Database, id: Uuid) -> Result<bool, sqlx::Error> {
     let Some(product) = find_by_id(db, id).await? else {
         return Ok(false);
     };
@@ -340,9 +334,18 @@ mod tests {
     async fn create_and_find_manual_product() {
         let db = crate::test_db().await;
         let h = households::create(&db, "h").await.unwrap();
-        let p = create_manual(&db, h.id, "Basmati rice", None, "mass", Some("g"), None, None)
-            .await
-            .unwrap();
+        let p = create_manual(
+            &db,
+            h.id,
+            "Basmati rice",
+            None,
+            "mass",
+            Some("g"),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
         assert_eq!(p.family, "mass");
         assert_eq!(p.preferred_unit, "g");
         assert_eq!(p.source, "manual");
@@ -356,11 +359,17 @@ mod tests {
     async fn default_preferred_unit_when_absent() {
         let db = crate::test_db().await;
         let h = households::create(&db, "h").await.unwrap();
-        let mass = create_manual(&db, h.id, "Flour", None, "mass", None, None, None).await.unwrap();
+        let mass = create_manual(&db, h.id, "Flour", None, "mass", None, None, None)
+            .await
+            .unwrap();
         assert_eq!(mass.preferred_unit, "g");
-        let vol = create_manual(&db, h.id, "Milk", None, "volume", None, None, None).await.unwrap();
+        let vol = create_manual(&db, h.id, "Milk", None, "volume", None, None, None)
+            .await
+            .unwrap();
         assert_eq!(vol.preferred_unit, "ml");
-        let count = create_manual(&db, h.id, "Eggs", None, "count", None, None, None).await.unwrap();
+        let count = create_manual(&db, h.id, "Eggs", None, "count", None, None, None)
+            .await
+            .unwrap();
         assert_eq!(count.preferred_unit, "piece");
     }
 
@@ -369,8 +378,30 @@ mod tests {
         let db = crate::test_db().await;
         let a = households::create(&db, "A").await.unwrap();
         let b = households::create(&db, "B").await.unwrap();
-        create_manual(&db, a.id, "Alice-Only Product", None, "count", None, None, None).await.unwrap();
-        create_manual(&db, b.id, "Bob-Only Product", None, "count", None, None, None).await.unwrap();
+        create_manual(
+            &db,
+            a.id,
+            "Alice-Only Product",
+            None,
+            "count",
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        create_manual(
+            &db,
+            b.id,
+            "Bob-Only Product",
+            None,
+            "count",
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
         let a_results = search(&db, a.id, "only", 10).await.unwrap();
         assert_eq!(a_results.len(), 1);
@@ -386,9 +417,17 @@ mod tests {
         let db = crate::test_db().await;
         let a = households::create(&db, "A").await.unwrap();
         let b = households::create(&db, "B").await.unwrap();
-        upsert_from_off(&db, "5449000000996", "Coca-Cola", Some("Coca-Cola"), "volume", Some("ml"), None)
-            .await
-            .unwrap();
+        upsert_from_off(
+            &db,
+            "5449000000996",
+            "Coca-Cola",
+            Some("Coca-Cola"),
+            "volume",
+            Some("ml"),
+            None,
+        )
+        .await
+        .unwrap();
         assert_eq!(search(&db, a.id, "coca", 10).await.unwrap().len(), 1);
         assert_eq!(search(&db, b.id, "coca", 10).await.unwrap().len(), 1);
     }
@@ -396,10 +435,28 @@ mod tests {
     #[tokio::test]
     async fn upsert_from_off_updates_existing() {
         let db = crate::test_db().await;
-        let first = upsert_from_off(&db, "8076809513388", "Spaghetti", None, "mass", Some("g"), None)
-            .await.unwrap();
-        let second = upsert_from_off(&db, "8076809513388", "Spaghetti No. 5", Some("Barilla"), "mass", Some("g"), None)
-            .await.unwrap();
+        let first = upsert_from_off(
+            &db,
+            "8076809513388",
+            "Spaghetti",
+            None,
+            "mass",
+            Some("g"),
+            None,
+        )
+        .await
+        .unwrap();
+        let second = upsert_from_off(
+            &db,
+            "8076809513388",
+            "Spaghetti No. 5",
+            Some("Barilla"),
+            "mass",
+            Some("g"),
+            None,
+        )
+        .await
+        .unwrap();
         assert_eq!(first.id, second.id);
         assert_eq!(second.name, "Spaghetti No. 5");
         assert_eq!(second.brand.as_deref(), Some("Barilla"));
@@ -409,14 +466,19 @@ mod tests {
     async fn search_with_deleted_flag_toggles_visibility() {
         let db = crate::test_db().await;
         let h = households::create(&db, "h").await.unwrap();
-        let p = create_manual(&db, h.id, "Retired widget", None, "count", None, None, None).await.unwrap();
+        let p = create_manual(&db, h.id, "Retired widget", None, "count", None, None, None)
+            .await
+            .unwrap();
 
         assert_eq!(search(&db, h.id, "retired", 10).await.unwrap().len(), 1);
 
         soft_delete(&db, p.id).await.unwrap();
         assert_eq!(search(&db, h.id, "retired", 10).await.unwrap().len(), 0);
         assert_eq!(
-            search_with_deleted(&db, h.id, "retired", 10, true).await.unwrap().len(),
+            search_with_deleted(&db, h.id, "retired", 10, true)
+                .await
+                .unwrap()
+                .len(),
             1
         );
     }
@@ -425,7 +487,9 @@ mod tests {
     async fn restore_flips_deleted_at_null() {
         let db = crate::test_db().await;
         let h = households::create(&db, "h").await.unwrap();
-        let p = create_manual(&db, h.id, "Widget", None, "count", None, None, None).await.unwrap();
+        let p = create_manual(&db, h.id, "Widget", None, "count", None, None, None)
+            .await
+            .unwrap();
         soft_delete(&db, p.id).await.unwrap();
         assert!(find_by_id(&db, p.id).await.unwrap().is_none());
 
@@ -439,7 +503,9 @@ mod tests {
     async fn find_including_deleted_returns_tombstone() {
         let db = crate::test_db().await;
         let h = households::create(&db, "h").await.unwrap();
-        let p = create_manual(&db, h.id, "Widget", None, "count", None, None, None).await.unwrap();
+        let p = create_manual(&db, h.id, "Widget", None, "count", None, None, None)
+            .await
+            .unwrap();
         soft_delete(&db, p.id).await.unwrap();
         let got = find_including_deleted(&db, p.id).await.unwrap().unwrap();
         assert!(got.deleted_at.is_some());

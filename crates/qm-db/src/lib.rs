@@ -17,10 +17,10 @@ pub mod memberships;
 pub mod products;
 pub mod stock;
 pub mod stock_events;
-pub mod tokens;
-pub mod users;
 #[cfg(test)]
 pub mod test_support;
+pub mod tokens;
+pub mod users;
 
 #[derive(Clone, Debug)]
 pub struct Database {
@@ -50,10 +50,14 @@ impl Database {
                     if backend == Backend::Sqlite {
                         // SQLite does not enforce foreign keys unless
                         // explicitly enabled on each connection.
-                        sqlx::query("PRAGMA foreign_keys = ON").execute(&mut *conn).await?;
+                        sqlx::query("PRAGMA foreign_keys = ON")
+                            .execute(&mut *conn)
+                            .await?;
                         // Let concurrent writers wait briefly instead of
                         // surfacing immediate "database is locked" errors.
-                        sqlx::query("PRAGMA busy_timeout = 5000").execute(&mut *conn).await?;
+                        sqlx::query("PRAGMA busy_timeout = 5000")
+                            .execute(&mut *conn)
+                            .await?;
                     }
                     Ok(())
                 })

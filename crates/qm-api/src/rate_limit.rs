@@ -66,7 +66,11 @@ pub async fn enforce(
     request: Request<axum::body::Body>,
     next: Next,
 ) -> ApiResult<Response> {
-    let key = client_key(request.headers(), &request, state.app_state.config.trust_proxy_headers);
+    let key = client_key(
+        request.headers(),
+        &request,
+        state.app_state.config.trust_proxy_headers,
+    );
     let limiter = state.app_state.rate_limiters.for_target(state.target);
     if !limiter.allow(&key).await {
         return Err(ApiError::RateLimited);
@@ -74,7 +78,11 @@ pub async fn enforce(
     Ok(next.run(request).await)
 }
 
-pub fn client_key<B>(headers: &HeaderMap, request: &Request<B>, trust_proxy_headers: bool) -> String {
+pub fn client_key<B>(
+    headers: &HeaderMap,
+    request: &Request<B>,
+    trust_proxy_headers: bool,
+) -> String {
     if trust_proxy_headers {
         if let Some(forwarded) = headers
             .get(&X_FORWARDED_FOR)
@@ -124,11 +132,13 @@ impl KeyedRateLimiter {
         let mut buckets = self.buckets.lock().await;
         buckets.retain(|_, state| now.duration_since(state.last_seen) <= self.entry_ttl);
 
-        let bucket = buckets.entry(key.to_owned()).or_insert_with(|| BucketState {
-            tokens: self.config.burst as f64,
-            last_refill: now,
-            last_seen: now,
-        });
+        let bucket = buckets
+            .entry(key.to_owned())
+            .or_insert_with(|| BucketState {
+                tokens: self.config.burst as f64,
+                last_refill: now,
+                last_seen: now,
+            });
         refill(bucket, now, self.refill_per_second, self.config.burst);
         bucket.last_seen = now;
 

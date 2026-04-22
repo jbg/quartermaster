@@ -88,8 +88,7 @@ pub async fn count(db: &Database) -> Result<i64, sqlx::Error> {
 
 fn row_to_user(row: sqlx::any::AnyRow) -> Result<UserRow, sqlx::Error> {
     let id_str: String = row.try_get("id")?;
-    let id = Uuid::parse_str(&id_str)
-        .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+    let id = Uuid::parse_str(&id_str).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
     Ok(UserRow {
         id,
         username: row.try_get("username")?,
@@ -106,7 +105,9 @@ mod tests {
     #[tokio::test]
     async fn create_and_find() {
         let db = crate::test_db().await;
-        let u = create(&db, "alice", Some("a@example.com"), "hash").await.unwrap();
+        let u = create(&db, "alice", Some("a@example.com"), "hash")
+            .await
+            .unwrap();
         assert_eq!(u.username, "alice");
 
         let by_name = find_by_username(&db, "alice").await.unwrap().unwrap();

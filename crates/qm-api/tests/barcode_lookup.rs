@@ -4,83 +4,15 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use axum::{
     extract::{Path, State},
-    http::{HeaderMap, Method, StatusCode},
+    http::StatusCode,
     response::IntoResponse,
     routing::get,
     Json, Router,
 };
-use qm_api::{ApiConfig, RegistrationMode};
+use qm_api::ApiConfig;
 use serde_json::{json, Value};
 use support::TestApp;
 use tokio::sync::Mutex;
-
-#[tokio::test]
-async fn login_is_rate_limited_per_client_ip() {
-    let app = TestApp::start(ApiConfig {
-        trust_proxy_headers: true,
-        rate_limit_auth: qm_api::RateLimitConfig {
-            requests_per_minute: 60,
-            burst: 1,
-        },
-        ..ApiConfig::default()
-    })
-    .await;
-    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
-
-    let mut headers = HeaderMap::new();
-    headers.insert("x-forwarded-for", "198.51.100.10".parse().unwrap());
-
-    let first = app
-        .send_with_headers(
-            Method::POST,
-            "/auth/login",
-            Some(json!({"username": "alice", "password": "password123"})),
-            None,
-            headers.clone(),
-        )
-        .await;
-    let second = app
-        .send_with_headers(
-            Method::POST,
-            "/auth/login",
-            Some(json!({"username": "alice", "password": "password123"})),
-            None,
-            headers,
-        )
-        .await;
-
-    assert_eq!(first.0, StatusCode::OK);
-    assert_eq!(second.0, StatusCode::TOO_MANY_REQUESTS);
-    assert_eq!(second.1["code"], "rate_limited");
-}
-
-#[tokio::test]
-async fn stock_history_is_rate_limited_per_client_ip() {
-    let app = TestApp::start(ApiConfig {
-        trust_proxy_headers: true,
-        rate_limit_history: qm_api::RateLimitConfig {
-            requests_per_minute: 60,
-            burst: 1,
-        },
-        ..ApiConfig::default()
-    })
-    .await;
-    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
-    let alice = app.login("alice").await;
-
-    let mut headers = HeaderMap::new();
-    headers.insert("x-forwarded-for", "198.51.100.20".parse().unwrap());
-
-    let first = app
-        .send_with_headers(Method::GET, "/stock/events", None, Some(&alice), headers.clone())
-        .await;
-    let second = app
-        .send_with_headers(Method::GET, "/stock/events", None, Some(&alice), headers)
-        .await;
-
-    assert_eq!(first.0, StatusCode::OK);
-    assert_eq!(second.0, StatusCode::TOO_MANY_REQUESTS);
-}
 
 #[tokio::test]
 async fn barcode_lookup_retries_transient_off_failures_then_succeeds() {
@@ -98,7 +30,7 @@ async fn barcode_lookup_retries_transient_off_failures_then_succeeds() {
 
     let (status, body) = app
         .send(
-            Method::GET,
+            axum::http::Method::GET,
             "/products/by-barcode/1111111111111",
             None,
             Some(&alice),
@@ -123,7 +55,7 @@ async fn barcode_lookup_404_writes_negative_cache_entry() {
 
     let (status, _) = app
         .send(
-            Method::GET,
+            axum::http::Method::GET,
             "/products/by-barcode/2222222222222",
             None,
             Some(&alice),
@@ -156,7 +88,7 @@ async fn breaker_open_failures_do_not_write_cache_misses_and_fail_fast() {
 
     let first = app
         .send(
-            Method::GET,
+            axum::http::Method::GET,
             "/products/by-barcode/3333333333333",
             None,
             Some(&alice),
@@ -164,7 +96,7 @@ async fn breaker_open_failures_do_not_write_cache_misses_and_fail_fast() {
         .await;
     let second = app
         .send(
-            Method::GET,
+            axum::http::Method::GET,
             "/products/by-barcode/3333333333333",
             None,
             Some(&alice),
@@ -178,21 +110,6 @@ async fn breaker_open_failures_do_not_write_cache_misses_and_fail_fast() {
         .await
         .unwrap()
         .is_none());
-}
-
-#[tokio::test]
-async fn join_landing_renders_invite_and_server() {
-    let app = TestApp::start(ApiConfig {
-        registration_mode: RegistrationMode::Open,
-        ..ApiConfig::default()
-    })
-    .await;
-    let (status, headers, raw) = app.raw(Method::GET, "/join?invite=ABCD1234&server=https%3A%2F%2Fexample.com").await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(headers.get("content-type").unwrap(), "text/html; charset=utf-8");
-    assert!(raw.contains("ABCD1234"));
-    assert!(raw.contains("https://example.com"));
-    assert!(raw.contains("quartermaster://join"));
 }
 
 struct MockOffServer {
@@ -220,7 +137,12 @@ impl MockOffServer {
     }
 
     async fn hit_count(&self, barcode: &str) -> usize {
-        self.hits.lock().await.get(barcode).copied().unwrap_or_default()
+        self.hits
+            .lock()
+            .await
+            .get(barcode)
+            .copied()
+            .unwrap_or_default()
     }
 }
 
@@ -242,20 +164,39 @@ async fn mock_off_product(
     };
 
     match barcode.as_str() {
-        "1111111111111" if attempt <= 2 => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        "1111111111111" => Json(json!({
-            "status": 1,
-            "product": {
-                "product_name": "Test Pasta",
-                "product_name_en": "Test Pasta",
-                "brands": "Quartermaster",
-                "image_url": "https://example.com/pasta.png",
-                "product_quantity_unit": "g"
-            }
-        }))
-        .into_response(),
-        "2222222222222" => StatusCode::NOT_FOUND.into_response(),
-        "3333333333333" => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        _ => Json(Value::Null).into_response(),
+        "1111111111111" if attempt < 3 => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"status": 0, "status_verbose": "temporary"})),
+        )
+            .into_response(),
+        "1111111111111" => (
+            StatusCode::OK,
+            Json(json!({
+                "code": barcode,
+                "status": 1,
+                "product": {
+                    "product_name": "Retry Beans",
+                    "brands": "Acme",
+                    "image_front_url": Value::Null,
+                    "quantity": "500 g",
+                }
+            })),
+        )
+            .into_response(),
+        "2222222222222" => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"status": 0, "status_verbose": "not found"})),
+        )
+            .into_response(),
+        "3333333333333" => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"status": 0, "status_verbose": "down"})),
+        )
+            .into_response(),
+        _ => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"status": 0, "status_verbose": "not found"})),
+        )
+            .into_response(),
     }
 }

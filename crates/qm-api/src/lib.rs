@@ -5,15 +5,15 @@ use std::{sync::Arc, time::Duration};
 use axum::{routing::get, Json, Router};
 use tower::ServiceBuilder;
 use tower_http::{
-    LatencyUnit,
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::{DefaultOnFailure, DefaultOnResponse, TraceLayer},
+    LatencyUnit,
 };
+use tracing::{field::Empty, Level};
 use utoipa::{
     openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
     Modify, OpenApi,
 };
-use tracing::{field::Empty, Level};
 
 pub mod auth;
 pub mod barcode;
