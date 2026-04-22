@@ -25,7 +25,7 @@ pub mod types;
 
 pub use error::{ApiError, ApiResult};
 use openfoodfacts::OffCircuitBreaker;
-use rate_limit::{ClientIpMode, RateLimitLayerState, RateLimitTarget};
+use rate_limit::{ClientIpMode, RateLimitLayerState, RateLimitTarget, TrustedProxyNet};
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -51,6 +51,7 @@ pub struct ApiConfig {
     pub public_base_url: Option<String>,
     /// Which client-IP source to use for rate-limit keys.
     pub rate_limit_client_ip_mode: ClientIpMode,
+    pub rate_limit_trusted_proxy_cidrs: Vec<TrustedProxyNet>,
     pub rate_limit_auth: RateLimitConfig,
     pub rate_limit_barcode: RateLimitConfig,
     pub rate_limit_history: RateLimitConfig,
@@ -59,6 +60,7 @@ pub struct ApiConfig {
     pub off_retry_base_delay: Duration,
     pub off_circuit_breaker_failure_threshold: u32,
     pub off_circuit_breaker_open_for: Duration,
+    pub auth_session_sweep_trigger_secret: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -78,6 +80,7 @@ impl Default for ApiConfig {
             off_api_base_url: "https://world.openfoodfacts.org/api/v2/product".into(),
             public_base_url: None,
             rate_limit_client_ip_mode: ClientIpMode::Socket,
+            rate_limit_trusted_proxy_cidrs: Vec::new(),
             rate_limit_auth: RateLimitConfig {
                 requests_per_minute: 10,
                 burst: 5,
@@ -95,6 +98,7 @@ impl Default for ApiConfig {
             off_retry_base_delay: Duration::from_millis(200),
             off_circuit_breaker_failure_threshold: 5,
             off_circuit_breaker_open_for: Duration::from_secs(60),
+            auth_session_sweep_trigger_secret: None,
         }
     }
 }
@@ -266,6 +270,13 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             RateLimitTarget::History,
         )))
+        .merge(
+            if state.config.auth_session_sweep_trigger_secret.is_some() {
+                routes::maintenance::router()
+            } else {
+                Router::new()
+            },
+        )
         .route(
             "/openapi.json",
             get(move || {

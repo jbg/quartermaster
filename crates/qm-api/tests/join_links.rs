@@ -2,6 +2,7 @@ mod support;
 
 use axum::http::{Method, StatusCode};
 use qm_api::{ApiConfig, RegistrationMode};
+use serde_json::Value;
 use support::TestApp;
 
 #[tokio::test]
@@ -40,6 +41,18 @@ async fn apple_app_site_association_is_served_from_well_known_path() {
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(headers.get("content-type").unwrap(), "application/json");
-    assert!(raw.contains("com.jasperhugo.quartermaster"));
-    assert!(raw.contains("/join"));
+    let body: Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(
+        body["applinks"]["details"][0]["appID"].as_str().unwrap(),
+        qm_api::routes::join::apple_app_site_association_app_id()
+    );
+    assert_eq!(
+        body["applinks"]["details"][0]["paths"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["/join", "/join*"]
+    );
 }

@@ -44,6 +44,11 @@ targets:
     buildToolPlugins:
       - plugin: OpenAPIGenerator
         package: OpenAPIGenerator
+    preBuildScripts:
+      - name: Validate Release Associated Domain
+        basedOnDependencyAnalysis: false
+        script: |
+          /bin/sh "${PROJECT_DIR}/scripts/validate-release-config.sh"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jasperhugo.quartermaster

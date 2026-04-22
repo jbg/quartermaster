@@ -1,0 +1,53 @@
+use axum::{
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    routing::post,
+    Json, Router,
+};
+use serde::Serialize;
+
+use crate::{ApiError, ApiResult, AppState};
+
+pub const MAINTENANCE_TOKEN_HEADER: &str = "x-qm-maintenance-token";
+
+#[derive(Debug, Serialize)]
+pub struct SweepAuthSessionsResponse {
+    pub deleted_sessions: u64,
+}
+
+pub fn router() -> Router<AppState> {
+    Router::new().route(
+        "/internal/maintenance/sweep-auth-sessions",
+        post(sweep_auth_sessions),
+    )
+}
+
+async fn sweep_auth_sessions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> ApiResult<(StatusCode, Json<SweepAuthSessionsResponse>)> {
+    let provided = headers
+        .get(MAINTENANCE_TOKEN_HEADER)
+        .and_then(|value| value.to_str().ok());
+    let expected = state
+        .config
+        .auth_session_sweep_trigger_secret
+        .as_deref()
+        .ok_or(ApiError::NotFound)?;
+
+    if provided != Some(expected) {
+        return Err(ApiError::Unauthorized);
+    }
+
+    let deleted_sessions = qm_db::auth_sessions::delete_stale_sessions(
+        &state.db,
+        &qm_db::now_utc_rfc3339(),
+        qm_db::auth_sessions::STALE_SESSION_SWEEP_BATCH_SIZE,
+    )
+    .await?;
+
+    Ok((
+        StatusCode::OK,
+        Json(SweepAuthSessionsResponse { deleted_sessions }),
+    ))
+}

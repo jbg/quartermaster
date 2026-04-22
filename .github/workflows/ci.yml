@@ -90,6 +90,9 @@ jobs:
       - name: Check OpenAPI drift
         run: git diff --exit-code -- openapi.json ios/Quartermaster/openapi.json
 
+      - name: Verify release config
+        run: cargo xtask verify-release-config
+
       - name: Seed ledger fixture
         env:
           QM_DATABASE_URL: sqlite://${{ github.workspace }}/ledger-fixture.db?mode=rwc
@@ -110,8 +113,10 @@ jobs:
           xcodebuild
           -project ios/Quartermaster.xcodeproj
           -scheme Quartermaster
+          -configuration Release
           -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2'
           -skipPackagePluginValidation
+          QUARTERMASTER_ASSOCIATED_DOMAIN=ci.quartermaster.example.com
           build
 
   docker-build:

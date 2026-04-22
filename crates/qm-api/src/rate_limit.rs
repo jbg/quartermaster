@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
     str::FromStr,
     sync::Arc,
     time::{Duration, Instant},
@@ -43,6 +44,68 @@ impl FromStr for ClientIpMode {
             other => Err(format!("unknown rate_limit_client_ip_mode: {other}")),
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TrustedProxyNet {
+    V4 { network: u32, prefix: u8 },
+    V6 { network: u128, prefix: u8 },
+}
+
+impl TrustedProxyNet {
+    pub fn contains(&self, ip: IpAddr) -> bool {
+        match (self, ip) {
+            (Self::V4 { network, prefix }, IpAddr::V4(ip)) => masked_v4(ip, *prefix) == *network,
+            (Self::V6 { network, prefix }, IpAddr::V6(ip)) => masked_v6(ip, *prefix) == *network,
+            _ => false,
+        }
+    }
+}
+
+impl FromStr for TrustedProxyNet {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let (ip, prefix) = value
+            .split_once('/')
+            .ok_or_else(|| format!("trusted proxy CIDR must include prefix length: {value}"))?;
+        let ip = ip
+            .parse::<IpAddr>()
+            .map_err(|_| format!("invalid trusted proxy address: {value}"))?;
+        let prefix = prefix
+            .parse::<u8>()
+            .map_err(|_| format!("invalid trusted proxy prefix length: {value}"))?;
+
+        match ip {
+            IpAddr::V4(ip) => {
+                if prefix > 32 {
+                    return Err(format!("IPv4 trusted proxy prefix must be <= 32: {value}"));
+                }
+                Ok(Self::V4 {
+                    network: masked_v4(ip, prefix),
+                    prefix,
+                })
+            }
+            IpAddr::V6(ip) => {
+                if prefix > 128 {
+                    return Err(format!("IPv6 trusted proxy prefix must be <= 128: {value}"));
+                }
+                Ok(Self::V6 {
+                    network: masked_v6(ip, prefix),
+                    prefix,
+                })
+            }
+        }
+    }
+}
+
+pub fn parse_trusted_proxy_cidrs(value: &str) -> Result<Vec<TrustedProxyNet>, String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .map(TrustedProxyNet::from_str)
+        .collect()
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -98,6 +161,7 @@ pub async fn enforce(
         request.headers(),
         &request,
         state.app_state.config.rate_limit_client_ip_mode,
+        &state.app_state.config.rate_limit_trusted_proxy_cidrs,
     );
     let limiter = state.app_state.rate_limiters.for_target(state.target);
     if !limiter.allow(&key).await {
@@ -110,8 +174,18 @@ pub fn client_key<B>(
     headers: &HeaderMap,
     request: &Request<B>,
     client_ip_mode: ClientIpMode,
+    trusted_proxy_cidrs: &[TrustedProxyNet],
 ) -> String {
-    if client_ip_mode == ClientIpMode::XForwardedFor {
+    let socket_ip = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|info| info.0.ip());
+
+    if client_ip_mode == ClientIpMode::XForwardedFor
+        && socket_ip
+            .as_ref()
+            .is_some_and(|ip| trusted_proxy_cidrs.iter().any(|cidr| cidr.contains(*ip)))
+    {
         if let Some(forwarded) = headers
             .get(&X_FORWARDED_FOR)
             .and_then(|value| value.to_str().ok())
@@ -121,10 +195,8 @@ pub fn client_key<B>(
         }
     }
 
-    request
-        .extensions()
-        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
-        .map(|info| info.0.ip().to_string())
+    socket_ip
+        .map(|ip| ip.to_string())
         .unwrap_or_else(|| "127.0.0.1".to_owned())
 }
 
@@ -196,6 +268,26 @@ fn refill(bucket: &mut BucketState, now: Instant, refill_per_second: f64, burst:
     bucket.last_refill = now;
 }
 
+fn masked_v4(ip: Ipv4Addr, prefix: u8) -> u32 {
+    let raw = u32::from(ip);
+    let mask = if prefix == 0 {
+        0
+    } else {
+        u32::MAX << (32 - prefix)
+    };
+    raw & mask
+}
+
+fn masked_v6(ip: Ipv6Addr, prefix: u8) -> u128 {
+    let raw = u128::from(ip);
+    let mask = if prefix == 0 {
+        0
+    } else {
+        u128::MAX << (128 - prefix)
+    };
+    raw & mask
+}
+
 #[cfg(test)]
 mod tests {
     use axum::http::Request;
@@ -208,18 +300,27 @@ mod tests {
         request.extensions_mut().insert(axum::extract::ConnectInfo(
             "10.0.0.2:1234".parse::<std::net::SocketAddr>().unwrap(),
         ));
-        let key = client_key(request.headers(), &request, ClientIpMode::Socket);
+        let key = client_key(request.headers(), &request, ClientIpMode::Socket, &[]);
         assert_eq!(key, "10.0.0.2");
     }
 
     #[test]
     fn trusts_leftmost_forwarded_for_when_enabled() {
-        let request = Request::builder()
+        let mut request = Request::builder()
             .uri("/")
             .header("x-forwarded-for", "198.51.100.7, 10.0.0.2")
             .body(())
             .unwrap();
-        let key = client_key(request.headers(), &request, ClientIpMode::XForwardedFor);
+        request.extensions_mut().insert(axum::extract::ConnectInfo(
+            "10.0.0.2:1234".parse::<std::net::SocketAddr>().unwrap(),
+        ));
+        let trusted = [TrustedProxyNet::from_str("10.0.0.0/8").unwrap()];
+        let key = client_key(
+            request.headers(),
+            &request,
+            ClientIpMode::XForwardedFor,
+            &trusted,
+        );
         assert_eq!(key, "198.51.100.7");
     }
 
@@ -229,7 +330,13 @@ mod tests {
         request.extensions_mut().insert(axum::extract::ConnectInfo(
             "10.0.0.3:1234".parse::<std::net::SocketAddr>().unwrap(),
         ));
-        let key = client_key(request.headers(), &request, ClientIpMode::XForwardedFor);
+        let trusted = [TrustedProxyNet::from_str("10.0.0.0/8").unwrap()];
+        let key = client_key(
+            request.headers(),
+            &request,
+            ClientIpMode::XForwardedFor,
+            &trusted,
+        );
         assert_eq!(key, "10.0.0.3");
     }
 
@@ -243,7 +350,33 @@ mod tests {
         request.extensions_mut().insert(axum::extract::ConnectInfo(
             "10.0.0.4:1234".parse::<std::net::SocketAddr>().unwrap(),
         ));
-        let key = client_key(request.headers(), &request, ClientIpMode::XForwardedFor);
+        let trusted = [TrustedProxyNet::from_str("10.0.0.0/8").unwrap()];
+        let key = client_key(
+            request.headers(),
+            &request,
+            ClientIpMode::XForwardedFor,
+            &trusted,
+        );
+        assert_eq!(key, "10.0.0.4");
+    }
+
+    #[test]
+    fn ignores_forwarded_header_from_untrusted_proxy() {
+        let mut request = Request::builder()
+            .uri("/")
+            .header("x-forwarded-for", "198.51.100.7")
+            .body(())
+            .unwrap();
+        request.extensions_mut().insert(axum::extract::ConnectInfo(
+            "10.0.0.4:1234".parse::<std::net::SocketAddr>().unwrap(),
+        ));
+        let trusted = [TrustedProxyNet::from_str("127.0.0.0/8").unwrap()];
+        let key = client_key(
+            request.headers(),
+            &request,
+            ClientIpMode::XForwardedFor,
+            &trusted,
+        );
         assert_eq!(key, "10.0.0.4");
     }
 

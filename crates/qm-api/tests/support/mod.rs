@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, str::FromStr, sync::Arc};
 
 use axum::{
     body::{to_bytes, Body},
@@ -58,7 +58,15 @@ impl TestApp {
         extra_headers: HeaderMap,
     ) -> (StatusCode, Value) {
         let (status, _, json) = self
-            .send_with_request_id_and_headers(method, path, body, bearer, None, extra_headers)
+            .send_with_peer_and_request_id_and_headers(
+                method,
+                path,
+                body,
+                bearer,
+                None,
+                extra_headers,
+                SocketAddr::from_str("127.0.0.1:3000").unwrap(),
+            )
             .await;
         (status, json)
     }
@@ -92,6 +100,29 @@ impl TestApp {
         request_id: Option<&str>,
         extra_headers: HeaderMap,
     ) -> (StatusCode, HeaderMap, Value) {
+        self.send_with_peer_and_request_id_and_headers(
+            method,
+            path,
+            body,
+            bearer,
+            request_id,
+            extra_headers,
+            SocketAddr::from_str("127.0.0.1:3000").unwrap(),
+        )
+        .await
+    }
+
+    #[allow(dead_code)]
+    pub async fn send_with_peer_and_request_id_and_headers(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+        bearer: Option<&str>,
+        request_id: Option<&str>,
+        extra_headers: HeaderMap,
+        peer_addr: SocketAddr,
+    ) -> (StatusCode, HeaderMap, Value) {
         let mut req = Request::builder()
             .method(method)
             .uri(path)
@@ -109,6 +140,8 @@ impl TestApp {
             })
             .unwrap();
         req.headers_mut().extend(extra_headers);
+        req.extensions_mut()
+            .insert(axum::extract::ConnectInfo(peer_addr));
         let res = self.app.clone().oneshot(req).await.unwrap();
         let headers = res.headers().clone();
         let status = res.status();
@@ -123,11 +156,14 @@ impl TestApp {
 
     #[allow(dead_code)]
     pub async fn raw(&self, method: Method, path: &str) -> (StatusCode, HeaderMap, String) {
-        let req = Request::builder()
+        let mut req = Request::builder()
             .method(method)
             .uri(path)
             .body(Body::empty())
             .unwrap();
+        req.extensions_mut().insert(axum::extract::ConnectInfo(
+            SocketAddr::from_str("127.0.0.1:3000").unwrap(),
+        ));
         let res = self.app.clone().oneshot(req).await.unwrap();
         let headers = res.headers().clone();
         let status = res.status();

@@ -49,7 +49,7 @@ The server listens on `0.0.0.0:8080` and creates `data.db` in the working direct
 | `QM_DATABASE_URL`       | `sqlite://data.db?mode=rwc` | SQLx connection string (SQLite or Postgres)  |
 | `QM_LOG_FORMAT`         | `text`                      | Log formatter: `text` or `json`              |
 | `QM_REGISTRATION_MODE`  | `first_run_only`            | `first_run_only` \| `invite_only` \| `open`  |
-| `QM_PUBLIC_BASE_URL`    | unset                       | Public URL used in invite/share links        |
+| `QM_PUBLIC_BASE_URL`    | unset                       | Public HTTPS origin used in invite/share links |
 | `RUST_LOG`              | `info`                      | Tracing filter                               |
 
 Then probe it:
@@ -68,6 +68,7 @@ Quartermaster also supports a few self-hosting hardening knobs:
 | Variable                                   | Default                                           | Meaning |
 |--------------------------------------------|---------------------------------------------------|---------|
 | `QM_RATE_LIMIT_CLIENT_IP_MODE`            | `socket`                                          | `socket` for direct client IPs, or `x-forwarded-for` when a trusted reverse proxy rewrites that header |
+| `QM_RATE_LIMIT_TRUSTED_PROXY_CIDRS`       | unset                                             | Comma-separated CIDRs whose socket IPs are allowed to supply `X-Forwarded-For` |
 | `QM_RATE_LIMIT_AUTH_PER_MINUTE`            | `10`                                              | Per-client auth request refill rate |
 | `QM_RATE_LIMIT_AUTH_BURST`                 | `5`                                               | Per-client auth burst bucket size |
 | `QM_RATE_LIMIT_BARCODE_PER_MINUTE`         | `60`                                              | Per-client barcode lookup refill rate |
@@ -81,12 +82,20 @@ Quartermaster also supports a few self-hosting hardening knobs:
 | `QM_OFF_RETRY_BASE_DELAY_MS`               | `200`                                             | Base backoff delay for OFF retries |
 | `QM_OFF_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `5`                                               | Consecutive transient OFF failures before opening the breaker |
 | `QM_OFF_CIRCUIT_BREAKER_OPEN_SECONDS`      | `60`                                              | How long OFF stays fail-fast once the breaker opens |
+| `QM_AUTH_SESSION_SWEEP_INTERVAL_SECONDS`   | `0`                                               | Periodic stale-session sweep interval in seconds; `0` disables the in-process timer |
+| `QM_AUTH_SESSION_SWEEP_TRIGGER_SECRET`     | unset                                             | Enables `POST /internal/maintenance/sweep-auth-sessions` when set; callers must supply the shared secret in `X-QM-Maintenance-Token` |
 
-Keep `QM_RATE_LIMIT_CLIENT_IP_MODE=socket` for direct deployments or simple local setups. Switch to `x-forwarded-for` only when Quartermaster sits behind a trusted reverse proxy that overwrites `X-Forwarded-For`; otherwise a client could spoof its own rate-limit identity.
+When `QM_PUBLIC_BASE_URL` is set, Quartermaster validates it strictly at startup: it must be an `https://` origin with no path, query, or fragment. The server normalizes a trailing slash away before exposing it to clients.
+
+Keep `QM_RATE_LIMIT_CLIENT_IP_MODE=socket` for direct deployments or simple local setups. Switch to `x-forwarded-for` only when Quartermaster sits behind a trusted reverse proxy that overwrites `X-Forwarded-For`, and set `QM_RATE_LIMIT_TRUSTED_PROXY_CIDRS` to the proxy subnet(s). Quartermaster ignores `X-Forwarded-For` unless the connecting peer IP matches one of those trusted CIDRs.
+
+Stale `auth_session` rows are still cleaned up opportunistically during auth flows. For long-lived deployments you can also opt into a periodic in-process sweep with `QM_AUTH_SESSION_SWEEP_INTERVAL_SECONDS`, or keep the timer disabled and trigger `POST /internal/maintenance/sweep-auth-sessions` from external automation. That maintenance route is intentionally not part of the public OpenAPI surface.
 
 ## Tests
 
 `cargo test --workspace` is the default fast verification pass.
+
+`cargo xtask verify-release-config` checks that the backend's Apple App Site Association payload matches the checked-in iOS team ID and bundle identifier.
 
 Postgres coverage uses the shared test harness in `qm-db::test_support`:
 
@@ -147,13 +156,23 @@ Invite-backed registration and `POST /invites/redeem` are transactional: creatin
 
 HTTPS invite links are built from `QM_PUBLIC_BASE_URL` when it is set. For direct app-opening on iOS, that public HTTPS origin must also serve `/.well-known/apple-app-site-association`, and the app build must include a matching `applinks:` associated domain. Quartermaster keeps `/join` as the browser fallback so shared links still work when the app is not installed.
 
+Release builds of the iOS app fail if `QUARTERMASTER_ASSOCIATED_DOMAIN` is still the placeholder `quartermaster.example.com` or is not a bare hostname. Local development can keep using the custom `quartermaster://` scheme without setting `QM_PUBLIC_BASE_URL`.
+
 ## Contributing
 
 The v1 scope is intentionally narrow — see the status section. Please open an issue to discuss feature ideas before writing code.
 
 ## Open Food Facts & ODbL
 
-Barcode lookups hit the [Open Food Facts](https://world.openfoodfacts.org) public API, and the server caches the result locally in `barcode_cache`. Open Food Facts data is licensed under the [Open Database Licence (ODbL) v1.0](https://opendatacommons.org/licenses/odbl/1-0/). That has implications for anyone *redistributing* a Quartermaster instance's database (self-hosters who only use it privately are fine). A more thorough audit is tracked in [TODO.md](TODO.md) under cross-cutting work.
+Barcode lookups hit the [Open Food Facts](https://world.openfoodfacts.org) public API, and the server caches the result locally in `barcode_cache`. That table stores the looked-up barcode, the linked Quartermaster product ID when one exists, the raw OFF JSON payload for successful lookups, the fetch timestamp, and a miss flag for negative cache entries.
+
+Open Food Facts data is licensed under the [Open Database Licence (ODbL) v1.0](https://opendatacommons.org/licenses/odbl/1-0/). For most private self-hosting, that is low risk: if you are only using Quartermaster for your own household and not redistributing the database or derived exports, the usual ODbL sharing triggers are unlikely to apply.
+
+The obligations matter more if you redistribute a Quartermaster database, publish hosted exports built from cached OFF data, or ship backups/dumps outside your private household use. In those cases, review OFF attribution and ODbL share-alike requirements before distributing the data. Quartermaster does not currently automate that compliance work for operators.
+
+## Self-Hosting Note
+
+If you plan to publish database snapshots, host a shared/public Quartermaster service, or export cached barcode data outside your private deployment, review the Open Food Facts / ODbL obligations first. The cached OFF payloads live in your application database, so backup and export workflows can become the point where redistribution rules matter.
 
 ## License
 

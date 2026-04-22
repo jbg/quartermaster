@@ -12,6 +12,9 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::AppState;
 
+pub const IOS_TEAM_ID: &str = "42J2SSX5SM";
+pub const IOS_BUNDLE_ID: &str = "com.jasperhugo.quartermaster";
+
 pub fn router() -> Router<AppState> {
     Router::new().route("/join", get(join_landing)).route(
         "/.well-known/apple-app-site-association",
@@ -107,22 +110,30 @@ pub async fn join_landing(Query(q): Query<JoinQuery>) -> impl IntoResponse {
 }
 
 pub async fn apple_app_site_association() -> impl IntoResponse {
-    let body = json!({
-        "applinks": {
-            "apps": [],
-            "details": [
-                {
-                    "appID": "42J2SSX5SM.com.jasperhugo.quartermaster",
-                    "paths": ["/join", "/join*"]
-                }
-            ]
-        }
-    });
+    let body = apple_app_site_association_body();
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/json")],
         body.to_string(),
     )
+}
+
+pub fn apple_app_site_association_app_id() -> String {
+    format!("{IOS_TEAM_ID}.{IOS_BUNDLE_ID}")
+}
+
+pub fn apple_app_site_association_body() -> serde_json::Value {
+    json!({
+        "applinks": {
+            "apps": [],
+            "details": [
+                {
+                    "appID": apple_app_site_association_app_id(),
+                    "paths": ["/join", "/join*"]
+                }
+            ]
+        }
+    })
 }
 
 fn html_escape(raw: &str) -> String {

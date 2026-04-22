@@ -9,6 +9,7 @@ fn main() -> ExitCode {
     let cmd = env::args().nth(1).unwrap_or_default();
     let result = match cmd.as_str() {
         "export-openapi" => export_openapi(),
+        "verify-release-config" => verify_release_config(),
         "verify-stock-ledger" => tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -52,6 +53,28 @@ fn export_openapi() -> anyhow::Result<()> {
         std::fs::write(&out, &json).with_context(|| format!("writing {}", out.display()))?;
         println!("wrote {}", out.display());
     }
+    Ok(())
+}
+
+fn verify_release_config() -> anyhow::Result<()> {
+    let root = repo_root()?;
+    let project_yml =
+        std::fs::read_to_string(root.join("ios/project.yml")).context("reading ios/project.yml")?;
+    let development_team = read_project_setting(&project_yml, "DEVELOPMENT_TEAM")
+        .context("reading DEVELOPMENT_TEAM from ios/project.yml")?;
+    let product_bundle_identifier = read_project_setting(&project_yml, "PRODUCT_BUNDLE_IDENTIFIER")
+        .context("reading PRODUCT_BUNDLE_IDENTIFIER from ios/project.yml")?;
+
+    let expected_app_id = format!("{development_team}.{product_bundle_identifier}");
+    let actual_app_id = qm_api::routes::join::apple_app_site_association_app_id();
+
+    if expected_app_id != actual_app_id {
+        bail!(
+            "AASA app ID drift: backend serves {actual_app_id}, but ios/project.yml implies {expected_app_id}"
+        );
+    }
+
+    println!("verified release config: {actual_app_id}");
     Ok(())
 }
 
@@ -200,11 +223,50 @@ fn repo_root() -> anyhow::Result<PathBuf> {
         .context("locating repo root")
 }
 
+fn read_project_setting(contents: &str, key: &str) -> anyhow::Result<String> {
+    let prefix = format!("{key}:");
+    let value = contents
+        .lines()
+        .map(str::trim)
+        .find_map(|line| line.strip_prefix(&prefix).map(str::trim))
+        .context(format!("missing {key}"))?;
+
+    Ok(value.trim_matches('"').to_owned())
+}
+
 fn print_help() {
     println!("usage: cargo xtask <subcommand>");
     println!();
     println!("subcommands:");
     println!("  export-openapi          write openapi.json to the repo root");
     println!("  seed-ledger-fixture     seed a small DB fixture for ledger verification");
+    println!("  verify-release-config   assert backend AASA app ID matches ios/project.yml");
     println!("  verify-stock-ledger     assert cached quantities match the event log");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_project_settings_from_project_yml() {
+        let contents = r#"
+settings:
+  base:
+    DEVELOPMENT_TEAM: "42J2SSX5SM"
+targets:
+  Quartermaster:
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jasperhugo.quartermaster
+"#;
+        assert_eq!(
+            read_project_setting(contents, "DEVELOPMENT_TEAM").unwrap(),
+            "42J2SSX5SM"
+        );
+        assert_eq!(
+            read_project_setting(contents, "PRODUCT_BUNDLE_IDENTIFIER").unwrap(),
+            "com.jasperhugo.quartermaster"
+        );
+    }
 }

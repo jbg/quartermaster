@@ -13,6 +13,7 @@ These are enforced in code, but the *why* lives here. Respect them.
 - **TEXT-backed enums at the DB boundary, typed enums at the API boundary.** `product.source`, `product.family`, `stock_event.event_type` are `TEXT` columns (for `sqlx::Any` portability and easy migrations). DTOs convert to typed Rust enums (`ProductSource`, `UnitFamily`, `StockEventType`) at the edge so the OpenAPI spec — and the generated iOS client — gets real enums. Keep this split: don't push enum types into the DB layer.
 - **Multiple memberships are allowed; one household is still "current".** Authenticated requests resolve the active household as the membership with the latest `joined_at`; ties break on `household.id DESC` so both SQLite and Postgres choose the same row. `GET /auth/me` and the auth extractor intentionally share this rule.
 - **Invite joins are transactional and duplicate-safe.** Invite-backed registration and invite redemption must create membership/user rows and consume the invite in one transaction. Re-redeeming into a household the user already belongs to is an idempotent no-op and must not burn another invite use.
+- **Operator-only maintenance hooks stay off the public API contract.** Internal endpoints such as `POST /internal/maintenance/sweep-auth-sessions` are deployment plumbing, not app surface. Keep them out of the OpenAPI document and generated mobile clients unless we intentionally promote them into supported product API.
 
 ## Workflow
 
@@ -21,6 +22,11 @@ These are enforced in code, but the *why* lives here. Respect them.
   cargo xtask export-openapi
   ```
   Writes two copies: `openapi.json` (repo-root canonical) and `ios/Quartermaster/openapi.json` (what the Xcode build-tool plugin reads). Commit both.
+- **Re-verify release config after touching universal-link identity wiring.**
+  ```sh
+  cargo xtask verify-release-config
+  ```
+  Use this after editing the AASA payload, iOS team/bundle identifiers, or `ios/project.yml` settings that affect app-site association identity.
 - **iOS types + `Client` are generated** from that second copy by [swift-openapi-generator](https://github.com/apple/swift-openapi-generator). Don't hand-edit `Components.Schemas.*`; don't add DTO structs to a Swift file. Extensions on generated types live in `ios/Quartermaster/Core/Networking/APIAliases.swift`; the two tri-state PATCH bodies that the generator can't express natively live in `APIOverrides.swift`.
 - **After regenerating the spec, rebuild iOS** — the plugin runs during `xcodebuild` / Xcode builds, so changes flow through automatically. First build after a package change may need `-skipPackagePluginValidation`.
 - **`TODO.md` is gitignored by design.** Treat it as a personal scratchpad for the current working session. Don't refer to it from tracked code or docs.
@@ -31,6 +37,7 @@ These are enforced in code, but the *why* lives here. Respect them.
 - **Rust:** `cargo test --workspace` — fast. Exercises the router, repo layer, unit conversions, and OpenFoodFacts parsing.
 - **`qm-api` integration tests are behavior-grouped.** Keep files in `crates/qm-api/tests/` named for the surface they cover (`invites.rs`, `households.rs`, `stock_lifecycle.rs`, …), not for implementation phases or generic "slice" buckets.
 - **Stock-ledger integrity:** `cargo xtask verify-stock-ledger` checks that every `stock_batch.quantity` equals `SUM(stock_event.quantity_delta)` for that batch. Useful after any change in `qm-db/src/stock.rs`.
+- **Release-config integrity:** `cargo xtask verify-release-config` checks that the backend AASA `appID` matches the checked-in iOS team + bundle identifier. Useful after any universal-link or signing-identity change.
 - **iOS build:** `xcodebuild -project ios/Quartermaster.xcodeproj -scheme Quartermaster -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' -skipPackagePluginValidation build`. A warning about `try` on `ok.body.json` accessors is compiler flow analysis noticing the single-case enum never throws — harmless, generator-side.
 - **End-to-end smoke test:** start `cargo run -p qm-server`, register + login via `curl`, verify `GET /auth/me` returns `household_id` + `household_name`. The iOS app against the running backend is the real integration test.
 

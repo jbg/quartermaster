@@ -19,6 +19,7 @@ The checked-in CI build uses:
 
 - simulator destination `platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2`
 - `-skipPackagePluginValidation` because `swift-openapi-generator` runs as an Xcode build-tool plugin during the build
+- Release configuration with `QUARTERMASTER_ASSOCIATED_DOMAIN` overridden to a non-placeholder hostname so the release validation script exercises the real contract
 
 If GitHub-hosted macOS images drift and that simulator runtime disappears, update the workflow and this note together.
 
@@ -44,6 +45,8 @@ Quartermaster keeps the custom `quartermaster://` scheme as a fallback, but iOS 
 2. Serve the backend route at `/.well-known/apple-app-site-association` from that same origin.
 3. Change `QUARTERMASTER_ASSOCIATED_DOMAIN` in `project.yml` from the placeholder `quartermaster.example.com` to that public host, then run `xcodegen generate`.
 4. Build/install the app again so the entitlement matches the deployed host.
+
+Release builds fail if `QUARTERMASTER_ASSOCIATED_DOMAIN` is still the placeholder host or is not a bare hostname. That guard is intentionally skipped for Debug builds so local development can keep using the custom scheme without a public HTTPS domain.
 
 Do not point the associated-domain entitlement at `localhost`; keep local development on the custom scheme and use a real HTTPS host for universal links.
 
