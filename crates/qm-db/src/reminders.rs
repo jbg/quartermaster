@@ -1131,6 +1131,95 @@ mod tests {
         assert_eq!(household_fire_local_at, "2026-04-23T09:00:00+02:00");
     }
 
+    #[test]
+    fn build_expiry_reminder_uses_household_timezone_for_fire_at() {
+        let now: Timestamp = "2026-01-01T00:00:00.000Z".parse().unwrap();
+        let policy = ExpiryReminderPolicy {
+            enabled: true,
+            lead_days: 1,
+            fire_hour: 9,
+            fire_minute: 0,
+        };
+
+        let kiritimati = build_expiry_reminder(
+            "2026-01-03",
+            "Pacific/Kiritimati",
+            "Milk",
+            "Pantry",
+            &policy,
+            now,
+        )
+        .unwrap()
+        .unwrap();
+        let los_angeles = build_expiry_reminder(
+            "2026-01-03",
+            "America/Los_Angeles",
+            "Milk",
+            "Pantry",
+            &policy,
+            now,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(kiritimati.0, "2026-01-01T19:00:00.000Z");
+        assert_eq!(kiritimati.3, "Pacific/Kiritimati");
+        assert_eq!(kiritimati.4, "2026-01-02T09:00:00+14:00");
+        assert_eq!(los_angeles.0, "2026-01-02T17:00:00.000Z");
+        assert_eq!(los_angeles.3, "America/Los_Angeles");
+        assert_eq!(los_angeles.4, "2026-01-02T09:00:00-08:00");
+    }
+
+    #[test]
+    fn build_expiry_reminder_respects_spring_forward_transition() {
+        let now: Timestamp = "2026-03-01T00:00:00.000Z".parse().unwrap();
+        let policy = ExpiryReminderPolicy {
+            enabled: true,
+            lead_days: 1,
+            fire_hour: 9,
+            fire_minute: 0,
+        };
+
+        let reminder = build_expiry_reminder(
+            "2026-03-10",
+            "America/New_York",
+            "Milk",
+            "Fridge",
+            &policy,
+            now,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(reminder.0, "2026-03-09T13:00:00.000Z");
+        assert_eq!(reminder.4, "2026-03-09T09:00:00-04:00");
+    }
+
+    #[test]
+    fn build_expiry_reminder_respects_fall_back_transition() {
+        let now: Timestamp = "2026-10-01T00:00:00.000Z".parse().unwrap();
+        let policy = ExpiryReminderPolicy {
+            enabled: true,
+            lead_days: 1,
+            fire_hour: 9,
+            fire_minute: 0,
+        };
+
+        let reminder = build_expiry_reminder(
+            "2026-11-02",
+            "America/New_York",
+            "Milk",
+            "Fridge",
+            &policy,
+            now,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(reminder.0, "2026-11-01T14:00:00.000Z");
+        assert_eq!(reminder.4, "2026-11-01T09:00:00-05:00");
+    }
+
     #[tokio::test]
     async fn stock_create_creates_pending_reminder() {
         let (db, household_id, user_id, pantry, product_id) = setup().await;

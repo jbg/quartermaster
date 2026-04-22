@@ -213,6 +213,7 @@ struct BatchDetailView: View {
         defer { isActing = false }
         do {
             _ = try await appState.api.restoreStock(id: batch.id)
+            await appState.refreshRemindersAfterInventoryMutation()
             // `load()` now refreshes both the batch state and the events
             // list, so the mini-history picks up the new `restore` row
             // automatically — no reload token needed.

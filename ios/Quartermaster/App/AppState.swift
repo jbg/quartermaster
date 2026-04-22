@@ -6,6 +6,12 @@ import UserNotifications
 @Observable
 @MainActor
 final class AppState {
+    enum ReminderSyncMode: Equatable {
+        case initialLoad
+        case userInitiated
+        case silent
+    }
+
     enum HouseholdScopedForbiddenResolution: Equatable {
         case retry
         case fallbackToNoHousehold
@@ -25,6 +31,8 @@ final class AppState {
     var units: [Unit] = []
     var reminders: [Reminder] = []
     var activeReminder: Reminder?
+    var isLoadingReminders = false
+    var reminderInboxError: String?
     /// Deep-link target set by history → "Open in Inventory". MainTabView
     /// observes this to switch tabs; InventoryView observes it to present
     /// the batches sheet for the named product+location, then clears it.
@@ -34,9 +42,11 @@ final class AppState {
     private let tokenStore = TokenStore()
     private(set) var api: APIClient
     private var queuedReminders: [Reminder] = []
+    private var reminderActionInFlightIDs = Set<String>()
     private var pushToken: String?
     private var pushAuthorization: PushAuthorizationStatus = .notDetermined
     private var isSyncingReminders = false
+    private var hasLoadedReminderInbox = false
 
     init() {
         self.api = APIClient(baseURL: ServerConfig.defaultURL, tokenStore: tokenStore)
@@ -75,7 +85,7 @@ final class AppState {
             await refreshNotificationAuthorization()
             await requestNotificationAuthorizationIfNeeded()
             await registerCurrentDevice()
-            await syncDueReminders()
+            await syncDueReminders(mode: .initialLoad)
         }
         lastError = nil
     }
@@ -118,9 +128,7 @@ final class AppState {
         _ = try? await api.logout()
         await tokenStore.clear()
         units = []
-        reminders = []
-        queuedReminders = []
-        activeReminder = nil
+        clearReminderState(clearLoadingState: true)
         phase = .unauthenticated
     }
 
@@ -199,23 +207,53 @@ final class AppState {
         return householdTimeZoneID != deviceTimeZone.identifier
     }
 
-    func syncDueReminders(limit: Int = 20) async {
+    func loadReminderInbox(limit: Int = 50) async {
+        await syncDueReminders(limit: limit, mode: .initialLoad)
+    }
+
+    func refreshRemindersAfterUserAction(limit: Int = 50) async {
+        await syncDueReminders(limit: limit, mode: .userInitiated)
+    }
+
+    func refreshRemindersSilently(limit: Int = 20) async {
+        await syncDueReminders(limit: limit, mode: .silent)
+    }
+
+    func refreshRemindersAfterInventoryMutation(limit: Int = 50) async {
+        await syncDueReminders(limit: limit, mode: .silent)
+    }
+
+    func syncDueReminders(limit: Int = 20, mode: ReminderSyncMode = .silent) async {
         guard !isSyncingReminders else { return }
         guard let me, me.householdId != nil else {
-            reminders = []
-            queuedReminders = []
-            activeReminder = nil
+            clearReminderState(clearLoadingState: true)
             return
         }
 
+        if mode != .silent && !hasLoadedReminderInbox {
+            isLoadingReminders = true
+            reminderInboxError = nil
+        }
+
         isSyncingReminders = true
-        defer { isSyncingReminders = false }
+        defer {
+            isSyncingReminders = false
+            if mode != .silent {
+                isLoadingReminders = false
+            }
+        }
 
         do {
             let response = try await api.listReminders(limit: limit)
-            reminders = response.items
+            hasLoadedReminderInbox = true
+            reminderInboxError = nil
+            applyReminderSnapshot(response.items)
             let existingIDs = Set(queuedReminders.map(\.id) + (activeReminder.map { [$0.id] } ?? []))
-            for reminder in response.items where reminder.presentedOnDeviceAt == nil && !existingIDs.contains(reminder.id) {
+            for reminder in response.items
+            where reminder.presentedOnDeviceAt == nil
+                && !existingIDs.contains(reminder.id)
+                && !reminderActionInFlightIDs.contains(reminder.id)
+            {
                 try? await api.presentReminder(id: reminder.id)
                 queuedReminders.append(reminder)
             }
@@ -224,13 +262,33 @@ final class AppState {
             if case .unauthorized = apiError {
                 await tokenStore.clear()
                 units = []
-                reminders = []
-                queuedReminders = []
-                activeReminder = nil
+                clearReminderState(clearLoadingState: true)
                 phase = .unauthenticated
+                return
+            }
+            if case .server(status: 403, _) = apiError {
+                switch await resolveHouseholdScopedForbidden() {
+                case .retry:
+                    await syncDueReminders(
+                        limit: limit,
+                        mode: mode == .silent ? .silent : .userInitiated
+                    )
+                case .fallbackToNoHousehold:
+                    clearReminderState(clearLoadingState: true)
+                case .failed(let message):
+                    if mode != .silent {
+                        reminderInboxError = message
+                    }
+                }
+                return
+            }
+            if mode != .silent {
+                reminderInboxError = apiError.userFacingMessage
             }
         } catch {
-            // Reminder polling is best-effort; ignore transient failures.
+            if mode != .silent {
+                reminderInboxError = error.localizedDescription
+            }
         }
     }
 
@@ -240,17 +298,50 @@ final class AppState {
     }
 
     func acknowledgeReminder(id: String) async {
+        guard !reminderActionInFlightIDs.contains(id) else { return }
+        let previousReminders = reminders
+        let previousQueued = queuedReminders
+        let previousActive = activeReminder
+        reminderActionInFlightIDs.insert(id)
+        reminders.removeAll { $0.id == id }
+        queuedReminders.removeAll { $0.id == id }
+        if activeReminder?.id == id {
+            activeReminder = nil
+        }
+        presentNextReminderIfNeeded()
+        defer { reminderActionInFlightIDs.remove(id) }
         do {
             try await api.ackReminder(id: id)
-            reminders.removeAll { $0.id == id }
-            queuedReminders.removeAll { $0.id == id }
-            if activeReminder?.id == id {
-                activeReminder = nil
-                presentNextReminderIfNeeded()
-            }
+            await refreshRemindersSilently(limit: 50)
         } catch let err as APIError {
+            reminders = previousReminders
+            queuedReminders = previousQueued
+            activeReminder = previousActive
+            if case .server(status: 403, _) = err {
+                switch await resolveHouseholdScopedForbidden() {
+                case .retry:
+                    reminderActionInFlightIDs.remove(id)
+                    await acknowledgeReminder(id: id)
+                    return
+                case .fallbackToNoHousehold:
+                    clearReminderState(clearLoadingState: true)
+                    return
+                case .failed(let message):
+                    lastError = message
+                    return
+                }
+            }
+            if case .unauthorized = err {
+                await tokenStore.clear()
+                clearReminderState(clearLoadingState: true)
+                phase = .unauthenticated
+                return
+            }
             lastError = err.userFacingMessage
         } catch {
+            reminders = previousReminders
+            queuedReminders = previousQueued
+            activeReminder = previousActive
             lastError = error.localizedDescription
         }
     }
@@ -352,14 +443,17 @@ final class AppState {
 
     func handleRemoteNotification(_ payload: ReminderPushPayload, opened: Bool) async {
         if opened {
-            try? await api.openReminder(id: payload.reminderID)
-            pendingInventoryTarget = InventoryTarget(
-                productID: payload.productID,
-                locationID: payload.locationID,
-                highlightBatchID: payload.batchID,
+            await openReminder(
+                id: payload.reminderID,
+                fallbackTarget: InventoryTarget(
+                    productID: payload.productID,
+                    locationID: payload.locationID,
+                    highlightBatchID: payload.batchID,
+                ),
+                surfacesErrors: false
             )
         }
-        await syncDueReminders(limit: 50)
+        await refreshRemindersSilently(limit: 50)
     }
 
     func householdDayDifference(for isoDate: String?) -> Int? {
@@ -388,15 +482,98 @@ final class AppState {
     }
 
     private func openReminder(_ reminder: Reminder) async {
-        try? await api.openReminder(id: reminder.id)
-        pendingInventoryTarget = InventoryTarget(
-            productID: reminder.productID,
-            locationID: reminder.locationID,
-            highlightBatchID: reminder.batchID,
+        await openReminder(
+            id: reminder.id,
+            fallbackTarget: InventoryTarget(
+                productID: reminder.productID,
+                locationID: reminder.locationID,
+                highlightBatchID: reminder.batchID,
+            ),
+            surfacesErrors: true
         )
+    }
+
+    func openReminderFromInbox(_ reminder: Reminder) {
+        Task { await openReminder(reminder) }
+    }
+
+    func isReminderActionInFlight(id: String) -> Bool {
+        reminderActionInFlightIDs.contains(id)
+    }
+
+    private func openReminder(
+        id: String,
+        fallbackTarget: InventoryTarget,
+        surfacesErrors: Bool
+    ) async {
+        guard !reminderActionInFlightIDs.contains(id) else { return }
+        reminderActionInFlightIDs.insert(id)
+        defer { reminderActionInFlightIDs.remove(id) }
+        do {
+            try await api.openReminder(id: id)
+            pendingInventoryTarget = fallbackTarget
+            if activeReminder?.id == id {
+                activeReminder = nil
+                presentNextReminderIfNeeded()
+            }
+            queuedReminders.removeAll { $0.id == id }
+            await refreshRemindersSilently(limit: 50)
+        } catch let err as APIError {
+            if case .server(status: 403, _) = err {
+                switch await resolveHouseholdScopedForbidden() {
+                case .retry:
+                    reminderActionInFlightIDs.remove(id)
+                    await openReminder(id: id, fallbackTarget: fallbackTarget, surfacesErrors: surfacesErrors)
+                    return
+                case .fallbackToNoHousehold:
+                    clearReminderState(clearLoadingState: true)
+                    return
+                case .failed(let message):
+                    if surfacesErrors {
+                        lastError = message
+                    }
+                    return
+                }
+            }
+            if case .unauthorized = err {
+                await tokenStore.clear()
+                clearReminderState(clearLoadingState: true)
+                phase = .unauthenticated
+                return
+            }
+            pendingInventoryTarget = fallbackTarget
+            if surfacesErrors {
+                lastError = err.userFacingMessage
+            }
+            await refreshRemindersSilently(limit: 50)
+        } catch {
+            pendingInventoryTarget = fallbackTarget
+            if surfacesErrors {
+                lastError = error.localizedDescription
+            }
+            await refreshRemindersSilently(limit: 50)
+        }
+    }
+
+    private func applyReminderSnapshot(_ snapshot: [Reminder]) {
+        reminders = snapshot
+        let validIDs = Set(snapshot.map(\.id))
+        queuedReminders.removeAll { !validIDs.contains($0.id) }
+        if let activeReminder, !validIDs.contains(activeReminder.id) {
+            self.activeReminder = nil
+        }
+    }
+
+    private func clearReminderState(clearLoadingState: Bool) {
+        reminders = []
+        queuedReminders = []
         activeReminder = nil
-        presentNextReminderIfNeeded()
-        await syncDueReminders(limit: 50)
+        reminderActionInFlightIDs.removeAll()
+        reminderInboxError = nil
+        hasLoadedReminderInbox = false
+        if clearLoadingState {
+            isLoadingReminders = false
+        }
     }
 
     private func authenticatedMe() async throws -> Me {
@@ -418,7 +595,7 @@ final class AppState {
         return error.localizedDescription
     }
 
-    private static func mapAuthorization(_ status: UNAuthorizationStatus) -> PushAuthorizationStatus {
+    nonisolated private static func mapAuthorization(_ status: UNAuthorizationStatus) -> PushAuthorizationStatus {
         switch status {
         case .authorized:
             return .authorized

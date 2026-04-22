@@ -413,7 +413,7 @@ struct SettingsView: View {
             } else {
                 invites = []
             }
-            await appState.syncDueReminders()
+            await appState.refreshRemindersSilently()
         } catch let err as APIError {
             if case .server(status: 403, _) = err, retryOnForbidden {
                 switch await appState.resolveHouseholdScopedForbidden() {

@@ -157,6 +157,7 @@ struct ProductBatchesSheet: View {
         do {
             try await appState.api.deleteStock(id: batch.id)
             batches.removeAll { $0.id == batch.id }
+            await appState.refreshRemindersAfterInventoryMutation()
             await onMutated()
             if batches.isEmpty { dismiss() }
         } catch let err as APIError {
@@ -333,6 +334,7 @@ private struct EditBatchForm: View {
 
         do {
             let updated = try await appState.api.updateStock(id: batch.id, request: request)
+            await appState.refreshRemindersAfterInventoryMutation()
             onUpdated(updated)
             dismiss()
         } catch let err as APIError {
@@ -430,6 +432,7 @@ private struct ConsumeForm: View {
         )
         do {
             let response = try await appState.api.consumeStock(request)
+            await appState.refreshRemindersAfterInventoryMutation()
             successMessage = buildSuccessMessage(response: response)
         } catch let err as APIError {
             errorMessage = err.userFacingMessage

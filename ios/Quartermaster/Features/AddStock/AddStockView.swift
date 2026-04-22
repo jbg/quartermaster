@@ -158,6 +158,7 @@ struct AddStockView: View {
         )
         do {
             let created = try await appState.api.createStock(req)
+            await appState.refreshRemindersAfterInventoryMutation()
             onAdded?(created)
             dismiss()
         } catch let err as APIError {

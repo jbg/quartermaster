@@ -126,6 +126,8 @@ You can run the worker in either deployment shape:
 
 `push-worker` mode requires `QM_APNS_ENABLED=true` and `QM_APNS_TOPIC` to be configured. In split deployments, the sweeper remains a repair tool for drift; the worker is still the primary delivery path.
 
+For a hosted deployment walkthrough, maintenance examples, and an operator troubleshooting checklist, see [docs/hosted-reminders.md](docs/hosted-reminders.md).
+
 ### Metrics and Health
 
 When `QM_METRICS_ENABLED=true`, Quartermaster exposes an internal Prometheus scrape surface protected by `X-QM-Maintenance-Token`:
@@ -187,11 +189,42 @@ For small hosted deployments, the default worker timings are intentionally conse
 
 Those defaults are a good starting point unless backlog age or retry volume shows they need tuning.
 
+### Production-Shaped Reminder Setup
+
+For small hosted deployments, the recommended v1 shape is:
+
+- API process with `QM_METRICS_ENABLED=true`
+- separate `cargo run -p qm-server -- push-worker` process
+- APNs configured on the worker
+- maintenance triggers enabled for auth-session and reminder sweeps
+
+Example maintenance calls:
+
+```sh
+curl -X POST \
+  -H "X-QM-Maintenance-Token: $QM_AUTH_SESSION_SWEEP_TRIGGER_SECRET" \
+  https://quartermaster.example.com/internal/maintenance/sweep-auth-sessions
+
+curl -X POST \
+  -H "X-QM-Maintenance-Token: $QM_EXPIRY_REMINDER_TRIGGER_SECRET" \
+  https://quartermaster.example.com/internal/maintenance/sweep-expiry-reminders
+```
+
+The sweeper endpoints repair drift. They do not replace the running push worker.
+
 ## Tests
 
 `cargo test --workspace` is the default fast verification pass.
 
 `cargo xtask verify-release-config` checks that the backend's Apple App Site Association payload matches the checked-in iOS team ID and bundle identifier.
+
+Use `cargo xtask verify-release-config` after any change to:
+
+- `QM_PUBLIC_BASE_URL`
+- the backend Apple App Site Association payload
+- `ios/project.yml` team ID, bundle ID, or associated-domain identity wiring
+
+If you changed reminder scheduling, reminder delivery, or hosted push-worker wiring, validate with `cargo test --workspace` and then do one split-worker smoke test locally (`cargo run -p qm-server` plus `cargo run -p qm-server -- push-worker`).
 
 Postgres coverage uses the shared test harness in `qm-db::test_support`:
 
@@ -253,6 +286,14 @@ Invite-backed registration and `POST /invites/redeem` are transactional: creatin
 HTTPS invite links are built from `QM_PUBLIC_BASE_URL` when it is set. For direct app-opening on iOS, that public HTTPS origin must also serve `/.well-known/apple-app-site-association`, and the app build must include a matching `applinks:` associated domain. Quartermaster keeps `/join` as the browser fallback so shared links still work when the app is not installed.
 
 Release builds of the iOS app fail if `QUARTERMASTER_ASSOCIATED_DOMAIN` is still the placeholder `quartermaster.example.com` or is not a bare hostname. Local development can keep using the custom `quartermaster://` scheme without setting `QM_PUBLIC_BASE_URL`.
+
+Quartermaster supports one explicit v1 release identity story:
+
+- one production `QM_PUBLIC_BASE_URL`
+- one associated-domain host
+- one iOS team ID + bundle ID pairing
+
+Keep those aligned and use `cargo xtask verify-release-config` as the drift check rather than maintaining separate environment-specific identity rules in the repo.
 
 ## Contributing
 

@@ -578,6 +578,149 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn mixed_delivery_outcomes_update_metrics_without_socket_io() {
+        let (db, household_id, user_id, pantry, product_id) = setup_push_fixture().await;
+        seed_due_reminder(
+            &db,
+            household_id,
+            user_id,
+            pantry,
+            product_id,
+            "token-success",
+        )
+        .await;
+        let retry_session = Uuid::now_v7();
+        auth_sessions::upsert(&db, retry_session, user_id, Some(household_id))
+            .await
+            .unwrap();
+        devices::upsert(
+            &db,
+            &DeviceUpsert {
+                user_id,
+                session_id: retry_session,
+                device_id: "ios-retry".into(),
+                platform: "ios".into(),
+                push_token: Some("token-retryable".into()),
+                push_authorization: "authorized".into(),
+                app_version: Some("0.1".into()),
+            },
+        )
+        .await
+        .unwrap();
+        let permanent_session = Uuid::now_v7();
+        auth_sessions::upsert(&db, permanent_session, user_id, Some(household_id))
+            .await
+            .unwrap();
+        devices::upsert(
+            &db,
+            &DeviceUpsert {
+                user_id,
+                session_id: permanent_session,
+                device_id: "ios-permanent".into(),
+                platform: "ios".into(),
+                push_token: Some("token-permanent".into()),
+                push_authorization: "authorized".into(),
+                app_version: Some("0.1".into()),
+            },
+        )
+        .await
+        .unwrap();
+
+        let now = "2000-01-01T00:00:00.000Z";
+        let _ = metrics::refresh_delivery_gauges(&db, now).await.unwrap();
+        let claimed =
+            reminders::claim_due_push_work(&db, now, 10, "2000-01-01T00:01:00.000Z")
+                .await
+                .unwrap();
+        assert_eq!(claimed.items.len(), 3);
+
+        for item in &claimed.items {
+            let outcome = match item.device_token.as_str() {
+                "token-success" => classify_apns_response(
+                    StatusCode::OK,
+                    Some("apns-success".into()),
+                    String::new(),
+                    "2000-01-01T00:05:00.000Z",
+                    item,
+                ),
+                "token-retryable" => classify_apns_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    None,
+                    json!({ "reason": "InternalServerError" }).to_string(),
+                    "2000-01-01T00:05:00.000Z",
+                    item,
+                ),
+                "token-permanent" => classify_apns_response(
+                    StatusCode::GONE,
+                    None,
+                    json!({ "reason": "Unregistered" }).to_string(),
+                    "2000-01-01T00:05:00.000Z",
+                    item,
+                ),
+                other => panic!("unexpected token {other}"),
+            };
+            reminders::complete_push_attempt(
+                &db,
+                item,
+                &reminders::PushDeliveryResult {
+                    status: outcome.status,
+                    finished_at: "2000-01-01T00:00:10.000Z".into(),
+                    next_retry_at: outcome.next_retry_at,
+                    provider_message_id: outcome.provider_message_id,
+                    error_code: outcome.error_code,
+                    error_message: outcome.error_message,
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let _ = metrics::refresh_delivery_gauges(&db, now).await.unwrap();
+
+        let summary = reminders::push_delivery_metrics_summary(
+            &db,
+            &time::format_timestamp(Timestamp::now()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(summary.retry_due_count, 1);
+        assert_eq!(summary.active_claim_count, 0);
+        assert_eq!(summary.failed_permanent_count, 1);
+        assert_eq!(summary.invalid_token_count, 1);
+
+        let rows = sqlx::query(
+            "SELECT d.push_token AS push_token, s.last_push_status, s.next_retry_at, s.last_error_code \
+             FROM reminder_device_state s \
+             INNER JOIN notification_device d ON d.id = s.device_id \
+             ORDER BY d.push_token ASC",
+        )
+        .fetch_all(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 3);
+
+        let permanent = rows.iter().find(|row| {
+            row.try_get::<String, _>("push_token")
+                .unwrap()
+                .as_str()
+                == "token-permanent"
+        });
+        assert_eq!(
+            permanent
+                .unwrap()
+                .try_get::<String, _>("last_push_status")
+                .unwrap(),
+            reminders::DELIVERY_STATUS_FAILED_PERMANENT
+        );
+        assert_eq!(
+            permanent
+                .unwrap()
+                .try_get::<String, _>("last_error_code")
+                .unwrap(),
+            "Unregistered"
+        );
+    }
+
+    #[tokio::test]
     async fn api_registered_device_is_claimed_and_expired_claim_is_retried() {
         let db = qm_db::test_support::sqlite().await.into_db();
         let config = Arc::new(ApiConfig {

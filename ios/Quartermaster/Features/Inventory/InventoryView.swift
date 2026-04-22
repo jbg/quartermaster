@@ -230,7 +230,7 @@ struct InventoryView: View {
             let (l, s) = try await (locs, stock)
             locations = l.sorted { $0.sortOrder < $1.sortOrder }
             batches = s
-            await appState.syncDueReminders()
+            await appState.refreshRemindersSilently()
         } catch let err as APIError {
             if case .server(status: 403, _) = err, retryOnForbidden {
                 switch await appState.resolveHouseholdScopedForbidden() {

@@ -27,7 +27,7 @@ struct QuartermasterApp: App {
                     Task {
                         await appState.refreshNotificationAuthorization()
                         await appState.registerCurrentDevice()
-                        await appState.syncDueReminders()
+                        await appState.refreshRemindersSilently()
                     }
                 }
         }

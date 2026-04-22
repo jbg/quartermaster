@@ -351,6 +351,7 @@ struct StockHistoryView: View {
     private func undo(_ event: StockEvent) async {
         do {
             _ = try await appState.api.restoreStock(id: event.batchID)
+            await appState.refreshRemindersAfterInventoryMutation()
             await loadInitial()
             await onChange?()
         } catch let err as APIError {
@@ -370,6 +371,7 @@ struct StockHistoryView: View {
         guard !batchIDs.isEmpty else { return }
         do {
             _ = try await appState.api.restoreManyStock(ids: batchIDs)
+            await appState.refreshRemindersAfterInventoryMutation()
             selectionMode = false
             selected.removeAll()
             await loadInitial()

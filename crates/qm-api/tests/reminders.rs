@@ -298,3 +298,140 @@ async fn present_open_and_ack_are_device_aware() {
     assert_eq!(status, StatusCode::OK);
     assert!(body["items"].as_array().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn reminder_device_state_is_per_device_but_ack_is_household_global() {
+    let app = TestApp::start(ApiConfig {
+        expiry_reminder_policy: enabled_policy(),
+        ..ApiConfig::default()
+    })
+    .await;
+    let (household_id, user_id) = app.seed_household_admin("alice").await;
+    let pantry = qm_db::locations::list_for_household(&app.db, household_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|row| row.kind == "pantry")
+        .unwrap()
+        .id;
+    let product = qm_db::products::create_manual(
+        &app.db,
+        household_id,
+        "Yogurt",
+        None,
+        "count",
+        Some("piece"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let batch = qm_db::stock::create(
+        &app.db,
+        household_id,
+        product.id,
+        pantry,
+        "2",
+        "piece",
+        Some("2999-01-03"),
+        None,
+        None,
+        user_id,
+        Some(&enabled_policy()),
+    )
+    .await
+    .unwrap();
+
+    sqlx::query("UPDATE stock_reminder SET fire_at = ? WHERE batch_id = ?")
+        .bind(qm_db::time::format_timestamp(Timestamp::now()))
+        .bind(batch.id.to_string())
+        .execute(&app.db.pool)
+        .await
+        .unwrap();
+
+    let alice_phone = app.login("alice").await;
+    let alice_tablet = app.login("alice").await;
+
+    let (status, _) = app
+        .send(
+            Method::POST,
+            "/devices/register",
+            Some(json!({
+                "device_id": "ios-phone",
+                "platform": "ios",
+                "push_authorization": "authorized",
+                "push_token": "token-phone",
+                "app_version": "0.1",
+            })),
+            Some(&alice_phone),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, _) = app
+        .send(
+            Method::POST,
+            "/devices/register",
+            Some(json!({
+                "device_id": "ios-tablet",
+                "platform": "ios",
+                "push_authorization": "authorized",
+                "push_token": "token-tablet",
+                "app_version": "0.1",
+            })),
+            Some(&alice_tablet),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, body) = app
+        .send(Method::GET, "/reminders", None, Some(&alice_phone))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let reminder_id = body["items"][0]["id"].as_str().unwrap().to_owned();
+    assert!(body["items"][0]["presented_on_device_at"].is_null());
+
+    let (status, _) = app
+        .send(
+            Method::POST,
+            &format!("/reminders/{reminder_id}/present"),
+            None,
+            Some(&alice_phone),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, phone_body) = app
+        .send(Method::GET, "/reminders", None, Some(&alice_phone))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(phone_body["items"][0]["presented_on_device_at"].is_string());
+
+    let (status, tablet_body) = app
+        .send(Method::GET, "/reminders", None, Some(&alice_tablet))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(tablet_body["items"][0]["presented_on_device_at"].is_null());
+
+    let (status, _) = app
+        .send(
+            Method::POST,
+            &format!("/reminders/{reminder_id}/ack"),
+            None,
+            Some(&alice_tablet),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, phone_after_ack) = app
+        .send(Method::GET, "/reminders", None, Some(&alice_phone))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(phone_after_ack["items"].as_array().unwrap().is_empty());
+
+    let (status, tablet_after_ack) = app
+        .send(Method::GET, "/reminders", None, Some(&alice_tablet))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(tablet_after_ack["items"].as_array().unwrap().is_empty());
+}
