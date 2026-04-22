@@ -1,11 +1,11 @@
 use std::{net::SocketAddr, str::FromStr, sync::Arc, time::Duration};
 
+use ::metrics::counter;
 use anyhow::Context;
 use figment::{
     providers::{Env, Serialized},
     Figment,
 };
-use ::metrics::counter;
 use qm_api::{
     rate_limit::{parse_trusted_proxy_cidrs, ClientIpMode},
     ApiConfig, AppState, RegistrationMode,
@@ -243,8 +243,7 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         raw.auth_session_sweep_trigger_secret,
         "QM_AUTH_SESSION_SWEEP_TRIGGER_SECRET",
     )?;
-    let ios_release_identity =
-        normalize_ios_release_identity(raw.ios_team_id, raw.ios_bundle_id)?;
+    let ios_release_identity = normalize_ios_release_identity(raw.ios_team_id, raw.ios_bundle_id)?;
     let expiry_reminder_trigger_secret = normalize_optional_secret(
         raw.expiry_reminder_trigger_secret,
         "QM_EXPIRY_REMINDER_TRIGGER_SECRET",

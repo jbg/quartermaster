@@ -282,7 +282,9 @@ fn print_help() {
     println!("subcommands:");
     println!("  export-openapi          write openapi.json to the repo root");
     println!("  seed-ledger-fixture     seed a small DB fixture for ledger verification");
-    println!("  verify-release-config   assert env-driven backend and iOS release identity stay aligned");
+    println!(
+        "  verify-release-config   assert env-driven backend and iOS release identity stay aligned"
+    );
     println!("  verify-stock-ledger     assert cached quantities match the event log");
 }
 
@@ -292,8 +294,11 @@ mod tests {
 
     #[test]
     fn accepts_bare_hostname() {
-        validate_bare_hostname("quartermaster.example.com", "QUARTERMASTER_ASSOCIATED_DOMAIN")
-            .unwrap();
+        validate_bare_hostname(
+            "quartermaster.example.com",
+            "QUARTERMASTER_ASSOCIATED_DOMAIN",
+        )
+        .unwrap();
     }
 
     #[test]

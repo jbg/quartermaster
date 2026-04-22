@@ -93,7 +93,12 @@ async fn sweep_expiry_reminders(
         return Err(ApiError::Unauthorized);
     }
 
-    let stats = match qm_db::reminders::reconcile_all(&state.db, &state.config.expiry_reminder_policy).await {
+    let stats = match qm_db::reminders::reconcile_all(
+        &state.db,
+        &state.config.expiry_reminder_policy,
+    )
+    .await
+    {
         Ok(stats) => stats,
         Err(err) => {
             counter!("qm_expiry_reminder_sweeps_total", "surface" => "manual", "outcome" => "failure")

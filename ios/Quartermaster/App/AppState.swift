@@ -191,7 +191,7 @@ final class AppState {
     }
 
     var householdTimeZoneID: String? {
-        me?.householdTimezone ?? me?.activeHousehold?.timezone
+        me?.currentHouseholdSummary?.timezone
     }
 
     var householdTimeZone: TimeZone? {
@@ -225,7 +225,7 @@ final class AppState {
 
     func syncDueReminders(limit: Int = 20, mode: ReminderSyncMode = .silent) async {
         guard !isSyncingReminders else { return }
-        guard let me, me.householdId != nil else {
+        guard let me, me.currentHouseholdSummary != nil else {
             clearReminderState(clearLoadingState: true)
             return
         }
@@ -368,7 +368,7 @@ final class AppState {
         do {
             let me = try await authenticatedMe()
             applyAuthenticated(me)
-            return me.householdId != nil ? .retry : .fallbackToNoHousehold
+            return me.currentHouseholdSummary != nil ? .retry : .fallbackToNoHousehold
         } catch let apiError as APIError {
             if case .unauthorized = apiError {
                 await tokenStore.clear()

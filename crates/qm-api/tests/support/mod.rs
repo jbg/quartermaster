@@ -254,3 +254,13 @@ impl TestApp {
 async fn test_db() -> Database {
     test_support::default_test_database().await.into_db()
 }
+
+#[allow(dead_code)]
+pub fn me_current_household_id(me: &Value) -> Option<&str> {
+    me["current_household"]["id"].as_str()
+}
+
+#[allow(dead_code)]
+pub fn me_current_household_name(me: &Value) -> Option<&str> {
+    me["current_household"]["name"].as_str()
+}

@@ -375,8 +375,8 @@ struct SettingsView: View {
 
     private var currentRole: MembershipRole? {
         guard let me else { return nil }
-        if let activeHouseholdID = me.householdId {
-            return me.households.first(where: { $0.household.id == activeHouseholdID })?.role
+        if let currentHouseholdID = me.currentHouseholdSummary?.id {
+            return me.households.first(where: { $0.id == currentHouseholdID })?.role
         }
         return members.first(where: { $0.user.id == me.user.id })?.role
     }
@@ -387,7 +387,7 @@ struct SettingsView: View {
 
     private func load(retryOnForbidden: Bool = true) async {
         guard let me else { return }
-        guard me.householdId != nil else {
+        guard me.currentHouseholdSummary != nil else {
             household = nil
             householdNameDraft = ""
             members = []

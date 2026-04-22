@@ -98,7 +98,7 @@ struct HouseholdEntrySections: View {
                         Button {
                             Task {
                                 await controller.switchHousehold(
-                                    to: membership.household.id,
+                                    to: membership.id,
                                     using: appState,
                                     onSuccess: onChanged,
                                 )
@@ -106,13 +106,13 @@ struct HouseholdEntrySections: View {
                         } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(membership.household.name)
+                                    Text(membership.name)
                                     Text(membership.role.displayName)
                                         .font(.footnote)
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                if me.householdId == membership.household.id {
+                                if me.currentHouseholdSummary?.id == membership.id {
                                     Image(systemName: "checkmark.circle.fill")
                                         .foregroundStyle(.tint)
                                 } else if controller.isSwitchingHousehold {
@@ -123,7 +123,7 @@ struct HouseholdEntrySections: View {
                         }
                         .disabled(
                             controller.isSwitchingHousehold
-                                || me.householdId == membership.household.id
+                                || me.currentHouseholdSummary?.id == membership.id
                         )
                     }
                 }

@@ -9,22 +9,22 @@ struct HouseholdSwitcherMenu: View {
         Menu {
             ForEach(me.households) { membership in
                 Button {
-                    onSwitch(membership.household.id)
+                    onSwitch(membership.id)
                 } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(membership.household.name)
+                            Text(membership.name)
                             Text(membership.role.displayName)
                         }
-                        if me.householdId == membership.household.id {
+                        if me.currentHouseholdSummary?.id == membership.id {
                             Image(systemName: "checkmark")
                         }
                     }
                 }
-                .disabled(isSwitching || me.householdId == membership.household.id)
+                .disabled(isSwitching || me.currentHouseholdSummary?.id == membership.id)
             }
         } label: {
-            Label(me.householdName ?? "Households", systemImage: "person.2")
+            Label(me.currentHouseholdSummary?.name ?? "Households", systemImage: "person.2")
                 .labelStyle(.titleAndIcon)
         }
         .disabled(isSwitching || me.households.isEmpty)

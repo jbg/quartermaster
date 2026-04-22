@@ -23,7 +23,7 @@ typealias TokenPair = Components.Schemas.TokenPair
 typealias User = Components.Schemas.UserDto
 typealias Household = Components.Schemas.HouseholdDto
 typealias Me = Components.Schemas.MeResponse
-typealias MeHousehold = Components.Schemas.MeHouseholdDto
+typealias HouseholdSummary = Components.Schemas.HouseholdSummaryDto
 typealias HouseholdDetail = Components.Schemas.HouseholdDetailDto
 typealias CreateHouseholdRequest = Components.Schemas.CreateHouseholdRequest
 typealias UpdateHouseholdRequest = Components.Schemas.UpdateHouseholdRequest
@@ -36,9 +36,7 @@ typealias PushAuthorizationStatus = Components.Schemas.PushAuthorizationStatus
 
 extension User: Identifiable {}
 extension Household: Identifiable {}
-extension MeHousehold: Identifiable {
-    var id: String { household.id }
-}
+extension HouseholdSummary: Identifiable {}
 extension HouseholdDetail: Identifiable {}
 extension Member: Identifiable {
     var id: String { user.id }
@@ -46,9 +44,8 @@ extension Member: Identifiable {
 extension Invite: Identifiable {}
 
 extension Me {
-    var activeHousehold: Household? {
-        guard let householdId else { return nil }
-        return households.first(where: { $0.household.id == householdId })?.household
+    var currentHouseholdSummary: HouseholdSummary? {
+        currentHousehold?.value1
     }
 }
 

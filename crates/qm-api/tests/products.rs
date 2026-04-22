@@ -3,7 +3,7 @@ mod support;
 use axum::http::{Method, StatusCode};
 use qm_api::ApiConfig;
 use serde_json::json;
-use support::TestApp;
+use support::{me_current_household_id, TestApp};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -12,7 +12,7 @@ async fn deleted_manual_products_stay_visible_in_history_but_reject_new_stock() 
     assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
     let alice = app.login("alice").await;
     let me = app.me(&alice).await;
-    let household_id = Uuid::parse_str(me["household_id"].as_str().unwrap()).unwrap();
+    let household_id = Uuid::parse_str(me_current_household_id(&me).unwrap()).unwrap();
     let pantry = qm_db::locations::list_for_household(&app.db, household_id)
         .await
         .unwrap()

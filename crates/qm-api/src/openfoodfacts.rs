@@ -169,7 +169,10 @@ impl OpenFoodFactsClient {
     }
 
     async fn fetch_once(&self, barcode: &str) -> FetchOutcome {
-        if let Some(session_id) = self.config.off_api_base_url.strip_prefix(MOCK_OFF_BASE_URL_PREFIX)
+        if let Some(session_id) = self
+            .config
+            .off_api_base_url
+            .strip_prefix(MOCK_OFF_BASE_URL_PREFIX)
         {
             return mock_fetch_once(session_id, barcode).await;
         }
@@ -243,10 +246,10 @@ fn mock_off_sessions() -> &'static Mutex<HashMap<String, MockOffHits>> {
 }
 
 pub async fn register_mock_session(session_id: &str) {
-    mock_off_sessions().lock().await.insert(
-        session_id.to_owned(),
-        Arc::new(Mutex::new(HashMap::new())),
-    );
+    mock_off_sessions()
+        .lock()
+        .await
+        .insert(session_id.to_owned(), Arc::new(Mutex::new(HashMap::new())));
 }
 
 pub async fn unregister_mock_session(session_id: &str) {

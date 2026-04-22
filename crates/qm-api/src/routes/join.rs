@@ -109,7 +109,11 @@ pub async fn join_landing(Query(q): Query<JoinQuery>) -> impl IntoResponse {
 pub async fn apple_app_site_association(State(state): State<AppState>) -> impl IntoResponse {
     let Some(body) = apple_app_site_association_body(state.config.ios_release_identity.as_ref())
     else {
-        return (StatusCode::NOT_FOUND, [(header::CONTENT_TYPE, "text/plain")], String::new())
+        return (
+            StatusCode::NOT_FOUND,
+            [(header::CONTENT_TYPE, "text/plain")],
+            String::new(),
+        )
             .into_response();
     };
     (

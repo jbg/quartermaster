@@ -2590,6 +2590,34 @@
           }
         }
       },
+      "HouseholdSummaryDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "timezone",
+          "role",
+          "joined_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "joined_at": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/MembershipRole"
+          },
+          "timezone": {
+            "type": "string"
+          }
+        }
+      },
       "InviteDto": {
         "type": "object",
         "required": [
@@ -2674,25 +2702,6 @@
           }
         }
       },
-      "MeHouseholdDto": {
-        "type": "object",
-        "required": [
-          "household",
-          "role",
-          "joined_at"
-        ],
-        "properties": {
-          "household": {
-            "$ref": "#/components/schemas/HouseholdDto"
-          },
-          "joined_at": {
-            "type": "string"
-          },
-          "role": {
-            "$ref": "#/components/schemas/MembershipRole"
-          }
-        }
-      },
       "MeResponse": {
         "type": "object",
         "required": [
@@ -2700,36 +2709,25 @@
           "households"
         ],
         "properties": {
-          "household_id": {
-            "type": [
-              "string",
-              "null"
+          "current_household": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HouseholdSummaryDto"
+              }
             ],
-            "format": "uuid"
-          },
-          "household_name": {
             "type": [
-              "string",
-              "null"
-            ]
-          },
-          "household_timezone": {
-            "type": [
-              "string",
+              "object",
               "null"
             ]
           },
           "households": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/MeHouseholdDto"
+              "$ref": "#/components/schemas/HouseholdSummaryDto"
             }
           },
           "public_base_url": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "user": {
             "$ref": "#/components/schemas/UserDto"

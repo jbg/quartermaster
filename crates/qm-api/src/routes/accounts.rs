@@ -9,7 +9,13 @@ use axum::{
 };
 use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{
+    openapi::{
+        schema::{AllOfBuilder, ArrayBuilder, ObjectBuilder, Schema, SchemaType, Type},
+        Ref, RefOr,
+    },
+    PartialSchema, ToSchema,
+};
 use uuid::Uuid;
 
 use crate::{
@@ -95,21 +101,58 @@ pub struct HouseholdDto {
     pub timezone: String,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
-pub struct MeHouseholdDto {
-    pub household: HouseholdDto,
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct HouseholdSummaryDto {
+    pub id: Uuid,
+    pub name: String,
+    pub timezone: String,
     pub role: crate::types::MembershipRole,
     pub joined_at: String,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
 pub struct MeResponse {
     pub user: UserDto,
-    pub household_id: Option<Uuid>,
-    pub household_name: Option<String>,
-    pub household_timezone: Option<String>,
-    pub households: Vec<MeHouseholdDto>,
+    pub current_household: Option<HouseholdSummaryDto>,
+    pub households: Vec<HouseholdSummaryDto>,
     pub public_base_url: Option<String>,
+}
+
+impl PartialSchema for MeResponse {
+    fn schema() -> RefOr<Schema> {
+        let nullable_current_household = Schema::AllOf(
+            AllOfBuilder::new()
+                .item(Ref::from_schema_name(HouseholdSummaryDto::name()))
+                .schema_type(SchemaType::from_iter([Type::Object, Type::Null]))
+                .build(),
+        );
+
+        ObjectBuilder::new()
+            .property("user", Ref::from_schema_name(UserDto::name()))
+            .required("user")
+            .property("current_household", nullable_current_household)
+            .property(
+                "households",
+                ArrayBuilder::new()
+                    .items(Ref::from_schema_name(HouseholdSummaryDto::name()))
+                    .build(),
+            )
+            .required("households")
+            .property("public_base_url", String::schema())
+            .into()
+    }
+}
+
+impl ToSchema for MeResponse {
+    fn schemas(schemas: &mut Vec<(String, RefOr<Schema>)>) {
+        schemas.push((UserDto::name().into_owned(), UserDto::schema()));
+        <UserDto as ToSchema>::schemas(schemas);
+        schemas.push((
+            HouseholdSummaryDto::name().into_owned(),
+            HouseholdSummaryDto::schema(),
+        ));
+        <HouseholdSummaryDto as ToSchema>::schemas(schemas);
+    }
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -479,21 +522,19 @@ pub(crate) async fn build_me_response(
     let households = memberships
         .iter()
         .map(|row| {
-            Ok::<_, ApiError>(MeHouseholdDto {
-                household: HouseholdDto {
-                    id: row.membership.household_id,
-                    name: row.household_name.clone(),
-                    timezone: row.household_timezone.clone(),
-                },
+            Ok::<_, ApiError>(HouseholdSummaryDto {
+                id: row.membership.household_id,
+                name: row.household_name.clone(),
+                timezone: row.household_timezone.clone(),
                 role: crate::types::MembershipRole::from_str(&row.membership.role)?,
                 joined_at: row.membership.joined_at.clone(),
             })
         })
         .collect::<ApiResult<Vec<_>>>()?;
-    let active_household = households
+    let current_household = households
         .iter()
-        .find(|row| Some(row.household.id) == active_household_id)
-        .map(|row| &row.household);
+        .find(|row| Some(row.id) == active_household_id)
+        .cloned();
 
     Ok(MeResponse {
         user: UserDto {
@@ -501,9 +542,7 @@ pub(crate) async fn build_me_response(
             username: user.username,
             email: user.email,
         },
-        household_id: active_household.map(|household| household.id),
-        household_name: active_household.map(|household| household.name.clone()),
-        household_timezone: active_household.map(|household| household.timezone.clone()),
+        current_household,
         households,
         public_base_url: state.config.public_base_url.clone(),
     })

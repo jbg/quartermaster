@@ -3,7 +3,7 @@ mod support;
 use axum::http::{Method, StatusCode};
 use qm_api::{ApiConfig, RegistrationMode};
 use serde_json::json;
-use support::TestApp;
+use support::{me_current_household_id, me_current_household_name, TestApp};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -27,7 +27,10 @@ async fn open_registration_creates_distinct_households() {
     let bob = app.login("bob").await;
     let alice_me = app.me(&alice).await;
     let bob_me = app.me(&bob).await;
-    assert_ne!(alice_me["household_id"], bob_me["household_id"]);
+    assert_ne!(
+        me_current_household_id(&alice_me),
+        me_current_household_id(&bob_me)
+    );
 }
 
 #[tokio::test]
@@ -79,17 +82,20 @@ async fn login_initializes_active_household_from_latest_joined_and_me_lists_memb
 
     let me = app.me(&alice).await;
     assert_eq!(
-        me["household_id"].as_str().unwrap(),
+        me_current_household_id(&me).unwrap(),
         newer_household.id.to_string()
     );
-    assert_eq!(me["household_name"].as_str().unwrap(), newer_household.name);
+    assert_eq!(
+        me_current_household_name(&me).unwrap(),
+        newer_household.name
+    );
     assert_eq!(
         me["public_base_url"].as_str().unwrap(),
         "https://quartermaster.example.com"
     );
     assert_eq!(me["households"].as_array().unwrap().len(), 2);
     assert_eq!(
-        me["households"][0]["household"]["id"].as_str().unwrap(),
+        me["households"][0]["id"].as_str().unwrap(),
         newer_household.id.to_string()
     );
     assert_eq!(me["households"][0]["role"].as_str().unwrap(), "member");
@@ -103,7 +109,7 @@ async fn login_initializes_active_household_from_latest_joined_and_me_lists_memb
 
     let me_after_tie = app.me(&alice).await;
     assert_eq!(
-        me_after_tie["household_id"].as_str().unwrap(),
+        me_current_household_id(&me_after_tie).unwrap(),
         newer_household.id.to_string()
     );
 
@@ -115,7 +121,7 @@ async fn login_initializes_active_household_from_latest_joined_and_me_lists_memb
         older_household
     };
     assert_eq!(
-        me_in_new_session["household_id"].as_str().unwrap(),
+        me_current_household_id(&me_in_new_session).unwrap(),
         expected.to_string()
     );
 }
@@ -171,11 +177,11 @@ async fn switch_household_is_session_scoped_and_rejects_non_members() {
     let me_a = app.me(&alice_session_a).await;
     let me_b = app.me(&alice_session_b).await;
     assert_eq!(
-        me_a["household_id"].as_str().unwrap(),
+        me_current_household_id(&me_a).unwrap(),
         cabin_household.id.to_string()
     );
     assert_eq!(
-        me_b["household_id"].as_str().unwrap(),
+        me_current_household_id(&me_b).unwrap(),
         home_household.to_string()
     );
 
@@ -189,7 +195,7 @@ async fn switch_household_is_session_scoped_and_rejects_non_members() {
         .await;
     assert_eq!(switch_status.0, StatusCode::OK);
     assert_eq!(
-        switch_status.1["household_id"].as_str().unwrap(),
+        me_current_household_id(&switch_status.1).unwrap(),
         home_household.to_string()
     );
 
@@ -313,7 +319,7 @@ async fn removing_active_membership_falls_back_and_last_membership_clears_active
     .unwrap();
     let me_after_removal = app.me(&alice).await;
     assert_eq!(
-        me_after_removal["household_id"].as_str().unwrap(),
+        me_current_household_id(&me_after_removal).unwrap(),
         older_household.to_string()
     );
 
@@ -325,8 +331,7 @@ async fn removing_active_membership_falls_back_and_last_membership_clears_active
     .await
     .unwrap();
     let me_after_last_removal = app.me(&alice).await;
-    assert!(me_after_last_removal["household_id"].is_null());
-    assert!(me_after_last_removal["household_name"].is_null());
+    assert!(me_after_last_removal["current_household"].is_null());
 }
 
 #[tokio::test]
@@ -341,7 +346,7 @@ async fn authenticated_user_without_memberships_can_create_household_and_become_
     let session_b = app.login("orphaned").await;
 
     let me_before = app.me(&session_a).await;
-    assert!(me_before["household_id"].is_null());
+    assert!(me_before["current_household"].is_null());
     assert!(me_before["households"].as_array().unwrap().is_empty());
 
     let (status, created) = app
@@ -354,8 +359,8 @@ async fn authenticated_user_without_memberships_can_create_household_and_become_
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
-    let household_id = Uuid::parse_str(created["household_id"].as_str().unwrap()).unwrap();
-    assert_eq!(created["household_name"].as_str().unwrap(), "Fresh Start");
+    let household_id = Uuid::parse_str(me_current_household_id(&created).unwrap()).unwrap();
+    assert_eq!(me_current_household_name(&created).unwrap(), "Fresh Start");
     assert_eq!(created["households"].as_array().unwrap().len(), 1);
     assert_eq!(created["households"][0]["role"].as_str().unwrap(), "admin");
 
@@ -373,7 +378,7 @@ async fn authenticated_user_without_memberships_can_create_household_and_become_
 
     let me_session_a = app.me(&session_a).await;
     assert_eq!(
-        me_session_a["household_id"].as_str().unwrap(),
+        me_current_household_id(&me_session_a).unwrap(),
         household_id.to_string()
     );
 
@@ -423,7 +428,7 @@ async fn create_household_restores_active_context_after_last_membership_is_remov
         .unwrap();
 
     let me_after_removal = app.me(&alice).await;
-    assert!(me_after_removal["household_id"].is_null());
+    assert!(me_after_removal["current_household"].is_null());
 
     let (status, created) = app
         .send(
@@ -435,7 +440,7 @@ async fn create_household_restores_active_context_after_last_membership_is_remov
         .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(
-        created["household_name"].as_str().unwrap(),
+        me_current_household_name(&created).unwrap(),
         "Replacement Home"
     );
     assert_eq!(created["households"].as_array().unwrap().len(), 1);
@@ -834,7 +839,7 @@ async fn stale_tokens_follow_current_household_and_cannot_access_prior_household
 
     let me = app.me(&alice).await;
     assert_eq!(
-        me["household_id"].as_str().unwrap(),
+        me_current_household_id(&me).unwrap(),
         household_b.id.to_string()
     );
 

@@ -6,7 +6,7 @@ use axum::http::{Method, StatusCode};
 use qm_api::{ApiConfig, RegistrationMode};
 use qm_db::{test_support::InviteRaceGate, Backend};
 use serde_json::json;
-use support::TestApp;
+use support::{me_current_household_id, TestApp};
 use uuid::Uuid;
 
 fn invite_body(max_uses: i64) -> serde_json::Value {
@@ -56,7 +56,7 @@ async fn invite_admin_flow_and_registration_work() {
     let bob = app.login("bob").await;
     let me = app.me(&bob).await;
     assert_eq!(
-        me["household_id"].as_str().unwrap(),
+        me_current_household_id(&me).unwrap(),
         household_id.to_string()
     );
     assert_eq!(
@@ -98,7 +98,7 @@ async fn revoke_invite_and_existing_user_redeem_flow() {
     assert_eq!(status, StatusCode::NO_CONTENT);
     let me = app.me(&bob).await;
     assert_eq!(
-        me["household_id"].as_str().unwrap(),
+        me_current_household_id(&me).unwrap(),
         target_household.to_string()
     );
 
@@ -177,7 +177,7 @@ async fn redeeming_same_household_invite_is_idempotent() {
 
     let me = app.me(&bob).await;
     assert_eq!(
-        me["household_id"].as_str().unwrap(),
+        me_current_household_id(&me).unwrap(),
         target_household.to_string()
     );
     let invite_row = qm_db::invites::find_by_id(&app.db, invite_id)
@@ -313,7 +313,7 @@ async fn concurrent_redeem_for_same_user_consumes_invite_once() {
 
     let me = app.me(&bob).await;
     assert_eq!(
-        me["household_id"].as_str().unwrap(),
+        me_current_household_id(&me).unwrap(),
         target_household.to_string()
     );
     let invite_row = qm_db::invites::find_by_id(&app.db, invite_id)
@@ -558,7 +558,7 @@ async fn concurrent_multi_use_redeems_do_not_exceed_max_uses() {
     let dave_me = app.me(&dave).await;
     let joined = [bob_me, carol_me, dave_me]
         .into_iter()
-        .filter(|me| me["household_id"].as_str().unwrap() == target_household.to_string())
+        .filter(|me| me_current_household_id(me).unwrap() == target_household.to_string())
         .count();
     assert_eq!(joined as i64, invite_row.use_count);
 }

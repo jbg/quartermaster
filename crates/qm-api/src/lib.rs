@@ -113,7 +113,10 @@ fn validate_bundle_id(value: &str) -> Result<(), String> {
         .chars()
         .all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '-')
     {
-        return Err("iOS bundle ID must contain only ASCII alphanumeric characters, dots, or hyphens".into());
+        return Err(
+            "iOS bundle ID must contain only ASCII alphanumeric characters, dots, or hyphens"
+                .into(),
+        );
     }
     Ok(())
 }
@@ -269,7 +272,7 @@ impl Modify for SecurityAddon {
         routes::accounts::RefreshRequest,
         routes::accounts::TokenPair,
         routes::accounts::MeResponse,
-        routes::accounts::MeHouseholdDto,
+        routes::accounts::HouseholdSummaryDto,
         routes::accounts::SwitchHouseholdRequest,
         routes::accounts::UserDto,
         routes::accounts::HouseholdDto,
@@ -424,8 +427,7 @@ mod tests {
 
     #[test]
     fn rejects_invalid_ios_bundle_id() {
-        let err = IosReleaseIdentity::new("42J2SSX5SM".into(), "com example".into())
-            .unwrap_err();
+        let err = IosReleaseIdentity::new("42J2SSX5SM".into(), "com example".into()).unwrap_err();
         assert!(err.contains("dots, or hyphens"));
     }
 }

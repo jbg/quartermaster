@@ -628,10 +628,9 @@ mod tests {
 
         let now = "2000-01-01T00:00:00.000Z";
         let _ = metrics::refresh_delivery_gauges(&db, now).await.unwrap();
-        let claimed =
-            reminders::claim_due_push_work(&db, now, 10, "2000-01-01T00:01:00.000Z")
-                .await
-                .unwrap();
+        let claimed = reminders::claim_due_push_work(&db, now, 10, "2000-01-01T00:01:00.000Z")
+            .await
+            .unwrap();
         assert_eq!(claimed.items.len(), 3);
 
         for item in &claimed.items {
@@ -699,10 +698,7 @@ mod tests {
         assert_eq!(rows.len(), 3);
 
         let permanent = rows.iter().find(|row| {
-            row.try_get::<String, _>("push_token")
-                .unwrap()
-                .as_str()
-                == "token-permanent"
+            row.try_get::<String, _>("push_token").unwrap().as_str() == "token-permanent"
         });
         assert_eq!(
             permanent

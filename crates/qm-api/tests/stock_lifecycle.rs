@@ -3,7 +3,7 @@ mod support;
 use axum::http::{Method, StatusCode};
 use qm_api::ApiConfig;
 use serde_json::json;
-use support::TestApp;
+use support::{me_current_household_id, TestApp};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -13,7 +13,7 @@ async fn product_stock_history_lifecycle_flows_through_api() {
     let alice = app.login("alice").await;
 
     let me = app.me(&alice).await;
-    let household_id = Uuid::parse_str(me["household_id"].as_str().unwrap()).unwrap();
+    let household_id = Uuid::parse_str(me_current_household_id(&me).unwrap()).unwrap();
     let pantry_id = qm_db::locations::list_for_household(&app.db, household_id)
         .await
         .unwrap()
@@ -127,7 +127,7 @@ async fn metadata_only_stock_updates_do_not_write_quantity_events() {
     assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
     let alice = app.login("alice").await;
     let me = app.me(&alice).await;
-    let household_id = Uuid::parse_str(me["household_id"].as_str().unwrap()).unwrap();
+    let household_id = Uuid::parse_str(me_current_household_id(&me).unwrap()).unwrap();
     let locations = qm_db::locations::list_for_household(&app.db, household_id)
         .await
         .unwrap();
@@ -198,7 +198,7 @@ async fn restore_many_failure_reports_every_unrestorable_id_and_rolls_back() {
     assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
     let alice = app.login("alice").await;
     let me = app.me(&alice).await;
-    let household_id = Uuid::parse_str(me["household_id"].as_str().unwrap()).unwrap();
+    let household_id = Uuid::parse_str(me_current_household_id(&me).unwrap()).unwrap();
     let pantry = qm_db::locations::list_for_household(&app.db, household_id)
         .await
         .unwrap()

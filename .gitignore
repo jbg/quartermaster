@@ -34,6 +34,11 @@ ios/Config/ReleaseIdentity.generated.xcconfig
 .swiftpm/
 Packages/
 
+# Android / Gradle
+.gradle/
+android/.gradle/
+android/local.properties
+
 # Generated Swift clients (regenerated from openapi.json at build time)
 ios/Quartermaster/Generated/
 

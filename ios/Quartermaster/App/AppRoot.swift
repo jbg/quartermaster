@@ -13,7 +13,7 @@ struct AppRoot: View {
             case .unauthenticated:
                 OnboardingView()
             case .authenticated(let me):
-                if me.householdId != nil {
+                if me.currentHouseholdSummary != nil {
                     MainTabView()
                 } else {
                     NavigationStack {

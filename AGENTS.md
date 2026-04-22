@@ -31,7 +31,7 @@ These are enforced in code, but the *why* lives here. Respect them.
   cargo xtask verify-release-config
   ```
   Use this after editing the AASA payload, iOS team/bundle identifiers, or `ios/project.yml` settings that affect app-site association identity.
-- **iOS types + `Client` are generated** from that second copy by [swift-openapi-generator](https://github.com/apple/swift-openapi-generator). Don't hand-edit `Components.Schemas.*`; don't add DTO structs to a Swift file. Extensions on generated types live in `ios/Quartermaster/Core/Networking/APIAliases.swift`; the two tri-state PATCH bodies that the generator can't express natively live in `APIOverrides.swift`.
+- **Native client DTOs are generated from OpenAPI.** iOS types + `Client` come from [swift-openapi-generator](https://github.com/apple/swift-openapi-generator); Android generates its Retrofit client from the repo-root `openapi.json` during the Gradle build. Don't hand-edit generated DTOs on either client. iOS extensions on generated types live in `ios/Quartermaster/Core/Networking/APIAliases.swift`; the two tri-state PATCH bodies that the Swift generator can't express natively live in `APIOverrides.swift`.
 - **After regenerating the spec, rebuild iOS** — the plugin runs during `xcodebuild` / Xcode builds, so changes flow through automatically. First build after a package change may need `-skipPackagePluginValidation`.
 - **`TODO.md` is gitignored by design.** Treat it as a personal scratchpad for the current working session. Don't refer to it from tracked code or docs.
 - **`xcodegen generate`** (in `ios/`) regenerates the `.xcodeproj` from `project.yml`. Re-run after any `project.yml` edit, and also after adding new Swift source files or source-group structure that Xcode needs to see.
@@ -44,7 +44,7 @@ These are enforced in code, but the *why* lives here. Respect them.
 - **Stock-ledger integrity:** `cargo xtask verify-stock-ledger` checks that every `stock_batch.quantity` equals `SUM(stock_event.quantity_delta)` for that batch. Useful after any change in `qm-db/src/stock.rs`.
 - **Release-config integrity:** `cargo xtask verify-release-config` checks that the backend AASA `appID` matches the checked-in iOS team + bundle identifier. Useful after any universal-link or signing-identity change.
 - **iOS build:** `xcodebuild -project ios/Quartermaster.xcodeproj -scheme Quartermaster -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' -skipPackagePluginValidation build`. A warning about `try` on `ok.body.json` accessors is compiler flow analysis noticing the single-case enum never throws — harmless, generator-side.
-- **End-to-end smoke test:** start `cargo run -p qm-server`, register + login via `curl`, verify `GET /auth/me` returns `household_id` + `household_name`. The iOS app against the running backend is the real integration test.
+- **End-to-end smoke test:** start `cargo run -p qm-server`, register + login via `curl`, verify `GET /auth/me` returns `current_household` plus the household membership list. The native apps against the running backend are the real integration test.
 
 ## Portability
 
@@ -55,8 +55,7 @@ These are enforced in code, but the *why* lives here. Respect them.
 
 - **IDs are `Swift.String`, not `Foundation.UUID`.** swift-openapi-generator treats `format: uuid` as an annotation on a string. Views pass IDs around as strings; parse to `UUID` only when the domain actually needs it.
 - **`namingStrategy: idiomatic`** converts `snake_case` schema fields to `camelCase` Swift properties. Abbreviations lose their capital letters: `image_url` → `imageUrl`, `location_id` → `locationId`, `next_before_id` → `nextBeforeId`. `APIAliases.swift` exposes old-style names (`imageURL`, `locationID`, …) as computed aliases so feature views don't have to rename.
-- **`Option<ComplexType>` on a Rust DTO field emits `oneOf: [null, $ref]`**, which swift-openapi-generator silently drops. Either flatten to primitive optionals (`Option<Uuid>`, `Option<String>`) or write a manual `ToSchema` impl. `MeResponse.household_id` / `household_name` is the current example.
-- **That generator workaround now includes household timezone too.** `MeResponse` still flattens active-household fields (`household_id`, `household_name`, `household_timezone`) because the generated Swift client won't reliably keep an optional nested object shape.
+- **If a Rust DTO needs an optional nested object, prefer an explicit OpenAPI schema over generator-specific flattening.** `GET /auth/me` now exposes `current_household` as a nullable object via a manual `ToSchema`/`PartialSchema` shape so both iOS and Android can consume the same contract cleanly. If another optional complex field appears, keep the wire contract clean and fix the schema generation rather than introducing client-specific DTO forks.
 
 ## Style
 
