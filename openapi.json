@@ -298,6 +298,44 @@
         ]
       }
     },
+    "/devices/register": {
+      "post": {
+        "tags": [
+          "devices"
+        ],
+        "operationId": "device_register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterDeviceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/healthz": {
       "get": {
         "tags": [
@@ -1488,6 +1526,55 @@
         ]
       }
     },
+    "/reminders/{id}/present": {
+      "post": {
+        "tags": [
+          "reminders"
+        ],
+        "operationId": "reminders_present",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/stock": {
       "get": {
         "tags": [
@@ -2266,10 +2353,14 @@
       "CreateHouseholdRequest": {
         "type": "object",
         "required": [
-          "name"
+          "name",
+          "timezone"
         ],
         "properties": {
           "name": {
+            "type": "string"
+          },
+          "timezone": {
             "type": "string"
           }
         }
@@ -2414,7 +2505,8 @@
         "type": "object",
         "required": [
           "id",
-          "name"
+          "name",
+          "timezone"
         ],
         "properties": {
           "id": {
@@ -2423,6 +2515,9 @@
           },
           "name": {
             "type": "string"
+          },
+          "timezone": {
+            "type": "string"
           }
         }
       },
@@ -2430,7 +2525,8 @@
         "type": "object",
         "required": [
           "id",
-          "name"
+          "name",
+          "timezone"
         ],
         "properties": {
           "id": {
@@ -2438,6 +2534,9 @@
             "format": "uuid"
           },
           "name": {
+            "type": "string"
+          },
+          "timezone": {
             "type": "string"
           }
         }
@@ -2565,6 +2664,12 @@
               "null"
             ]
           },
+          "household_timezone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "households": {
             "type": "array",
             "items": {
@@ -2682,6 +2787,15 @@
           "manual"
         ]
       },
+      "PushAuthorizationStatus": {
+        "type": "string",
+        "enum": [
+          "not_determined",
+          "denied",
+          "authorized",
+          "provisional"
+        ]
+      },
       "RedeemInviteRequest": {
         "type": "object",
         "required": [
@@ -2701,6 +2815,37 @@
         "properties": {
           "refresh_token": {
             "type": "string"
+          }
+        }
+      },
+      "RegisterDeviceRequest": {
+        "type": "object",
+        "required": [
+          "device_id",
+          "platform",
+          "push_authorization"
+        ],
+        "properties": {
+          "app_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "push_authorization": {
+            "$ref": "#/components/schemas/PushAuthorizationStatus"
+          },
+          "push_token": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -2747,11 +2892,19 @@
           "title",
           "body",
           "fire_at",
+          "household_timezone",
+          "household_fire_local_at",
           "batch_id",
           "product_id",
           "location_id"
         ],
         "properties": {
+          "acked_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "batch_id": {
             "type": "string",
             "format": "uuid"
@@ -2759,7 +2912,19 @@
           "body": {
             "type": "string"
           },
+          "expires_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "fire_at": {
+            "type": "string"
+          },
+          "household_fire_local_at": {
+            "type": "string"
+          },
+          "household_timezone": {
             "type": "string"
           },
           "id": {
@@ -2772,6 +2937,12 @@
           "location_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "presented_at": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "product_id": {
             "type": "string",
@@ -3086,10 +3257,14 @@
       "UpdateHouseholdRequest": {
         "type": "object",
         "required": [
-          "name"
+          "name",
+          "timezone"
         ],
         "properties": {
           "name": {
+            "type": "string"
+          },
+          "timezone": {
             "type": "string"
           }
         }
@@ -3230,6 +3405,10 @@
     {
       "name": "accounts",
       "description": "Authentication and session"
+    },
+    {
+      "name": "devices",
+      "description": "Notification-capable client registrations"
     },
     {
       "name": "households",

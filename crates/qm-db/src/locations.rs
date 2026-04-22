@@ -170,7 +170,7 @@ mod tests {
     #[tokio::test]
     async fn seed_and_list() {
         let db = crate::test_db().await;
-        let h = households::create(&db, "Test").await.unwrap();
+        let h = households::create(&db, "Test", "UTC").await.unwrap();
         seed_defaults(&db, h.id).await.unwrap();
 
         let locs = list_for_household(&db, h.id).await.unwrap();

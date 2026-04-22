@@ -337,7 +337,7 @@ mod tests {
     #[tokio::test]
     async fn create_list_revoke_and_consume() {
         let db = crate::test_db().await;
-        let household = households::create(&db, "Home").await.unwrap();
+        let household = households::create(&db, "Home", "UTC").await.unwrap();
         let creator = users::create(&db, "alice", None, "hash").await.unwrap();
         let invite = create(
             &db,

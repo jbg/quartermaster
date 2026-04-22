@@ -12,7 +12,7 @@
 
 use std::str::FromStr;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::{civil::Date, Timestamp};
 use qm_core::batch::{BatchConsumption, BatchRef};
 use rust_decimal::Decimal;
 use serde::Serialize;
@@ -50,15 +50,10 @@ impl StockBatchRow {
         let qty =
             Decimal::from_str(&self.quantity).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
         let expires = match &self.expires_on {
-            Some(s) => Some(
-                NaiveDate::parse_from_str(s, "%Y-%m-%d")
-                    .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
-            ),
+            Some(s) => Some(crate::time::parse_date(s)?),
             None => None,
         };
-        let created_at: DateTime<Utc> = DateTime::parse_from_rfc3339(&self.created_at)
-            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?
-            .with_timezone(&Utc);
+        let created_at: Timestamp = crate::time::parse_timestamp(&self.created_at)?;
         Ok(BatchRef {
             id: self.id,
             quantity: qty,
@@ -79,7 +74,7 @@ pub struct StockBatchWithProduct {
 pub struct StockFilter {
     pub location_id: Option<Uuid>,
     pub product_id: Option<Uuid>,
-    pub expiring_before: Option<NaiveDate>,
+    pub expiring_before: Option<Date>,
     pub include_depleted: bool,
     pub include_undated_when_expiring_filter: bool,
 }
@@ -133,7 +128,7 @@ pub async fn list(
         q = q.bind(pid.to_string());
     }
     if let Some(d) = filter.expiring_before {
-        q = q.bind(d.format("%Y-%m-%d").to_string());
+        q = q.bind(crate::time::format_date(d));
     }
 
     let rows = q.fetch_all(&db.pool).await?;
@@ -856,7 +851,7 @@ mod tests {
     };
 
     async fn setup_with_db(db: &Database) -> (Uuid, Uuid, Uuid, Uuid) {
-        let h = households::create(db, "h").await.unwrap();
+        let h = households::create(db, "h", "UTC").await.unwrap();
         let u = users::create(db, "u", None, "hash").await.unwrap();
         memberships::insert(db, h.id, u.id, "admin").await.unwrap();
         locations::seed_defaults(db, h.id).await.unwrap();
@@ -1249,7 +1244,7 @@ mod tests {
             &db,
             hid,
             &StockFilter {
-                expiring_before: Some(NaiveDate::from_ymd_opt(2026, 6, 1).unwrap()),
+                expiring_before: Some("2026-06-01".parse().unwrap()),
                 ..Default::default()
             },
         )

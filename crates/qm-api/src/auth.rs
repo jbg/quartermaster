@@ -9,7 +9,7 @@ use axum::{
     http::{header, request::Parts},
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use sha2::{Digest, Sha256};
 use tracing::Span;
 use uuid::Uuid;
@@ -132,10 +132,8 @@ where
             return Err(ApiError::Unauthorized);
         }
 
-        let expires: DateTime<Utc> = DateTime::parse_from_rfc3339(&token.expires_at)
-            .map_err(|_| ApiError::Unauthorized)?
-            .with_timezone(&Utc);
-        if expires < Utc::now() {
+        let expires: Timestamp = token.expires_at.parse().map_err(|_| ApiError::Unauthorized)?;
+        if expires < Timestamp::now() {
             cleanup_session_if_unused(&app_state.db, token.session_id).await?;
             return Err(ApiError::Unauthorized);
         }

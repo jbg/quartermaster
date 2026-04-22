@@ -6,6 +6,7 @@ import SwiftUI
 final class HouseholdEntryController {
     var redeemCode: String = ""
     var householdNameDraft: String = ""
+    var householdTimezoneID: String = TimeZone.autoupdatingCurrent.identifier
 
     var isSwitchingHousehold = false
     var isRedeemingInvite = false
@@ -63,7 +64,8 @@ final class HouseholdEntryController {
         defer { isCreatingHousehold = false }
         do {
             _ = try await appState.createHousehold(
-                named: householdNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                named: householdNameDraft.trimmingCharacters(in: .whitespacesAndNewlines),
+                timezone: householdTimezoneID
             )
             householdNameDraft = ""
             if let onSuccess {
@@ -155,6 +157,11 @@ struct HouseholdEntrySections: View {
             if showsCreateHousehold {
                 Section("Create household") {
                     TextField("Household name", text: $controller.householdNameDraft)
+                    Picker("Timezone", selection: $controller.householdTimezoneID) {
+                        ForEach(TimeZone.knownTimeZoneIdentifiers, id: \.self) { identifier in
+                            Text(identifier).tag(identifier)
+                        }
+                    }
                     Button {
                         Task {
                             await controller.createHousehold(

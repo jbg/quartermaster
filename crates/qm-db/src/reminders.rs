@@ -1,9 +1,9 @@
-use chrono::{DateTime, Duration, NaiveDate, Utc};
+use jiff::{tz, Timestamp, ToSpan};
 use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{now_utc_rfc3339, Database};
+use crate::{now_utc_rfc3339, time, Database};
 
 pub const KIND_EXPIRY: &str = "expiry";
 
@@ -35,10 +35,14 @@ pub struct ReminderRow {
     pub location_id: Uuid,
     pub kind: String,
     pub fire_at: String,
+    pub household_timezone: String,
+    pub household_fire_local_at: String,
+    pub expires_on: Option<String>,
     pub title: String,
     pub body: String,
     pub created_at: String,
     pub presented_at: Option<String>,
+    pub acked_at: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +66,9 @@ struct ReminderDraft {
     location_id: Uuid,
     kind: &'static str,
     fire_at: String,
+    household_timezone: String,
+    household_fire_local_at: String,
+    expires_on: Option<String>,
     title: String,
     body: String,
 }
@@ -69,6 +76,7 @@ struct ReminderDraft {
 #[derive(Debug, Clone)]
 struct BatchReminderContext {
     household_id: Uuid,
+    household_timezone: String,
     batch_id: Uuid,
     product_id: Uuid,
     location_id: Uuid,
@@ -104,9 +112,11 @@ pub async fn list_due(
     limit: i64,
 ) -> Result<ReminderPage, sqlx::Error> {
     let mut sql = String::from(
-        "SELECT id, household_id, batch_id, product_id, location_id, kind, fire_at, title, body, created_at, presented_at \
+        "SELECT id, household_id, batch_id, product_id, location_id, kind, fire_at, \
+                household_timezone, household_fire_local_at, expires_on, title, body, \
+                created_at, presented_at, acked_at \
          FROM stock_reminder \
-         WHERE household_id = ? AND presented_at IS NULL AND fire_at <= ? ",
+         WHERE household_id = ? AND acked_at IS NULL AND fire_at <= ? ",
     );
     match (after_fire_at, after_id) {
         (Some(fire_at), Some(id)) => {
@@ -153,7 +163,7 @@ pub async fn list_due(
     page_from_rows(rows, limit)
 }
 
-pub async fn ack_presented(
+pub async fn mark_presented(
     db: &Database,
     household_id: Uuid,
     id: Uuid,
@@ -161,9 +171,40 @@ pub async fn ack_presented(
 ) -> Result<bool, sqlx::Error> {
     let updated = sqlx::query(
         "UPDATE stock_reminder SET presented_at = ? \
-         WHERE id = ? AND household_id = ? AND presented_at IS NULL",
+         WHERE id = ? AND household_id = ? AND acked_at IS NULL AND presented_at IS NULL",
     )
     .bind(presented_at)
+    .bind(id.to_string())
+    .bind(household_id.to_string())
+    .execute(&db.pool)
+    .await?
+    .rows_affected();
+
+    if updated > 0 {
+        return Ok(true);
+    }
+
+    let exists = sqlx::query(
+        "SELECT 1 AS x FROM stock_reminder WHERE id = ? AND household_id = ? AND acked_at IS NULL",
+    )
+    .bind(id.to_string())
+    .bind(household_id.to_string())
+    .fetch_optional(&db.pool)
+    .await?;
+    Ok(exists.is_some())
+}
+
+pub async fn ack(
+    db: &Database,
+    household_id: Uuid,
+    id: Uuid,
+    acked_at: &str,
+) -> Result<bool, sqlx::Error> {
+    let updated = sqlx::query(
+        "UPDATE stock_reminder SET acked_at = ? \
+         WHERE id = ? AND household_id = ? AND acked_at IS NULL",
+    )
+    .bind(acked_at)
     .bind(id.to_string())
     .bind(household_id.to_string())
     .execute(&db.pool)
@@ -225,24 +266,28 @@ pub async fn reconcile_all(
 
 pub fn build_expiry_reminder(
     expires_on: &str,
+    household_timezone: &str,
     product_name: &str,
     location_name: &str,
     policy: &ExpiryReminderPolicy,
-    now: DateTime<Utc>,
-) -> Result<Option<(String, String, String)>, sqlx::Error> {
+    now: Timestamp,
+) -> Result<Option<(String, String, String, String, String)>, sqlx::Error> {
     if !policy.enabled {
         return Ok(None);
     }
 
-    let expiry = NaiveDate::parse_from_str(expires_on, "%Y-%m-%d")
-        .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+    let expiry = time::parse_date(expires_on)?;
     let fire_date = expiry
-        .checked_sub_signed(Duration::days(policy.lead_days))
-        .ok_or_else(|| sqlx::Error::Protocol("invalid reminder lead_days".into()))?;
-    let fire_naive = fire_date
-        .and_hms_opt(policy.fire_hour, policy.fire_minute, 0)
-        .ok_or_else(|| sqlx::Error::Protocol("invalid reminder fire time".into()))?;
-    let fire_at = DateTime::<Utc>::from_naive_utc_and_offset(fire_naive, Utc);
+        .checked_sub(policy.lead_days.days())
+        .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+    let fire_civil = fire_date.at(policy.fire_hour as i8, policy.fire_minute as i8, 0, 0);
+    let time_zone = tz::db()
+        .get(household_timezone)
+        .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+    let fire_zoned = fire_civil
+        .to_zoned(time_zone)
+        .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+    let fire_at = fire_zoned.timestamp();
     if fire_at <= now {
         return Ok(None);
     }
@@ -254,9 +299,11 @@ pub fn build_expiry_reminder(
     };
 
     Ok(Some((
-        fire_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        time::format_timestamp(fire_at),
         title,
         location_name.to_owned(),
+        household_timezone.to_owned(),
+        time::format_zoned_with_offset(&fire_zoned),
     )))
 }
 
@@ -266,10 +313,12 @@ async fn load_batch_context_tx(
 ) -> Result<Option<BatchReminderContext>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT \
-            b.household_id AS household_id, b.id AS batch_id, b.product_id AS product_id, \
+            b.household_id AS household_id, h.timezone AS household_timezone, \
+            b.id AS batch_id, b.product_id AS product_id, \
             b.location_id AS location_id, b.expires_on AS expires_on, b.depleted_at AS depleted_at, \
             p.name AS product_name, l.name AS location_name \
          FROM stock_batch b \
+         INNER JOIN household h ON h.id = b.household_id \
          INNER JOIN product p ON p.id = b.product_id \
          INNER JOIN location l ON l.id = b.location_id \
          WHERE b.id = ?",
@@ -292,10 +341,12 @@ async fn load_household_drafts(
 
     let rows = sqlx::query(
         "SELECT \
-            b.household_id AS household_id, b.id AS batch_id, b.product_id AS product_id, \
+            b.household_id AS household_id, h.timezone AS household_timezone, \
+            b.id AS batch_id, b.product_id AS product_id, \
             b.location_id AS location_id, b.expires_on AS expires_on, b.depleted_at AS depleted_at, \
             p.name AS product_name, l.name AS location_name \
          FROM stock_batch b \
+         INNER JOIN household h ON h.id = b.household_id \
          INNER JOIN product p ON p.id = b.product_id \
          INNER JOIN location l ON l.id = b.location_id \
          WHERE b.household_id = ? AND b.depleted_at IS NULL",
@@ -324,14 +375,16 @@ fn expiry_draft_for_context(
     let Some(expires_on) = ctx.expires_on.as_deref() else {
         return Ok(None);
     };
-    let now = Utc::now();
-    let Some((fire_at, title, body)) = build_expiry_reminder(
-        expires_on,
-        &ctx.product_name,
-        &ctx.location_name,
-        policy,
-        now,
-    )?
+    let now = Timestamp::now();
+    let Some((fire_at, title, body, household_timezone, household_fire_local_at)) =
+        build_expiry_reminder(
+            expires_on,
+            &ctx.household_timezone,
+            &ctx.product_name,
+            &ctx.location_name,
+            policy,
+            now,
+        )?
     else {
         return Ok(None);
     };
@@ -343,6 +396,9 @@ fn expiry_draft_for_context(
         location_id: ctx.location_id,
         kind: KIND_EXPIRY,
         fire_at,
+        household_timezone,
+        household_fire_local_at,
+        expires_on: ctx.expires_on.clone(),
         title,
         body,
     }))
@@ -353,7 +409,7 @@ async fn delete_pending_for_batch_kind_tx(
     batch_id: Uuid,
     kind: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM stock_reminder WHERE batch_id = ? AND kind = ? AND presented_at IS NULL")
+    sqlx::query("DELETE FROM stock_reminder WHERE batch_id = ? AND kind = ? AND acked_at IS NULL")
         .bind(batch_id.to_string())
         .bind(kind)
         .execute(&mut **tx)
@@ -367,7 +423,7 @@ async fn delete_pending_for_household_kind_tx(
     kind: &str,
 ) -> Result<u64, sqlx::Error> {
     let deleted = sqlx::query(
-        "DELETE FROM stock_reminder WHERE household_id = ? AND kind = ? AND presented_at IS NULL",
+        "DELETE FROM stock_reminder WHERE household_id = ? AND kind = ? AND acked_at IS NULL",
     )
     .bind(household_id.to_string())
     .bind(kind)
@@ -383,8 +439,9 @@ async fn insert_draft_tx(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO stock_reminder \
-         (id, household_id, batch_id, product_id, location_id, kind, fire_at, title, body, created_at, presented_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+         (id, household_id, batch_id, product_id, location_id, kind, fire_at, household_timezone, \
+          household_fire_local_at, expires_on, title, body, created_at, presented_at, acked_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)",
     )
     .bind(Uuid::now_v7().to_string())
     .bind(draft.household_id.to_string())
@@ -393,6 +450,9 @@ async fn insert_draft_tx(
     .bind(draft.location_id.to_string())
     .bind(draft.kind)
     .bind(&draft.fire_at)
+    .bind(&draft.household_timezone)
+    .bind(&draft.household_fire_local_at)
+    .bind(&draft.expires_on)
     .bind(&draft.title)
     .bind(&draft.body)
     .bind(now_utc_rfc3339())
@@ -421,6 +481,7 @@ fn page_from_rows(rows: Vec<sqlx::any::AnyRow>, limit: i64) -> Result<ReminderPa
 fn row_to_context(row: sqlx::any::AnyRow) -> Result<BatchReminderContext, sqlx::Error> {
     Ok(BatchReminderContext {
         household_id: uuid_from(&row, "household_id")?,
+        household_timezone: row.try_get("household_timezone")?,
         batch_id: uuid_from(&row, "batch_id")?,
         product_id: uuid_from(&row, "product_id")?,
         location_id: uuid_from(&row, "location_id")?,
@@ -440,10 +501,14 @@ fn row_to_reminder(row: sqlx::any::AnyRow) -> Result<ReminderRow, sqlx::Error> {
         location_id: uuid_from(&row, "location_id")?,
         kind: row.try_get("kind")?,
         fire_at: row.try_get("fire_at")?,
+        household_timezone: row.try_get("household_timezone")?,
+        household_fire_local_at: row.try_get("household_fire_local_at")?,
+        expires_on: row.try_get("expires_on")?,
         title: row.try_get("title")?,
         body: row.try_get("body")?,
         created_at: row.try_get("created_at")?,
         presented_at: row.try_get("presented_at")?,
+        acked_at: row.try_get("acked_at")?,
     })
 }
 
@@ -459,7 +524,7 @@ mod tests {
 
     async fn setup() -> (Database, Uuid, Uuid, Uuid, Uuid) {
         let db = crate::test_db().await;
-        let household = households::create(&db, "Home").await.unwrap();
+        let household = households::create(&db, "Home", "Europe/Madrid").await.unwrap();
         locations::seed_defaults(&db, household.id).await.unwrap();
         let pantry = locations::list_for_household(&db, household.id)
             .await
@@ -494,23 +559,30 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn build_expiry_reminder_formats_title_and_body() {
-        let now = DateTime::parse_from_rfc3339("2026-04-22T08:00:00.000Z")
-            .unwrap()
-            .with_timezone(&Utc);
+    #[test]
+    fn build_expiry_reminder_formats_title_and_body() {
+        let now: Timestamp = "2026-04-22T08:00:00.000Z".parse().unwrap();
         let policy = ExpiryReminderPolicy {
             enabled: true,
             lead_days: 1,
             fire_hour: 9,
             fire_minute: 0,
         };
-        let reminder =
-            build_expiry_reminder("2026-04-24", "Milk", "Fridge", &policy, now).unwrap();
-        let (fire_at, title, body) = reminder.unwrap();
-        assert_eq!(fire_at, "2026-04-23T09:00:00.000Z");
+        let reminder = build_expiry_reminder(
+            "2026-04-24",
+            "Europe/Madrid",
+            "Milk",
+            "Fridge",
+            &policy,
+            now,
+        )
+        .unwrap();
+        let (fire_at, title, body, timezone, household_fire_local_at) = reminder.unwrap();
+        assert_eq!(fire_at, "2026-04-23T07:00:00.000Z");
         assert_eq!(title, "Milk expires tomorrow");
         assert_eq!(body, "Fridge");
+        assert_eq!(timezone, "Europe/Madrid");
+        assert_eq!(household_fire_local_at, "2026-04-23T09:00:00+02:00");
     }
 
     #[tokio::test]
@@ -577,7 +649,7 @@ mod tests {
             .unwrap();
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].batch_id, batch.id);
-        assert_eq!(page.items[0].fire_at, "2999-01-05T09:00:00.000Z");
+        assert_eq!(page.items[0].expires_on.as_deref(), Some("2999-01-06"));
     }
 
     #[tokio::test]

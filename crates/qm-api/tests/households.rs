@@ -41,7 +41,9 @@ async fn login_initializes_active_household_from_latest_joined_and_me_lists_memb
     let (older_household, _) = app.seed_household_admin("alice").await;
     let alice = app.login("alice").await;
 
-    let newer_household = qm_db::households::create(&app.db, "Cabin").await.unwrap();
+    let newer_household = qm_db::households::create(&app.db, "Cabin", "UTC")
+        .await
+        .unwrap();
     qm_db::locations::seed_defaults(&app.db, newer_household.id)
         .await
         .unwrap();
@@ -127,7 +129,9 @@ async fn switch_household_is_session_scoped_and_rejects_non_members() {
     .await;
     let (home_household, home_admin) = app.seed_household_admin("alice").await;
 
-    let cabin_household = qm_db::households::create(&app.db, "Cabin").await.unwrap();
+    let cabin_household = qm_db::households::create(&app.db, "Cabin", "UTC")
+        .await
+        .unwrap();
     qm_db::locations::seed_defaults(&app.db, cabin_household.id)
         .await
         .unwrap();
@@ -235,7 +239,7 @@ async fn switch_household_is_session_scoped_and_rejects_non_members() {
         StatusCode::OK
     );
 
-    let outsider_household = qm_db::households::create(&app.db, "Outsider")
+    let outsider_household = qm_db::households::create(&app.db, "Outsider", "UTC")
         .await
         .unwrap();
     qm_db::locations::seed_defaults(&app.db, outsider_household.id)
@@ -264,7 +268,9 @@ async fn removing_active_membership_falls_back_and_last_membership_clears_active
     let (older_household, _) = app.seed_household_admin("alice").await;
     let alice = app.login("alice").await;
 
-    let newer_household = qm_db::households::create(&app.db, "Cabin").await.unwrap();
+    let newer_household = qm_db::households::create(&app.db, "Cabin", "UTC")
+        .await
+        .unwrap();
     qm_db::locations::seed_defaults(&app.db, newer_household.id)
         .await
         .unwrap();
@@ -342,7 +348,7 @@ async fn authenticated_user_without_memberships_can_create_household_and_become_
         .send(
             Method::POST,
             "/households",
-            Some(json!({ "name": "Fresh Start" })),
+            Some(json!({ "name": "Fresh Start", "timezone": "UTC" })),
             Some(&session_a),
         )
         .await;
@@ -423,7 +429,7 @@ async fn create_household_restores_active_context_after_last_membership_is_remov
         .send(
             Method::POST,
             "/households",
-            Some(json!({ "name": "Replacement Home" })),
+            Some(json!({ "name": "Replacement Home", "timezone": "UTC" })),
             Some(&alice),
         )
         .await;
@@ -492,7 +498,9 @@ async fn expired_only_session_is_cleaned_up_when_access_token_is_used() {
         &qm_api::auth::sha256_hex(expired_access),
         qm_db::tokens::KIND_ACCESS,
         Some("iPhone"),
-        chrono::Utc::now() - chrono::Duration::minutes(1),
+        jiff::Timestamp::now()
+            .checked_sub(jiff::SignedDuration::from_mins(1))
+            .unwrap(),
     )
     .await
     .unwrap();
@@ -527,7 +535,9 @@ async fn expired_access_keeps_session_when_refresh_token_is_still_live() {
         &qm_api::auth::sha256_hex(expired_access),
         qm_db::tokens::KIND_ACCESS,
         Some("iPhone"),
-        chrono::Utc::now() - chrono::Duration::minutes(1),
+        jiff::Timestamp::now()
+            .checked_sub(jiff::SignedDuration::from_mins(1))
+            .unwrap(),
     )
     .await
     .unwrap();
@@ -538,7 +548,9 @@ async fn expired_access_keeps_session_when_refresh_token_is_still_live() {
         &qm_api::auth::sha256_hex(live_refresh),
         qm_db::tokens::KIND_REFRESH,
         Some("iPhone"),
-        chrono::Utc::now() + chrono::Duration::minutes(30),
+        jiff::Timestamp::now()
+            .checked_add(jiff::SignedDuration::from_mins(30))
+            .unwrap(),
     )
     .await
     .unwrap();
@@ -784,7 +796,9 @@ async fn stale_tokens_follow_current_household_and_cannot_access_prior_household
     .await
     .unwrap();
 
-    let household_b = qm_db::households::create(&app.db, "Cabin").await.unwrap();
+    let household_b = qm_db::households::create(&app.db, "Cabin", "UTC")
+        .await
+        .unwrap();
     qm_db::locations::seed_defaults(&app.db, household_b.id)
         .await
         .unwrap();

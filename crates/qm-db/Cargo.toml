@@ -13,7 +13,7 @@ test-support = ["dep:anyhow", "dep:testcontainers", "dep:testcontainers-modules"
 qm-core = { path = "../qm-core" }
 
 anyhow = { workspace = true, optional = true }
-chrono.workspace = true
+jiff.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true
 sqlx.workspace = true
@@ -26,6 +26,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
+jiff.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 testcontainers = "0.23"
 testcontainers-modules = { version = "0.11", features = ["postgres"] }

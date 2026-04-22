@@ -165,6 +165,7 @@ impl Modify for SecurityAddon {
         routes::accounts::logout,
         routes::accounts::me,
         routes::accounts::switch_household,
+        routes::devices::register,
         routes::households::create_household,
         routes::locations::list_locations,
         routes::locations::create_location,
@@ -188,6 +189,7 @@ impl Modify for SecurityAddon {
         routes::products::refresh,
         routes::products::restore,
         routes::reminders::list,
+        routes::reminders::present,
         routes::reminders::ack,
         routes::stock::list,
         routes::stock::get_one,
@@ -216,6 +218,8 @@ impl Modify for SecurityAddon {
         routes::accounts::SwitchHouseholdRequest,
         routes::accounts::UserDto,
         routes::accounts::HouseholdDto,
+        routes::devices::RegisterDeviceRequest,
+        routes::devices::PushAuthorizationStatus,
         routes::households::HouseholdDetailDto,
         routes::households::CreateHouseholdRequest,
         routes::households::UpdateHouseholdRequest,
@@ -250,6 +254,7 @@ impl Modify for SecurityAddon {
     tags(
         (name = "health", description = "Liveness / readiness"),
         (name = "accounts", description = "Authentication and session"),
+        (name = "devices", description = "Notification-capable client registrations"),
         (name = "households", description = "Household administration, invites, and members"),
         (name = "locations", description = "Pantry / fridge / freezer"),
         (name = "units", description = "Units of measure"),
@@ -269,6 +274,7 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             RateLimitTarget::Auth,
         )))
+        .merge(routes::devices::router())
         .merge(routes::households::router())
         .merge(routes::locations::router())
         .merge(routes::units::router())

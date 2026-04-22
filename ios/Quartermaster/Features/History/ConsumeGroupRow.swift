@@ -28,7 +28,7 @@ struct ConsumeGroupRow: View {
                         HStack(spacing: 6) {
                             Text("Consumed")
                                 .font(.subheadline.weight(.semibold))
-                            if let sharedExpiry = sharedExpiryDate {
+                            if let sharedExpiry = sharedExpiry {
                                 ExpiryBadge(expiresOn: sharedExpiry)
                             }
                         }
@@ -81,13 +81,12 @@ struct ConsumeGroupRow: View {
     /// When every event in the correlation carries the same non-nil
     /// `batchExpiresOn`, surface it on the collapsed row. Mixed or
     /// all-nil → hide the badge to keep the summary honest.
-    private var sharedExpiryDate: Date? {
+    private var sharedExpiry: String? {
         let values = Set(events.map(\.batchExpiresOn))
         guard values.count == 1,
-              let only = values.first,
-              let stringValue = only
+              let only = values.first
         else { return nil }
-        return StockBatch.yyyymmdd.date(from: stringValue)
+        return only
     }
 
     private func toggle() {

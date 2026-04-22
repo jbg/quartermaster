@@ -18,7 +18,10 @@ struct QuartermasterApp: App {
                 }
                 .onChange(of: scenePhase) { _, phase in
                     guard phase == .active else { return }
-                    Task { await appState.syncDueReminders() }
+                    Task {
+                        await appState.registerCurrentDevice()
+                        await appState.syncDueReminders()
+                    }
                 }
         }
     }

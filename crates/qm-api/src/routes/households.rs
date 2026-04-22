@@ -6,7 +6,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -45,16 +45,19 @@ pub fn router() -> Router<AppState> {
 pub struct HouseholdDetailDto {
     pub id: Uuid,
     pub name: String,
+    pub timezone: String,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateHouseholdRequest {
     pub name: String,
+    pub timezone: String,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateHouseholdRequest {
     pub name: String,
+    pub timezone: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -102,7 +105,8 @@ pub async fn create_household(
     Json(req): Json<CreateHouseholdRequest>,
 ) -> ApiResult<(StatusCode, Json<MeResponse>)> {
     let name = validate_household_name(&req.name)?;
-    let household = qm_db::households::create(&state.db, name).await?;
+    let timezone = validate_household_timezone(&req.timezone)?;
+    let household = qm_db::households::create(&state.db, name, timezone).await?;
     qm_db::locations::seed_defaults(&state.db, household.id).await?;
     qm_db::memberships::insert(&state.db, household.id, current.user_id, ROLE_ADMIN).await?;
     qm_db::auth_sessions::upsert(
@@ -138,6 +142,7 @@ pub async fn get_current_household(
     Ok(Json(HouseholdDetailDto {
         id: household.id,
         name: household.name,
+        timezone: household.timezone,
     }))
 }
 
@@ -158,12 +163,14 @@ pub async fn update_current_household(
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
     require_admin(&current)?;
     let name = validate_household_name(&req.name)?;
-    let household = qm_db::households::rename(&state.db, household_id, name)
+    let timezone = validate_household_timezone(&req.timezone)?;
+    let household = qm_db::households::update(&state.db, household_id, name, timezone)
         .await?
         .ok_or(ApiError::NotFound)?;
     Ok(Json(HouseholdDetailDto {
         id: household.id,
         name: household.name,
+        timezone: household.timezone,
     }))
 }
 
@@ -248,10 +255,11 @@ pub async fn create_invite(
     if req.max_uses < 1 {
         return Err(ApiError::BadRequest("max_uses must be >= 1".into()));
     }
-    let expires = DateTime::parse_from_rfc3339(&req.expires_at)
-        .map_err(|_| ApiError::BadRequest("expires_at must be RFC-3339".into()))?
-        .with_timezone(&Utc);
-    if expires <= Utc::now() {
+    let expires: Timestamp = req
+        .expires_at
+        .parse()
+        .map_err(|_| ApiError::BadRequest("expires_at must be RFC-3339".into()))?;
+    if expires <= Timestamp::now() {
         return Err(ApiError::BadRequest(
             "expires_at must be in the future".into(),
         ));
@@ -363,6 +371,17 @@ fn validate_household_name(name: &str) -> ApiResult<&str> {
         ));
     }
     Ok(name)
+}
+
+fn validate_household_timezone(timezone: &str) -> ApiResult<&str> {
+    let timezone = timezone.trim();
+    if timezone.is_empty() {
+        return Err(ApiError::BadRequest("timezone is required".into()));
+    }
+    jiff::tz::db()
+        .get(timezone)
+        .map_err(|_| ApiError::BadRequest("timezone must be a valid IANA zone".into()))?;
+    Ok(timezone)
 }
 
 fn invite_to_dto(row: qm_db::invites::InviteRow) -> ApiResult<InviteDto> {

@@ -1,7 +1,7 @@
 mod support;
 
 use axum::http::{Method, StatusCode};
-use chrono::Utc;
+use jiff::Timestamp;
 use qm_api::ApiConfig;
 use qm_db::reminders::ExpiryReminderPolicy;
 use serde_json::json;
@@ -23,7 +23,9 @@ async fn list_returns_due_reminders_for_active_household_only() {
     .await;
 
     let (household_a, user_id) = app.seed_household_admin("alice").await;
-    let household_b = qm_db::households::create(&app.db, "Cabin").await.unwrap();
+    let household_b = qm_db::households::create(&app.db, "Cabin", "UTC")
+        .await
+        .unwrap();
     qm_db::locations::seed_defaults(&app.db, household_b.id)
         .await
         .unwrap();
@@ -151,7 +153,7 @@ async fn list_returns_due_reminders_for_active_household_only() {
 }
 
 #[tokio::test]
-async fn ack_is_idempotent_and_hides_presented_reminders() {
+async fn present_and_ack_are_idempotent() {
     let app = TestApp::start(ApiConfig {
         expiry_reminder_policy: enabled_policy(),
         ..ApiConfig::default()
@@ -194,7 +196,7 @@ async fn ack_is_idempotent_and_hides_presented_reminders() {
     .unwrap();
 
     sqlx::query("UPDATE stock_reminder SET fire_at = ? WHERE batch_id = ?")
-        .bind(Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+        .bind(qm_db::time::format_timestamp(Timestamp::now()))
         .bind(batch.id.to_string())
         .execute(&app.db.pool)
         .await
@@ -204,6 +206,17 @@ async fn ack_is_idempotent_and_hides_presented_reminders() {
     let (status, body) = app.send(Method::GET, "/reminders", None, Some(&alice)).await;
     assert_eq!(status, StatusCode::OK);
     let reminder_id = body["items"][0]["id"].as_str().unwrap().to_owned();
+
+    let (status, body) = app
+        .send(
+            Method::POST,
+            &format!("/reminders/{reminder_id}/present"),
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(body.is_null());
 
     let (status, body) = app
         .send(

@@ -58,8 +58,8 @@ struct ProductRow: View {
         }
     }
 
-    private var earliestExpiry: Date? {
-        visibleBatches.compactMap(\.expiresOnDate).min()
+    private var earliestExpiry: String? {
+        visibleBatches.compactMap(\.expiresOn).min()
     }
 
     @ViewBuilder

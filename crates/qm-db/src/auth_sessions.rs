@@ -183,7 +183,7 @@ fn row_to_auth_session(row: sqlx::any::AnyRow) -> Result<AuthSessionRow, sqlx::E
 
 #[cfg(test)]
 mod tests {
-    use chrono::{Duration, Utc};
+    use jiff::{SignedDuration, Timestamp};
 
     use super::*;
     use crate::{test_support, tokens, users};
@@ -192,7 +192,7 @@ mod tests {
         db: &Database,
         username: &str,
         session_id: Uuid,
-        expires_at: chrono::DateTime<Utc>,
+        expires_at: Timestamp,
         revoked_at: Option<&str>,
     ) {
         let user = users::create(
@@ -227,23 +227,39 @@ mod tests {
 
     async fn assert_delete_stale_sessions_on_backend(test_db: test_support::TestDatabase) {
         let db = test_db.db();
-        let now = Utc::now();
+        let now = Timestamp::now();
         let stale_a = Uuid::now_v7();
         let stale_b = Uuid::now_v7();
         let live = Uuid::now_v7();
 
-        seed_session_with_token(db, "stale-a", stale_a, now - Duration::minutes(5), None).await;
+        seed_session_with_token(
+            db,
+            "stale-a",
+            stale_a,
+            now.checked_sub(SignedDuration::from_mins(5)).unwrap(),
+            None,
+        )
+        .await;
         seed_session_with_token(
             db,
             "stale-b",
             stale_b,
-            now + Duration::minutes(5),
-            Some(&(now - Duration::minutes(1)).to_rfc3339()),
+            now.checked_add(SignedDuration::from_mins(5)).unwrap(),
+            Some(&crate::time::format_timestamp(
+                now.checked_sub(SignedDuration::from_mins(1)).unwrap(),
+            )),
         )
         .await;
-        seed_session_with_token(db, "live", live, now + Duration::minutes(30), None).await;
+        seed_session_with_token(
+            db,
+            "live",
+            live,
+            now.checked_add(SignedDuration::from_mins(30)).unwrap(),
+            None,
+        )
+        .await;
 
-        let deleted = delete_stale_sessions(db, &now.to_rfc3339(), 1)
+        let deleted = delete_stale_sessions(db, &crate::time::format_timestamp(now), 1)
             .await
             .unwrap();
         assert_eq!(deleted, 2);

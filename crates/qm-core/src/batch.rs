@@ -1,4 +1,4 @@
-use chrono::NaiveDate;
+use jiff::{civil::Date, Timestamp};
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
@@ -10,8 +10,8 @@ pub struct BatchRef {
     pub id: Uuid,
     pub quantity: Decimal,
     pub unit: String,
-    pub expires_on: Option<NaiveDate>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub expires_on: Option<Date>,
+    pub created_at: Timestamp,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,7 +96,7 @@ pub fn plan_consumption(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{TimeZone, Utc};
+    use jiff::{civil::Date, Timestamp};
     use std::str::FromStr;
 
     fn dec(s: &str) -> Decimal {
@@ -108,8 +108,8 @@ mod tests {
             id: Uuid::from_u128(id as u128),
             quantity: dec(qty),
             unit: unit.to_owned(),
-            expires_on: expires.map(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()),
-            created_at: Utc.timestamp_opt(created_ts, 0).unwrap(),
+            expires_on: expires.map(|s| Date::from_str(s).unwrap()),
+            created_at: Timestamp::from_second(created_ts).unwrap(),
         }
     }
 

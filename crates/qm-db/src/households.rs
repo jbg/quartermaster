@@ -8,15 +8,21 @@ use crate::{now_utc_rfc3339, Database};
 pub struct HouseholdRow {
     pub id: Uuid,
     pub name: String,
+    pub timezone: String,
     pub created_at: String,
 }
 
-pub async fn create(db: &Database, name: &str) -> Result<HouseholdRow, sqlx::Error> {
+pub async fn create(
+    db: &Database,
+    name: &str,
+    timezone: &str,
+) -> Result<HouseholdRow, sqlx::Error> {
     let id = Uuid::now_v7();
     let created_at = now_utc_rfc3339();
-    sqlx::query("INSERT INTO household (id, name, created_at) VALUES (?, ?, ?)")
+    sqlx::query("INSERT INTO household (id, name, timezone, created_at) VALUES (?, ?, ?, ?)")
         .bind(id.to_string())
         .bind(name)
+        .bind(timezone)
         .bind(&created_at)
         .execute(&db.pool)
         .await?;
@@ -24,6 +30,7 @@ pub async fn create(db: &Database, name: &str) -> Result<HouseholdRow, sqlx::Err
     Ok(HouseholdRow {
         id,
         name: name.to_owned(),
+        timezone: timezone.to_owned(),
         created_at,
     })
 }
@@ -33,7 +40,7 @@ pub async fn find_for_user(
     user_id: Uuid,
 ) -> Result<Option<HouseholdRow>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT h.id, h.name, h.created_at \
+        "SELECT h.id, h.name, h.timezone, h.created_at \
          FROM household h \
          INNER JOIN membership m ON m.household_id = h.id \
          WHERE m.user_id = ? \
@@ -50,6 +57,7 @@ pub async fn find_for_user(
         Ok::<_, sqlx::Error>(HouseholdRow {
             id,
             name: r.try_get("name")?,
+            timezone: r.try_get("timezone")?,
             created_at: r.try_get("created_at")?,
         })
     })
@@ -57,7 +65,7 @@ pub async fn find_for_user(
 }
 
 pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<HouseholdRow>, sqlx::Error> {
-    let row = sqlx::query("SELECT id, name, created_at FROM household WHERE id = ?")
+    let row = sqlx::query("SELECT id, name, timezone, created_at FROM household WHERE id = ?")
         .bind(id.to_string())
         .fetch_optional(&db.pool)
         .await?;
@@ -67,19 +75,22 @@ pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<HouseholdRow>,
         Ok::<_, sqlx::Error>(HouseholdRow {
             id,
             name: r.try_get("name")?,
+            timezone: r.try_get("timezone")?,
             created_at: r.try_get("created_at")?,
         })
     })
     .transpose()
 }
 
-pub async fn rename(
+pub async fn update(
     db: &Database,
     id: Uuid,
     name: &str,
+    timezone: &str,
 ) -> Result<Option<HouseholdRow>, sqlx::Error> {
-    let res = sqlx::query("UPDATE household SET name = ? WHERE id = ?")
+    let res = sqlx::query("UPDATE household SET name = ?, timezone = ? WHERE id = ?")
         .bind(name)
+        .bind(timezone)
         .bind(id.to_string())
         .execute(&db.pool)
         .await?;
@@ -96,8 +107,8 @@ mod tests {
 
     async fn assert_current_household_ordering(db: &Database) {
         let user = users::create(db, "alice", None, "hash").await.unwrap();
-        let older = create(db, "Older").await.unwrap();
-        let newer = create(db, "Newer").await.unwrap();
+        let older = create(db, "Older", "UTC").await.unwrap();
+        let newer = create(db, "Newer", "UTC").await.unwrap();
 
         memberships::insert(db, older.id, user.id, "member")
             .await

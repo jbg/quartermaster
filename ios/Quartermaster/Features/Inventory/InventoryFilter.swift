@@ -10,18 +10,17 @@ enum InventoryFilter: String, CaseIterable, Identifiable {
     /// How far out "expiring soon" reaches.
     static let soonWindowDays: Int = 7
 
-    func matches(_ batch: StockBatch) -> Bool {
+    @MainActor
+    func matches(_ batch: StockBatch, using appState: AppState) -> Bool {
         switch self {
         case .all:
             return true
         case .expired:
-            guard let date = batch.expiresOnDate else { return false }
-            return date < Calendar.current.startOfDay(for: .now)
+            guard let days = appState.householdDayDifference(for: batch.expiresOn) else { return false }
+            return days < 0
         case .expiringSoon:
-            guard let date = batch.expiresOnDate else { return false }
-            let start = Calendar.current.startOfDay(for: .now)
-            let end = Calendar.current.date(byAdding: .day, value: Self.soonWindowDays, to: start) ?? start
-            return date >= start && date < end
+            guard let days = appState.householdDayDifference(for: batch.expiresOn) else { return false }
+            return days >= 0 && days < Self.soonWindowDays
         }
     }
 }

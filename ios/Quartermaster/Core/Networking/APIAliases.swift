@@ -32,6 +32,7 @@ typealias MembershipRole = Components.Schemas.MembershipRole
 typealias Invite = Components.Schemas.InviteDto
 typealias CreateInviteRequest = Components.Schemas.CreateInviteRequest
 typealias RedeemInviteRequest = Components.Schemas.RedeemInviteRequest
+typealias PushAuthorizationStatus = Components.Schemas.PushAuthorizationStatus
 
 extension User: Identifiable {}
 extension Household: Identifiable {}
@@ -43,6 +44,13 @@ extension Member: Identifiable {
     var id: String { user.id }
 }
 extension Invite: Identifiable {}
+
+extension Me {
+    var activeHousehold: Household? {
+        guard let householdId else { return nil }
+        return households.first(where: { $0.household.id == householdId })?.household
+    }
+}
 
 extension MembershipRole {
     var displayName: String {
@@ -181,6 +189,13 @@ extension Reminder: Identifiable {
     var batchID: String { batchId }
     var productID: String { productId }
     var locationID: String { locationId }
+    var fireAtDate: Date? { Self.iso.date(from: fireAt) }
+    var householdFireLocalAtDate: Date? { Self.iso.date(from: householdFireLocalAt) }
+    nonisolated(unsafe) private static let iso: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
 }
 
 extension ReminderListResponse {

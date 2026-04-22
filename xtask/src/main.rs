@@ -137,7 +137,7 @@ async fn seed_ledger_fixture() -> anyhow::Result<()> {
         .context("connecting to database")?;
     db.migrate().await.context("running migrations")?;
 
-    let household = qm_db::households::create(&db, "Fixture Household")
+    let household = qm_db::households::create(&db, "Fixture Household", "UTC")
         .await
         .context("creating household")?;
     qm_db::locations::seed_defaults(&db, household.id)

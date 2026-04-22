@@ -18,6 +18,7 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/reminders", get(list))
+        .route("/reminders/{id}/present", post(present))
         .route("/reminders/{id}/ack", post(ack))
 }
 
@@ -28,9 +29,14 @@ pub struct ReminderDto {
     pub title: String,
     pub body: String,
     pub fire_at: String,
+    pub household_timezone: String,
+    pub household_fire_local_at: String,
+    pub expires_on: Option<String>,
     pub batch_id: Uuid,
     pub product_id: Uuid,
     pub location_id: Uuid,
+    pub presented_at: Option<String>,
+    pub acked_at: Option<String>,
 }
 
 impl TryFrom<qm_db::reminders::ReminderRow> for ReminderDto {
@@ -43,9 +49,14 @@ impl TryFrom<qm_db::reminders::ReminderRow> for ReminderDto {
             title: value.title,
             body: value.body,
             fire_at: value.fire_at,
+            household_timezone: value.household_timezone,
+            household_fire_local_at: value.household_fire_local_at,
+            expires_on: value.expires_on,
             batch_id: value.batch_id,
             product_id: value.product_id,
             location_id: value.location_id,
+            presented_at: value.presented_at,
+            acked_at: value.acked_at,
         })
     }
 }
@@ -119,6 +130,39 @@ pub async fn list(
 
 #[utoipa::path(
     post,
+    path = "/reminders/{id}/present",
+    operation_id = "reminders_present",
+    tag = "reminders",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 204),
+        (status = 401, body = crate::error::ApiErrorBody),
+        (status = 404, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn present(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<StatusCode> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    let found = qm_db::reminders::mark_presented(
+        &state.db,
+        household_id,
+        id,
+        &qm_db::now_utc_rfc3339(),
+    )
+    .await?;
+    if found {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError::NotFound)
+    }
+}
+
+#[utoipa::path(
+    post,
     path = "/reminders/{id}/ack",
     operation_id = "reminders_ack",
     tag = "reminders",
@@ -136,7 +180,7 @@ pub async fn ack(
     Path(id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    let found = qm_db::reminders::ack_presented(
+    let found = qm_db::reminders::ack(
         &state.db,
         household_id,
         id,

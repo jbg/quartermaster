@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::{SignedDuration, Timestamp};
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -15,20 +15,19 @@ pub struct CacheEntry {
 impl CacheEntry {
     pub fn is_fresh(
         &self,
-        now: DateTime<Utc>,
+        now: Timestamp,
         positive_ttl_days: i64,
         negative_ttl_days: i64,
     ) -> bool {
-        let Ok(fetched) = DateTime::parse_from_rfc3339(&self.fetched_at) else {
+        let Ok(fetched) = crate::time::parse_timestamp(&self.fetched_at) else {
             return false;
         };
-        let fetched_utc = fetched.with_timezone(&Utc);
         let ttl_days = if self.miss {
             negative_ttl_days
         } else {
             positive_ttl_days
         };
-        (now - fetched_utc).num_days() < ttl_days
+        now.duration_since(fetched) < SignedDuration::from_hours(24 * ttl_days)
     }
 }
 
@@ -101,7 +100,7 @@ mod tests {
     #[tokio::test]
     async fn hit_then_lookup() {
         let db = crate::test_db().await;
-        let h = households::create(&db, "h").await.unwrap();
+        let h = households::create(&db, "h", "UTC").await.unwrap();
         let p = products::create_manual(&db, h.id, "Test", None, "count", None, None, None)
             .await
             .unwrap();
@@ -123,7 +122,7 @@ mod tests {
     #[tokio::test]
     async fn miss_overwrites_hit() {
         let db = crate::test_db().await;
-        let h = households::create(&db, "h").await.unwrap();
+        let h = households::create(&db, "h", "UTC").await.unwrap();
         let p = products::create_manual(&db, h.id, "Test", None, "count", None, None, None)
             .await
             .unwrap();
@@ -135,11 +134,13 @@ mod tests {
 
     #[test]
     fn freshness_check() {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let fresh = CacheEntry {
             barcode: "x".into(),
             product_id: None,
-            fetched_at: (now - chrono::Duration::days(1)).to_rfc3339(),
+            fetched_at: crate::time::format_timestamp(
+                now.checked_sub(SignedDuration::from_hours(24)).unwrap(),
+            ),
             miss: false,
         };
         assert!(fresh.is_fresh(now, 30, 7));
@@ -147,7 +148,9 @@ mod tests {
         let stale = CacheEntry {
             barcode: "x".into(),
             product_id: None,
-            fetched_at: (now - chrono::Duration::days(31)).to_rfc3339(),
+            fetched_at: crate::time::format_timestamp(
+                now.checked_sub(SignedDuration::from_hours(24 * 31)).unwrap(),
+            ),
             miss: false,
         };
         assert!(!stale.is_fresh(now, 30, 7));
@@ -155,7 +158,9 @@ mod tests {
         let miss_fresh = CacheEntry {
             barcode: "x".into(),
             product_id: None,
-            fetched_at: (now - chrono::Duration::days(3)).to_rfc3339(),
+            fetched_at: crate::time::format_timestamp(
+                now.checked_sub(SignedDuration::from_hours(24 * 3)).unwrap(),
+            ),
             miss: true,
         };
         assert!(miss_fresh.is_fresh(now, 30, 7));
@@ -163,7 +168,9 @@ mod tests {
         let miss_stale = CacheEntry {
             barcode: "x".into(),
             product_id: None,
-            fetched_at: (now - chrono::Duration::days(8)).to_rfc3339(),
+            fetched_at: crate::time::format_timestamp(
+                now.checked_sub(SignedDuration::from_hours(24 * 8)).unwrap(),
+            ),
             miss: true,
         };
         assert!(!miss_stale.is_fresh(now, 30, 7));

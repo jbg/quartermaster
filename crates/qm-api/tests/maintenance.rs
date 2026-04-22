@@ -1,7 +1,7 @@
 mod support;
 
 use axum::http::{HeaderMap, Method, StatusCode};
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use qm_api::ApiConfig;
 use support::TestApp;
 use uuid::Uuid;
@@ -46,7 +46,9 @@ async fn sweep_auth_sessions_deletes_stale_rows_with_valid_secret() {
         "expired-hash",
         qm_db::tokens::KIND_ACCESS,
         Some("iPhone"),
-        Utc::now() - Duration::minutes(5),
+        Timestamp::now()
+            .checked_sub(SignedDuration::from_mins(5))
+            .unwrap(),
     )
     .await
     .unwrap();
@@ -109,7 +111,9 @@ async fn sweep_expiry_reminders_reconciles_rows_with_valid_secret() {
         ..ApiConfig::default()
     })
     .await;
-    let household = qm_db::households::create(&app.db, "Home").await.unwrap();
+    let household = qm_db::households::create(&app.db, "Home", "UTC")
+        .await
+        .unwrap();
     qm_db::locations::seed_defaults(&app.db, household.id)
         .await
         .unwrap();

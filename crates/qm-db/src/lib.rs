@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 pub mod auth_sessions;
 pub mod barcode_cache;
+pub mod devices;
 pub mod households;
 pub mod invites;
 pub mod locations;
@@ -23,6 +24,7 @@ pub mod stock;
 pub mod stock_events;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
+pub mod time;
 pub mod tokens;
 pub mod users;
 
@@ -90,7 +92,7 @@ impl Database {
 }
 
 pub fn now_utc_rfc3339() -> String {
-    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    time::now_utc_rfc3339()
 }
 
 #[cfg(any(test, feature = "test-support"))]

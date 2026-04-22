@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct ExpiryBadge: View {
-    let expiresOn: Date?
+    @Environment(AppState.self) private var appState
+    let expiresOn: String?
 
     var body: some View {
         Text(label)
@@ -13,8 +14,7 @@ struct ExpiryBadge: View {
     }
 
     private var label: String {
-        guard let expiresOn else { return "No date" }
-        let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: .now), to: Calendar.current.startOfDay(for: expiresOn)).day ?? 0
+        guard let days = appState.householdDayDifference(for: expiresOn) else { return "No date" }
         if days < 0 {
             return "Expired"
         } else if days == 0 {
@@ -24,13 +24,12 @@ struct ExpiryBadge: View {
         } else if days < 7 {
             return "\(days)d"
         } else {
-            return Self.shortDate.string(from: expiresOn)
+            return appState.displayDate(for: expiresOn) ?? "No date"
         }
     }
 
     private var severity: Severity {
-        guard let expiresOn else { return .none }
-        let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: .now), to: Calendar.current.startOfDay(for: expiresOn)).day ?? 0
+        guard let days = appState.householdDayDifference(for: expiresOn) else { return .none }
         if days < 0 { return .expired }
         if days < 7 { return .soon }
         return .ok
@@ -55,11 +54,4 @@ struct ExpiryBadge: View {
     }
 
     private enum Severity { case expired, soon, ok, none }
-
-    private static let shortDate: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .none
-        return f
-    }()
 }

@@ -213,7 +213,9 @@ impl TestApp {
 
     #[allow(dead_code)]
     pub async fn seed_household_admin(&self, username: &str) -> (Uuid, Uuid) {
-        let household = qm_db::households::create(&self.db, "Home").await.unwrap();
+        let household = qm_db::households::create(&self.db, "Home", "UTC")
+            .await
+            .unwrap();
         qm_db::locations::seed_defaults(&self.db, household.id)
             .await
             .unwrap();

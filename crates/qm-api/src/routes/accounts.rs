@@ -7,7 +7,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -92,6 +92,7 @@ pub struct UserDto {
 pub struct HouseholdDto {
     pub id: Uuid,
     pub name: String,
+    pub timezone: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -106,6 +107,7 @@ pub struct MeResponse {
     pub user: UserDto,
     pub household_id: Option<Uuid>,
     pub household_name: Option<String>,
+    pub household_timezone: Option<String>,
     pub households: Vec<MeHouseholdDto>,
     pub public_base_url: Option<String>,
 }
@@ -140,7 +142,7 @@ pub async fn register(
 
     let user = match (state.config.registration_mode, existing_count) {
         (RegistrationMode::FirstRunOnly, 0) => {
-            let h = qm_db::households::create(&state.db, "My Household").await?;
+            let h = qm_db::households::create(&state.db, "My Household", "UTC").await?;
             qm_db::locations::seed_defaults(&state.db, h.id).await?;
             if qm_db::users::find_by_username(&state.db, &req.username)
                 .await?
@@ -162,8 +164,12 @@ pub async fn register(
             return Err(ApiError::RegistrationDisabled);
         }
         (RegistrationMode::Open, _) => {
-            let h = qm_db::households::create(&state.db, &format!("{}'s Household", req.username))
-                .await?;
+            let h = qm_db::households::create(
+                &state.db,
+                &format!("{}'s Household", req.username),
+                "UTC",
+            )
+            .await?;
             qm_db::locations::seed_defaults(&state.db, h.id).await?;
             if qm_db::users::find_by_username(&state.db, &req.username)
                 .await?
@@ -286,10 +292,8 @@ pub async fn refresh(
         auth::cleanup_session_if_unused(&state.db, token.session_id).await?;
         return Err(ApiError::Unauthorized);
     }
-    let expires = chrono::DateTime::parse_from_rfc3339(&token.expires_at)
-        .map_err(|_| ApiError::Unauthorized)?
-        .with_timezone(&Utc);
-    if expires < Utc::now() {
+    let expires: Timestamp = token.expires_at.parse().map_err(|_| ApiError::Unauthorized)?;
+    if expires < Timestamp::now() {
         auth::cleanup_session_if_unused(&state.db, token.session_id).await?;
         return Err(ApiError::Unauthorized);
     }
@@ -417,9 +421,17 @@ async fn issue_token_pair(
 ) -> ApiResult<TokenPair> {
     let access = auth::generate_token();
     let refresh = auth::generate_token();
-    let now = Utc::now();
-    let access_expires = now + Duration::seconds(state.config.access_token_ttl_seconds);
-    let refresh_expires = now + Duration::seconds(state.config.refresh_token_ttl_seconds);
+    let now = Timestamp::now();
+    let access_expires = now
+        .checked_add(SignedDuration::from_secs(
+            state.config.access_token_ttl_seconds,
+        ))
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!("access expiry overflow: {e}")))?;
+    let refresh_expires = now
+        .checked_add(SignedDuration::from_secs(
+            state.config.refresh_token_ttl_seconds,
+        ))
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!("refresh expiry overflow: {e}")))?;
 
     qm_db::auth_sessions::upsert(&state.db, session_id, user_id, active_household_id).await?;
 
@@ -468,6 +480,7 @@ pub(crate) async fn build_me_response(
                 household: HouseholdDto {
                     id: row.membership.household_id,
                     name: row.household_name.clone(),
+                    timezone: row.household_timezone.clone(),
                 },
                 role: crate::types::MembershipRole::from_str(&row.membership.role)?,
                 joined_at: row.membership.joined_at.clone(),
@@ -487,6 +500,7 @@ pub(crate) async fn build_me_response(
         },
         household_id: active_household.map(|household| household.id),
         household_name: active_household.map(|household| household.name.clone()),
+        household_timezone: active_household.map(|household| household.timezone.clone()),
         households,
         public_base_url: state.config.public_base_url.clone(),
     })

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct MainTabView: View {
     @Environment(AppState.self) private var appState
-    enum Screen: Hashable { case inventory, scan, settings }
+    enum Screen: Hashable { case inventory, reminders, scan, settings }
 
     @State private var selection: Screen = .inventory
 
@@ -10,6 +10,10 @@ struct MainTabView: View {
         TabView(selection: $selection) {
             Tab("Inventory", systemImage: "basket", value: Screen.inventory) {
                 NavigationStack { InventoryView() }
+            }
+
+            Tab("Reminders", systemImage: "bell", value: Screen.reminders) {
+                NavigationStack { ReminderInboxView() }
             }
 
             Tab("Scan", systemImage: "barcode.viewfinder", value: Screen.scan) {

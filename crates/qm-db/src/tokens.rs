@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -26,7 +26,7 @@ pub async fn create(
     token_hash: &str,
     kind: &str,
     device_label: Option<&str>,
-    expires_at: DateTime<Utc>,
+    expires_at: Timestamp,
 ) -> Result<Uuid, sqlx::Error> {
     let id = Uuid::now_v7();
     let now = now_utc_rfc3339();
@@ -42,7 +42,7 @@ pub async fn create(
     .bind(kind)
     .bind(device_label)
     .bind(&now)
-    .bind(expires_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+    .bind(crate::time::format_timestamp(expires_at))
     .bind(&now)
     .execute(&db.pool)
     .await?;

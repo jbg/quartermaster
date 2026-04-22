@@ -185,7 +185,7 @@ struct BatchRow: View {
                 }
             }
             Spacer()
-            ExpiryBadge(expiresOn: batch.expiresOnDate)
+            ExpiryBadge(expiresOn: batch.expiresOn)
         }
         .padding(.vertical, 2)
     }

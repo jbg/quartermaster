@@ -92,13 +92,21 @@ struct BatchDetailView: View {
                     LabeledContent("Location", value: location.name)
                 }
                 LabeledContent("Expires") {
-                    ExpiryBadge(expiresOn: batch.expiresOnDate)
+                    ExpiryBadge(expiresOn: batch.expiresOn)
                 }
                 if let opened = batch.openedOnDate {
                     LabeledContent("Opened", value: Self.shortDate.string(from: opened))
                 }
                 if let note = batch.note, !note.isEmpty {
                     LabeledContent("Note", value: note)
+                }
+            }
+
+            if appState.timezonesDiffer {
+                Section {
+                    Text("Expiry dates in this household follow \(appState.householdTimeZoneID ?? "the household timezone").")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
 

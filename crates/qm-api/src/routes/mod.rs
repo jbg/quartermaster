@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod devices;
 pub mod health;
 pub mod households;
 pub mod join;

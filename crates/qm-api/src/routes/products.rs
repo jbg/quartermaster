@@ -205,7 +205,7 @@ pub async fn by_barcode(
 ) -> ApiResult<Json<BarcodeLookupResponse>> {
     let barcode = barcode::normalise(&raw_barcode)?;
 
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let cached = qm_db::barcode_cache::get(&state.db, &barcode).await?;
 
     if let Some(entry) = &cached {

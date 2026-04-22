@@ -96,6 +96,13 @@ struct InventoryView: View {
     @ViewBuilder
     private var loadedContent: some View {
         List {
+            if appState.timezonesDiffer {
+                Section {
+                    Text("Expiry dates follow \(appState.householdTimeZoneID ?? "the household timezone").")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Section {
                 Picker("Filter", selection: $filter.animation(.easeInOut(duration: 0.15))) {
                     ForEach(InventoryFilter.allCases) { f in
@@ -149,7 +156,7 @@ struct InventoryView: View {
 
         var groups: [ProductGroup] = []
         for (_, all) in allByProduct {
-            let visible = all.filter { filter.matches($0) }
+            let visible = all.filter { filter.matches($0, using: appState) }
             if visible.isEmpty { continue }
 
             let sortByExpiry: (StockBatch, StockBatch) -> Bool = { lhs, rhs in

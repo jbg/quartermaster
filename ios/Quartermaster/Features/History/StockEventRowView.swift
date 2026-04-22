@@ -24,7 +24,7 @@ struct StockEventRowView: View {
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(accent)
                     if showExpiry, event.batchExpiresOn != nil {
-                        ExpiryBadge(expiresOn: event.batchExpiresOnDate)
+                        ExpiryBadge(expiresOn: event.batchExpiresOn)
                     }
                 }
                 Text(productLine)

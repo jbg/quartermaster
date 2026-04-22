@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var locations: [Location] = []
 
     @State private var householdNameDraft: String = ""
+    @State private var householdTimezoneDraft: String = TimeZone.autoupdatingCurrent.identifier
     @State private var newInviteMaxUses: Int = 1
     @State private var newInviteRole: MembershipRole = .member
     @State private var newInviteExpiry: Date = Calendar.current.date(byAdding: .day, value: 7, to: .now) ?? .now
@@ -41,6 +42,18 @@ struct SettingsView: View {
                 }
             }
 
+            if let household {
+                Section("Time") {
+                    LabeledContent("Household timezone", value: household.timezone)
+                    LabeledContent("Device timezone", value: appState.deviceTimeZone.identifier)
+                    if appState.timezonesDiffer {
+                        Text("Expiry dates and reminder schedules follow household time.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
             if let me {
                 HouseholdEntrySections(
                     controller: householdEntry,
@@ -66,6 +79,11 @@ struct SettingsView: View {
                 Section("Household") {
                     if isAdmin {
                         TextField("Household name", text: $householdNameDraft)
+                        Picker("Timezone", selection: $householdTimezoneDraft) {
+                            ForEach(TimeZone.knownTimeZoneIdentifiers, id: \.self) { identifier in
+                                Text(identifier).tag(identifier)
+                            }
+                        }
                         Button {
                             showRenameConfirmation = true
                         } label: {
@@ -290,7 +308,12 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Rename the household to \(householdNameDraft.trimmingCharacters(in: .whitespacesAndNewlines))?")
+            Text(
+                """
+                Save the household as \(householdNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)) in \(householdTimezoneDraft)?
+                Existing stored dates stay unchanged; this corrects how household-local dates are interpreted.
+                """
+            )
         }
         .confirmationDialog(
             "Revoke invite?",
@@ -382,6 +405,7 @@ struct SettingsView: View {
             let (household, members, locations) = try await (householdReq, membersReq, locationsReq)
             self.household = household
             self.householdNameDraft = household.name
+            self.householdTimezoneDraft = household.timezone
             self.members = members
             self.locations = locations.sorted { $0.sortOrder < $1.sortOrder }
             if members.first(where: { $0.user.id == me.user.id })?.role == .admin {
@@ -420,7 +444,8 @@ struct SettingsView: View {
         defer { isSavingHousehold = false }
         do {
             let updated = try await appState.api.updateCurrentHousehold(
-                name: householdNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                name: householdNameDraft.trimmingCharacters(in: .whitespacesAndNewlines),
+                timezone: householdTimezoneDraft
             )
             household = updated
             await appState.refreshMe()

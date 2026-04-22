@@ -108,9 +108,9 @@ actor APIClient {
 
     // MARK: - Households
 
-    func createHousehold(name: String) async throws -> Me {
+    func createHousehold(name: String, timezone: String) async throws -> Me {
         let response = try await client.householdCreate(.init(
-            body: .json(.init(name: name)),
+            body: .json(.init(name: name, timezone: timezone)),
         ))
         switch response {
         case .created(let ok): return try ok.body.json
@@ -130,9 +130,9 @@ actor APIClient {
         }
     }
 
-    func updateCurrentHousehold(name: String) async throws -> HouseholdDetail {
+    func updateCurrentHousehold(name: String, timezone: String) async throws -> HouseholdDetail {
         let response = try await client.householdCurrentUpdate(.init(
-            body: .json(.init(name: name)),
+            body: .json(.init(name: name, timezone: timezone)),
         ))
         switch response {
         case .ok(let ok): return try ok.body.json
@@ -529,12 +529,46 @@ actor APIClient {
         }
     }
 
+    func presentReminder(id: String) async throws {
+        let response = try await client.remindersPresent(.init(path: .init(id: id)))
+        switch response {
+        case .noContent: return
+        case .unauthorized: throw APIError.unauthorized
+        case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
     func ackReminder(id: String) async throws {
         let response = try await client.remindersAck(.init(path: .init(id: id)))
         switch response {
         case .noContent: return
         case .unauthorized: throw APIError.unauthorized
         case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
+    func registerDevice(
+        deviceID: String,
+        pushToken: String?,
+        pushAuthorization: PushAuthorizationStatus,
+        appVersion: String?,
+    ) async throws {
+        let response = try await client.deviceRegister(.init(
+            body: .json(.init(
+                appVersion: appVersion,
+                deviceId: deviceID,
+                platform: "ios",
+                pushAuthorization: pushAuthorization,
+                pushToken: pushToken,
+            )),
+        ))
+        switch response {
+        case .noContent: return
+        case .unauthorized: throw APIError.unauthorized
         case .undocumented(let statusCode, _):
             throw APIError.server(status: statusCode, body: nil)
         }

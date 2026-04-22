@@ -333,7 +333,7 @@ mod tests {
     #[tokio::test]
     async fn create_and_find_manual_product() {
         let db = crate::test_db().await;
-        let h = households::create(&db, "h").await.unwrap();
+        let h = households::create(&db, "h", "UTC").await.unwrap();
         let p = create_manual(
             &db,
             h.id,
@@ -358,7 +358,7 @@ mod tests {
     #[tokio::test]
     async fn default_preferred_unit_when_absent() {
         let db = crate::test_db().await;
-        let h = households::create(&db, "h").await.unwrap();
+        let h = households::create(&db, "h", "UTC").await.unwrap();
         let mass = create_manual(&db, h.id, "Flour", None, "mass", None, None, None)
             .await
             .unwrap();
@@ -376,8 +376,8 @@ mod tests {
     #[tokio::test]
     async fn search_is_household_scoped_for_manuals() {
         let db = crate::test_db().await;
-        let a = households::create(&db, "A").await.unwrap();
-        let b = households::create(&db, "B").await.unwrap();
+        let a = households::create(&db, "A", "UTC").await.unwrap();
+        let b = households::create(&db, "B", "UTC").await.unwrap();
         create_manual(
             &db,
             a.id,
@@ -415,8 +415,8 @@ mod tests {
     #[tokio::test]
     async fn search_sees_off_products_across_households() {
         let db = crate::test_db().await;
-        let a = households::create(&db, "A").await.unwrap();
-        let b = households::create(&db, "B").await.unwrap();
+        let a = households::create(&db, "A", "UTC").await.unwrap();
+        let b = households::create(&db, "B", "UTC").await.unwrap();
         upsert_from_off(
             &db,
             "5449000000996",
@@ -465,7 +465,7 @@ mod tests {
     #[tokio::test]
     async fn search_with_deleted_flag_toggles_visibility() {
         let db = crate::test_db().await;
-        let h = households::create(&db, "h").await.unwrap();
+        let h = households::create(&db, "h", "UTC").await.unwrap();
         let p = create_manual(&db, h.id, "Retired widget", None, "count", None, None, None)
             .await
             .unwrap();
@@ -486,7 +486,7 @@ mod tests {
     #[tokio::test]
     async fn restore_flips_deleted_at_null() {
         let db = crate::test_db().await;
-        let h = households::create(&db, "h").await.unwrap();
+        let h = households::create(&db, "h", "UTC").await.unwrap();
         let p = create_manual(&db, h.id, "Widget", None, "count", None, None, None)
             .await
             .unwrap();
@@ -502,7 +502,7 @@ mod tests {
     #[tokio::test]
     async fn find_including_deleted_returns_tombstone() {
         let db = crate::test_db().await;
-        let h = households::create(&db, "h").await.unwrap();
+        let h = households::create(&db, "h", "UTC").await.unwrap();
         let p = create_manual(&db, h.id, "Widget", None, "count", None, None, None)
             .await
             .unwrap();

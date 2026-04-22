@@ -7,7 +7,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use qm_core::batch::plan_consumption;
 use qm_db::products::ProductRow;
 use qm_db::stock::{
@@ -210,7 +210,7 @@ pub async fn list(
     let expiring_before = q
         .expiring_before
         .as_deref()
-        .map(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d"))
+        .map(Date::from_str)
         .transpose()
         .map_err(|_| ApiError::BadRequest("expiring_before must be YYYY-MM-DD".into()))?;
 
@@ -815,7 +815,7 @@ fn validate_positive_decimal(s: &str) -> ApiResult<()> {
 }
 
 fn validate_iso_date(s: &str) -> ApiResult<()> {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d")
+    Date::from_str(s)
         .map(|_| ())
         .map_err(|_| ApiError::BadRequest(format!("date must be YYYY-MM-DD (got {s})")))
 }
