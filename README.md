@@ -59,6 +59,59 @@ open http://localhost:8080/docs      # Swagger UI (when built with default featu
 
 Every HTTP response includes an `X-Request-Id` header. If a client supplies one, Quartermaster propagates it; otherwise the server generates one. Authenticated request spans also record the resolved `user_id` and `household_id`, and `QM_LOG_FORMAT=json` switches logs to newline-delimited JSON for structured ingestion.
 
+Quartermaster also supports a few self-hosting hardening knobs:
+
+| Variable                                   | Default                                           | Meaning |
+|--------------------------------------------|---------------------------------------------------|---------|
+| `QM_TRUST_PROXY_HEADERS`                   | `false`                                           | Trust `X-Forwarded-For` for client-IP keyed rate limiting |
+| `QM_RATE_LIMIT_AUTH_PER_MINUTE`            | `10`                                              | Per-client auth request refill rate |
+| `QM_RATE_LIMIT_AUTH_BURST`                 | `5`                                               | Per-client auth burst bucket size |
+| `QM_RATE_LIMIT_BARCODE_PER_MINUTE`         | `60`                                              | Per-client barcode lookup refill rate |
+| `QM_RATE_LIMIT_BARCODE_BURST`              | `20`                                              | Per-client barcode lookup burst bucket size |
+| `QM_RATE_LIMIT_HISTORY_PER_MINUTE`         | `120`                                             | Per-client history request refill rate |
+| `QM_RATE_LIMIT_HISTORY_BURST`              | `40`                                              | Per-client history burst bucket size |
+| `QM_OFF_API_BASE_URL`                      | `https://world.openfoodfacts.org/api/v2/product`  | Open Food Facts API base URL |
+| `QM_OFF_TIMEOUT_SECONDS`                   | `5`                                               | Timeout for one OFF HTTP request |
+| `QM_OFF_MAX_RETRIES`                       | `2`                                               | Retries for transient OFF failures |
+| `QM_OFF_RETRY_BASE_DELAY_MS`               | `200`                                             | Base backoff delay for OFF retries |
+| `QM_OFF_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `5`                                               | Consecutive transient OFF failures before opening the breaker |
+| `QM_OFF_CIRCUIT_BREAKER_OPEN_SECONDS`      | `60`                                              | How long OFF stays fail-fast once the breaker opens |
+
+## Container image
+
+The repository ships a generic `Dockerfile` for self-hosting platforms that can run OCI images.
+
+Build the image:
+
+```sh
+docker build -t quartermaster:latest .
+```
+
+Run it directly:
+
+```sh
+docker run --rm \
+  -p 8080:8080 \
+  -e QM_DATABASE_URL=sqlite:///data/data.db?mode=rwc \
+  -v quartermaster-data:/data \
+  quartermaster:latest
+```
+
+The image contract is intentionally small:
+
+- configuration is done through `QM_*` environment variables
+- the app listens on port `8080`
+- `/data` is the recommended writable mount point for SQLite
+- `docker compose` is optional convenience, not the deployment model
+
+An example `compose.yaml` is included for local or small-server setups:
+
+```sh
+docker compose up --build
+```
+
+If you deploy on another platform such as Fly.io, Nomad, Kubernetes, or systemd+Podman, use the same image and environment-variable contract rather than treating Compose as special.
+
 ## Regenerating the OpenAPI spec
 
 ```sh

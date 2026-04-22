@@ -19,6 +19,7 @@ final class AppState {
     /// observes this to switch tabs; InventoryView observes it to present
     /// the batches sheet for the named product+location, then clears it.
     var pendingInventoryTarget: InventoryTarget?
+    var pendingInviteContext: InviteContext?
 
     private let tokenStore = TokenStore()
     private(set) var api: APIClient
@@ -94,6 +95,40 @@ final class AppState {
         api = APIClient(baseURL: url, tokenStore: tokenStore)
     }
 
+    func takePendingInviteContext() -> InviteContext? {
+        defer { pendingInviteContext = nil }
+        return pendingInviteContext
+    }
+
+    func handleIncomingURL(_ url: URL) {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return
+        }
+
+        let isJoinLink = (components.scheme == "quartermaster" && components.host == "join")
+            || components.path == "/join"
+        guard isJoinLink else { return }
+
+        let items = Dictionary(
+            uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") }
+        )
+        let inviteCode = items["invite"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let incomingServer = items["server"].flatMap { raw -> URL? in
+            guard let url = URL(string: raw) else { return nil }
+            guard ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+            return url
+        }
+
+        if case .unauthenticated = phase, let incomingServer {
+            updateServerURL(incomingServer)
+        }
+
+        pendingInviteContext = InviteContext(
+            inviteCode: inviteCode?.isEmpty == false ? inviteCode : nil,
+            serverURL: incomingServer
+        )
+    }
+
     func unitsFor(family: ProductFamily) -> [Unit] {
         units.filter { $0.family == family }
     }
@@ -120,4 +155,9 @@ struct InventoryTarget: Equatable, Hashable, Sendable {
     /// this batch — so "Open in Inventory" from a history row makes it
     /// obvious which batch the user came from when there are several.
     var highlightBatchID: String?
+}
+
+struct InviteContext: Equatable, Sendable {
+    let inviteCode: String?
+    let serverURL: URL?
 }

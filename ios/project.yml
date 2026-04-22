@@ -52,6 +52,7 @@ targets:
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_CFBundleDisplayName: Quartermaster
+        INFOPLIST_KEY_CFBundleURLTypes: '[{"CFBundleURLName":"com.jasperhugo.quartermaster","CFBundleURLSchemes":["quartermaster"]}]'
         INFOPLIST_KEY_NSCameraUsageDescription: "Quartermaster scans barcodes to look up products when you add items to your inventory."
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_PREVIEWS: YES

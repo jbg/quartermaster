@@ -9,6 +9,9 @@ struct QuartermasterApp: App {
             AppRoot()
                 .environment(appState)
                 .task { await appState.bootstrap() }
+                .onOpenURL { url in
+                    appState.handleIncomingURL(url)
+                }
         }
     }
 }

@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod health;
 pub mod households;
+pub mod join;
 pub mod locations;
 pub mod products;
 pub mod stock;

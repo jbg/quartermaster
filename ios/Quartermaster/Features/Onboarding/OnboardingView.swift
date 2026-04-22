@@ -94,6 +94,10 @@ struct OnboardingView: View {
             }
             .navigationTitle("Quartermaster")
             .navigationBarTitleDisplayMode(.inline)
+            .task { applyPendingInviteContext() }
+            .onChange(of: appState.pendingInviteContext) { _, _ in
+                applyPendingInviteContext()
+            }
         }
     }
 
@@ -139,6 +143,17 @@ struct OnboardingView: View {
                 email: trimmedEmail.isEmpty ? nil : trimmedEmail,
                 inviteCode: trimmedInvite.isEmpty ? nil : trimmedInvite,
             )
+        }
+    }
+
+    private func applyPendingInviteContext() {
+        guard let invite = appState.takePendingInviteContext() else { return }
+        mode = .createFirst
+        if let serverURL = invite.serverURL {
+            self.serverURL = serverURL.absoluteString
+        }
+        if let inviteCode = invite.inviteCode {
+            self.inviteCode = inviteCode
         }
     }
 }

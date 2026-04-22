@@ -1,0 +1,7 @@
+target
+.git
+.github
+ios/DerivedData
+**/.DS_Store
+data.db
+ledger-fixture.db

@@ -1,0 +1,15 @@
+services:
+  quartermaster:
+    build:
+      context: .
+    ports:
+      - "8080:8080"
+    environment:
+      QM_DATABASE_URL: sqlite:///data/data.db?mode=rwc
+      RUST_LOG: info
+      QM_LOG_FORMAT: text
+    volumes:
+      - quartermaster-data:/data
+
+volumes:
+  quartermaster-data:

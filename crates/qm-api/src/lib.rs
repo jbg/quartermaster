@@ -1,6 +1,6 @@
 //! HTTP surface for Quartermaster.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use axum::{routing::get, Json, Router};
 use tower::ServiceBuilder;
@@ -19,16 +19,21 @@ pub mod auth;
 pub mod barcode;
 pub mod error;
 pub mod openfoodfacts;
+pub mod rate_limit;
 pub mod routes;
 pub mod types;
 
 pub use error::{ApiError, ApiResult};
+use openfoodfacts::OffCircuitBreaker;
+use rate_limit::{RateLimitLayerState, RateLimitTarget};
 
 #[derive(Clone, Debug)]
 pub struct AppState {
     pub db: qm_db::Database,
     pub config: Arc<ApiConfig>,
     pub http: reqwest::Client,
+    pub off_breaker: Arc<OffCircuitBreaker>,
+    pub rate_limiters: Arc<rate_limit::RateLimiters>,
 }
 
 #[derive(Clone, Debug)]
@@ -42,6 +47,24 @@ pub struct ApiConfig {
     /// How many days a negative barcode-cache entry (`barcode → miss`) is
     /// considered fresh.
     pub off_negative_ttl_days: i64,
+    pub off_api_base_url: String,
+    /// Whether `X-Forwarded-For` should override the socket address for
+    /// client-identity keyed rate limiting.
+    pub trust_proxy_headers: bool,
+    pub rate_limit_auth: RateLimitConfig,
+    pub rate_limit_barcode: RateLimitConfig,
+    pub rate_limit_history: RateLimitConfig,
+    pub off_timeout: Duration,
+    pub off_max_retries: u32,
+    pub off_retry_base_delay: Duration,
+    pub off_circuit_breaker_failure_threshold: u32,
+    pub off_circuit_breaker_open_for: Duration,
+}
+
+#[derive(Clone, Debug)]
+pub struct RateLimitConfig {
+    pub requests_per_minute: u32,
+    pub burst: u32,
 }
 
 impl Default for ApiConfig {
@@ -52,6 +75,25 @@ impl Default for ApiConfig {
             refresh_token_ttl_seconds: 60 * 24 * 60 * 60,
             off_positive_ttl_days: 30,
             off_negative_ttl_days: 7,
+            off_api_base_url: "https://world.openfoodfacts.org/api/v2/product".into(),
+            trust_proxy_headers: false,
+            rate_limit_auth: RateLimitConfig {
+                requests_per_minute: 10,
+                burst: 5,
+            },
+            rate_limit_barcode: RateLimitConfig {
+                requests_per_minute: 60,
+                burst: 20,
+            },
+            rate_limit_history: RateLimitConfig {
+                requests_per_minute: 120,
+                burst: 40,
+            },
+            off_timeout: Duration::from_secs(5),
+            off_max_retries: 2,
+            off_retry_base_delay: Duration::from_millis(200),
+            off_circuit_breaker_failure_threshold: 5,
+            off_circuit_breaker_open_for: Duration::from_secs(60),
         }
     }
 }
@@ -107,6 +149,7 @@ impl Modify for SecurityAddon {
     ),
     paths(
         routes::health::healthz,
+        routes::join::join_landing,
         routes::accounts::register,
         routes::accounts::login,
         routes::accounts::refresh,
@@ -201,12 +244,22 @@ pub fn router(state: AppState) -> Router {
     let openapi_spec = ApiDoc::openapi();
     Router::new()
         .merge(routes::health::router())
-        .merge(routes::accounts::router())
+        .merge(routes::join::router())
+        .merge(routes::accounts::router(RateLimitLayerState::new(
+            state.clone(),
+            RateLimitTarget::Auth,
+        )))
         .merge(routes::households::router())
         .merge(routes::locations::router())
         .merge(routes::units::router())
-        .merge(routes::products::router())
-        .merge(routes::stock::router())
+        .merge(routes::products::router(RateLimitLayerState::new(
+            state.clone(),
+            RateLimitTarget::Barcode,
+        )))
+        .merge(routes::stock::router(RateLimitLayerState::new(
+            state.clone(),
+            RateLimitTarget::History,
+        )))
         .route(
             "/openapi.json",
             get(move || {

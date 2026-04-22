@@ -57,6 +57,9 @@ pub enum ApiError {
     #[error("invite code is invalid, expired, revoked, or exhausted")]
     InvalidInvite,
 
+    #[error("too many requests")]
+    RateLimited,
+
     #[error("you must be a household admin to do that")]
     AdminOnly,
 
@@ -117,6 +120,7 @@ impl IntoResponse for ApiError {
             ApiError::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
             ApiError::RegistrationDisabled => (StatusCode::FORBIDDEN, "registration_disabled"),
             ApiError::InvalidInvite => (StatusCode::BAD_REQUEST, "invalid_invite"),
+            ApiError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
             ApiError::AdminOnly => (StatusCode::FORBIDDEN, "admin_only"),
             ApiError::LastAdminRemoval => (StatusCode::CONFLICT, "last_admin_removal"),
             ApiError::AlreadyMember => (StatusCode::CONFLICT, "already_member"),

@@ -18,12 +18,19 @@ pub struct TestApp {
 
 impl TestApp {
     pub async fn start(config: ApiConfig) -> Self {
+        Self::start_with_http(config, reqwest::Client::new()).await
+    }
+
+    pub async fn start_with_http(config: ApiConfig, http: reqwest::Client) -> Self {
         let db = Database::connect(&temp_db_url()).await.unwrap();
         db.migrate().await.unwrap();
+        let config = Arc::new(config);
         let state = AppState {
             db: db.clone(),
-            config: Arc::new(config),
-            http: reqwest::Client::new(),
+            off_breaker: Arc::new(qm_api::openfoodfacts::OffCircuitBreaker::default()),
+            rate_limiters: Arc::new(qm_api::rate_limit::RateLimiters::new(&config)),
+            config,
+            http,
         };
         Self {
             app: qm_api::router(state),
@@ -38,12 +45,25 @@ impl TestApp {
         body: Option<Value>,
         bearer: Option<&str>,
     ) -> (StatusCode, Value) {
+        self.send_with_headers(method, path, body, bearer, HeaderMap::new())
+            .await
+    }
+
+    pub async fn send_with_headers(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+        bearer: Option<&str>,
+        extra_headers: HeaderMap,
+    ) -> (StatusCode, Value) {
         let (status, _, json) = self
-            .send_with_request_id(method, path, body, bearer, None)
+            .send_with_request_id_and_headers(method, path, body, bearer, None, extra_headers)
             .await;
         (status, json)
     }
 
+    #[allow(dead_code)]
     pub async fn send_with_request_id(
         &self,
         method: Method,
@@ -51,6 +71,26 @@ impl TestApp {
         body: Option<Value>,
         bearer: Option<&str>,
         request_id: Option<&str>,
+    ) -> (StatusCode, HeaderMap, Value) {
+        self.send_with_request_id_and_headers(
+            method,
+            path,
+            body,
+            bearer,
+            request_id,
+            HeaderMap::new(),
+        )
+        .await
+    }
+
+    pub async fn send_with_request_id_and_headers(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+        bearer: Option<&str>,
+        request_id: Option<&str>,
+        extra_headers: HeaderMap,
     ) -> (StatusCode, HeaderMap, Value) {
         let mut req = Request::builder()
             .method(method)
@@ -62,12 +102,13 @@ impl TestApp {
         if let Some(request_id) = request_id {
             req = req.header("x-request-id", request_id);
         }
-        let req = req
+        let mut req = req
             .body(match body {
                 Some(value) => Body::from(serde_json::to_vec(&value).unwrap()),
                 None => Body::empty(),
             })
             .unwrap();
+        req.headers_mut().extend(extra_headers);
         let res = self.app.clone().oneshot(req).await.unwrap();
         let headers = res.headers().clone();
         let status = res.status();
@@ -78,6 +119,20 @@ impl TestApp {
             serde_json::from_slice(&bytes).unwrap()
         };
         (status, headers, json)
+    }
+
+    #[allow(dead_code)]
+    pub async fn raw(&self, method: Method, path: &str) -> (StatusCode, HeaderMap, String) {
+        let req = Request::builder()
+            .method(method)
+            .uri(path)
+            .body(Body::empty())
+            .unwrap();
+        let res = self.app.clone().oneshot(req).await.unwrap();
+        let headers = res.headers().clone();
+        let status = res.status();
+        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        (status, headers, String::from_utf8(bytes.to_vec()).unwrap())
     }
 
     pub async fn register(&self, username: &str, invite_code: Option<&str>) -> (StatusCode, Value) {
@@ -111,6 +166,7 @@ impl TestApp {
         body["access_token"].as_str().unwrap().to_owned()
     }
 
+    #[allow(dead_code)]
     pub async fn me(&self, bearer: &str) -> Value {
         self.send(Method::GET, "/auth/me", None, Some(bearer)).await.1
     }

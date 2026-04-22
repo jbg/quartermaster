@@ -51,6 +51,8 @@ actor APIClient {
             throw APIError.server(status: 403, body: try? err.body.json)
         case .conflict(let err):
             throw APIError.server(status: 409, body: try? err.body.json)
+        case .tooManyRequests(let err):
+            throw APIError.server(status: 429, body: try? err.body.json)
         case .undocumented(let statusCode, _):
             throw APIError.server(status: statusCode, body: nil)
         }
@@ -66,6 +68,7 @@ actor APIClient {
         switch response {
         case .ok(let ok): return try ok.body.json
         case .unauthorized(let err): throw APIError.server(status: 401, body: try? err.body.json)
+        case .tooManyRequests(let err): throw APIError.server(status: 429, body: try? err.body.json)
         case .undocumented(let statusCode, _): throw APIError.server(status: statusCode, body: nil)
         }
     }
@@ -255,6 +258,7 @@ actor APIClient {
         case .ok(let ok): return try ok.body.json
         case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
         case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .tooManyRequests(let err): throw APIError.server(status: 429, body: try? err.body.json)
         case .badGateway(let err): throw APIError.server(status: 502, body: try? err.body.json)
         case .undocumented(let statusCode, _):
             throw APIError.server(status: statusCode, body: nil)
@@ -426,6 +430,7 @@ actor APIClient {
         switch response {
         case .ok(let ok): return try ok.body.json
         case .unauthorized: throw APIError.unauthorized
+        case .tooManyRequests(let err): throw APIError.server(status: 429, body: try? err.body.json)
         case .undocumented(let statusCode, _):
             throw APIError.server(status: statusCode, body: nil)
         }
@@ -448,6 +453,7 @@ actor APIClient {
         switch response {
         case .ok(let ok): return try ok.body.json
         case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+        case .tooManyRequests(let err): throw APIError.server(status: 429, body: try? err.body.json)
         case .undocumented(let statusCode, _):
             throw APIError.server(status: statusCode, body: nil)
         }

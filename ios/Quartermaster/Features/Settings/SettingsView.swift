@@ -260,8 +260,14 @@ struct SettingsView: View {
                 ProgressView("Loading…")
             }
         }
-        .task { await load() }
+        .task {
+            applyPendingInviteContext()
+            await load()
+        }
         .refreshable { await load() }
+        .onChange(of: appState.pendingInviteContext) { _, _ in
+            applyPendingInviteContext()
+        }
         .sheet(isPresented: $showLocationEditor) {
             NavigationStack {
                 LocationEditorView(location: editingLocation) { name, kind in
@@ -516,13 +522,33 @@ struct SettingsView: View {
 
     private func inviteShareText(_ invite: Invite) -> String {
         let householdName = household?.name ?? "your household"
+        let link = inviteJoinURL(invite)?.absoluteString ?? appState.serverURL.absoluteString
         return """
         Join \(householdName) in Quartermaster.
 
+        Open link: \(link)
+        Server URL: \(appState.serverURL.absoluteString)
         Invite code: \(invite.code)
 
         Open Quartermaster, go to Settings, and choose “Redeem invite”.
         """
+    }
+
+    private func inviteJoinURL(_ invite: Invite) -> URL? {
+        var components = URLComponents(url: appState.serverURL, resolvingAgainstBaseURL: false)
+        components?.path = "/join"
+        components?.queryItems = [
+            URLQueryItem(name: "invite", value: invite.code),
+            URLQueryItem(name: "server", value: appState.serverURL.absoluteString),
+        ]
+        return components?.url
+    }
+
+    private func applyPendingInviteContext() {
+        guard let invite = appState.takePendingInviteContext() else { return }
+        if let inviteCode = invite.inviteCode {
+            redeemCode = inviteCode
+        }
     }
 
     private static let rfc3339: ISO8601DateFormatter = {

@@ -3,6 +3,7 @@ use std::str::FromStr;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    middleware,
     routing::{get, post},
     Json, Router,
 };
@@ -21,19 +22,32 @@ use uuid::Uuid;
 use crate::{
     auth::CurrentUser,
     error::{ApiError, ApiResult},
+    rate_limit::RateLimitLayerState,
     routes::products::ProductDto,
     types::StockEventType,
     AppState,
 };
 
-pub fn router() -> Router<AppState> {
+pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
     Router::new()
         .route("/stock", get(list).post(create))
         .route("/stock/consume", post(consume))
-        .route("/stock/events", get(list_events))
+        .route(
+            "/stock/events",
+            get(list_events).route_layer(middleware::from_fn_with_state(
+                rate_limit_state.clone(),
+                crate::rate_limit::enforce,
+            )),
+        )
         .route("/stock/restore-many", post(restore_many))
         .route("/stock/{id}", get(get_one).patch(update).delete(delete_one))
-        .route("/stock/{id}/events", get(list_events_for_batch))
+        .route(
+            "/stock/{id}/events",
+            get(list_events_for_batch).route_layer(middleware::from_fn_with_state(
+                rate_limit_state,
+                crate::rate_limit::enforce,
+            )),
+        )
         .route("/stock/{id}/restore", post(restore_one))
 }
 
@@ -538,6 +552,7 @@ const MAX_EVENT_LIMIT: i64 = 200;
     responses(
         (status = 200, body = StockEventListResponse),
         (status = 401, body = crate::error::ApiErrorBody),
+        (status = 429, body = crate::error::ApiErrorBody),
     ),
     security(("bearer" = [])),
 )]
@@ -572,6 +587,7 @@ pub async fn list_events(
     responses(
         (status = 200, body = StockEventListResponse),
         (status = 404, body = crate::error::ApiErrorBody),
+        (status = 429, body = crate::error::ApiErrorBody),
     ),
     security(("bearer" = [])),
 )]

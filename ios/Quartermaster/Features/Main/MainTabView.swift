@@ -28,5 +28,10 @@ struct MainTabView: View {
                 selection = .inventory
             }
         }
+        .onChange(of: appState.pendingInviteContext) { _, target in
+            if target != nil {
+                selection = .settings
+            }
+        }
     }
 }

@@ -1,6 +1,7 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    middleware,
     routing::{get, post},
     Json, Router,
 };
@@ -15,14 +16,21 @@ use crate::{
     barcode,
     error::{ApiError, ApiResult},
     openfoodfacts::{self, OffResult, OpenFoodFactsClient},
+    rate_limit::RateLimitLayerState,
     types::ProductSource,
     AppState,
 };
 
-pub fn router() -> Router<AppState> {
+pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
     Router::new()
         .route("/products/search", get(search))
-        .route("/products/by-barcode/{barcode}", get(by_barcode))
+        .route(
+            "/products/by-barcode/{barcode}",
+            get(by_barcode).route_layer(middleware::from_fn_with_state(
+                rate_limit_state,
+                crate::rate_limit::enforce,
+            )),
+        )
         .route("/products", post(create))
         .route(
             "/products/{id}",
@@ -185,6 +193,7 @@ pub async fn search(
         (status = 200, body = BarcodeLookupResponse),
         (status = 400, body = crate::error::ApiErrorBody),
         (status = 404, body = crate::error::ApiErrorBody),
+        (status = 429, body = crate::error::ApiErrorBody),
         (status = 502, body = crate::error::ApiErrorBody),
     ),
     security(("bearer" = [])),
@@ -496,7 +505,7 @@ pub async fn refresh(
 
     // Fetch OFF first so we can check for family conflicts before
     // touching local state.
-    let off = OpenFoodFactsClient::new(state.http.clone());
+    let off = OpenFoodFactsClient::new(state.http.clone(), state.off_breaker.clone(), state.config.clone());
     let off_product = match off.fetch(&barcode).await {
         OffResult::Found(p) => p,
         OffResult::NotFound => return Err(ApiError::NotFound),
@@ -583,7 +592,11 @@ pub async fn restore(
 // ----- helpers -----
 
 async fn fetch_and_cache(state: &AppState, barcode: &str) -> ApiResult<Json<BarcodeLookupResponse>> {
-    let off = OpenFoodFactsClient::new(state.http.clone());
+    let off = OpenFoodFactsClient::new(
+        state.http.clone(),
+        state.off_breaker.clone(),
+        state.config.clone(),
+    );
     match off.fetch(barcode).await {
         OffResult::Found(p) => {
             let family = openfoodfacts::infer_family(p.quantity_unit.as_deref());

@@ -26,6 +26,19 @@ struct RawConfig {
     refresh_token_ttl_seconds: i64,
     off_positive_ttl_days: i64,
     off_negative_ttl_days: i64,
+    off_api_base_url: String,
+    trust_proxy_headers: bool,
+    rate_limit_auth_per_minute: u32,
+    rate_limit_auth_burst: u32,
+    rate_limit_barcode_per_minute: u32,
+    rate_limit_barcode_burst: u32,
+    rate_limit_history_per_minute: u32,
+    rate_limit_history_burst: u32,
+    off_timeout_seconds: u64,
+    off_max_retries: u32,
+    off_retry_base_delay_ms: u64,
+    off_circuit_breaker_failure_threshold: u32,
+    off_circuit_breaker_open_seconds: u64,
 }
 
 impl Default for RawConfig {
@@ -39,6 +52,19 @@ impl Default for RawConfig {
             refresh_token_ttl_seconds: 60 * 24 * 60 * 60,
             off_positive_ttl_days: 30,
             off_negative_ttl_days: 7,
+            off_api_base_url: "https://world.openfoodfacts.org/api/v2/product".into(),
+            trust_proxy_headers: false,
+            rate_limit_auth_per_minute: 10,
+            rate_limit_auth_burst: 5,
+            rate_limit_barcode_per_minute: 60,
+            rate_limit_barcode_burst: 20,
+            rate_limit_history_per_minute: 120,
+            rate_limit_history_burst: 40,
+            off_timeout_seconds: 5,
+            off_max_retries: 2,
+            off_retry_base_delay_ms: 200,
+            off_circuit_breaker_failure_threshold: 5,
+            off_circuit_breaker_open_seconds: 60,
         }
     }
 }
@@ -97,7 +123,7 @@ async fn main() -> anyhow::Result<()> {
 
     let http = reqwest::Client::builder()
         .user_agent(USER_AGENT)
-        .timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(raw.off_timeout_seconds))
         .build()
         .context("building HTTP client")?;
 
@@ -108,12 +134,34 @@ async fn main() -> anyhow::Result<()> {
         refresh_token_ttl_seconds: raw.refresh_token_ttl_seconds,
         off_positive_ttl_days: raw.off_positive_ttl_days,
         off_negative_ttl_days: raw.off_negative_ttl_days,
+        off_api_base_url: raw.off_api_base_url,
+        trust_proxy_headers: raw.trust_proxy_headers,
+        rate_limit_auth: qm_api::RateLimitConfig {
+            requests_per_minute: raw.rate_limit_auth_per_minute,
+            burst: raw.rate_limit_auth_burst,
+        },
+        rate_limit_barcode: qm_api::RateLimitConfig {
+            requests_per_minute: raw.rate_limit_barcode_per_minute,
+            burst: raw.rate_limit_barcode_burst,
+        },
+        rate_limit_history: qm_api::RateLimitConfig {
+            requests_per_minute: raw.rate_limit_history_per_minute,
+            burst: raw.rate_limit_history_burst,
+        },
+        off_timeout: Duration::from_secs(raw.off_timeout_seconds),
+        off_max_retries: raw.off_max_retries,
+        off_retry_base_delay: Duration::from_millis(raw.off_retry_base_delay_ms),
+        off_circuit_breaker_failure_threshold: raw.off_circuit_breaker_failure_threshold,
+        off_circuit_breaker_open_for: Duration::from_secs(raw.off_circuit_breaker_open_seconds),
     };
+    let api_config = Arc::new(api_config);
 
     let state = AppState {
         db,
-        config: Arc::new(api_config),
+        config: api_config.clone(),
         http,
+        off_breaker: Arc::new(qm_api::openfoodfacts::OffCircuitBreaker::default()),
+        rate_limiters: Arc::new(qm_api::rate_limit::RateLimiters::new(&api_config)),
     };
 
     let app = qm_api::router(state);
@@ -124,7 +172,7 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("binding {addr}"))?;
     tracing::info!(%addr, "listening");
 
-    axum::serve(listener, app)
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(shutdown_signal())
         .await
         .context("serving HTTP")?;

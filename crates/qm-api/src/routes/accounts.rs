@@ -1,6 +1,7 @@
 use axum::{
     extract::State,
     http::StatusCode,
+    middleware,
     routing::{get, post},
     Json, Router,
 };
@@ -12,16 +13,35 @@ use uuid::Uuid;
 use crate::{
     auth::{self, CurrentUser},
     error::{ApiError, ApiResult},
+    rate_limit::RateLimitLayerState,
     AppState, RegistrationMode,
 };
 
 const ROLE_ADMIN: &str = "admin";
 
-pub fn router() -> Router<AppState> {
+pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
     Router::new()
-        .route("/auth/register", post(register))
-        .route("/auth/login", post(login))
-        .route("/auth/refresh", post(refresh))
+        .route(
+            "/auth/register",
+            post(register).route_layer(middleware::from_fn_with_state(
+                rate_limit_state.clone(),
+                crate::rate_limit::enforce,
+            )),
+        )
+        .route(
+            "/auth/login",
+            post(login).route_layer(middleware::from_fn_with_state(
+                rate_limit_state.clone(),
+                crate::rate_limit::enforce,
+            )),
+        )
+        .route(
+            "/auth/refresh",
+            post(refresh).route_layer(middleware::from_fn_with_state(
+                rate_limit_state,
+                crate::rate_limit::enforce,
+            )),
+        )
         .route("/auth/logout", post(logout))
         .route("/auth/me", get(me))
 }
@@ -89,6 +109,7 @@ pub struct MeResponse {
         (status = 400, body = crate::error::ApiErrorBody),
         (status = 403, body = crate::error::ApiErrorBody),
         (status = 409, body = crate::error::ApiErrorBody),
+        (status = 429, body = crate::error::ApiErrorBody),
     ),
 )]
 pub async fn register(
@@ -184,6 +205,7 @@ pub async fn register(
     responses(
         (status = 200, body = TokenPair),
         (status = 401, body = crate::error::ApiErrorBody),
+        (status = 429, body = crate::error::ApiErrorBody),
     ),
 )]
 pub async fn login(
@@ -209,6 +231,7 @@ pub async fn login(
     responses(
         (status = 200, body = TokenPair),
         (status = 401, body = crate::error::ApiErrorBody),
+        (status = 429, body = crate::error::ApiErrorBody),
     ),
 )]
 pub async fn refresh(

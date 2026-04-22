@@ -21,6 +21,8 @@ enum APIError: Error, LocalizedError {
                 return "This location still has active stock. Move, consume, or discard it first."
             case "invalid_invite":
                 return "That invite is invalid, expired, revoked, or already used up."
+            case "rate_limited":
+                return "The server is asking us to slow down. Please try again in a moment."
             case "admin_only", "forbidden":
                 return "You need household admin access for that action."
             default:
