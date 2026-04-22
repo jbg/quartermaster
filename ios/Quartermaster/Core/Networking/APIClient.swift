@@ -93,6 +93,19 @@ actor APIClient {
         }
     }
 
+    func switchHousehold(householdID: String) async throws -> Me {
+        let response = try await client.authSwitchHousehold(.init(
+            body: .json(.init(householdId: householdID)),
+        ))
+        switch response {
+        case .ok(let ok): return try ok.body.json
+        case .unauthorized: throw APIError.unauthorized
+        case .forbidden(let err): throw APIError.server(status: 403, body: try? err.body.json)
+        case .undocumented(let statusCode, _):
+            throw APIError.server(status: statusCode, body: nil)
+        }
+    }
+
     // MARK: - Households
 
     func currentHousehold() async throws -> HouseholdDetail {

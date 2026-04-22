@@ -243,6 +243,61 @@
         }
       }
     },
+    "/auth/switch-household": {
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "operationId": "auth_switch_household",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SwitchHouseholdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/healthz": {
       "get": {
         "tags": [
@@ -2284,10 +2339,30 @@
           }
         }
       },
+      "MeHouseholdDto": {
+        "type": "object",
+        "required": [
+          "household",
+          "role",
+          "joined_at"
+        ],
+        "properties": {
+          "household": {
+            "$ref": "#/components/schemas/HouseholdDto"
+          },
+          "joined_at": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/MembershipRole"
+          }
+        }
+      },
       "MeResponse": {
         "type": "object",
         "required": [
-          "user"
+          "user",
+          "households"
         ],
         "properties": {
           "household_id": {
@@ -2298,6 +2373,18 @@
             "format": "uuid"
           },
           "household_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "households": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeHouseholdDto"
+            }
+          },
+          "public_base_url": {
             "type": [
               "string",
               "null"
@@ -2665,6 +2752,18 @@
             "items": {
               "$ref": "#/components/schemas/StockBatchDto"
             }
+          }
+        }
+      },
+      "SwitchHouseholdRequest": {
+        "type": "object",
+        "required": [
+          "household_id"
+        ],
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },

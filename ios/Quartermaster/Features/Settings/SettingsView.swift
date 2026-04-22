@@ -18,6 +18,7 @@ struct SettingsView: View {
     @State private var editingLocation: Location?
 
     @State private var isLoading = true
+    @State private var isSwitchingHousehold = false
     @State private var isSavingHousehold = false
     @State private var isRedeemingInvite = false
     @State private var isCreatingInvite = false
@@ -39,6 +40,31 @@ struct SettingsView: View {
                         LabeledContent("Household", value: household.name)
                     }
                     LabeledContent("Role", value: currentRole?.displayName ?? "Member")
+                }
+            }
+
+            if let me, !me.households.isEmpty {
+                Section("Households") {
+                    ForEach(me.households) { membership in
+                        Button {
+                            Task { await switchHousehold(to: membership.household.id) }
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(membership.household.name)
+                                    Text(membership.role.displayName)
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if me.householdId == membership.household.id {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.tint)
+                                }
+                            }
+                        }
+                        .disabled(isSwitchingHousehold || me.householdId == membership.household.id)
+                    }
                 }
             }
 
@@ -360,6 +386,9 @@ struct SettingsView: View {
 
     private var currentRole: MembershipRole? {
         guard let me else { return nil }
+        if let activeHouseholdID = me.householdId {
+            return me.households.first(where: { $0.household.id == activeHouseholdID })?.role
+        }
         return members.first(where: { $0.user.id == me.user.id })?.role
     }
 
@@ -368,7 +397,16 @@ struct SettingsView: View {
     }
 
     private func load() async {
-        guard me != nil else { return }
+        guard let me else { return }
+        guard me.householdId != nil else {
+            household = nil
+            householdNameDraft = ""
+            members = []
+            invites = []
+            locations = []
+            isLoading = false
+            return
+        }
         isLoading = true
         defer { isLoading = false }
         do {
@@ -380,7 +418,7 @@ struct SettingsView: View {
             self.householdNameDraft = household.name
             self.members = members
             self.locations = locations.sorted { $0.sortOrder < $1.sortOrder }
-            if members.first(where: { $0.user.id == me?.user.id })?.role == .admin {
+            if members.first(where: { $0.user.id == me.user.id })?.role == .admin {
                 invites = try await appState.api.householdInvites()
             } else {
                 invites = []
@@ -401,6 +439,20 @@ struct SettingsView: View {
             )
             household = updated
             await appState.refreshMe()
+        } catch let err as APIError {
+            errorMessage = err.userFacingMessage
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func switchHousehold(to householdID: String) async {
+        isSwitchingHousehold = true
+        defer { isSwitchingHousehold = false }
+        do {
+            let updatedMe = try await appState.api.switchHousehold(householdID: householdID)
+            appState.applyAuthenticated(updatedMe)
+            await load()
         } catch let err as APIError {
             errorMessage = err.userFacingMessage
         } catch {
@@ -522,7 +574,7 @@ struct SettingsView: View {
 
     private func inviteShareText(_ invite: Invite) -> String {
         let householdName = household?.name ?? "your household"
-        let link = inviteJoinURL(invite)?.absoluteString ?? appState.serverURL.absoluteString
+        let link = inviteJoinURL(invite)?.absoluteString ?? inviteBaseURL.absoluteString
         return """
         Join \(householdName) in Quartermaster.
 
@@ -535,13 +587,23 @@ struct SettingsView: View {
     }
 
     private func inviteJoinURL(_ invite: Invite) -> URL? {
-        var components = URLComponents(url: appState.serverURL, resolvingAgainstBaseURL: false)
+        var components = URLComponents(url: inviteBaseURL, resolvingAgainstBaseURL: false)
         components?.path = "/join"
         components?.queryItems = [
             URLQueryItem(name: "invite", value: invite.code),
             URLQueryItem(name: "server", value: appState.serverURL.absoluteString),
         ]
         return components?.url
+    }
+
+    private var inviteBaseURL: URL {
+        if
+            let raw = me?.publicBaseUrl,
+            let url = URL(string: raw)
+        {
+            return url
+        }
+        return appState.serverURL
     }
 
     private func applyPendingInviteContext() {

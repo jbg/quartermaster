@@ -31,9 +31,10 @@ async fn open_registration_creates_distinct_households() {
 }
 
 #[tokio::test]
-async fn current_household_uses_latest_joined_then_household_id_tiebreak() {
+async fn login_initializes_active_household_from_latest_joined_and_me_lists_memberships() {
     let app = TestApp::start(ApiConfig {
         registration_mode: RegistrationMode::InviteOnly,
+        public_base_url: Some("https://quartermaster.example.com".into()),
         ..ApiConfig::default()
     })
     .await;
@@ -79,6 +80,23 @@ async fn current_household_uses_latest_joined_then_household_id_tiebreak() {
         me["household_id"].as_str().unwrap(),
         newer_household.id.to_string()
     );
+    assert_eq!(
+        me["household_name"].as_str().unwrap(),
+        newer_household.name
+    );
+    assert_eq!(
+        me["public_base_url"].as_str().unwrap(),
+        "https://quartermaster.example.com"
+    );
+    assert_eq!(me["households"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        me["households"][0]["household"]["id"].as_str().unwrap(),
+        newer_household.id.to_string()
+    );
+    assert_eq!(
+        me["households"][0]["role"].as_str().unwrap(),
+        "member"
+    );
 
     sqlx::query("UPDATE membership SET joined_at = ? WHERE user_id = ?")
         .bind("2026-01-01T00:00:00.000Z")
@@ -88,20 +106,204 @@ async fn current_household_uses_latest_joined_then_household_id_tiebreak() {
         .unwrap();
 
     let me_after_tie = app.me(&alice).await;
+    assert_eq!(
+        me_after_tie["household_id"].as_str().unwrap(),
+        newer_household.id.to_string()
+    );
+
+    let alice_second_session = app.login("alice").await;
+    let me_in_new_session = app.me(&alice_second_session).await;
     let expected = if newer_household.id > older_household {
         newer_household.id
     } else {
         older_household
     };
     assert_eq!(
-        me_after_tie["household_id"].as_str().unwrap(),
+        me_in_new_session["household_id"].as_str().unwrap(),
         expected.to_string()
+    );
+}
+
+#[tokio::test]
+async fn switch_household_is_session_scoped_and_rejects_non_members() {
+    let app = TestApp::start(ApiConfig {
+        registration_mode: RegistrationMode::InviteOnly,
+        ..ApiConfig::default()
+    })
+    .await;
+    let (home_household, home_admin) = app.seed_household_admin("alice").await;
+
+    let cabin_household = qm_db::households::create(&app.db, "Cabin").await.unwrap();
+    qm_db::locations::seed_defaults(&app.db, cabin_household.id)
+        .await
+        .unwrap();
+    let cabin_admin = qm_db::users::create(&app.db, "cabin-owner", Some("cabin@example.com"), "hash")
+        .await
+        .unwrap();
+    qm_db::memberships::insert(&app.db, cabin_household.id, cabin_admin.id, "admin")
+        .await
+        .unwrap();
+    let invite = qm_db::invites::create(
+        &app.db,
+        cabin_household.id,
+        "JOINCABIN123",
+        cabin_admin.id,
+        "2999-01-01T00:00:00.000Z",
+        5,
+        "member",
+    )
+    .await
+    .unwrap();
+
+    let alice_session_a = app.login("alice").await;
+    let alice_session_b = app.login("alice").await;
+    assert_eq!(
+        app.send(
+            Method::POST,
+            "/invites/redeem",
+            Some(json!({ "invite_code": invite.code })),
+            Some(&alice_session_a),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+
+    let me_a = app.me(&alice_session_a).await;
+    let me_b = app.me(&alice_session_b).await;
+    assert_eq!(
+        me_a["household_id"].as_str().unwrap(),
+        cabin_household.id.to_string()
+    );
+    assert_eq!(
+        me_b["household_id"].as_str().unwrap(),
+        home_household.to_string()
+    );
+
+    let switch_status = app
+        .send(
+            Method::POST,
+            "/auth/switch-household",
+            Some(json!({ "household_id": home_household })),
+            Some(&alice_session_a),
+        )
+        .await;
+    assert_eq!(switch_status.0, StatusCode::OK);
+    assert_eq!(
+        switch_status.1["household_id"].as_str().unwrap(),
+        home_household.to_string()
+    );
+
+    let pantry_home = qm_db::locations::list_for_household(&app.db, home_household)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|loc| loc.kind == "pantry")
+        .unwrap()
+        .id;
+    let product_home = qm_db::products::create_manual(
+        &app.db,
+        home_household,
+        "Rice",
+        None,
+        "mass",
+        Some("g"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let home_batch = qm_db::stock::create(
+        &app.db,
+        home_household,
+        product_home.id,
+        pantry_home,
+        "100",
+        "g",
+        None,
+        None,
+        None,
+        home_admin,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        app.send(
+            Method::GET,
+            &format!("/stock/{}", home_batch.id),
+            None,
+            Some(&alice_session_a),
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+
+    let outsider_household = qm_db::households::create(&app.db, "Outsider").await.unwrap();
+    qm_db::locations::seed_defaults(&app.db, outsider_household.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        app.send(
+            Method::POST,
+            "/auth/switch-household",
+            Some(json!({ "household_id": outsider_household.id })),
+            Some(&alice_session_a),
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[tokio::test]
+async fn removing_active_membership_falls_back_and_last_membership_clears_active_household() {
+    let app = TestApp::start(ApiConfig {
+        registration_mode: RegistrationMode::InviteOnly,
+        ..ApiConfig::default()
+    })
+    .await;
+    let (older_household, _) = app.seed_household_admin("alice").await;
+    let alice = app.login("alice").await;
+
+    let newer_household = qm_db::households::create(&app.db, "Cabin").await.unwrap();
+    qm_db::locations::seed_defaults(&app.db, newer_household.id)
+        .await
+        .unwrap();
+    let admin = qm_db::users::create(&app.db, "owner2", Some("owner2@example.com"), "hash")
+        .await
+        .unwrap();
+    qm_db::memberships::insert(&app.db, newer_household.id, admin.id, "admin")
+        .await
+        .unwrap();
+
+    let invite = qm_db::invites::create(
+        &app.db,
+        newer_household.id,
+        "JOINCABIN456",
+        admin.id,
+        "2999-01-01T00:00:00.000Z",
+        5,
+        "member",
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        app.send(
+            Method::POST,
+            "/invites/redeem",
+            Some(json!({ "invite_code": invite.code })),
+            Some(&alice),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
     );
 
     qm_db::memberships::remove(
         &app.db,
         newer_household.id,
-        Uuid::parse_str(me["user"]["id"].as_str().unwrap()).unwrap(),
+        Uuid::parse_str(app.me(&alice).await["user"]["id"].as_str().unwrap()).unwrap(),
     )
     .await
     .unwrap();
@@ -110,6 +312,17 @@ async fn current_household_uses_latest_joined_then_household_id_tiebreak() {
         me_after_removal["household_id"].as_str().unwrap(),
         older_household.to_string()
     );
+
+    qm_db::memberships::remove(
+        &app.db,
+        older_household,
+        Uuid::parse_str(me_after_removal["user"]["id"].as_str().unwrap()).unwrap(),
+    )
+    .await
+    .unwrap();
+    let me_after_last_removal = app.me(&alice).await;
+    assert!(me_after_last_removal["household_id"].is_null());
+    assert!(me_after_last_removal["household_name"].is_null());
 }
 
 #[tokio::test]

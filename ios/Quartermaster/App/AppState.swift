@@ -39,9 +39,7 @@ final class AppState {
     func refreshMe() async {
         do {
             let me = try await api.me()
-            phase = .authenticated(me)
-            await loadUnits()
-            lastError = nil
+            applyAuthenticated(me)
         } catch {
             let message = userMessage(for: error)
             if let apiError = error as? APIError, case .unauthorized = apiError {
@@ -54,6 +52,12 @@ final class AppState {
                 phase = .launchFailed(message)
             }
         }
+    }
+
+    func applyAuthenticated(_ me: Me) {
+        phase = .authenticated(me)
+        Task { await loadUnits() }
+        lastError = nil
     }
 
     func register(username: String, password: String, email: String?, inviteCode: String? = nil) async {

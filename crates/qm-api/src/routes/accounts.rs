@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use axum::{
     extract::State,
     http::StatusCode,
@@ -43,6 +45,7 @@ pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
             )),
         )
         .route("/auth/logout", post(logout))
+        .route("/auth/switch-household", post(switch_household))
         .route("/auth/me", get(me))
 }
 
@@ -92,10 +95,24 @@ pub struct HouseholdDto {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct MeHouseholdDto {
+    pub household: HouseholdDto,
+    pub role: crate::types::MembershipRole,
+    pub joined_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct MeResponse {
     pub user: UserDto,
     pub household_id: Option<Uuid>,
     pub household_name: Option<String>,
+    pub households: Vec<MeHouseholdDto>,
+    pub public_base_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SwitchHouseholdRequest {
+    pub household_id: Uuid,
 }
 
 #[utoipa::path(
@@ -195,8 +212,17 @@ pub async fn register(
         }
     };
 
-    let pair =
-        issue_token_pair(&state, user.id, Uuid::now_v7(), req.device_label.as_deref()).await?;
+    let initial_household_id = qm_db::households::find_for_user(&state.db, user.id)
+        .await?
+        .map(|household| household.id);
+    let pair = issue_token_pair(
+        &state,
+        user.id,
+        Uuid::now_v7(),
+        req.device_label.as_deref(),
+        initial_household_id,
+    )
+    .await?;
     Ok((StatusCode::CREATED, Json(pair)))
 }
 
@@ -222,8 +248,17 @@ pub async fn login(
     if !auth::verify_password(&req.password, &user.password_hash) {
         return Err(ApiError::Unauthorized);
     }
-    let pair =
-        issue_token_pair(&state, user.id, Uuid::now_v7(), req.device_label.as_deref()).await?;
+    let initial_household_id = qm_db::households::find_for_user(&state.db, user.id)
+        .await?
+        .map(|household| household.id);
+    let pair = issue_token_pair(
+        &state,
+        user.id,
+        Uuid::now_v7(),
+        req.device_label.as_deref(),
+        initial_household_id,
+    )
+    .await?;
     Ok(Json(pair))
 }
 
@@ -264,6 +299,9 @@ pub async fn refresh(
         token.user_id,
         token.session_id,
         token.device_label.as_deref(),
+        auth::resolve_active_household(&state.db, token.session_id, token.user_id)
+            .await?
+            .household_id,
     )
     .await?;
     Ok(Json(pair))
@@ -308,29 +346,45 @@ pub async fn me(
     State(state): State<AppState>,
     current: CurrentUser,
 ) -> ApiResult<Json<MeResponse>> {
-    let user = qm_db::users::find_by_id(&state.db, current.user_id)
+    Ok(Json(build_me_response(&state, current.user_id, current.household_id).await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth/switch-household",
+    operation_id = "auth_switch_household",
+    tag = "accounts",
+    request_body = SwitchHouseholdRequest,
+    responses(
+        (status = 200, body = MeResponse),
+        (status = 403, body = crate::error::ApiErrorBody),
+        (status = 401, body = crate::error::ApiErrorBody)
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn switch_household(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Json(req): Json<SwitchHouseholdRequest>,
+) -> ApiResult<Json<MeResponse>> {
+    if qm_db::memberships::find(&state.db, req.household_id, current.user_id)
         .await?
-        .ok_or(ApiError::Unauthorized)?;
-    let household = if let Some(hid) = current.household_id {
-        qm_db::households::find_for_user(&state.db, current.user_id)
-            .await?
-            .filter(|h| h.id == hid)
-    } else {
-        None
-    };
-    let (household_id, household_name) = match household {
-        Some(h) => (Some(h.id), Some(h.name)),
-        None => (None, None),
-    };
-    Ok(Json(MeResponse {
-        user: UserDto {
-            id: user.id,
-            username: user.username,
-            email: user.email,
-        },
-        household_id,
-        household_name,
-    }))
+        .is_none()
+    {
+        return Err(ApiError::Forbidden);
+    }
+
+    qm_db::auth_sessions::upsert(
+        &state.db,
+        current.session_id,
+        current.user_id,
+        Some(req.household_id),
+    )
+    .await?;
+
+    Ok(Json(
+        build_me_response(&state, current.user_id, Some(req.household_id)).await?,
+    ))
 }
 
 fn validate_credentials(username: &str, password: &str) -> ApiResult<()> {
@@ -353,12 +407,15 @@ async fn issue_token_pair(
     user_id: Uuid,
     session_id: Uuid,
     device_label: Option<&str>,
+    active_household_id: Option<Uuid>,
 ) -> ApiResult<TokenPair> {
     let access = auth::generate_token();
     let refresh = auth::generate_token();
     let now = Utc::now();
     let access_expires = now + Duration::seconds(state.config.access_token_ttl_seconds);
     let refresh_expires = now + Duration::seconds(state.config.refresh_token_ttl_seconds);
+
+    qm_db::auth_sessions::upsert(&state.db, session_id, user_id, active_household_id).await?;
 
     qm_db::tokens::create(
         &state.db,
@@ -386,5 +443,45 @@ async fn issue_token_pair(
         refresh_token: refresh,
         token_type: "Bearer",
         expires_in: state.config.access_token_ttl_seconds,
+    })
+}
+
+async fn build_me_response(
+    state: &AppState,
+    user_id: Uuid,
+    active_household_id: Option<Uuid>,
+) -> ApiResult<MeResponse> {
+    let user = qm_db::users::find_by_id(&state.db, user_id)
+        .await?
+        .ok_or(ApiError::Unauthorized)?;
+    let memberships = qm_db::memberships::list_for_user(&state.db, user_id).await?;
+    let households = memberships
+        .iter()
+        .map(|row| {
+            Ok::<_, ApiError>(MeHouseholdDto {
+                household: HouseholdDto {
+                    id: row.membership.household_id,
+                    name: row.household_name.clone(),
+                },
+                role: crate::types::MembershipRole::from_str(&row.membership.role)?,
+                joined_at: row.membership.joined_at.clone(),
+            })
+        })
+        .collect::<ApiResult<Vec<_>>>()?;
+    let active_household = households
+        .iter()
+        .find(|row| Some(row.household.id) == active_household_id)
+        .map(|row| &row.household);
+
+    Ok(MeResponse {
+        user: UserDto {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+        },
+        household_id: active_household.map(|household| household.id),
+        household_name: active_household.map(|household| household.name.clone()),
+        households,
+        public_base_url: state.config.public_base_url.clone(),
     })
 }

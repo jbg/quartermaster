@@ -23,6 +23,7 @@ typealias TokenPair = Components.Schemas.TokenPair
 typealias User = Components.Schemas.UserDto
 typealias Household = Components.Schemas.HouseholdDto
 typealias Me = Components.Schemas.MeResponse
+typealias MeHousehold = Components.Schemas.MeHouseholdDto
 typealias HouseholdDetail = Components.Schemas.HouseholdDetailDto
 typealias UpdateHouseholdRequest = Components.Schemas.UpdateHouseholdRequest
 typealias Member = Components.Schemas.MemberDto
@@ -33,6 +34,9 @@ typealias RedeemInviteRequest = Components.Schemas.RedeemInviteRequest
 
 extension User: Identifiable {}
 extension Household: Identifiable {}
+extension MeHousehold: Identifiable {
+    var id: String { household.id }
+}
 extension HouseholdDetail: Identifiable {}
 extension Member: Identifiable {
     var id: String { user.id }

@@ -9,6 +9,7 @@ use std::str::FromStr;
 use sqlx::any::AnyPoolOptions;
 use sqlx::AnyPool;
 
+pub mod auth_sessions;
 pub mod barcode_cache;
 pub mod households;
 pub mod invites;

@@ -49,8 +49,8 @@ pub struct RegisteredInviteUser {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RedeemOutcome {
-    Joined,
-    AlreadyMember,
+    Joined { household_id: Uuid },
+    AlreadyMember { household_id: Uuid },
 }
 
 #[derive(Debug)]
@@ -244,11 +244,15 @@ pub async fn redeem_for_user(
                 return Err(RedeemInviteError::InvalidInvite);
             }
             tx.commit().await?;
-            Ok(RedeemOutcome::Joined)
+            Ok(RedeemOutcome::Joined {
+                household_id: invite.household_id,
+            })
         }
         InsertOutcome::AlreadyExists => {
             tx.commit().await?;
-            Ok(RedeemOutcome::AlreadyMember)
+            Ok(RedeemOutcome::AlreadyMember {
+                household_id: invite.household_id,
+            })
         }
     }
 }

@@ -19,6 +19,12 @@ pub struct MembershipWithUserRow {
     pub email: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct MembershipWithHouseholdRow {
+    pub membership: MembershipRow,
+    pub household_name: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InsertOutcome {
     Inserted,
@@ -104,6 +110,30 @@ pub async fn list_members(
                 membership: row_to_membership_ref(&row)?,
                 username: row.try_get("username")?,
                 email: row.try_get("email")?,
+            })
+        })
+        .collect()
+}
+
+pub async fn list_for_user(
+    db: &Database,
+    user_id: Uuid,
+) -> Result<Vec<MembershipWithHouseholdRow>, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT m.household_id, m.user_id, m.role, m.joined_at, h.name AS household_name \
+         FROM membership m \
+         INNER JOIN household h ON h.id = m.household_id \
+         WHERE m.user_id = ? \
+         ORDER BY m.joined_at DESC, h.id DESC",
+    )
+    .bind(user_id.to_string())
+    .fetch_all(&db.pool)
+    .await?;
+    rows.into_iter()
+        .map(|row| {
+            Ok::<_, sqlx::Error>(MembershipWithHouseholdRow {
+                membership: row_to_membership_ref(&row)?,
+                household_name: row.try_get("household_name")?,
             })
         })
         .collect()

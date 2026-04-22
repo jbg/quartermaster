@@ -16,6 +16,12 @@ use uuid::Uuid;
 
 use crate::{error::ApiError, AppState};
 
+#[derive(Clone, Debug)]
+pub struct ResolvedHousehold {
+    pub household_id: Option<Uuid>,
+    pub role: Option<String>,
+}
+
 pub fn hash_password(plaintext: &str) -> Result<String, ApiError> {
     let salt = SaltString::generate(&mut ArgonOsRng);
     Argon2::default()
@@ -54,8 +60,42 @@ pub fn sha256_hex(s: &str) -> String {
 #[derive(Clone, Debug)]
 pub struct CurrentUser {
     pub user_id: Uuid,
+    pub session_id: Uuid,
     pub household_id: Option<Uuid>,
     pub role: Option<String>,
+}
+
+pub async fn resolve_active_household(
+    db: &qm_db::Database,
+    session_id: Uuid,
+    user_id: Uuid,
+) -> Result<ResolvedHousehold, sqlx::Error> {
+    if let Some(session) = qm_db::auth_sessions::find(db, session_id).await? {
+        if session.user_id == user_id {
+            if let Some(active_household_id) = session.active_household_id {
+                if let Some(membership) = qm_db::memberships::find(db, active_household_id, user_id).await?
+                {
+                    return Ok(ResolvedHousehold {
+                        household_id: Some(active_household_id),
+                        role: Some(membership.role),
+                    });
+                }
+            }
+        }
+    }
+
+    let fallback = qm_db::households::find_for_user(db, user_id).await?;
+    let household_id = fallback.as_ref().map(|household| household.id);
+    qm_db::auth_sessions::upsert(db, session_id, user_id, household_id).await?;
+    let role = if let Some(household_id) = household_id {
+        qm_db::memberships::find(db, household_id, user_id)
+            .await?
+            .map(|membership| membership.role)
+    } else {
+        None
+    };
+
+    Ok(ResolvedHousehold { household_id, role })
 }
 
 impl<S> FromRequestParts<S> for CurrentUser
@@ -91,26 +131,20 @@ where
         }
 
         qm_db::tokens::touch_last_used(&app_state.db, token.id).await?;
-
-        let household = qm_db::households::find_for_user(&app_state.db, token.user_id).await?;
-        let role = if let Some(household) = household.as_ref() {
-            qm_db::memberships::find(&app_state.db, household.id, token.user_id)
-                .await?
-                .map(|m| m.role)
-        } else {
-            None
-        };
+        let resolved = resolve_active_household(&app_state.db, token.session_id, token.user_id)
+            .await?;
 
         let span = Span::current();
         span.record("user_id", tracing::field::display(token.user_id));
-        if let Some(household_id) = household.as_ref().map(|h| h.id) {
+        if let Some(household_id) = resolved.household_id {
             span.record("household_id", tracing::field::display(household_id));
         }
 
         Ok(CurrentUser {
             user_id: token.user_id,
-            household_id: household.map(|h| h.id),
-            role,
+            session_id: token.session_id,
+            household_id: resolved.household_id,
+            role: resolved.role,
         })
     }
 }

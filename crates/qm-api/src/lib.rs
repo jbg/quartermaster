@@ -48,6 +48,7 @@ pub struct ApiConfig {
     /// considered fresh.
     pub off_negative_ttl_days: i64,
     pub off_api_base_url: String,
+    pub public_base_url: Option<String>,
     /// Whether `X-Forwarded-For` should override the socket address for
     /// client-identity keyed rate limiting.
     pub trust_proxy_headers: bool,
@@ -76,6 +77,7 @@ impl Default for ApiConfig {
             off_positive_ttl_days: 30,
             off_negative_ttl_days: 7,
             off_api_base_url: "https://world.openfoodfacts.org/api/v2/product".into(),
+            public_base_url: None,
             trust_proxy_headers: false,
             rate_limit_auth: RateLimitConfig {
                 requests_per_minute: 10,
@@ -155,6 +157,7 @@ impl Modify for SecurityAddon {
         routes::accounts::refresh,
         routes::accounts::logout,
         routes::accounts::me,
+        routes::accounts::switch_household,
         routes::locations::list_locations,
         routes::locations::create_location,
         routes::locations::update_location,
@@ -198,6 +201,8 @@ impl Modify for SecurityAddon {
         routes::accounts::RefreshRequest,
         routes::accounts::TokenPair,
         routes::accounts::MeResponse,
+        routes::accounts::MeHouseholdDto,
+        routes::accounts::SwitchHouseholdRequest,
         routes::accounts::UserDto,
         routes::accounts::HouseholdDto,
         routes::households::HouseholdDetailDto,

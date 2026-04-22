@@ -27,6 +27,7 @@ struct RawConfig {
     off_positive_ttl_days: i64,
     off_negative_ttl_days: i64,
     off_api_base_url: String,
+    public_base_url: Option<String>,
     trust_proxy_headers: bool,
     rate_limit_auth_per_minute: u32,
     rate_limit_auth_burst: u32,
@@ -53,6 +54,7 @@ impl Default for RawConfig {
             off_positive_ttl_days: 30,
             off_negative_ttl_days: 7,
             off_api_base_url: "https://world.openfoodfacts.org/api/v2/product".into(),
+            public_base_url: None,
             trust_proxy_headers: false,
             rate_limit_auth_per_minute: 10,
             rate_limit_auth_burst: 5,
@@ -135,6 +137,7 @@ async fn main() -> anyhow::Result<()> {
         off_positive_ttl_days: raw.off_positive_ttl_days,
         off_negative_ttl_days: raw.off_negative_ttl_days,
         off_api_base_url: raw.off_api_base_url,
+        public_base_url: raw.public_base_url,
         trust_proxy_headers: raw.trust_proxy_headers,
         rate_limit_auth: qm_api::RateLimitConfig {
             requests_per_minute: raw.rate_limit_auth_per_minute,

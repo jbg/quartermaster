@@ -298,7 +298,17 @@ pub async fn redeem_invite(
 ) -> ApiResult<StatusCode> {
     let code = req.invite_code.trim().to_ascii_uppercase();
     match qm_db::invites::redeem_for_user(&state.db, &code, current.user_id).await {
-        Ok(_) => Ok(StatusCode::NO_CONTENT),
+        Ok(qm_db::invites::RedeemOutcome::Joined { household_id })
+        | Ok(qm_db::invites::RedeemOutcome::AlreadyMember { household_id }) => {
+            qm_db::auth_sessions::upsert(
+                &state.db,
+                current.session_id,
+                current.user_id,
+                Some(household_id),
+            )
+            .await?;
+            Ok(StatusCode::NO_CONTENT)
+        }
         Err(qm_db::invites::RedeemInviteError::InvalidInvite) => Err(ApiError::InvalidInvite),
         Err(qm_db::invites::RedeemInviteError::Database(err)) => Err(ApiError::Database(err)),
     }

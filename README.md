@@ -49,6 +49,7 @@ The server listens on `0.0.0.0:8080` and creates `data.db` in the working direct
 | `QM_DATABASE_URL`       | `sqlite://data.db?mode=rwc` | SQLx connection string (SQLite or Postgres)  |
 | `QM_LOG_FORMAT`         | `text`                      | Log formatter: `text` or `json`              |
 | `QM_REGISTRATION_MODE`  | `first_run_only`            | `first_run_only` \| `invite_only` \| `open`  |
+| `QM_PUBLIC_BASE_URL`    | unset                       | Public URL used in invite/share links        |
 | `RUST_LOG`              | `info`                      | Tracing filter                               |
 
 Then probe it:
@@ -59,6 +60,8 @@ open http://localhost:8080/docs      # Swagger UI (when built with default featu
 ```
 
 Every HTTP response includes an `X-Request-Id` header. If a client supplies one, Quartermaster propagates it; otherwise the server generates one. Authenticated request spans also record the resolved `user_id` and `household_id`, and `QM_LOG_FORMAT=json` switches logs to newline-delimited JSON for structured ingestion.
+
+Users may belong to multiple households. The active household is session-scoped: each logged-in device/session keeps its own selected household, and `POST /auth/switch-household` changes that selection for the current session only.
 
 Quartermaster also supports a few self-hosting hardening knobs:
 
@@ -72,6 +75,7 @@ Quartermaster also supports a few self-hosting hardening knobs:
 | `QM_RATE_LIMIT_HISTORY_PER_MINUTE`         | `120`                                             | Per-client history request refill rate |
 | `QM_RATE_LIMIT_HISTORY_BURST`              | `40`                                              | Per-client history burst bucket size |
 | `QM_OFF_API_BASE_URL`                      | `https://world.openfoodfacts.org/api/v2/product`  | Open Food Facts API base URL |
+| `QM_PUBLIC_BASE_URL`                       | unset                                             | Public base URL for invite/share links |
 | `QM_OFF_TIMEOUT_SECONDS`                   | `5`                                               | Timeout for one OFF HTTP request |
 | `QM_OFF_MAX_RETRIES`                       | `2`                                               | Retries for transient OFF failures |
 | `QM_OFF_RETRY_BASE_DELAY_MS`               | `200`                                             | Base backoff delay for OFF retries |
