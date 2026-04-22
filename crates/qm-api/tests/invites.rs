@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use axum::http::{Method, StatusCode};
 use qm_api::{ApiConfig, RegistrationMode};
-use qm_db::{Backend, test_support::InviteRaceGate};
+use qm_db::{test_support::InviteRaceGate, Backend};
 use serde_json::json;
 use support::TestApp;
 use uuid::Uuid;
@@ -223,11 +223,13 @@ async fn invalid_invite_registration_does_not_create_orphaned_user() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_redeem_for_same_user_consumes_invite_once() {
-    let app = Arc::new(TestApp::start(ApiConfig {
-        registration_mode: RegistrationMode::InviteOnly,
-        ..ApiConfig::default()
-    })
-    .await);
+    let app = Arc::new(
+        TestApp::start(ApiConfig {
+            registration_mode: RegistrationMode::InviteOnly,
+            ..ApiConfig::default()
+        })
+        .await,
+    );
     let (target_household, _) = app.seed_household_admin("alice").await;
     let alice = app.login("alice").await;
     let (_, invite) = app
@@ -244,7 +246,11 @@ async fn concurrent_redeem_for_same_user_consumes_invite_once() {
     let bob = app.login("bob").await;
     let gate = InviteRaceGate::new(
         invite_id,
-        if app.db.backend() == Backend::Postgres { 2 } else { 1 },
+        if app.db.backend() == Backend::Postgres {
+            2
+        } else {
+            1
+        },
     );
     app.db.install_invite_race_gate(gate.clone()).await;
 
@@ -327,11 +333,13 @@ async fn concurrent_redeem_for_same_user_consumes_invite_once() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_single_use_registration_creates_no_orphaned_user() {
-    let app = Arc::new(TestApp::start(ApiConfig {
-        registration_mode: RegistrationMode::InviteOnly,
-        ..ApiConfig::default()
-    })
-    .await);
+    let app = Arc::new(
+        TestApp::start(ApiConfig {
+            registration_mode: RegistrationMode::InviteOnly,
+            ..ApiConfig::default()
+        })
+        .await,
+    );
     let _ = app.seed_household_admin("alice").await;
     let alice = app.login("alice").await;
     let (_, invite) = app
@@ -346,7 +354,11 @@ async fn concurrent_single_use_registration_creates_no_orphaned_user() {
     let invite_id = Uuid::parse_str(invite["id"].as_str().unwrap()).unwrap();
     let gate = InviteRaceGate::new(
         invite_id,
-        if app.db.backend() == Backend::Postgres { 2 } else { 1 },
+        if app.db.backend() == Backend::Postgres {
+            2
+        } else {
+            1
+        },
     );
     app.db.install_invite_race_gate(gate.clone()).await;
 
@@ -407,11 +419,13 @@ async fn concurrent_single_use_registration_creates_no_orphaned_user() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_multi_use_redeems_do_not_exceed_max_uses() {
-    let app = Arc::new(TestApp::start(ApiConfig {
-        registration_mode: RegistrationMode::InviteOnly,
-        ..ApiConfig::default()
-    })
-    .await);
+    let app = Arc::new(
+        TestApp::start(ApiConfig {
+            registration_mode: RegistrationMode::InviteOnly,
+            ..ApiConfig::default()
+        })
+        .await,
+    );
     let (target_household, _) = app.seed_household_admin("alice").await;
     let alice = app.login("alice").await;
     let (_, invite) = app
@@ -433,7 +447,11 @@ async fn concurrent_multi_use_redeems_do_not_exceed_max_uses() {
 
     let gate = InviteRaceGate::new(
         invite_id,
-        if app.db.backend() == Backend::Postgres { 3 } else { 1 },
+        if app.db.backend() == Backend::Postgres {
+            3
+        } else {
+            1
+        },
     );
     app.db.install_invite_race_gate(gate.clone()).await;
 

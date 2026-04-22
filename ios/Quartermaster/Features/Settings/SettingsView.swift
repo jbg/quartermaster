@@ -537,7 +537,7 @@ struct SettingsView: View {
         Server URL: \(appState.serverURL.absoluteString)
         Invite code: \(invite.code)
 
-        Open Quartermaster, go to Settings, and choose “Redeem invite”.
+        On supported iPhone installs the link can open Quartermaster directly. If it doesn’t, open Quartermaster and choose “Redeem invite”.
         """
     }
 

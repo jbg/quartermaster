@@ -283,12 +283,14 @@ pub async fn refresh(
         .await?
         .ok_or(ApiError::Unauthorized)?;
     if token.kind != qm_db::tokens::KIND_REFRESH {
+        auth::cleanup_session_if_unused(&state.db, token.session_id).await?;
         return Err(ApiError::Unauthorized);
     }
     let expires = chrono::DateTime::parse_from_rfc3339(&token.expires_at)
         .map_err(|_| ApiError::Unauthorized)?
         .with_timezone(&Utc);
     if expires < Utc::now() {
+        auth::cleanup_session_if_unused(&state.db, token.session_id).await?;
         return Err(ApiError::Unauthorized);
     }
 
@@ -304,6 +306,7 @@ pub async fn refresh(
             .household_id,
     )
     .await?;
+    auth::cleanup_session_if_unused(&state.db, token.session_id).await?;
     Ok(Json(pair))
 }
 
@@ -347,7 +350,9 @@ pub async fn me(
     State(state): State<AppState>,
     current: CurrentUser,
 ) -> ApiResult<Json<MeResponse>> {
-    Ok(Json(build_me_response(&state, current.user_id, current.household_id).await?))
+    Ok(Json(
+        build_me_response(&state, current.user_id, current.household_id).await?,
+    ))
 }
 
 #[utoipa::path(

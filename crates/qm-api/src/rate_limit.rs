@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    str::FromStr,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -16,6 +17,33 @@ use crate::{ApiError, ApiResult, AppState, RateLimitConfig};
 
 const ENTRY_TTL_MULTIPLIER: u32 = 10;
 static X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClientIpMode {
+    Socket,
+    XForwardedFor,
+}
+
+impl ClientIpMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Socket => "socket",
+            Self::XForwardedFor => "x-forwarded-for",
+        }
+    }
+}
+
+impl FromStr for ClientIpMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "socket" => Ok(Self::Socket),
+            "x-forwarded-for" => Ok(Self::XForwardedFor),
+            other => Err(format!("unknown rate_limit_client_ip_mode: {other}")),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum RateLimitTarget {
@@ -69,7 +97,7 @@ pub async fn enforce(
     let key = client_key(
         request.headers(),
         &request,
-        state.app_state.config.trust_proxy_headers,
+        state.app_state.config.rate_limit_client_ip_mode,
     );
     let limiter = state.app_state.rate_limiters.for_target(state.target);
     if !limiter.allow(&key).await {
@@ -81,9 +109,9 @@ pub async fn enforce(
 pub fn client_key<B>(
     headers: &HeaderMap,
     request: &Request<B>,
-    trust_proxy_headers: bool,
+    client_ip_mode: ClientIpMode,
 ) -> String {
-    if trust_proxy_headers {
+    if client_ip_mode == ClientIpMode::XForwardedFor {
         if let Some(forwarded) = headers
             .get(&X_FORWARDED_FOR)
             .and_then(|value| value.to_str().ok())
@@ -180,7 +208,7 @@ mod tests {
         request.extensions_mut().insert(axum::extract::ConnectInfo(
             "10.0.0.2:1234".parse::<std::net::SocketAddr>().unwrap(),
         ));
-        let key = client_key(request.headers(), &request, false);
+        let key = client_key(request.headers(), &request, ClientIpMode::Socket);
         assert_eq!(key, "10.0.0.2");
     }
 
@@ -191,8 +219,32 @@ mod tests {
             .header("x-forwarded-for", "198.51.100.7, 10.0.0.2")
             .body(())
             .unwrap();
-        let key = client_key(request.headers(), &request, true);
+        let key = client_key(request.headers(), &request, ClientIpMode::XForwardedFor);
         assert_eq!(key, "198.51.100.7");
+    }
+
+    #[test]
+    fn falls_back_to_socket_address_when_forwarded_header_missing() {
+        let mut request = Request::builder().uri("/").body(()).unwrap();
+        request.extensions_mut().insert(axum::extract::ConnectInfo(
+            "10.0.0.3:1234".parse::<std::net::SocketAddr>().unwrap(),
+        ));
+        let key = client_key(request.headers(), &request, ClientIpMode::XForwardedFor);
+        assert_eq!(key, "10.0.0.3");
+    }
+
+    #[test]
+    fn falls_back_to_socket_address_when_forwarded_header_is_blank() {
+        let mut request = Request::builder()
+            .uri("/")
+            .header("x-forwarded-for", "  , ")
+            .body(())
+            .unwrap();
+        request.extensions_mut().insert(axum::extract::ConnectInfo(
+            "10.0.0.4:1234".parse::<std::net::SocketAddr>().unwrap(),
+        ));
+        let key = client_key(request.headers(), &request, ClientIpMode::XForwardedFor);
+        assert_eq!(key, "10.0.0.4");
     }
 
     #[tokio::test]

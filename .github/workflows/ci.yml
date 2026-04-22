@@ -5,12 +5,20 @@ on:
   push:
 
 jobs:
-  rust:
+  rust-sqlite:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        backend: [sqlite, postgres]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run workspace tests
+        run: cargo test --workspace
+
+  rust-postgres-qmdb:
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:16
@@ -32,19 +40,36 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Run workspace tests (SQLite lane)
-        if: matrix.backend == 'sqlite'
-        run: cargo test --workspace
-
       - name: Run qm-db tests with Postgres parity enabled
-        if: matrix.backend == 'postgres'
         env:
           QM_REQUIRE_POSTGRES_TESTS: "1"
           QM_POSTGRES_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
         run: cargo test -p qm-db -- --nocapture
 
+  rust-postgres-qmapi:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
       - name: Run compact qm-api Postgres household/auth suite
-        if: matrix.backend == 'postgres'
         env:
           QM_REQUIRE_POSTGRES_TESTS: "1"
           QM_POSTGRES_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres

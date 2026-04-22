@@ -47,6 +47,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jasperhugo.quartermaster
+        CODE_SIGN_ENTITLEMENTS: Quartermaster/Quartermaster.entitlements
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
@@ -54,6 +55,7 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Quartermaster
         INFOPLIST_KEY_CFBundleURLTypes: '[{"CFBundleURLName":"com.jasperhugo.quartermaster","CFBundleURLSchemes":["quartermaster"]}]'
         INFOPLIST_KEY_NSCameraUsageDescription: "Quartermaster scans barcodes to look up products when you add items to your inventory."
+        QUARTERMASTER_ASSOCIATED_DOMAIN: quartermaster.example.com
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_PREVIEWS: YES
         GENERATE_INFOPLIST_FILE: YES

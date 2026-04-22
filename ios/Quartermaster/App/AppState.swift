@@ -118,6 +118,15 @@ final class AppState {
     }
 
     func handleIncomingURL(_ url: URL) {
+        handleIncomingJoinURL(url)
+    }
+
+    func handleIncomingUserActivity(_ userActivity: NSUserActivity) {
+        guard let url = userActivity.webpageURL else { return }
+        handleIncomingJoinURL(url)
+    }
+
+    private func handleIncomingJoinURL(_ url: URL) {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             return
         }

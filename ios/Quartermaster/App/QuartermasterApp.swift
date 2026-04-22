@@ -12,6 +12,9 @@ struct QuartermasterApp: App {
                 .onOpenURL { url in
                     appState.handleIncomingURL(url)
                 }
+                .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+                    appState.handleIncomingUserActivity(activity)
+                }
         }
     }
 }

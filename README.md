@@ -67,7 +67,7 @@ Quartermaster also supports a few self-hosting hardening knobs:
 
 | Variable                                   | Default                                           | Meaning |
 |--------------------------------------------|---------------------------------------------------|---------|
-| `QM_TRUST_PROXY_HEADERS`                   | `false`                                           | Trust `X-Forwarded-For` for client-IP keyed rate limiting |
+| `QM_RATE_LIMIT_CLIENT_IP_MODE`            | `socket`                                          | `socket` for direct client IPs, or `x-forwarded-for` when a trusted reverse proxy rewrites that header |
 | `QM_RATE_LIMIT_AUTH_PER_MINUTE`            | `10`                                              | Per-client auth request refill rate |
 | `QM_RATE_LIMIT_AUTH_BURST`                 | `5`                                               | Per-client auth burst bucket size |
 | `QM_RATE_LIMIT_BARCODE_PER_MINUTE`         | `60`                                              | Per-client barcode lookup refill rate |
@@ -82,9 +82,17 @@ Quartermaster also supports a few self-hosting hardening knobs:
 | `QM_OFF_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `5`                                               | Consecutive transient OFF failures before opening the breaker |
 | `QM_OFF_CIRCUIT_BREAKER_OPEN_SECONDS`      | `60`                                              | How long OFF stays fail-fast once the breaker opens |
 
+Keep `QM_RATE_LIMIT_CLIENT_IP_MODE=socket` for direct deployments or simple local setups. Switch to `x-forwarded-for` only when Quartermaster sits behind a trusted reverse proxy that overwrites `X-Forwarded-For`; otherwise a client could spoof its own rate-limit identity.
+
 ## Tests
 
 `cargo test --workspace` is the default fast verification pass.
+
+Postgres coverage uses the shared test harness in `qm-db::test_support`:
+
+- `QM_POSTGRES_TEST_URL` points at an existing Postgres server and makes the tests create an isolated throwaway database inside it.
+- `QM_RUN_POSTGRES_TESTS=1` tells the harness to start its own containerized Postgres instance when available locally.
+- `QM_REQUIRE_POSTGRES_TESTS=1` turns Postgres availability into a hard failure instead of silently skipping those cases. CI uses this for the dedicated Postgres lanes.
 
 The `qm-api` integration tests live under `crates/qm-api/tests/` and are organized by what they cover, not by implementation milestone. Keep new test files behavior-oriented too: for example `invites.rs`, `households.rs`, and `stock_lifecycle.rs`, not `phase7.rs` or `*_slice.rs`.
 
@@ -134,6 +142,10 @@ Writes `openapi.json` at the repo root **and** at `ios/Quartermaster/openapi.jso
 Re-run this after any change to a Rust DTO, route, or enum — the next iOS build will regenerate `Components.Schemas.*` and the generated `Client` automatically.
 
 Invite-backed registration and `POST /invites/redeem` are transactional: creating the user/membership and consuming the invite happen together, and redeeming an invite for a household the user already belongs to is treated as an idempotent no-op rather than consuming another use.
+
+## Universal Links
+
+HTTPS invite links are built from `QM_PUBLIC_BASE_URL` when it is set. For direct app-opening on iOS, that public HTTPS origin must also serve `/.well-known/apple-app-site-association`, and the app build must include a matching `applinks:` associated domain. Quartermaster keeps `/join` as the browser fallback so shared links still work when the app is not installed.
 
 ## Contributing
 

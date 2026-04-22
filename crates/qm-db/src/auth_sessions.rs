@@ -12,10 +12,7 @@ pub struct AuthSessionRow {
     pub updated_at: String,
 }
 
-pub async fn find(
-    db: &Database,
-    session_id: Uuid,
-) -> Result<Option<AuthSessionRow>, sqlx::Error> {
+pub async fn find(db: &Database, session_id: Uuid) -> Result<Option<AuthSessionRow>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT session_id, user_id, active_household_id, created_at, updated_at \
          FROM auth_session WHERE session_id = ?",
@@ -71,13 +68,45 @@ pub async fn delete(db: &Database, session_id: Uuid) -> Result<(), sqlx::Error> 
     Ok(())
 }
 
+pub async fn has_live_tokens(
+    db: &Database,
+    session_id: Uuid,
+    now_rfc3339: &str,
+) -> Result<bool, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT COUNT(*) AS live_count FROM auth_token \
+         WHERE session_id = ? AND revoked_at IS NULL AND expires_at > ?",
+    )
+    .bind(session_id.to_string())
+    .bind(now_rfc3339)
+    .fetch_one(&db.pool)
+    .await?;
+    let live_count: i64 = row.try_get("live_count")?;
+    Ok(live_count > 0)
+}
+
+pub async fn delete_if_no_live_tokens(
+    db: &Database,
+    session_id: Uuid,
+    now_rfc3339: &str,
+) -> Result<bool, sqlx::Error> {
+    if has_live_tokens(db, session_id, now_rfc3339).await? {
+        return Ok(false);
+    }
+
+    let deleted = sqlx::query("DELETE FROM auth_session WHERE session_id = ?")
+        .bind(session_id.to_string())
+        .execute(&db.pool)
+        .await?;
+    Ok(deleted.rows_affected() > 0)
+}
+
 fn row_to_auth_session(row: sqlx::any::AnyRow) -> Result<AuthSessionRow, sqlx::Error> {
     let session_id: String = row.try_get("session_id")?;
     let user_id: String = row.try_get("user_id")?;
     let active_household_id: Option<String> = row.try_get("active_household_id")?;
     Ok(AuthSessionRow {
-        session_id: Uuid::parse_str(&session_id)
-            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+        session_id: Uuid::parse_str(&session_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         user_id: Uuid::parse_str(&user_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         active_household_id: active_household_id
             .map(|id| Uuid::parse_str(&id).map_err(|e| sqlx::Error::Decode(Box::new(e))))

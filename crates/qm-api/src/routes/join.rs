@@ -1,17 +1,22 @@
 use axum::{
     extract::Query,
+    http::{header, StatusCode},
     response::{Html, IntoResponse},
     routing::get,
     Router,
 };
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use serde::Deserialize;
+use serde_json::json;
 use utoipa::{IntoParams, ToSchema};
 
 use crate::AppState;
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/join", get(join_landing))
+    Router::new().route("/join", get(join_landing)).route(
+        "/.well-known/apple-app-site-association",
+        get(apple_app_site_association),
+    )
 }
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
@@ -99,6 +104,25 @@ pub async fn join_landing(Query(q): Query<JoinQuery>) -> impl IntoResponse {
 </body>
 </html>"#
     ))
+}
+
+pub async fn apple_app_site_association() -> impl IntoResponse {
+    let body = json!({
+        "applinks": {
+            "apps": [],
+            "details": [
+                {
+                    "appID": "42J2SSX5SM.com.jasperhugo.quartermaster",
+                    "paths": ["/join", "/join*"]
+                }
+            ]
+        }
+    });
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json")],
+        body.to_string(),
+    )
 }
 
 fn html_escape(raw: &str) -> String {

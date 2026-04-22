@@ -5,7 +5,7 @@ use figment::{
     providers::{Env, Serialized},
     Figment,
 };
-use qm_api::{ApiConfig, AppState, RegistrationMode};
+use qm_api::{rate_limit::ClientIpMode, ApiConfig, AppState, RegistrationMode};
 use qm_db::Database;
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
@@ -28,7 +28,7 @@ struct RawConfig {
     off_negative_ttl_days: i64,
     off_api_base_url: String,
     public_base_url: Option<String>,
-    trust_proxy_headers: bool,
+    rate_limit_client_ip_mode: String,
     rate_limit_auth_per_minute: u32,
     rate_limit_auth_burst: u32,
     rate_limit_barcode_per_minute: u32,
@@ -55,7 +55,7 @@ impl Default for RawConfig {
             off_negative_ttl_days: 7,
             off_api_base_url: "https://world.openfoodfacts.org/api/v2/product".into(),
             public_base_url: None,
-            trust_proxy_headers: false,
+            rate_limit_client_ip_mode: "socket".into(),
             rate_limit_auth_per_minute: 10,
             rate_limit_auth_burst: 5,
             rate_limit_barcode_per_minute: 60,
@@ -116,7 +116,12 @@ fn init_tracing(log_format: LogFormat) {
 async fn main() -> anyhow::Result<()> {
     let raw = load_config()?;
     init_tracing(LogFormat::from_str(&raw.log_format).map_err(anyhow::Error::msg)?);
-    tracing::info!(bind = %raw.bind, database_url = %raw.database_url, "starting qm-server");
+    tracing::info!(
+        bind = %raw.bind,
+        database_url = %raw.database_url,
+        rate_limit_client_ip_mode = %raw.rate_limit_client_ip_mode,
+        "starting qm-server"
+    );
 
     let db = Database::connect(&raw.database_url)
         .await
@@ -138,7 +143,8 @@ async fn main() -> anyhow::Result<()> {
         off_negative_ttl_days: raw.off_negative_ttl_days,
         off_api_base_url: raw.off_api_base_url,
         public_base_url: raw.public_base_url,
-        trust_proxy_headers: raw.trust_proxy_headers,
+        rate_limit_client_ip_mode: ClientIpMode::from_str(&raw.rate_limit_client_ip_mode)
+            .map_err(anyhow::Error::msg)?,
         rate_limit_auth: qm_api::RateLimitConfig {
             requests_per_minute: raw.rate_limit_auth_per_minute,
             burst: raw.rate_limit_auth_burst,

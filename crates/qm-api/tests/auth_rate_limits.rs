@@ -1,14 +1,14 @@
 mod support;
 
 use axum::http::{HeaderMap, Method, StatusCode};
-use qm_api::ApiConfig;
+use qm_api::{rate_limit::ClientIpMode, ApiConfig};
 use serde_json::json;
 use support::TestApp;
 
 #[tokio::test]
 async fn login_is_rate_limited_per_client_ip() {
     let app = TestApp::start(ApiConfig {
-        trust_proxy_headers: true,
+        rate_limit_client_ip_mode: ClientIpMode::XForwardedFor,
         rate_limit_auth: qm_api::RateLimitConfig {
             requests_per_minute: 60,
             burst: 1,
@@ -48,7 +48,7 @@ async fn login_is_rate_limited_per_client_ip() {
 #[tokio::test]
 async fn stock_history_is_rate_limited_per_client_ip() {
     let app = TestApp::start(ApiConfig {
-        trust_proxy_headers: true,
+        rate_limit_client_ip_mode: ClientIpMode::XForwardedFor,
         rate_limit_history: qm_api::RateLimitConfig {
             requests_per_minute: 60,
             burst: 1,
@@ -73,6 +73,84 @@ async fn stock_history_is_rate_limited_per_client_ip() {
         .await;
     let second = app
         .send_with_headers(Method::GET, "/stock/events", None, Some(&alice), headers)
+        .await;
+
+    assert_eq!(first.0, StatusCode::OK);
+    assert_eq!(second.0, StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
+async fn socket_mode_ignores_forwarded_headers() {
+    let app = TestApp::start(ApiConfig {
+        rate_limit_client_ip_mode: ClientIpMode::Socket,
+        rate_limit_auth: qm_api::RateLimitConfig {
+            requests_per_minute: 60,
+            burst: 1,
+        },
+        ..ApiConfig::default()
+    })
+    .await;
+    app.seed_user_without_household("alice").await;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("x-forwarded-for", "198.51.100.10".parse().unwrap());
+
+    let first = app
+        .send_with_headers(
+            Method::POST,
+            "/auth/login",
+            Some(json!({"username": "alice", "password": "password123"})),
+            None,
+            headers.clone(),
+        )
+        .await;
+    let second = app
+        .send_with_headers(
+            Method::POST,
+            "/auth/login",
+            Some(json!({"username": "alice", "password": "password123"})),
+            None,
+            headers,
+        )
+        .await;
+
+    assert_eq!(first.0, StatusCode::OK);
+    assert_eq!(second.0, StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
+async fn forwarded_mode_falls_back_when_header_is_blank() {
+    let app = TestApp::start(ApiConfig {
+        rate_limit_client_ip_mode: ClientIpMode::XForwardedFor,
+        rate_limit_auth: qm_api::RateLimitConfig {
+            requests_per_minute: 60,
+            burst: 1,
+        },
+        ..ApiConfig::default()
+    })
+    .await;
+    app.seed_user_without_household("alice").await;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("x-forwarded-for", " , ".parse().unwrap());
+
+    let first = app
+        .send_with_headers(
+            Method::POST,
+            "/auth/login",
+            Some(json!({"username": "alice", "password": "password123"})),
+            None,
+            headers.clone(),
+        )
+        .await;
+    let second = app
+        .send_with_headers(
+            Method::POST,
+            "/auth/login",
+            Some(json!({"username": "alice", "password": "password123"})),
+            None,
+            headers,
+        )
         .await;
 
     assert_eq!(first.0, StatusCode::OK);

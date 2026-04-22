@@ -1,13 +1,9 @@
-use std::{
-    any::Any,
-    str::FromStr,
-    sync::Arc,
-};
+use std::{any::Any, str::FromStr, sync::Arc};
 
 use sqlx::{any::AnyPoolOptions, postgres::PgConnection, Connection, Executor};
-use tokio::sync::{Barrier, Mutex};
 use testcontainers::ContainerAsync;
 use testcontainers_modules::{postgres::Postgres, testcontainers::runners::AsyncRunner};
+use tokio::sync::{Barrier, Mutex};
 use uuid::Uuid;
 
 use crate::{Backend, Database};

@@ -25,7 +25,7 @@ pub mod types;
 
 pub use error::{ApiError, ApiResult};
 use openfoodfacts::OffCircuitBreaker;
-use rate_limit::{RateLimitLayerState, RateLimitTarget};
+use rate_limit::{ClientIpMode, RateLimitLayerState, RateLimitTarget};
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -49,9 +49,8 @@ pub struct ApiConfig {
     pub off_negative_ttl_days: i64,
     pub off_api_base_url: String,
     pub public_base_url: Option<String>,
-    /// Whether `X-Forwarded-For` should override the socket address for
-    /// client-identity keyed rate limiting.
-    pub trust_proxy_headers: bool,
+    /// Which client-IP source to use for rate-limit keys.
+    pub rate_limit_client_ip_mode: ClientIpMode,
     pub rate_limit_auth: RateLimitConfig,
     pub rate_limit_barcode: RateLimitConfig,
     pub rate_limit_history: RateLimitConfig,
@@ -78,7 +77,7 @@ impl Default for ApiConfig {
             off_negative_ttl_days: 7,
             off_api_base_url: "https://world.openfoodfacts.org/api/v2/product".into(),
             public_base_url: None,
-            trust_proxy_headers: false,
+            rate_limit_client_ip_mode: ClientIpMode::Socket,
             rate_limit_auth: RateLimitConfig {
                 requests_per_minute: 10,
                 burst: 5,

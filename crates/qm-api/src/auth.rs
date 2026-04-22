@@ -57,6 +57,13 @@ pub fn sha256_hex(s: &str) -> String {
     out
 }
 
+pub async fn cleanup_session_if_unused(
+    db: &qm_db::Database,
+    session_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    qm_db::auth_sessions::delete_if_no_live_tokens(db, session_id, &qm_db::now_utc_rfc3339()).await
+}
+
 #[derive(Clone, Debug)]
 pub struct CurrentUser {
     pub user_id: Uuid,
@@ -73,7 +80,8 @@ pub async fn resolve_active_household(
     if let Some(session) = qm_db::auth_sessions::find(db, session_id).await? {
         if session.user_id == user_id {
             if let Some(active_household_id) = session.active_household_id {
-                if let Some(membership) = qm_db::memberships::find(db, active_household_id, user_id).await?
+                if let Some(membership) =
+                    qm_db::memberships::find(db, active_household_id, user_id).await?
                 {
                     return Ok(ResolvedHousehold {
                         household_id: Some(active_household_id),
@@ -120,6 +128,7 @@ where
             .ok_or(ApiError::Unauthorized)?;
 
         if token.kind != qm_db::tokens::KIND_ACCESS {
+            cleanup_session_if_unused(&app_state.db, token.session_id).await?;
             return Err(ApiError::Unauthorized);
         }
 
@@ -127,12 +136,13 @@ where
             .map_err(|_| ApiError::Unauthorized)?
             .with_timezone(&Utc);
         if expires < Utc::now() {
+            cleanup_session_if_unused(&app_state.db, token.session_id).await?;
             return Err(ApiError::Unauthorized);
         }
 
         qm_db::tokens::touch_last_used(&app_state.db, token.id).await?;
-        let resolved = resolve_active_household(&app_state.db, token.session_id, token.user_id)
-            .await?;
+        let resolved =
+            resolve_active_household(&app_state.db, token.session_id, token.user_id).await?;
 
         let span = Span::current();
         span.record("user_id", tracing::field::display(token.user_id));

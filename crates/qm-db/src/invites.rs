@@ -2,7 +2,7 @@ use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{Backend, memberships::InsertOutcome};
+use crate::{memberships::InsertOutcome, Backend};
 use crate::{now_utc_rfc3339, Database};
 
 #[derive(Debug, Clone, Serialize)]

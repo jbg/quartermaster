@@ -80,10 +80,7 @@ async fn login_initializes_active_household_from_latest_joined_and_me_lists_memb
         me["household_id"].as_str().unwrap(),
         newer_household.id.to_string()
     );
-    assert_eq!(
-        me["household_name"].as_str().unwrap(),
-        newer_household.name
-    );
+    assert_eq!(me["household_name"].as_str().unwrap(), newer_household.name);
     assert_eq!(
         me["public_base_url"].as_str().unwrap(),
         "https://quartermaster.example.com"
@@ -93,10 +90,7 @@ async fn login_initializes_active_household_from_latest_joined_and_me_lists_memb
         me["households"][0]["household"]["id"].as_str().unwrap(),
         newer_household.id.to_string()
     );
-    assert_eq!(
-        me["households"][0]["role"].as_str().unwrap(),
-        "member"
-    );
+    assert_eq!(me["households"][0]["role"].as_str().unwrap(), "member");
 
     sqlx::query("UPDATE membership SET joined_at = ? WHERE user_id = ?")
         .bind("2026-01-01T00:00:00.000Z")
@@ -137,9 +131,10 @@ async fn switch_household_is_session_scoped_and_rejects_non_members() {
     qm_db::locations::seed_defaults(&app.db, cabin_household.id)
         .await
         .unwrap();
-    let cabin_admin = qm_db::users::create(&app.db, "cabin-owner", Some("cabin@example.com"), "hash")
-        .await
-        .unwrap();
+    let cabin_admin =
+        qm_db::users::create(&app.db, "cabin-owner", Some("cabin@example.com"), "hash")
+            .await
+            .unwrap();
     qm_db::memberships::insert(&app.db, cabin_household.id, cabin_admin.id, "admin")
         .await
         .unwrap();
@@ -239,7 +234,9 @@ async fn switch_household_is_session_scoped_and_rejects_non_members() {
         StatusCode::OK
     );
 
-    let outsider_household = qm_db::households::create(&app.db, "Outsider").await.unwrap();
+    let outsider_household = qm_db::households::create(&app.db, "Outsider")
+        .await
+        .unwrap();
     qm_db::locations::seed_defaults(&app.db, outsider_household.id)
         .await
         .unwrap();
@@ -373,16 +370,18 @@ async fn authenticated_user_without_memberships_can_create_household_and_become_
         household_id.to_string()
     );
 
-    let session_a_id = qm_db::tokens::find_active_by_hash(&app.db, &qm_api::auth::sha256_hex(&session_a))
-        .await
-        .unwrap()
-        .unwrap()
-        .session_id;
-    let session_b_id = qm_db::tokens::find_active_by_hash(&app.db, &qm_api::auth::sha256_hex(&session_b))
-        .await
-        .unwrap()
-        .unwrap()
-        .session_id;
+    let session_a_id =
+        qm_db::tokens::find_active_by_hash(&app.db, &qm_api::auth::sha256_hex(&session_a))
+            .await
+            .unwrap()
+            .unwrap()
+            .session_id;
+    let session_b_id =
+        qm_db::tokens::find_active_by_hash(&app.db, &qm_api::auth::sha256_hex(&session_b))
+            .await
+            .unwrap()
+            .unwrap()
+            .session_id;
     assert_eq!(
         qm_db::auth_sessions::find(&app.db, session_a_id)
             .await
@@ -458,23 +457,140 @@ async fn logout_revokes_tokens_and_deletes_auth_session_row() {
         .await
         .unwrap()
         .unwrap();
-    assert!(
-        qm_db::auth_sessions::find(&app.db, token.session_id)
-            .await
-            .unwrap()
-            .is_some()
-    );
+    assert!(qm_db::auth_sessions::find(&app.db, token.session_id)
+        .await
+        .unwrap()
+        .is_some());
 
     assert_eq!(
-        app.send(Method::POST, "/auth/logout", None, Some(access)).await.0,
+        app.send(Method::POST, "/auth/logout", None, Some(access))
+            .await
+            .0,
         StatusCode::NO_CONTENT
     );
-    assert!(
-        qm_db::auth_sessions::find(&app.db, token.session_id)
+    assert!(qm_db::auth_sessions::find(&app.db, token.session_id)
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+async fn expired_only_session_is_cleaned_up_when_access_token_is_used() {
+    let app = TestApp::start(ApiConfig::default()).await;
+    let user_id = app.seed_user_without_household("alice").await;
+    let session_id = Uuid::now_v7();
+    let expired_access = "expired-access-token";
+
+    qm_db::auth_sessions::upsert(&app.db, session_id, user_id, None)
+        .await
+        .unwrap();
+    qm_db::tokens::create(
+        &app.db,
+        user_id,
+        session_id,
+        &qm_api::auth::sha256_hex(expired_access),
+        qm_db::tokens::KIND_ACCESS,
+        Some("iPhone"),
+        chrono::Utc::now() - chrono::Duration::minutes(1),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        app.send(Method::GET, "/auth/me", None, Some(expired_access))
             .await
-            .unwrap()
-            .is_none()
+            .0,
+        StatusCode::UNAUTHORIZED
     );
+    assert!(qm_db::auth_sessions::find(&app.db, session_id)
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+async fn expired_access_keeps_session_when_refresh_token_is_still_live() {
+    let app = TestApp::start(ApiConfig::default()).await;
+    let user_id = app.seed_user_without_household("alice").await;
+    let session_id = Uuid::now_v7();
+    let expired_access = "expired-access-token";
+    let live_refresh = "live-refresh-token";
+
+    qm_db::auth_sessions::upsert(&app.db, session_id, user_id, None)
+        .await
+        .unwrap();
+    qm_db::tokens::create(
+        &app.db,
+        user_id,
+        session_id,
+        &qm_api::auth::sha256_hex(expired_access),
+        qm_db::tokens::KIND_ACCESS,
+        Some("iPhone"),
+        chrono::Utc::now() - chrono::Duration::minutes(1),
+    )
+    .await
+    .unwrap();
+    qm_db::tokens::create(
+        &app.db,
+        user_id,
+        session_id,
+        &qm_api::auth::sha256_hex(live_refresh),
+        qm_db::tokens::KIND_REFRESH,
+        Some("iPhone"),
+        chrono::Utc::now() + chrono::Duration::minutes(30),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        app.send(Method::GET, "/auth/me", None, Some(expired_access))
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert!(qm_db::auth_sessions::find(&app.db, session_id)
+        .await
+        .unwrap()
+        .is_some());
+}
+
+#[tokio::test]
+async fn refresh_rotation_keeps_auth_session_row_alive() {
+    let app = TestApp::start(ApiConfig::default()).await;
+    let _ = app.register("alice", None).await;
+    let (status, login) = app
+        .send(
+            Method::POST,
+            "/auth/login",
+            Some(json!({
+                "username": "alice",
+                "password": "password123",
+            })),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let refresh = login["refresh_token"].as_str().unwrap();
+    let token = qm_db::tokens::find_active_by_hash(&app.db, &qm_api::auth::sha256_hex(refresh))
+        .await
+        .unwrap()
+        .unwrap();
+
+    let (refresh_status, rotated) = app
+        .send(
+            Method::POST,
+            "/auth/refresh",
+            Some(json!({ "refresh_token": refresh })),
+            None,
+        )
+        .await;
+    assert_eq!(refresh_status, StatusCode::OK);
+    assert!(rotated["access_token"].as_str().is_some());
+    assert!(qm_db::auth_sessions::find(&app.db, token.session_id)
+        .await
+        .unwrap()
+        .is_some());
 }
 
 #[tokio::test]
