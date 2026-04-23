@@ -93,7 +93,7 @@ Quartermaster also supports a few self-hosting hardening knobs:
 | `QM_EXPIRY_REMINDER_FIRE_MINUTE`           | `0`                                               | Household-local minute when expiry reminders should fire |
 | `QM_EXPIRY_REMINDER_SWEEP_INTERVAL_SECONDS`| `0`                                               | Periodic reminder reconciliation interval in seconds; `0` disables the in-process timer |
 | `QM_EXPIRY_REMINDER_TRIGGER_SECRET`        | unset                                             | Enables `POST /internal/maintenance/sweep-expiry-reminders` when set; callers must supply the shared secret in `X-QM-Maintenance-Token` |
-| `QM_PUSH_WORKER_ENABLED`                   | `false`                                           | Runs the APNs delivery worker inside the main API process when `true` and APNs is configured |
+| `QM_PUSH_WORKER_ENABLED`                   | `false`                                           | Runs the reminder push delivery worker inside the main API process when `true` and at least one push provider is configured |
 | `QM_PUSH_WORKER_POLL_INTERVAL_SECONDS`     | `30`                                              | How often the worker scans for due reminder deliveries |
 | `QM_PUSH_WORKER_BATCH_SIZE`                | `25`                                              | Maximum reminder/device deliveries to claim in one cycle |
 | `QM_PUSH_WORKER_CLAIM_TTL_SECONDS`         | `60`                                              | How long a claimed delivery stays reserved before it is considered stale |
@@ -103,6 +103,11 @@ Quartermaster also supports a few self-hosting hardening knobs:
 | `QM_APNS_TOPIC`                            | unset                                             | APNs topic / bundle identifier used for reminder notifications |
 | `QM_APNS_AUTH_TOKEN`                       | unset                                             | APNs bearer token; must be supplied when APNs is enabled |
 | `QM_APNS_BASE_URL`                         | unset                                             | Optional APNs base URL override for local development or testing |
+| `QM_FCM_ENABLED`                           | `false`                                           | Enables FCM delivery support for Android reminder notifications |
+| `QM_FCM_PROJECT_ID`                        | unset                                             | Firebase project ID used in the FCM v1 send path |
+| `QM_FCM_SERVICE_ACCOUNT_JSON_PATH`         | unset                                             | Path to a Firebase service-account JSON file used for OAuth token minting |
+| `QM_FCM_BASE_URL`                          | unset                                             | Optional FCM base URL override for local development or testing |
+| `QM_FCM_TOKEN_URL`                         | unset                                             | Optional OAuth token URL override for local development or testing |
 | `QM_METRICS_ENABLED`                       | `false`                                           | Enables internal Prometheus metrics exposure |
 | `QM_METRICS_BIND`                          | `127.0.0.1:9091`                                  | Bind address for the dedicated `push-worker` metrics/health server |
 | `QM_METRICS_TRIGGER_SECRET`                | unset                                             | Required when metrics are enabled; callers must supply it in `X-QM-Maintenance-Token` for `GET /internal/metrics` |
@@ -120,14 +125,14 @@ Expiry reminders are also backend-owned in the current v1 design: the server com
 Quartermaster's reminder delivery pipeline has two pieces:
 
 - the main API process, which owns stock mutations, reminder reconciliation, and the reminder inbox API
-- the APNs worker, which claims due reminder/device deliveries, sends push requests, and writes durable delivery attempts
+- the push worker, which claims due reminder/device deliveries, sends APNs and/or FCM requests, and writes durable delivery attempts
 
 You can run the worker in either deployment shape:
 
 - integrated mode: run `cargo run -p qm-server` with `QM_PUSH_WORKER_ENABLED=true`
 - split mode: run the API normally and start a second process with `cargo run -p qm-server -- push-worker`
 
-`push-worker` mode requires `QM_APNS_ENABLED=true` and `QM_APNS_TOPIC` to be configured. In split deployments, the sweeper remains a repair tool for drift; the worker is still the primary delivery path.
+`push-worker` mode requires at least one configured push provider. For iOS that means `QM_APNS_ENABLED=true` plus `QM_APNS_TOPIC`; for Android that means `QM_FCM_ENABLED=true` plus `QM_FCM_PROJECT_ID` and `QM_FCM_SERVICE_ACCOUNT_JSON_PATH`. In split deployments, the sweeper remains a repair tool for drift; the worker is still the primary delivery path.
 
 For a hosted deployment walkthrough, maintenance examples, and an operator troubleshooting checklist, see [docs/hosted-reminders.md](docs/hosted-reminders.md).
 
@@ -144,8 +149,8 @@ The worker publishes counters and gauges for:
 
 - cycle count and cycle failures
 - claimed deliveries, claim conflicts, and expired claims
-- push attempts by outcome (`succeeded`, `failed_retryable`, `failed_permanent`)
-- transport failures before any APNs response
+- push attempts by channel/outcome (`succeeded`, `failed_retryable`, `failed_permanent`)
+- transport failures before any provider response
 - send/cycle latency histograms
 - due reminder count, retry-due count, active claim count, permanent/retryable failure counts, invalid-token count, and oldest due reminder age
 
@@ -163,7 +168,7 @@ Potential trouble signs are:
 - frequent claim conflicts across multiple workers
 - permanent token failures accumulating faster than devices refresh their push tokens
 
-An APNs permanent token failure means the server has stopped retrying that reminder for that exact device token. Delivery resumes automatically if the client later re-registers the device with a new token.
+A permanent invalid-token failure means the server has stopped retrying that reminder for that exact device token. Delivery resumes automatically if the client later re-registers the device with a new token.
 
 Example Prometheus scrape config:
 

@@ -103,16 +103,17 @@ pub fn record_expired_claims(count: u64) {
     counter!("qm_push_worker_expired_claims_total").increment(count);
 }
 
-pub fn record_attempt(outcome: &'static str) {
-    counter!("qm_push_attempts_total", "channel" => "apns", "outcome" => outcome).increment(1);
+pub fn record_attempt(channel: &str, outcome: &'static str) {
+    counter!("qm_push_attempts_total", "channel" => channel.to_owned(), "outcome" => outcome)
+        .increment(1);
 }
 
-pub fn record_transport_failure() {
-    counter!("qm_push_transport_failures_total").increment(1);
+pub fn record_transport_failure(channel: &str) {
+    counter!("qm_push_transport_failures_total", "channel" => channel.to_owned()).increment(1);
 }
 
-pub fn record_send_duration(seconds: f64) {
-    histogram!("qm_push_send_duration_seconds").record(seconds);
+pub fn record_send_duration(channel: &str, seconds: f64) {
+    histogram!("qm_push_send_duration_seconds", "channel" => channel.to_owned()).record(seconds);
 }
 
 async fn healthz() -> axum::Json<HealthResponse> {

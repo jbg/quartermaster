@@ -24,6 +24,11 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
+        buildConfigField("String", "FIREBASE_PROJECT_ID", "\"${System.getenv("QUARTERMASTER_ANDROID_FIREBASE_PROJECT_ID") ?: ""}\"")
+        buildConfigField("String", "FIREBASE_APPLICATION_ID", "\"${System.getenv("QUARTERMASTER_ANDROID_FIREBASE_APPLICATION_ID") ?: ""}\"")
+        buildConfigField("String", "FIREBASE_API_KEY", "\"${System.getenv("QUARTERMASTER_ANDROID_FIREBASE_API_KEY") ?: ""}\"")
+        buildConfigField("String", "FIREBASE_SENDER_ID", "\"${System.getenv("QUARTERMASTER_ANDROID_FIREBASE_SENDER_ID") ?: ""}\"")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
@@ -109,9 +114,11 @@ tasks.withType<KotlinCompile>().configureEach {
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
+    val firebaseBom = platform("com.google.firebase:firebase-bom:34.4.0")
 
     implementation(composeBom)
     androidTestImplementation(composeBom)
+    implementation(firebaseBom)
 
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.compose.material3:material3")
@@ -122,10 +129,13 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.4")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.core:core-splashscreen:1.0.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
+    implementation("com.google.firebase:firebase-messaging")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.squareup.retrofit2:retrofit:2.11.0")

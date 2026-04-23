@@ -167,7 +167,7 @@ class QuartermasterApi(private val authStore: AuthStore) {
     ) {
         authedUnit(
             method = "POST",
-            path = "/devices",
+            path = "/devices/register",
             body = RegisterDeviceRequest(
                 deviceId = deviceId,
                 platform = "android",

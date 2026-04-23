@@ -4,7 +4,7 @@ Quartermaster's reminder system has one supported v1 operating model:
 
 - the backend owns reminder timing, wording, and inbox state
 - the API process owns stock mutations, reminder reconciliation, and the durable inbox API
-- the APNs worker owns push delivery attempts
+- the push worker owns APNs and FCM delivery attempts
 - the reminder sweeper is a repair tool, not the primary delivery loop
 
 Use this guide when running reminders in a self-hosted or small hosted deployment.
@@ -34,6 +34,9 @@ Example environment split:
   - `QM_APNS_ENVIRONMENT=production`
   - `QM_APNS_TOPIC=com.example.quartermaster`
   - `QM_APNS_AUTH_TOKEN=<operator-managed-bearer-token>`
+  - `QM_FCM_ENABLED=true`
+  - `QM_FCM_PROJECT_ID=<firebase-project-id>`
+  - `QM_FCM_SERVICE_ACCOUNT_JSON_PATH=/run/secrets/quartermaster-fcm-service-account.json`
   - `QM_METRICS_ENABLED=true`
   - `QM_METRICS_BIND=127.0.0.1:9091`
   - `QM_METRICS_TRIGGER_SECRET=<shared-maintenance-secret>`
@@ -50,7 +53,7 @@ curl -X POST \
   https://quartermaster.example.com/internal/maintenance/sweep-expiry-reminders
 ```
 
-The sweeper endpoints are useful for drift repair and low-frequency maintenance. They are not a replacement for the running APNs worker.
+The sweeper endpoints are useful for drift repair and low-frequency maintenance. They are not a replacement for the running push worker.
 
 ## Metrics and Health
 
@@ -89,14 +92,14 @@ If due reminders keep backing up:
 
 - confirm the worker is running at all
 - check that `qm_push_worker_last_cycle_completed_timestamp_seconds` is moving
-- check worker logs for APNs transport or auth failures
-- confirm the worker can reach APNs from the deployment network
+- check worker logs for APNs or FCM transport/auth failures
+- confirm the worker can reach Apple and Google push endpoints from the deployment network
 
 If retry backlog keeps growing:
 
 - check `qm_push_deliveries_retry_due_count`
-- inspect worker logs for repeated transient APNs or transport errors
-- verify the APNs environment and topic match the app build you actually shipped
+- inspect worker logs for repeated transient provider or transport errors
+- verify the APNs environment/topic or FCM project/service-account config match the client build you actually shipped
 
 If invalid tokens keep growing:
 
@@ -116,20 +119,23 @@ If metrics appear missing:
 - verify the scrape request sends `X-QM-Maintenance-Token`
 - verify the worker's `QM_METRICS_BIND` is reachable from the scraper
 
-## APNs Requirements and Failure Modes
+## Provider Requirements and Failure Modes
 
-Quartermaster's current APNs contract is intentionally small:
+Quartermaster's current provider contract is intentionally small:
 
 - `QM_APNS_ENABLED=true`
 - `QM_APNS_TOPIC=<bundle identifier>`
 - `QM_APNS_AUTH_TOKEN=<bearer token>`
 - `QM_APNS_ENVIRONMENT=sandbox|production`
+- `QM_FCM_ENABLED=true`
+- `QM_FCM_PROJECT_ID=<firebase-project-id>`
+- `QM_FCM_SERVICE_ACCOUNT_JSON_PATH=<service-account-json-path>`
 
 Common failure classes:
 
-- transport failure: no APNs response; reminder/device goes retryable
-- retryable APNs failure: APNs responded with a transient error; reminder/device gets `next_retry_at`
-- permanent APNs failure: APNs rejected the token or request permanently; that token stops retrying for that reminder
+- transport failure: no provider response; reminder/device goes retryable
+- retryable provider failure: APNs or FCM responded with a transient error; reminder/device gets `next_retry_at`
+- permanent provider failure: APNs or FCM rejected the token or request permanently; that token stops retrying for that reminder
 
 An invalid or unregistered token does not remove the reminder from the durable inbox. It only stops retrying that reminder for that exact token.
 

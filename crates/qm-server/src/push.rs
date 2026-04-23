@@ -1,16 +1,25 @@
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::{
+    collections::BTreeMap,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::Context;
 use jiff::{Timestamp, ToSpan};
+use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use metrics_exporter_prometheus::PrometheusHandle;
 use reqwest::StatusCode;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tokio::sync::watch;
+use tokio::sync::{watch, Mutex};
 use tracing::{debug, error, info, warn};
 
 use crate::metrics;
 use qm_db::{reminders, time, Database};
+
+const FCM_SCOPE: &str = "https://www.googleapis.com/auth/firebase.messaging";
+const FCM_TOKEN_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:jwt-bearer";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApnsEnvironment {
@@ -57,6 +66,64 @@ impl ApnsConfig {
 }
 
 #[derive(Clone, Debug)]
+pub struct FcmConfig {
+    pub enabled: bool,
+    pub project_id: Option<String>,
+    pub service_account_json_path: Option<String>,
+    pub base_url: Option<String>,
+    pub token_url: Option<String>,
+    auth_cache: Arc<Mutex<Option<CachedFcmAccessToken>>>,
+}
+
+impl FcmConfig {
+    pub fn new(
+        enabled: bool,
+        project_id: Option<String>,
+        service_account_json_path: Option<String>,
+        base_url: Option<String>,
+        token_url: Option<String>,
+    ) -> Self {
+        Self {
+            enabled,
+            project_id,
+            service_account_json_path,
+            base_url,
+            token_url,
+            auth_cache: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.enabled && self.project_id.is_some() && self.service_account_json_path.is_some()
+    }
+
+    pub fn base_url(&self) -> &str {
+        self.base_url
+            .as_deref()
+            .unwrap_or("https://fcm.googleapis.com")
+    }
+
+    pub fn token_url(&self) -> &str {
+        self.token_url
+            .as_deref()
+            .unwrap_or("https://oauth2.googleapis.com/token")
+    }
+
+    fn project_id(&self) -> anyhow::Result<&str> {
+        self.project_id
+            .as_deref()
+            .context("QM_FCM_PROJECT_ID is required when QM_FCM_ENABLED=true")
+    }
+
+    fn service_account_path(&self) -> anyhow::Result<PathBuf> {
+        self.service_account_json_path
+            .as_ref()
+            .map(PathBuf::from)
+            .context("QM_FCM_SERVICE_ACCOUNT_JSON_PATH is required when QM_FCM_ENABLED=true")
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct PushWorkerConfig {
     pub poll_interval: Duration,
     pub batch_size: i64,
@@ -66,6 +133,7 @@ pub struct PushWorkerConfig {
 
 #[derive(Debug)]
 struct PushSendOutcome {
+    channel: String,
     status: &'static str,
     metric_outcome: &'static str,
     provider_message_id: Option<String>,
@@ -75,15 +143,77 @@ struct PushSendOutcome {
     transport_error: bool,
 }
 
+#[derive(Debug, Default)]
+struct ChannelStats {
+    successful_attempts: u64,
+    retryable_attempts: u64,
+    permanent_attempts: u64,
+    transport_failures: u64,
+}
+
 #[derive(Debug, Deserialize)]
 struct ApnsErrorBody {
     reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FcmTokenResponse {
+    access_token: String,
+    expires_in: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct FcmSuccessBody {
+    name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FcmErrorResponse {
+    error: Option<FcmErrorEnvelope>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FcmErrorEnvelope {
+    code: Option<i64>,
+    status: Option<String>,
+    message: Option<String>,
+    details: Option<Vec<FcmErrorDetail>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FcmErrorDetail {
+    #[serde(rename = "@type")]
+    type_url: Option<String>,
+    error_code: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ServiceAccountJson {
+    client_email: String,
+    private_key: String,
+    token_uri: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct CachedFcmAccessToken {
+    access_token: String,
+    refresh_at: Instant,
+}
+
+#[derive(Debug, Serialize)]
+struct FcmJwtClaims<'a> {
+    iss: &'a str,
+    scope: &'a str,
+    aud: &'a str,
+    exp: usize,
+    iat: usize,
 }
 
 pub async fn run_push_worker(
     db: Database,
     http: reqwest::Client,
     apns: ApnsConfig,
+    fcm: FcmConfig,
     worker: PushWorkerConfig,
     _metrics_handle: Option<PrometheusHandle>,
     mut shutdown: watch::Receiver<bool>,
@@ -95,7 +225,7 @@ pub async fn run_push_worker(
         tokio::select! {
             _ = ticker.tick() => {
                 metrics::record_cycle_started();
-                if let Err(err) = run_push_cycle(&db, &http, &apns, &worker).await {
+                if let Err(err) = run_push_cycle(&db, &http, &apns, &fcm, &worker).await {
                     metrics::record_cycle_failed();
                     error!(?err, "push worker cycle failed");
                 }
@@ -114,10 +244,11 @@ pub async fn run_push_cycle(
     db: &Database,
     http: &reqwest::Client,
     apns: &ApnsConfig,
+    fcm: &FcmConfig,
     worker: &PushWorkerConfig,
 ) -> anyhow::Result<()> {
-    if !apns.is_ready() {
-        debug!("push worker skipped: APNs is not configured");
+    if !apns.is_ready() && !fcm.is_ready() {
+        debug!("push worker skipped: no push providers are configured");
         return Ok(());
     }
 
@@ -149,38 +280,42 @@ pub async fn run_push_cycle(
     metrics::record_claimed(claimed.items.len() as u64);
     metrics::record_claim_conflicts(claimed.claim_conflicts);
 
-    let mut successful_attempts = 0_u64;
-    let mut retryable_attempts = 0_u64;
-    let mut permanent_attempts = 0_u64;
-    let mut transport_failures = 0_u64;
+    let mut channel_stats = BTreeMap::<String, ChannelStats>::new();
 
     for item in claimed.items {
         let send_started = Instant::now();
-        let outcome = match send_apns(http, apns, &item, &retry_at).await {
-            Ok(outcome) => outcome,
-            Err(err) => {
-                warn!(?err, reminder_id = %item.reminder_id, device_id = %item.device_row_id, "push send failed before response");
-                PushSendOutcome {
-                    status: reminders::DELIVERY_STATUS_FAILED_RETRYABLE,
-                    metric_outcome: "failed_retryable",
-                    provider_message_id: None,
-                    error_code: Some("transport_error".into()),
-                    error_message: Some(err.to_string()),
-                    next_retry_at: Some(retry_at.clone()),
-                    transport_error: true,
-                }
+        let outcome = match item.channel.as_str() {
+            reminders::CHANNEL_APNS => match send_apns(http, apns, &item, &retry_at).await {
+                Ok(outcome) => outcome,
+                Err(err) => transport_failure_outcome(&item.channel, err, &retry_at),
+            },
+            reminders::CHANNEL_FCM => match send_fcm(http, fcm, &item, &retry_at).await {
+                Ok(outcome) => outcome,
+                Err(err) => transport_failure_outcome(&item.channel, err, &retry_at),
+            },
+            other => {
+                warn!(
+                    reminder_id = %item.reminder_id,
+                    device_id = %item.device_row_id,
+                    channel = other,
+                    "skipping push delivery for unsupported provider"
+                );
+                continue;
             }
         };
-        metrics::record_send_duration(send_started.elapsed().as_secs_f64());
-        metrics::record_attempt(outcome.metric_outcome);
+
+        metrics::record_send_duration(&outcome.channel, send_started.elapsed().as_secs_f64());
+        metrics::record_attempt(&outcome.channel, outcome.metric_outcome);
+
+        let stats = channel_stats.entry(outcome.channel.clone()).or_default();
         if outcome.transport_error {
-            metrics::record_transport_failure();
-            transport_failures += 1;
+            metrics::record_transport_failure(&outcome.channel);
+            stats.transport_failures += 1;
         }
         match outcome.status {
-            reminders::DELIVERY_STATUS_SUCCEEDED => successful_attempts += 1,
-            reminders::DELIVERY_STATUS_FAILED_RETRYABLE => retryable_attempts += 1,
-            reminders::DELIVERY_STATUS_FAILED_PERMANENT => permanent_attempts += 1,
+            reminders::DELIVERY_STATUS_SUCCEEDED => stats.successful_attempts += 1,
+            reminders::DELIVERY_STATUS_FAILED_RETRYABLE => stats.retryable_attempts += 1,
+            reminders::DELIVERY_STATUS_FAILED_PERMANENT => stats.permanent_attempts += 1,
             _ => {}
         }
 
@@ -188,6 +323,7 @@ pub async fn run_push_cycle(
             db,
             &item,
             &reminders::PushDeliveryResult {
+                channel: outcome.channel,
                 status: outcome.status,
                 finished_at: time::format_timestamp(Timestamp::now()),
                 next_retry_at: outcome.next_retry_at,
@@ -203,6 +339,16 @@ pub async fn run_push_cycle(
         metrics::refresh_delivery_gauges(db, &time::format_timestamp(Timestamp::now())).await?;
     metrics::record_cycle_duration(cycle_started.elapsed().as_secs_f64());
     metrics::record_last_cycle_completed(unix_timestamp_seconds());
+
+    let claimed_count: u64 = channel_stats
+        .values()
+        .map(|stats| {
+            stats.successful_attempts
+                + stats.retryable_attempts
+                + stats.permanent_attempts
+                + stats.transport_failures
+        })
+        .sum();
     info!(
         due_before = before_summary.due_count,
         due_after = after_summary.due_count,
@@ -212,16 +358,27 @@ pub async fn run_push_cycle(
         failed_permanent_after = after_summary.failed_permanent_count,
         invalid_tokens_after = after_summary.invalid_token_count,
         expired_claims = expired,
-        claimed = successful_attempts + retryable_attempts + permanent_attempts,
         claim_conflicts = claimed.claim_conflicts,
-        successful_attempts,
-        retryable_attempts,
-        permanent_attempts,
-        transport_failures,
+        claimed = claimed_count,
+        channel_stats = ?channel_stats,
         "push worker cycle completed"
     );
 
     Ok(())
+}
+
+fn transport_failure_outcome(channel: &str, err: anyhow::Error, retry_at: &str) -> PushSendOutcome {
+    warn!(?err, channel, "push send failed before response");
+    PushSendOutcome {
+        channel: channel.to_owned(),
+        status: reminders::DELIVERY_STATUS_FAILED_RETRYABLE,
+        metric_outcome: "failed_retryable",
+        provider_message_id: None,
+        error_code: Some("transport_error".into()),
+        error_message: Some(err.to_string()),
+        next_retry_at: Some(retry_at.to_owned()),
+        transport_error: true,
+    }
 }
 
 async fn send_apns(
@@ -230,6 +387,10 @@ async fn send_apns(
     item: &reminders::PushWorkItem,
     retry_at: &str,
 ) -> anyhow::Result<PushSendOutcome> {
+    if !apns.is_ready() {
+        anyhow::bail!("APNs is not configured");
+    }
+
     let url = format!("{}/3/device/{}", apns.base_url(), item.device_token);
     let mut request = http
         .post(url)
@@ -273,6 +434,130 @@ async fn send_apns(
     ))
 }
 
+async fn send_fcm(
+    http: &reqwest::Client,
+    fcm: &FcmConfig,
+    item: &reminders::PushWorkItem,
+    retry_at: &str,
+) -> anyhow::Result<PushSendOutcome> {
+    if !fcm.is_ready() {
+        anyhow::bail!("FCM is not configured");
+    }
+
+    let access_token = fcm_access_token(http, fcm).await?;
+    let project_id = fcm.project_id()?;
+    let url = format!(
+        "{}/v1/projects/{project_id}/messages:send",
+        fcm.base_url().trim_end_matches('/')
+    );
+    let payload = json!({
+        "message": {
+            "token": item.device_token,
+            "android": {
+                "priority": "HIGH",
+                "notification": {
+                    "channel_id": "expiry_reminders"
+                }
+            },
+            "notification": {
+                "title": item.title,
+                "body": item.body
+            },
+            "data": {
+                "reminder_id": item.reminder_id.to_string(),
+                "batch_id": item.batch_id.to_string(),
+                "product_id": item.product_id.to_string(),
+                "location_id": item.location_id.to_string(),
+                "kind": item.kind.clone(),
+                "title": item.title.clone(),
+                "body": item.body.clone()
+            }
+        }
+    });
+    let response = http
+        .post(url)
+        .bearer_auth(access_token)
+        .json(&payload)
+        .send()
+        .await
+        .context("sending FCM request")?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    Ok(classify_fcm_response(status, body, retry_at))
+}
+
+async fn fcm_access_token(http: &reqwest::Client, fcm: &FcmConfig) -> anyhow::Result<String> {
+    let mut cache = fcm.auth_cache.lock().await;
+    if let Some(cached) = cache.as_ref() {
+        if Instant::now() < cached.refresh_at {
+            return Ok(cached.access_token.clone());
+        }
+    }
+
+    let credentials = read_service_account_json(fcm).await?;
+    let audience = credentials
+        .token_uri
+        .clone()
+        .unwrap_or_else(|| fcm.token_url().to_owned());
+    let assertion = build_fcm_jwt_assertion(&credentials, &audience)?;
+    let response = http
+        .post(fcm.token_url())
+        .form(&[
+            ("grant_type", FCM_TOKEN_GRANT_TYPE),
+            ("assertion", assertion.as_str()),
+        ])
+        .send()
+        .await
+        .context("requesting FCM access token")?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        anyhow::bail!(
+            "FCM token exchange failed with HTTP {}: {}",
+            status.as_u16(),
+            body
+        );
+    }
+    let parsed: FcmTokenResponse =
+        serde_json::from_str(&body).context("parsing FCM token response")?;
+    let refresh_in = parsed.expires_in.saturating_sub(60).max(1) as u64;
+    let access_token = parsed.access_token;
+    *cache = Some(CachedFcmAccessToken {
+        access_token: access_token.clone(),
+        refresh_at: Instant::now() + Duration::from_secs(refresh_in),
+    });
+    Ok(access_token)
+}
+
+async fn read_service_account_json(fcm: &FcmConfig) -> anyhow::Result<ServiceAccountJson> {
+    let path = fcm.service_account_path()?;
+    let raw = tokio::fs::read_to_string(&path)
+        .await
+        .with_context(|| format!("reading FCM service account JSON from {}", path.display()))?;
+    serde_json::from_str(&raw).context("parsing FCM service account JSON")
+}
+
+fn build_fcm_jwt_assertion(
+    credentials: &ServiceAccountJson,
+    audience: &str,
+) -> anyhow::Result<String> {
+    let issued_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as usize;
+    let claims = FcmJwtClaims {
+        iss: &credentials.client_email,
+        scope: FCM_SCOPE,
+        aud: audience,
+        iat: issued_at,
+        exp: issued_at + 3600,
+    };
+    let key = EncodingKey::from_rsa_pem(credentials.private_key.as_bytes())
+        .context("loading FCM service account private key")?;
+    jsonwebtoken::encode(&Header::new(Algorithm::RS256), &claims, &key)
+        .context("encoding FCM JWT assertion")
+}
+
 fn unix_timestamp_seconds() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -295,6 +580,7 @@ fn classify_apns_response(
             "push delivery succeeded"
         );
         return PushSendOutcome {
+            channel: reminders::CHANNEL_APNS.into(),
             status: reminders::DELIVERY_STATUS_SUCCEEDED,
             metric_outcome: "succeeded",
             provider_message_id: apns_id,
@@ -313,6 +599,7 @@ fn classify_apns_response(
     let permanent = matches!(status.as_u16(), 400 | 403 | 404 | 410);
     let error_message = if body.is_empty() { None } else { Some(body) };
     PushSendOutcome {
+        channel: reminders::CHANNEL_APNS.into(),
         status: if permanent {
             reminders::DELIVERY_STATUS_FAILED_PERMANENT
         } else {
@@ -335,11 +622,100 @@ fn classify_apns_response(
     }
 }
 
+fn classify_fcm_response(status: StatusCode, body: String, retry_at: &str) -> PushSendOutcome {
+    if status.is_success() {
+        let provider_message_id = serde_json::from_str::<FcmSuccessBody>(&body)
+            .ok()
+            .and_then(|value| value.name);
+        return PushSendOutcome {
+            channel: reminders::CHANNEL_FCM.into(),
+            status: reminders::DELIVERY_STATUS_SUCCEEDED,
+            metric_outcome: "succeeded",
+            provider_message_id,
+            error_code: None,
+            error_message: None,
+            next_retry_at: None,
+            transport_error: false,
+        };
+    }
+
+    let parsed = serde_json::from_str::<FcmErrorResponse>(&body).ok();
+    let normalized = normalize_fcm_error(status, parsed.as_ref());
+    let permanent = matches!(normalized.as_str(), "invalid_token" | "unregistered")
+        || matches!(status.as_u16(), 400 | 403 | 404);
+    let error_message = parsed
+        .as_ref()
+        .and_then(|value| value.error.as_ref())
+        .and_then(|value| value.message.clone())
+        .or_else(|| if body.is_empty() { None } else { Some(body) });
+    PushSendOutcome {
+        channel: reminders::CHANNEL_FCM.into(),
+        status: if permanent {
+            reminders::DELIVERY_STATUS_FAILED_PERMANENT
+        } else {
+            reminders::DELIVERY_STATUS_FAILED_RETRYABLE
+        },
+        metric_outcome: if permanent {
+            "failed_permanent"
+        } else {
+            "failed_retryable"
+        },
+        provider_message_id: None,
+        error_code: Some(normalized),
+        error_message,
+        next_retry_at: if permanent {
+            None
+        } else {
+            Some(retry_at.to_owned())
+        },
+        transport_error: false,
+    }
+}
+
+fn normalize_fcm_error(status: StatusCode, parsed: Option<&FcmErrorResponse>) -> String {
+    let Some(envelope) = parsed.and_then(|value| value.error.as_ref()) else {
+        return format!("http_{}", status.as_u16());
+    };
+
+    if let Some(details) = &envelope.details {
+        for detail in details {
+            if detail
+                .type_url
+                .as_deref()
+                .is_some_and(|value| value.contains("FcmError"))
+            {
+                match detail.error_code.as_deref() {
+                    Some("UNREGISTERED") => return "unregistered".into(),
+                    Some("INVALID_ARGUMENT") => return "invalid_token".into(),
+                    Some(code) => return code.to_ascii_lowercase(),
+                    None => {}
+                }
+            }
+        }
+    }
+
+    match envelope.status.as_deref() {
+        Some("UNAUTHENTICATED") | Some("INTERNAL") | Some("UNAVAILABLE") => {
+            format!("http_{}", status.as_u16())
+        }
+        Some("NOT_FOUND") => "unregistered".into(),
+        Some("INVALID_ARGUMENT") => "invalid_token".into(),
+        Some(other) => other.to_ascii_lowercase(),
+        None => envelope
+            .code
+            .map(|code| format!("http_{code}"))
+            .unwrap_or_else(|| format!("http_{}", status.as_u16())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
-    use axum::http::StatusCode;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode as AxumStatusCode},
+    };
     use serde_json::Value;
     use sqlx::Row;
     use tower::util::ServiceExt;
@@ -392,6 +768,8 @@ mod tests {
         pantry: Uuid,
         product_id: Uuid,
         token: &str,
+        platform: &str,
+        device_id: &str,
     ) -> Uuid {
         let batch = stock::create(
             db,
@@ -426,8 +804,8 @@ mod tests {
             &DeviceUpsert {
                 user_id,
                 session_id,
-                device_id: "ios-main".into(),
-                platform: "ios".into(),
+                device_id: device_id.into(),
+                platform: platform.into(),
                 push_token: Some(token.into()),
                 push_authorization: "authorized".into(),
                 app_version: Some("0.1".into()),
@@ -461,22 +839,26 @@ mod tests {
         metrics::init_recorder().unwrap().render()
     }
 
-    #[tokio::test]
-    async fn classify_apns_response_marks_success() {
-        let (_, household_id, user_id, pantry, product_id) = setup_push_fixture().await;
-        let dummy = reminders::PushWorkItem {
+    fn dummy_item(channel: &str) -> reminders::PushWorkItem {
+        reminders::PushWorkItem {
             attempt_id: Uuid::now_v7(),
+            channel: channel.into(),
             reminder_id: Uuid::now_v7(),
-            household_id,
-            batch_id: pantry,
-            product_id,
-            location_id: pantry,
+            household_id: Uuid::now_v7(),
+            batch_id: Uuid::now_v7(),
+            product_id: Uuid::now_v7(),
+            location_id: Uuid::now_v7(),
             kind: reminders::KIND_EXPIRY.into(),
             title: "Milk expires tomorrow".into(),
             body: "Pantry".into(),
-            device_row_id: user_id,
-            device_token: "token-success".into(),
-        };
+            device_row_id: Uuid::now_v7(),
+            device_token: "token".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn classify_apns_response_marks_success() {
+        let dummy = dummy_item(reminders::CHANNEL_APNS);
         let outcome = classify_apns_response(
             StatusCode::OK,
             Some("test-apns-id".into()),
@@ -484,37 +866,52 @@ mod tests {
             "2000-01-01T00:05:00.000Z",
             &dummy,
         );
+        assert_eq!(outcome.channel, reminders::CHANNEL_APNS);
         assert_eq!(outcome.status, reminders::DELIVERY_STATUS_SUCCEEDED);
         assert_eq!(outcome.metric_outcome, "succeeded");
         assert_eq!(outcome.provider_message_id.as_deref(), Some("test-apns-id"));
     }
 
     #[tokio::test]
-    async fn classify_apns_response_marks_retryable_failure() {
-        let (_, household_id, user_id, pantry, product_id) = setup_push_fixture().await;
-        let dummy = reminders::PushWorkItem {
-            attempt_id: Uuid::now_v7(),
-            reminder_id: Uuid::now_v7(),
-            household_id,
-            batch_id: pantry,
-            product_id,
-            location_id: pantry,
-            kind: reminders::KIND_EXPIRY.into(),
-            title: "Milk expires tomorrow".into(),
-            body: "Pantry".into(),
-            device_row_id: user_id,
-            device_token: "token-retryable".into(),
-        };
-        let outcome = classify_apns_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            None,
-            json!({ "reason": "InternalServerError" }).to_string(),
+    async fn classify_fcm_response_marks_invalid_token_as_permanent() {
+        let outcome = classify_fcm_response(
+            StatusCode::BAD_REQUEST,
+            json!({
+                "error": {
+                    "code": 400,
+                    "status": "INVALID_ARGUMENT",
+                    "message": "bad token",
+                    "details": [
+                        {
+                            "@type": "type.googleapis.com/google.firebase.fcm.v1.FcmError",
+                            "errorCode": "INVALID_ARGUMENT"
+                        }
+                    ]
+                }
+            })
+            .to_string(),
             "2000-01-01T00:05:00.000Z",
-            &dummy,
+        );
+        assert_eq!(outcome.channel, reminders::CHANNEL_FCM);
+        assert_eq!(outcome.status, reminders::DELIVERY_STATUS_FAILED_PERMANENT);
+        assert_eq!(outcome.error_code.as_deref(), Some("invalid_token"));
+    }
+
+    #[tokio::test]
+    async fn classify_fcm_response_marks_retryable_failure() {
+        let outcome = classify_fcm_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            json!({
+                "error": {
+                    "code": 503,
+                    "status": "UNAVAILABLE",
+                    "message": "retry later"
+                }
+            })
+            .to_string(),
+            "2000-01-01T00:05:00.000Z",
         );
         assert_eq!(outcome.status, reminders::DELIVERY_STATUS_FAILED_RETRYABLE);
-        assert_eq!(outcome.metric_outcome, "failed_retryable");
-        assert_eq!(outcome.error_code.as_deref(), Some("InternalServerError"));
         assert_eq!(
             outcome.next_retry_at.as_deref(),
             Some("2000-01-01T00:05:00.000Z")
@@ -522,32 +919,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn classify_apns_response_marks_permanent_failure() {
-        let (_, household_id, user_id, pantry, product_id) = setup_push_fixture().await;
-        let dummy = reminders::PushWorkItem {
-            attempt_id: Uuid::now_v7(),
-            reminder_id: Uuid::now_v7(),
-            household_id,
-            batch_id: pantry,
-            product_id,
-            location_id: pantry,
-            kind: reminders::KIND_EXPIRY.into(),
-            title: "Milk expires tomorrow".into(),
-            body: "Pantry".into(),
-            device_row_id: user_id,
-            device_token: "token-permanent".into(),
-        };
-        let outcome = classify_apns_response(
-            StatusCode::GONE,
+    async fn fcm_access_token_reuses_cached_token() {
+        let fcm = FcmConfig::new(
+            true,
+            Some("quartermaster-test".into()),
+            Some("/tmp/unused-service-account.json".into()),
             None,
-            json!({ "reason": "Unregistered" }).to_string(),
-            "2000-01-01T00:05:00.000Z",
-            &dummy,
+            None,
         );
-        assert_eq!(outcome.status, reminders::DELIVERY_STATUS_FAILED_PERMANENT);
-        assert_eq!(outcome.metric_outcome, "failed_permanent");
-        assert_eq!(outcome.error_code.as_deref(), Some("Unregistered"));
-        assert!(outcome.next_retry_at.is_none());
+        *fcm.auth_cache.lock().await = Some(CachedFcmAccessToken {
+            access_token: "ya29.cached".into(),
+            refresh_at: Instant::now() + Duration::from_secs(60),
+        });
+
+        let http = reqwest::Client::new();
+        let first = fcm_access_token(&http, &fcm).await.unwrap();
+        let second = fcm_access_token(&http, &fcm).await.unwrap();
+        assert_eq!(first, "ya29.cached");
+        assert_eq!(second, "ya29.cached");
     }
 
     #[tokio::test]
@@ -560,6 +949,8 @@ mod tests {
             pantry,
             product_id,
             "token-transport",
+            "ios",
+            "ios-main",
         )
         .await;
         let _ = metrics::init_recorder().unwrap();
@@ -569,16 +960,22 @@ mod tests {
             .unwrap();
         let apns = apns_config("http://127.0.0.1:9".into());
 
-        run_push_cycle(&db, &http, &apns, &worker_config())
-            .await
-            .unwrap();
+        run_push_cycle(
+            &db,
+            &http,
+            &apns,
+            &FcmConfig::new(false, None, None, None, None),
+            &worker_config(),
+        )
+        .await
+        .unwrap();
 
         let snapshot = metrics_snapshot().await;
         assert!(snapshot.contains("qm_push_transport_failures_total"));
     }
 
     #[tokio::test]
-    async fn mixed_delivery_outcomes_update_metrics_without_socket_io() {
+    async fn mixed_platform_claims_choose_expected_channels() {
         let (db, household_id, user_id, pantry, product_id) = setup_push_fixture().await;
         seed_due_reminder(
             &db,
@@ -586,138 +983,44 @@ mod tests {
             user_id,
             pantry,
             product_id,
-            "token-success",
+            "token-ios",
+            "ios",
+            "ios-main",
         )
         .await;
-        let retry_session = Uuid::now_v7();
-        auth_sessions::upsert(&db, retry_session, user_id, Some(household_id))
-            .await
-            .unwrap();
-        devices::upsert(
+        seed_due_reminder(
             &db,
-            &DeviceUpsert {
-                user_id,
-                session_id: retry_session,
-                device_id: "ios-retry".into(),
-                platform: "ios".into(),
-                push_token: Some("token-retryable".into()),
-                push_authorization: "authorized".into(),
-                app_version: Some("0.1".into()),
-            },
+            household_id,
+            user_id,
+            pantry,
+            product_id,
+            "token-android",
+            "android",
+            "android-main",
         )
-        .await
-        .unwrap();
-        let permanent_session = Uuid::now_v7();
-        auth_sessions::upsert(&db, permanent_session, user_id, Some(household_id))
-            .await
-            .unwrap();
-        devices::upsert(
+        .await;
+
+        let claimed = reminders::claim_due_push_work(
             &db,
-            &DeviceUpsert {
-                user_id,
-                session_id: permanent_session,
-                device_id: "ios-permanent".into(),
-                platform: "ios".into(),
-                push_token: Some("token-permanent".into()),
-                push_authorization: "authorized".into(),
-                app_version: Some("0.1".into()),
-            },
+            "2000-01-01T00:00:00.000Z",
+            10,
+            "2000-01-01T00:01:00.000Z",
         )
         .await
         .unwrap();
-
-        let now = "2000-01-01T00:00:00.000Z";
-        let _ = metrics::refresh_delivery_gauges(&db, now).await.unwrap();
-        let claimed = reminders::claim_due_push_work(&db, now, 10, "2000-01-01T00:01:00.000Z")
-            .await
-            .unwrap();
-        assert_eq!(claimed.items.len(), 3);
-
-        for item in &claimed.items {
-            let outcome = match item.device_token.as_str() {
-                "token-success" => classify_apns_response(
-                    StatusCode::OK,
-                    Some("apns-success".into()),
-                    String::new(),
-                    "2000-01-01T00:05:00.000Z",
-                    item,
-                ),
-                "token-retryable" => classify_apns_response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    None,
-                    json!({ "reason": "InternalServerError" }).to_string(),
-                    "2000-01-01T00:05:00.000Z",
-                    item,
-                ),
-                "token-permanent" => classify_apns_response(
-                    StatusCode::GONE,
-                    None,
-                    json!({ "reason": "Unregistered" }).to_string(),
-                    "2000-01-01T00:05:00.000Z",
-                    item,
-                ),
-                other => panic!("unexpected token {other}"),
-            };
-            reminders::complete_push_attempt(
-                &db,
-                item,
-                &reminders::PushDeliveryResult {
-                    status: outcome.status,
-                    finished_at: "2000-01-01T00:00:10.000Z".into(),
-                    next_retry_at: outcome.next_retry_at,
-                    provider_message_id: outcome.provider_message_id,
-                    error_code: outcome.error_code,
-                    error_message: outcome.error_message,
-                },
-            )
-            .await
-            .unwrap();
-        }
-        let _ = metrics::refresh_delivery_gauges(&db, now).await.unwrap();
-
-        let summary = reminders::push_delivery_metrics_summary(
-            &db,
-            &time::format_timestamp(Timestamp::now()),
-        )
-        .await
-        .unwrap();
-        assert_eq!(summary.retry_due_count, 1);
-        assert_eq!(summary.active_claim_count, 0);
-        assert_eq!(summary.failed_permanent_count, 1);
-        assert_eq!(summary.invalid_token_count, 1);
-
-        let rows = sqlx::query(
-            "SELECT d.push_token AS push_token, s.last_push_status, s.next_retry_at, s.last_error_code \
-             FROM reminder_device_state s \
-             INNER JOIN notification_device d ON d.id = s.device_id \
-             ORDER BY d.push_token ASC",
-        )
-        .fetch_all(&db.pool)
-        .await
-        .unwrap();
-        assert_eq!(rows.len(), 3);
-
-        let permanent = rows.iter().find(|row| {
-            row.try_get::<String, _>("push_token").unwrap().as_str() == "token-permanent"
-        });
-        assert_eq!(
-            permanent
-                .unwrap()
-                .try_get::<String, _>("last_push_status")
-                .unwrap(),
-            reminders::DELIVERY_STATUS_FAILED_PERMANENT
-        );
-        assert_eq!(
-            permanent
-                .unwrap()
-                .try_get::<String, _>("last_error_code")
-                .unwrap(),
-            "Unregistered"
-        );
+        assert_eq!(claimed.items.len(), 4);
+        assert!(claimed
+            .items
+            .iter()
+            .any(|item| item.channel == reminders::CHANNEL_APNS));
+        assert!(claimed
+            .items
+            .iter()
+            .any(|item| item.channel == reminders::CHANNEL_FCM));
     }
 
     #[tokio::test]
-    async fn api_registered_device_is_claimed_and_expired_claim_is_retried() {
+    async fn api_registered_android_device_is_claimed_with_fcm_channel() {
         let db = qm_db::test_support::sqlite().await.into_db();
         let config = Arc::new(ApiConfig {
             expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy {
@@ -785,43 +1088,56 @@ mod tests {
             .await
             .unwrap();
 
-        let login_req = axum::http::Request::builder()
-            .method("POST")
-            .uri("/auth/login")
-            .header("content-type", "application/json")
-            .body(axum::body::Body::from(
-                json!({"username":"alice","password":"password123"}).to_string(),
-            ))
-            .unwrap();
-        let login_res = app.clone().oneshot(login_req).await.unwrap();
-        let login_body = axum::body::to_bytes(login_res.into_body(), usize::MAX)
+        let login = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "username": "alice",
+                            "password": "password123",
+                            "device_label": "Android",
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
             .await
             .unwrap();
-        let access_token = serde_json::from_slice::<Value>(&login_body).unwrap()["access_token"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-
-        let register_req = axum::http::Request::builder()
-            .method("POST")
-            .uri("/devices/register")
-            .header("content-type", "application/json")
-            .header("authorization", format!("Bearer {access_token}"))
-            .body(axum::body::Body::from(
-                json!({
-                    "device_id":"ios-main",
-                    "platform":"ios",
-                    "push_authorization":"authorized",
-                    "push_token":"token-api",
-                    "app_version":"0.1"
-                })
-                .to_string(),
-            ))
+        assert_eq!(login.status(), AxumStatusCode::OK);
+        let body = axum::body::to_bytes(login.into_body(), usize::MAX)
+            .await
             .unwrap();
-        let register_res = app.clone().oneshot(register_req).await.unwrap();
-        assert_eq!(register_res.status(), StatusCode::NO_CONTENT);
+        let token_body: Value = serde_json::from_slice(&body).unwrap();
+        let access_token = token_body["access_token"].as_str().unwrap();
 
-        let first_claim = reminders::claim_due_push_work(
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/devices/register")
+                    .header("authorization", format!("Bearer {access_token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "device_id": "android-main",
+                            "platform": "android",
+                            "push_authorization": "authorized",
+                            "push_token": "token-android",
+                            "app_version": "0.1",
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), AxumStatusCode::NO_CONTENT);
+
+        let claimed = reminders::claim_due_push_work(
             &db,
             "2000-01-01T00:00:00.000Z",
             10,
@@ -829,37 +1145,136 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(first_claim.items.len(), 1);
+        assert_eq!(claimed.items.len(), 1);
+        assert_eq!(claimed.items[0].channel, reminders::CHANNEL_FCM);
+    }
 
-        let expired = reminders::expire_stale_push_claims(
+    #[tokio::test]
+    async fn mixed_delivery_outcomes_update_metrics_without_socket_io() {
+        let (db, household_id, user_id, pantry, product_id) = setup_push_fixture().await;
+        let _batch_id = seed_due_reminder(
             &db,
-            "2000-01-01T00:02:00.000Z",
-            "2000-01-01T00:05:00.000Z",
+            household_id,
+            user_id,
+            pantry,
+            product_id,
+            "token-success",
+            "ios",
+            "ios-success",
         )
-        .await
-        .unwrap();
-        assert_eq!(expired, 1);
-
-        let second_claim = reminders::claim_due_push_work(
+        .await;
+        let android_user = users::create(&db, "bob", Some("bob@example.com"), "hash")
+            .await
+            .unwrap();
+        memberships::insert(&db, household_id, android_user.id, "member")
+            .await
+            .unwrap();
+        let android_session = Uuid::now_v7();
+        auth_sessions::upsert(&db, android_session, android_user.id, Some(household_id))
+            .await
+            .unwrap();
+        devices::upsert(
             &db,
-            "2000-01-01T00:05:00.000Z",
-            10,
-            "2000-01-01T00:06:00.000Z",
+            &DeviceUpsert {
+                user_id: android_user.id,
+                session_id: android_session,
+                device_id: "android-permanent".into(),
+                platform: "android".into(),
+                push_token: Some("token-permanent".into()),
+                push_authorization: "authorized".into(),
+                app_version: Some("0.1".into()),
+            },
         )
         .await
         .unwrap();
-        assert_eq!(second_claim.items.len(), 1);
 
-        let state_row = sqlx::query(
-            "SELECT last_push_status, next_retry_at FROM reminder_device_state ORDER BY updated_at DESC LIMIT 1",
+        let now = "2000-01-01T00:00:00.000Z";
+        let _ = metrics::refresh_delivery_gauges(&db, now).await.unwrap();
+        let claimed = reminders::claim_due_push_work(&db, now, 10, "2000-01-01T00:01:00.000Z")
+            .await
+            .unwrap();
+        assert_eq!(claimed.items.len(), 2);
+
+        for item in &claimed.items {
+            let outcome = match item.channel.as_str() {
+                reminders::CHANNEL_APNS => classify_apns_response(
+                    StatusCode::OK,
+                    Some("apns-success".into()),
+                    String::new(),
+                    "2000-01-01T00:05:00.000Z",
+                    item,
+                ),
+                reminders::CHANNEL_FCM => classify_fcm_response(
+                    StatusCode::BAD_REQUEST,
+                    json!({
+                        "error": {
+                            "code": 400,
+                            "status": "INVALID_ARGUMENT",
+                            "details": [
+                                {
+                                    "@type": "type.googleapis.com/google.firebase.fcm.v1.FcmError",
+                                    "errorCode": "INVALID_ARGUMENT"
+                                }
+                            ]
+                        }
+                    })
+                    .to_string(),
+                    "2000-01-01T00:05:00.000Z",
+                ),
+                other => panic!("unexpected channel {other}"),
+            };
+            reminders::complete_push_attempt(
+                &db,
+                item,
+                &reminders::PushDeliveryResult {
+                    channel: outcome.channel,
+                    status: outcome.status,
+                    finished_at: "2000-01-01T00:00:10.000Z".into(),
+                    next_retry_at: outcome.next_retry_at,
+                    provider_message_id: outcome.provider_message_id,
+                    error_code: outcome.error_code,
+                    error_message: outcome.error_message,
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let _ = metrics::refresh_delivery_gauges(&db, now).await.unwrap();
+
+        let summary = reminders::push_delivery_metrics_summary(
+            &db,
+            &time::format_timestamp(Timestamp::now()),
         )
-        .fetch_one(&db.pool)
         .await
         .unwrap();
-        let last_push_status: Option<String> = state_row.try_get("last_push_status").unwrap();
+        assert_eq!(summary.failed_permanent_count, 1);
+        assert_eq!(summary.invalid_token_count, 1);
+
+        let rows = sqlx::query(
+            "SELECT d.push_token AS push_token, s.last_push_channel, s.last_error_code \
+             FROM reminder_device_state s \
+             INNER JOIN notification_device d ON d.id = s.device_id \
+             ORDER BY d.push_token ASC",
+        )
+        .fetch_all(&db.pool)
+        .await
+        .unwrap();
+        let permanent = rows.iter().find(|row| {
+            row.try_get::<String, _>("push_token").unwrap().as_str() == "token-permanent"
+        });
         assert_eq!(
-            last_push_status.as_deref(),
-            Some(reminders::DELIVERY_STATUS_SENDING)
+            permanent
+                .unwrap()
+                .try_get::<String, _>("last_push_channel")
+                .unwrap(),
+            reminders::CHANNEL_FCM
+        );
+        assert_eq!(
+            permanent
+                .unwrap()
+                .try_get::<String, _>("last_error_code")
+                .unwrap(),
+            "invalid_token"
         );
     }
 }

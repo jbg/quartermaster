@@ -7,6 +7,7 @@ use crate::{devices, now_utc_rfc3339, time, Database};
 
 pub const KIND_EXPIRY: &str = "expiry";
 pub const CHANNEL_APNS: &str = "apns";
+pub const CHANNEL_FCM: &str = "fcm";
 pub const DELIVERY_STATUS_SENDING: &str = "sending";
 pub const DELIVERY_STATUS_SUCCEEDED: &str = "succeeded";
 pub const DELIVERY_STATUS_FAILED_RETRYABLE: &str = "failed_retryable";
@@ -94,6 +95,7 @@ struct BatchReminderContext {
 #[derive(Debug, Clone)]
 pub struct PushWorkItem {
     pub attempt_id: Uuid,
+    pub channel: String,
     pub reminder_id: Uuid,
     pub household_id: Uuid,
     pub batch_id: Uuid,
@@ -114,6 +116,7 @@ pub struct PushClaimResult {
 
 #[derive(Debug, Clone)]
 pub struct PushDeliveryResult {
+    pub channel: String,
     pub status: &'static str,
     pub finished_at: String,
     pub next_retry_at: Option<String>,
@@ -313,11 +316,10 @@ pub async fn expire_stale_push_claims(
     retry_at_rfc3339: &str,
 ) -> Result<u64, sqlx::Error> {
     let rows = sqlx::query(
-        "SELECT id, reminder_id, device_id \
+        "SELECT id, reminder_id, device_id, channel \
          FROM reminder_delivery \
-         WHERE channel = ? AND status = ? AND claim_until IS NOT NULL AND claim_until <= ?",
+         WHERE status = ? AND claim_until IS NOT NULL AND claim_until <= ?",
     )
-    .bind(CHANNEL_APNS)
     .bind(DELIVERY_STATUS_SENDING)
     .bind(now_rfc3339)
     .fetch_all(&db.pool)
@@ -328,6 +330,7 @@ pub async fn expire_stale_push_claims(
         let attempt_id = uuid_from(&row, "id")?;
         let reminder_id = uuid_from(&row, "reminder_id")?;
         let device_id = uuid_from(&row, "device_id")?;
+        let channel: String = row.try_get("channel")?;
         sqlx::query(
             "UPDATE reminder_delivery \
              SET status = ?, finished_at = ?, claim_until = NULL, error_code = ?, error_message = ? \
@@ -345,6 +348,7 @@ pub async fn expire_stale_push_claims(
             db,
             reminder_id,
             device_id,
+            &channel,
             None,
             now_rfc3339,
             DELIVERY_STATUS_FAILED_RETRYABLE,
@@ -366,7 +370,7 @@ pub async fn claim_due_push_work(
 ) -> Result<PushClaimResult, sqlx::Error> {
     let rows = sqlx::query(
         "SELECT r.id AS reminder_id, r.household_id, r.batch_id, r.product_id, r.location_id, \
-                r.kind, r.title, r.body, d.id AS device_row_id, d.push_token \
+                r.kind, r.title, r.body, d.id AS device_row_id, d.push_token, d.platform \
          FROM stock_reminder r \
          INNER JOIN membership m ON m.household_id = r.household_id \
          INNER JOIN notification_device d ON d.user_id = m.user_id \
@@ -377,9 +381,10 @@ pub async fn claim_due_push_work(
            AND d.push_token IS NOT NULL \
            AND d.push_token <> '' \
            AND d.push_authorization IN ('authorized', 'provisional') \
-           AND (s.last_push_status IS NULL OR s.last_push_status <> ?) \
+           AND (s.last_push_status IS NULL OR s.last_push_status <> ? OR s.last_push_channel <> CASE d.platform WHEN 'ios' THEN ? WHEN 'android' THEN ? ELSE '' END) \
            AND NOT ( \
                s.last_push_status = ? \
+               AND s.last_push_channel = CASE d.platform WHEN 'ios' THEN ? WHEN 'android' THEN ? ELSE '' END \
                AND s.last_push_token IS NOT NULL \
                AND s.last_push_token = d.push_token \
            ) \
@@ -388,7 +393,7 @@ pub async fn claim_due_push_work(
                SELECT 1 FROM reminder_delivery rd \
                WHERE rd.reminder_id = r.id \
                  AND rd.device_id = d.id \
-                 AND rd.channel = ? \
+                 AND rd.channel = CASE d.platform WHEN 'ios' THEN ? WHEN 'android' THEN ? ELSE '' END \
                  AND rd.status = ? \
                  AND (rd.claim_until IS NULL OR rd.claim_until > ?) \
            ) \
@@ -397,9 +402,14 @@ pub async fn claim_due_push_work(
     )
     .bind(now_rfc3339)
     .bind(DELIVERY_STATUS_SUCCEEDED)
+    .bind(CHANNEL_APNS)
+    .bind(CHANNEL_FCM)
     .bind(DELIVERY_STATUS_FAILED_PERMANENT)
+    .bind(CHANNEL_APNS)
+    .bind(CHANNEL_FCM)
     .bind(now_rfc3339)
     .bind(CHANNEL_APNS)
+    .bind(CHANNEL_FCM)
     .bind(DELIVERY_STATUS_SENDING)
     .bind(now_rfc3339)
     .bind(limit)
@@ -415,6 +425,12 @@ pub async fn claim_due_push_work(
         let Some(push_token) = push_token.filter(|value| !value.is_empty()) else {
             continue;
         };
+        let platform: String = row.try_get("platform")?;
+        let channel = match platform.as_str() {
+            "ios" => CHANNEL_APNS,
+            "android" => CHANNEL_FCM,
+            _ => continue,
+        };
         maybe_synchronize_reminder_delivery_race(db, reminder_id).await;
         let attempt_id = Uuid::now_v7();
         let inserted = sqlx::query(
@@ -425,7 +441,7 @@ pub async fn claim_due_push_work(
         .bind(attempt_id.to_string())
         .bind(reminder_id.to_string())
         .bind(device_row_id.to_string())
-        .bind(CHANNEL_APNS)
+        .bind(channel)
         .bind(DELIVERY_STATUS_SENDING)
         .bind(now_rfc3339)
         .bind(now_rfc3339)
@@ -438,6 +454,7 @@ pub async fn claim_due_push_work(
                     db,
                     reminder_id,
                     device_row_id,
+                    channel,
                     Some(&push_token),
                     now_rfc3339,
                     DELIVERY_STATUS_SENDING,
@@ -448,6 +465,7 @@ pub async fn claim_due_push_work(
                 .await?;
                 claimed.push(PushWorkItem {
                     attempt_id,
+                    channel: channel.into(),
                     reminder_id,
                     household_id: uuid_from(&row, "household_id")?,
                     batch_id: uuid_from(&row, "batch_id")?,
@@ -496,6 +514,7 @@ pub async fn complete_push_attempt(
         db,
         work.reminder_id,
         work.device_row_id,
+        &outcome.channel,
         Some(&work.device_token),
         &outcome.finished_at,
         outcome.status,
@@ -580,7 +599,7 @@ pub async fn push_delivery_metrics_summary(
         "SELECT COUNT(*) AS invalid_token_count \
          FROM reminder_device_state \
          WHERE last_push_status = ? \
-           AND last_error_code IN ('BadDeviceToken', 'Unregistered', 'DeviceTokenNotForTopic', 'http_404', 'http_410')",
+           AND last_error_code IN ('invalid_token', 'unregistered', 'BadDeviceToken', 'Unregistered', 'DeviceTokenNotForTopic', 'http_404', 'http_410')",
     )
     .bind(DELIVERY_STATUS_FAILED_PERMANENT)
     .fetch_one(&db.pool)
@@ -877,6 +896,7 @@ async fn upsert_device_state_delivery(
     db: &Database,
     reminder_id: Uuid,
     device_id: Uuid,
+    channel: &str,
     push_token: Option<&str>,
     attempted_at: &str,
     status: &str,
@@ -893,6 +913,7 @@ async fn upsert_device_state_delivery(
         "UPDATE reminder_device_state \
          SET first_push_attempted_at = COALESCE(first_push_attempted_at, ?), \
              last_push_attempted_at = ?, \
+             last_push_channel = ?, \
              last_push_status = ?, \
              last_push_token = ?, \
              next_retry_at = ?, \
@@ -903,6 +924,7 @@ async fn upsert_device_state_delivery(
     )
     .bind(attempted_at)
     .bind(attempted_at)
+    .bind(channel)
     .bind(status)
     .bind(push_token)
     .bind(next_retry)
@@ -920,15 +942,16 @@ async fn upsert_device_state_delivery(
 
     let inserted = sqlx::query(
         "INSERT INTO reminder_device_state \
-         (reminder_id, device_id, first_push_attempted_at, last_push_attempted_at, last_push_status, \
+         (reminder_id, device_id, first_push_attempted_at, last_push_attempted_at, last_push_channel, last_push_status, \
           last_push_token, next_retry_at, last_error_code, last_error_message, first_presented_at, \
           opened_at, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
     )
     .bind(reminder_id.to_string())
     .bind(device_id.to_string())
     .bind(attempted_at)
     .bind(attempted_at)
+    .bind(channel)
     .bind(status)
     .bind(push_token)
     .bind(next_retry)
@@ -945,6 +968,7 @@ async fn upsert_device_state_delivery(
                 "UPDATE reminder_device_state \
                  SET first_push_attempted_at = COALESCE(first_push_attempted_at, ?), \
                      last_push_attempted_at = ?, \
+                     last_push_channel = ?, \
                      last_push_status = ?, \
                      last_push_token = ?, \
                      next_retry_at = ?, \
@@ -955,6 +979,7 @@ async fn upsert_device_state_delivery(
             )
             .bind(attempted_at)
             .bind(attempted_at)
+            .bind(channel)
             .bind(status)
             .bind(push_token)
             .bind(next_retry)
@@ -1510,6 +1535,7 @@ mod tests {
             &db,
             work,
             &PushDeliveryResult {
+                channel: work.channel.clone(),
                 status: DELIVERY_STATUS_FAILED_RETRYABLE,
                 finished_at: "2000-01-01T00:00:10.000Z".into(),
                 next_retry_at: Some("2000-01-01T01:00:00.000Z".into()),
@@ -1606,6 +1632,7 @@ mod tests {
             &db,
             &first.items[0],
             &PushDeliveryResult {
+                channel: first.items[0].channel.clone(),
                 status: DELIVERY_STATUS_FAILED_PERMANENT,
                 finished_at: "2000-01-01T00:00:10.000Z".into(),
                 next_retry_at: None,
@@ -1653,6 +1680,7 @@ mod tests {
             &db,
             &first.items[0],
             &PushDeliveryResult {
+                channel: first.items[0].channel.clone(),
                 status: DELIVERY_STATUS_SUCCEEDED,
                 finished_at: "2000-01-01T00:00:05.000Z".into(),
                 next_retry_at: None,
@@ -1701,6 +1729,7 @@ mod tests {
             &db,
             work,
             &PushDeliveryResult {
+                channel: work.channel.clone(),
                 status: DELIVERY_STATUS_FAILED_PERMANENT,
                 finished_at: "2000-01-01T00:00:10.000Z".into(),
                 next_retry_at: None,
@@ -1771,6 +1800,7 @@ mod tests {
             &db,
             &first.items[0],
             &PushDeliveryResult {
+                channel: first.items[0].channel.clone(),
                 status: DELIVERY_STATUS_FAILED_PERMANENT,
                 finished_at: "2000-01-01T00:00:10.000Z".into(),
                 next_retry_at: None,

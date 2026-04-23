@@ -46,7 +46,18 @@ The Android app uses the repo-root `openapi.json` as its single API source of tr
    - connecting to Quartermaster on another machine on your LAN
    - connecting to a remote/self-hosted deployment
 
-7. Emulator smoke path:
+7. Android push reminders use env-driven Firebase config. Set these before building if you want FCM enabled in the app:
+
+   ```sh
+   export QUARTERMASTER_ANDROID_FIREBASE_PROJECT_ID=...
+   export QUARTERMASTER_ANDROID_FIREBASE_APPLICATION_ID=...
+   export QUARTERMASTER_ANDROID_FIREBASE_API_KEY=...
+   export QUARTERMASTER_ANDROID_FIREBASE_SENDER_ID=...
+   ```
+
+   The app does not require a tracked `google-services.json`. If those env vars are unset, the Android client still works, but reminder delivery stays inbox-only.
+
+8. Emulator smoke path:
    - launch the backend with the reminder env vars above
    - seed or refresh local smoke data
    - run the Android app in an emulator

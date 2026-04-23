@@ -1,7 +1,9 @@
 package dev.quartermaster.android
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -182,6 +184,7 @@ class QuartermasterApiBackend(
 class QuartermasterAppState(
     private val sessionStore: SessionStore,
     private val backend: QuartermasterBackend,
+    private val appContext: Context? = null,
 ) {
     var phase: AppPhase by mutableStateOf(AppPhase.Launching)
         private set
@@ -233,6 +236,8 @@ class QuartermasterAppState(
         private set
     var pendingInventoryTarget by mutableStateOf<InventoryTarget?>(null)
         private set
+    var shouldRequestNotificationPermission by mutableStateOf(false)
+        private set
 
     private var reminderActionInFlight by mutableStateOf<Map<String, ReminderAction>>(emptyMap())
     var scanActionInFlight by mutableStateOf<ScanAction?>(null)
@@ -243,6 +248,10 @@ class QuartermasterAppState(
     }
 
     suspend fun bootstrap() {
+        appContext?.let {
+            PushSupport.initialize(it)
+            PushSupport.ensureNotificationChannel(it)
+        }
         val snapshot = sessionStore.snapshot()
         serverUrl = snapshot.serverUrl
         backend.serverUrl = serverUrl
@@ -266,6 +275,23 @@ class QuartermasterAppState(
 
     fun handleDeepLink(uri: Uri) {
         handleDeepLink(uri.toString())
+    }
+
+    suspend fun handleIntent(intent: Intent?) {
+        intent?.data?.let(::handleDeepLink)
+        val payload = PushSupport.payloadFromIntent(intent) ?: return
+        pendingInventoryTarget = InventoryTarget(
+            productId = payload.productId,
+            locationId = payload.locationId,
+            batchId = payload.batchId,
+        )
+        selectedTab = MainTab.Inventory
+        if (phase is AppPhase.Authenticated && currentHouseholdId != null) {
+            runCatching { backend.openReminder(payload.reminderId) }
+            reminders = reminders.filterNot { it.id.toString() == payload.reminderId }
+            refreshInventory(force = true)
+            refreshReminders(limit = 50)
+        }
     }
 
     fun handleDeepLink(rawUrl: String) {
@@ -306,6 +332,13 @@ class QuartermasterAppState(
         authActionInFlight = true
         lastError = null
         try {
+            appContext?.let {
+                PushSupport.clearDeviceRegistration(
+                    context = it,
+                    backend = backend,
+                    deviceId = sessionStore.stableDeviceId(),
+                )
+            }
             backend.logout()
         } catch (_: Throwable) {
             // Best effort.
@@ -455,14 +488,23 @@ class QuartermasterAppState(
     }
 
     suspend fun registerDevice() {
-        runCatching {
-            backend.registerDevice(
-                deviceId = sessionStore.stableDeviceId(),
-                pushToken = null,
-                authorization = PushAuthorizationStatus.DENIED,
-                appVersion = "0.1.0",
-            )
+        refreshPushRegistration()
+    }
+
+    suspend fun onNotificationPermissionResult(granted: Boolean) {
+        shouldRequestNotificationPermission = false
+        val context = appContext ?: return
+        val authorization = if (granted) {
+            PushAuthorizationStatus.AUTHORIZED
+        } else {
+            PushAuthorizationStatus.DENIED
         }
+        PushSupport.syncDeviceRegistration(
+            context = context,
+            backend = backend,
+            deviceId = sessionStore.stableDeviceId(),
+            authorizationOverride = authorization,
+        )
     }
 
     fun reminderActionFor(id: String): ReminderAction? = reminderActionInFlight[id]
@@ -673,6 +715,7 @@ class QuartermasterAppState(
         selectedProduct = null
         pendingInviteContext = null
         lastError = null
+        shouldRequestNotificationPermission = false
     }
 
     private fun clearHouseholdScopedData() {
@@ -694,12 +737,30 @@ class QuartermasterAppState(
         scanActionInFlight = null
     }
 
+    private suspend fun refreshPushRegistration() {
+        val context = appContext ?: return
+        if (currentHouseholdId == null || !PushSupport.isFirebaseConfigured()) return
+        val authorization = PushSupport.currentAuthorization(context)
+        shouldRequestNotificationPermission =
+            authorization == PushAuthorizationStatus.NOT_DETERMINED &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+        if (authorization != PushAuthorizationStatus.NOT_DETERMINED) {
+            PushSupport.syncDeviceRegistration(
+                context = context,
+                backend = backend,
+                deviceId = sessionStore.stableDeviceId(),
+                authorizationOverride = authorization,
+            )
+        }
+    }
+
     companion object {
         fun fromContext(context: Context): QuartermasterAppState {
             val store = AuthStore(context)
             return QuartermasterAppState(
                 sessionStore = store,
                 backend = QuartermasterApiBackend(QuartermasterApi(store)),
+                appContext = context.applicationContext,
             )
         }
 

@@ -68,6 +68,11 @@ struct RawConfig {
     apns_topic: Option<String>,
     apns_auth_token: Option<String>,
     apns_base_url: Option<String>,
+    fcm_enabled: bool,
+    fcm_project_id: Option<String>,
+    fcm_service_account_json_path: Option<String>,
+    fcm_base_url: Option<String>,
+    fcm_token_url: Option<String>,
     metrics_enabled: bool,
     metrics_bind: String,
     metrics_trigger_secret: Option<String>,
@@ -119,6 +124,11 @@ impl Default for RawConfig {
             apns_topic: None,
             apns_auth_token: None,
             apns_base_url: None,
+            fcm_enabled: false,
+            fcm_project_id: None,
+            fcm_service_account_json_path: None,
+            fcm_base_url: None,
+            fcm_token_url: None,
             metrics_enabled: false,
             metrics_bind: "127.0.0.1:9091".into(),
             metrics_trigger_secret: None,
@@ -145,6 +155,7 @@ struct LoadedConfig {
     push_worker_enabled: bool,
     push_worker_config: push::PushWorkerConfig,
     apns_config: push::ApnsConfig,
+    fcm_config: push::FcmConfig,
     metrics_config: MetricsConfig,
 }
 
@@ -272,6 +283,11 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         None => None,
     };
     let apns_auth_token = normalize_optional_secret(raw.apns_auth_token, "QM_APNS_AUTH_TOKEN")?;
+    let fcm_project_id = normalize_optional_secret(raw.fcm_project_id, "QM_FCM_PROJECT_ID")?;
+    let fcm_service_account_json_path = normalize_optional_secret(
+        raw.fcm_service_account_json_path,
+        "QM_FCM_SERVICE_ACCOUNT_JSON_PATH",
+    )?;
     let metrics_trigger_secret =
         normalize_optional_secret(raw.metrics_trigger_secret, "QM_METRICS_TRIGGER_SECRET")?;
     let metrics_bind = raw
@@ -349,6 +365,13 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
             auth_token: apns_auth_token,
             base_url: raw.apns_base_url,
         },
+        fcm_config: push::FcmConfig::new(
+            raw.fcm_enabled,
+            fcm_project_id,
+            fcm_service_account_json_path,
+            raw.fcm_base_url,
+            raw.fcm_token_url,
+        ),
         metrics_config: MetricsConfig {
             enabled: raw.metrics_enabled,
             bind: metrics_bind,
@@ -438,9 +461,12 @@ async fn main() -> anyhow::Result<()> {
         .build()
         .context("building HTTP client")?;
 
-    if process_mode == ProcessMode::PushWorker && !loaded.apns_config.is_ready() {
+    if process_mode == ProcessMode::PushWorker
+        && !loaded.apns_config.is_ready()
+        && !loaded.fcm_config.is_ready()
+    {
         anyhow::bail!(
-            "push-worker mode requires QM_APNS_ENABLED=true and QM_APNS_TOPIC to be configured"
+            "push-worker mode requires at least one configured push provider (APNs or FCM)"
         );
     }
 
@@ -470,11 +496,14 @@ async fn main() -> anyhow::Result<()> {
                 shutdown_rx.clone(),
             )));
         }
-        if loaded.push_worker_enabled && loaded.apns_config.is_ready() {
+        if loaded.push_worker_enabled
+            && (loaded.apns_config.is_ready() || loaded.fcm_config.is_ready())
+        {
             tasks.push(tokio::spawn(push::run_push_worker(
                 state.db.clone(),
                 http.clone(),
                 loaded.apns_config.clone(),
+                loaded.fcm_config.clone(),
                 loaded.push_worker_config.clone(),
                 loaded.metrics_config.handle.clone(),
                 shutdown_rx.clone(),
@@ -514,6 +543,7 @@ async fn main() -> anyhow::Result<()> {
             db.clone(),
             http.clone(),
             loaded.apns_config.clone(),
+            loaded.fcm_config.clone(),
             loaded.push_worker_config.clone(),
             loaded.metrics_config.handle.clone(),
             shutdown_rx.clone(),
