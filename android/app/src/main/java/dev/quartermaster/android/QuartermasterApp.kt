@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -367,7 +368,10 @@ private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier 
                 item { ErrorCard("Couldn't load inventory", appState.inventoryError!!) }
             }
             appState.locations.isEmpty() -> {
-                item { Text("No locations yet.") }
+                item { Text("No locations yet. Create one from Settings before adding stock.") }
+            }
+            appState.batches.isEmpty() && appState.inventoryLoadState != LoadState.Loading -> {
+                item { Text("No stock yet. Use Scan to search for a product and add your first batch.") }
             }
         }
 
@@ -385,7 +389,7 @@ private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier 
                         Text("Opened from reminder", style = MaterialTheme.typography.titleMedium)
                         Text(
                             when {
-                                product != null && location != null -> "${product.name} in ${location.name}"
+                                product != null && location != null -> "Showing ${product.name} in ${location.name}. The matching batch is highlighted below."
                                 product != null -> product.name
                                 else -> "Looking up the related stock..."
                             }
@@ -407,6 +411,7 @@ private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier 
             LocationInventoryCard(
                 location = location,
                 batches = appState.batchesForLocation(location.id.toString(), target),
+                target = target,
             )
         }
 
@@ -435,7 +440,9 @@ private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier 
 private fun LocationInventoryCard(
     location: LocationDto,
     batches: List<StockBatchDto>,
+    target: InventoryTarget?,
 ) {
+    val isTargetLocation = location.id.toString() == target?.locationId
     Card {
         Column(
             modifier = Modifier
@@ -443,12 +450,39 @@ private fun LocationInventoryCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(location.name, style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (isTargetLocation) "${location.name} · reminder target" else location.name,
+                style = MaterialTheme.typography.titleMedium,
+            )
             if (batches.isEmpty()) {
                 Text("Nothing here yet.")
             } else {
                 batches.forEach { batch ->
-                    Text("${batch.product.name} · ${batch.quantity} ${batch.unit}")
+                    val isTargetBatch =
+                        batch.id.toString() == target?.batchId ||
+                            (batch.product.id.toString() == target?.productId && batch.locationId.toString() == target.locationId)
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isTargetBatch) {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            }
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text("${batch.product.name} · ${batch.quantity} ${batch.unit}")
+                            batch.expiresOn?.let { Text("Expires $it") }
+                            if (isTargetBatch) {
+                                Text("Reminder target", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -479,7 +513,7 @@ private fun ReminderScreen(appState: QuartermasterAppState, modifier: Modifier =
                 item { ErrorCard("Couldn't load reminders", appState.reminderError!!) }
             }
             appState.reminders.isEmpty() -> {
-                item { Text("No due reminders right now.") }
+                item { Text("No due reminders right now. Expiry reminders stay here until someone opens or acknowledges them.") }
             }
         }
 
@@ -529,6 +563,7 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
     var query by remember { mutableStateOf("") }
     var quantity by remember { mutableStateOf("") }
     var unit by remember { mutableStateOf("") }
+    var selectedLocationId by remember { mutableStateOf<String?>(null) }
     var expiresOn by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
 
@@ -537,9 +572,32 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
     }
 
     val selectedProduct = appState.selectedProduct
-    val firstLocation = appState.locations.firstOrNull()?.id
-    val defaultUnit = selectedProduct?.let(appState::defaultUnitSymbolFor)
-    val selectedUnit = unit.ifBlank { defaultUnit.orEmpty() }
+    val locations = appState.locations.sortedWith(compareBy<LocationDto> { it.sortOrder }.thenBy { it.name.lowercase() })
+    val unitChoices = selectedProduct?.let(appState::unitSymbolsFor).orEmpty()
+    val selectedUnit = unit.ifBlank { selectedProduct?.let(appState::defaultUnitSymbolFor).orEmpty() }
+    val selectedLocation = selectedLocationId?.let { id -> locations.firstOrNull { it.id.toString() == id } }
+    val addDisabledReason = when {
+        selectedProduct == null -> "Choose a product before adding stock."
+        locations.isEmpty() -> "Create a location before adding stock."
+        selectedLocation == null -> "Choose where this stock lives."
+        quantity.isBlank() -> "Enter a quantity."
+        selectedUnit.isBlank() -> "Choose a unit."
+        else -> null
+    }
+
+    LaunchedEffect(locations.map { it.id }) {
+        if (selectedLocationId == null || locations.none { it.id.toString() == selectedLocationId }) {
+            selectedLocationId = locations.firstOrNull()?.id?.toString()
+        }
+    }
+
+    LaunchedEffect(selectedProduct?.id, unitChoices) {
+        if (selectedProduct == null) {
+            unit = ""
+        } else if (unit.isBlank() || unit !in unitChoices) {
+            unit = appState.defaultUnitSymbolFor(selectedProduct).orEmpty()
+        }
+    }
 
     LazyColumn(
         modifier = modifier
@@ -557,6 +615,9 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
         appState.inventoryError?.let { message ->
             item { ErrorCard("Inventory refresh failed", message) }
         }
+        appState.scanError?.let { message ->
+            item { ErrorCard("Scan action failed", message) }
+        }
         item {
             OutlinedTextField(
                 value = barcode,
@@ -569,9 +630,9 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
         item {
             Button(
                 onClick = { scope.launch { appState.lookupBarcode(barcode.trim()) } },
-                enabled = barcode.isNotBlank(),
+                enabled = barcode.isNotBlank() && appState.scanActionInFlight == null,
             ) {
-                Text("Look up barcode")
+                Text(if (appState.scanActionInFlight == ScanAction.BarcodeLookup) "Looking up..." else "Look up barcode")
             }
         }
         item {
@@ -585,9 +646,9 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
         item {
             Button(
                 onClick = { scope.launch { appState.searchProducts(query.trim()) } },
-                enabled = query.isNotBlank(),
+                enabled = query.isNotBlank() && appState.scanActionInFlight == null,
             ) {
-                Text("Search")
+                Text(if (appState.scanActionInFlight == ScanAction.ProductSearch) "Searching..." else "Search")
             }
         }
         items(appState.searchResults, key = { it.id }) { product ->
@@ -598,6 +659,15 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
                 Text("Add ${selectedProduct.name}", style = MaterialTheme.typography.titleMedium)
             }
             item {
+                SelectionCard(
+                    title = "Location",
+                    options = locations.map { it.id.toString() to it.name },
+                    selected = selectedLocationId,
+                    emptyText = "No locations yet. Add a location from Settings first.",
+                    onSelect = { selectedLocationId = it },
+                )
+            }
+            item {
                 OutlinedTextField(
                     value = quantity,
                     onValueChange = { quantity = it },
@@ -606,11 +676,12 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
                 )
             }
             item {
-                OutlinedTextField(
-                    value = selectedUnit,
-                    onValueChange = { unit = it },
-                    label = { Text("Unit") },
-                    modifier = Modifier.fillMaxWidth(),
+                SelectionCard(
+                    title = "Unit",
+                    options = unitChoices.map { it to it },
+                    selected = selectedUnit.takeIf(String::isNotBlank),
+                    emptyText = "No units are available for ${selectedProduct.family.name.lowercase()} products.",
+                    onSelect = { unit = it },
                 )
             }
             item {
@@ -630,13 +701,14 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
                 )
             }
             item {
+                addDisabledReason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 Button(
                     onClick = {
-                        firstLocation?.let { locationId ->
+                        selectedLocation?.let { location ->
                             scope.launch {
                                 appState.addStock(
                                     productId = selectedProduct.id.toString(),
-                                    locationId = locationId.toString(),
+                                    locationId = location.id.toString(),
                                     quantity = quantity.trim(),
                                     unit = selectedUnit.trim(),
                                     expiresOn = expiresOn.takeIf(String::isNotBlank),
@@ -649,9 +721,9 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
                             }
                         }
                     },
-                    enabled = quantity.isNotBlank() && selectedUnit.isNotBlank() && firstLocation != null,
+                    enabled = addDisabledReason == null && appState.scanActionInFlight == null,
                 ) {
-                    Text("Add stock")
+                    Text(if (appState.scanActionInFlight == ScanAction.AddStock) "Adding..." else "Add stock")
                 }
             }
         }
@@ -684,8 +756,14 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
     val scope = rememberCoroutineScope()
     var inviteExpiry by remember { mutableStateOf("2999-01-01T00:00:00.000Z") }
     var inviteMaxUses by remember { mutableStateOf("1") }
+    var redeemInviteCode by remember { mutableStateOf(appState.pendingInviteContext?.inviteCode.orEmpty()) }
 
     LaunchedEffect(appState.currentHouseholdId) { appState.loadSettings() }
+    LaunchedEffect(appState.pendingInviteContext) {
+        if (!appState.pendingInviteContext?.inviteCode.isNullOrBlank()) {
+            redeemInviteCode = appState.pendingInviteContext?.inviteCode.orEmpty()
+        }
+    }
 
     LazyColumn(
         modifier = modifier
@@ -735,6 +813,25 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
                         Text("Switch")
                     }
                 }
+            }
+        }
+        item {
+            Text("Redeem invite", style = MaterialTheme.typography.titleMedium)
+        }
+        item {
+            OutlinedTextField(
+                value = redeemInviteCode,
+                onValueChange = { redeemInviteCode = it },
+                label = { Text("Invite code") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        item {
+            Button(
+                onClick = { scope.launch { appState.redeemInvite(redeemInviteCode.trim()) } },
+                enabled = appState.settingsLoadState != LoadState.Loading && redeemInviteCode.isNotBlank(),
+            ) {
+                Text(if (appState.settingsLoadState == LoadState.Loading) "Working..." else "Redeem invite")
             }
         }
         item {
@@ -811,6 +908,46 @@ private fun ErrorCard(title: String, message: String) {
     }
 }
 
+@Composable
+private fun SelectionCard(
+    title: String,
+    options: List<Pair<String, String>>,
+    selected: String?,
+    emptyText: String,
+    onSelect: (String) -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            if (options.isEmpty()) {
+                Text(emptyText)
+            } else {
+                options.forEach { (value, label) ->
+                    val isSelected = value == selected
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(label)
+                        if (isSelected) {
+                            Text("Selected", style = MaterialTheme.typography.labelMedium)
+                        } else {
+                            TextButton(onClick = { onSelect(value) }) {
+                                Text("Select")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 private fun QuartermasterAppState.batchesForLocation(
     locationId: String,
     target: InventoryTarget?,
@@ -821,8 +958,4 @@ private fun QuartermasterAppState.batchesForLocation(
                 .thenBy { it.product.name.lowercase() }
                 .thenBy { it.expiresOn ?: "9999-12-31" }
         )
-}
-
-private fun QuartermasterAppState.defaultUnitSymbolFor(product: ProductDto): String? {
-    return units.firstOrNull { it.family == product.family }?.code
 }

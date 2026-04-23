@@ -42,6 +42,12 @@ enum class ReminderAction {
     Acknowledge,
 }
 
+enum class ScanAction {
+    BarcodeLookup,
+    ProductSearch,
+    AddStock,
+}
+
 data class InviteContext(
     val inviteCode: String?,
     val serverUrl: String?,
@@ -220,6 +226,8 @@ class QuartermasterAppState(
         private set
     var settingsError by mutableStateOf<String?>(null)
         private set
+    var scanError by mutableStateOf<String?>(null)
+        private set
 
     var pendingInviteContext by mutableStateOf<InviteContext?>(null)
         private set
@@ -227,6 +235,8 @@ class QuartermasterAppState(
         private set
 
     private var reminderActionInFlight by mutableStateOf<Map<String, ReminderAction>>(emptyMap())
+    var scanActionInFlight by mutableStateOf<ScanAction?>(null)
+        private set
 
     init {
         backend.serverUrl = serverUrl
@@ -255,7 +265,11 @@ class QuartermasterAppState(
     }
 
     fun handleDeepLink(uri: Uri) {
-        parseInviteContext(uri.toString())?.let { context ->
+        handleDeepLink(uri.toString())
+    }
+
+    fun handleDeepLink(rawUrl: String) {
+        parseInviteContext(rawUrl)?.let { context ->
             context.serverUrl?.let(::updateServerUrl)
             pendingInviteContext = context
             selectedTab = MainTab.Settings
@@ -374,18 +388,21 @@ class QuartermasterAppState(
     }
 
     suspend fun searchProducts(query: String) {
-        lastError = null
-        searchResults = if (query.isBlank()) emptyList() else backend.searchProducts(query)
+        runScanAction(ScanAction.ProductSearch) {
+            searchResults = if (query.isBlank()) emptyList() else backend.searchProducts(query)
+        }
     }
 
     suspend fun lookupBarcode(barcode: String) {
-        lastError = null
-        val response: BarcodeLookupResponse = backend.lookupBarcode(barcode)
-        selectedProduct = response.product
+        runScanAction(ScanAction.BarcodeLookup) {
+            val response: BarcodeLookupResponse = backend.lookupBarcode(barcode)
+            selectedProduct = response.product
+        }
     }
 
     fun selectProduct(product: ProductDto) {
         selectedProduct = product
+        scanError = null
     }
 
     fun clearInventoryTarget() {
@@ -399,7 +416,7 @@ class QuartermasterAppState(
         unit: String,
         expiresOn: String?,
         note: String?,
-    ) = runInventoryMutation {
+    ) = runScanAction(ScanAction.AddStock) {
         backend.addStock(
             CreateStockRequest(
                 locationId = UUID.fromString(locationId),
@@ -449,6 +466,19 @@ class QuartermasterAppState(
     }
 
     fun reminderActionFor(id: String): ReminderAction? = reminderActionInFlight[id]
+
+    fun unitSymbolsFor(product: ProductDto): List<String> =
+        units.filter { it.family == product.family }
+            .sortedBy { it.code }
+            .map { it.code }
+
+    fun defaultUnitSymbolFor(product: ProductDto): String? {
+        val symbols = unitSymbolsFor(product)
+        return when {
+            product.preferredUnit in symbols -> product.preferredUnit
+            else -> symbols.firstOrNull()
+        }
+    }
 
     val meOrNull: MeResponse?
         get() = (phase as? AppPhase.Authenticated)?.me
@@ -546,6 +576,30 @@ class QuartermasterAppState(
         }
     }
 
+    private suspend fun runScanAction(
+        action: ScanAction,
+        block: suspend () -> Unit,
+    ) {
+        if (scanActionInFlight != null) return
+        scanActionInFlight = action
+        scanError = null
+        lastError = null
+        try {
+            block()
+        } catch (failure: Throwable) {
+            if (failure is ApiFailure && failure.status == 401) {
+                clearSession()
+                phase = AppPhase.Unauthenticated
+            } else {
+                val message = failure.userFacingMessage()
+                scanError = message
+                lastError = message
+            }
+        } finally {
+            scanActionInFlight = null
+        }
+    }
+
     private suspend fun runReminderAction(
         id: String,
         action: ReminderAction,
@@ -632,10 +686,12 @@ class QuartermasterAppState(
         inventoryError = null
         reminderError = null
         settingsError = null
+        scanError = null
         inventoryLoadState = LoadState.Idle
         remindersLoadState = LoadState.Idle
         settingsLoadState = LoadState.Idle
         reminderActionInFlight = emptyMap()
+        scanActionInFlight = null
     }
 
     companion object {

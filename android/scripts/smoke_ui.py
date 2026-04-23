@@ -1,0 +1,239 @@
+#!/usr/bin/env python3
+"""Drive a minimal Android emulator smoke test via UIAutomator selectors.
+
+This intentionally avoids hard-coded pixel coordinates. It reads the Android
+accessibility tree, finds controls by visible text/label, and taps the center of
+the matched node bounds.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import urllib.error
+import urllib.request
+import re
+import subprocess
+import sys
+import time
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass
+from typing import Iterable
+
+
+PACKAGE = "dev.quartermaster.android"
+ACTIVITY = f"{PACKAGE}/.MainActivity"
+BOUNDS_RE = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
+
+
+@dataclass(frozen=True)
+class UiNode:
+    element: ET.Element
+    parent: "UiNode | None"
+
+    @property
+    def text(self) -> str:
+        return self.element.attrib.get("text", "")
+
+    @property
+    def klass(self) -> str:
+        return self.element.attrib.get("class", "")
+
+    @property
+    def clickable(self) -> bool:
+        return self.element.attrib.get("clickable") == "true"
+
+    @property
+    def bounds(self) -> tuple[int, int, int, int]:
+        raw = self.element.attrib.get("bounds", "")
+        match = BOUNDS_RE.fullmatch(raw)
+        if not match:
+            raise RuntimeError(f"node has invalid bounds: {raw!r}")
+        return tuple(int(part) for part in match.groups())  # type: ignore[return-value]
+
+    @property
+    def center(self) -> tuple[int, int]:
+        left, top, right, bottom = self.bounds
+        return ((left + right) // 2, (top + bottom) // 2)
+
+    def ancestors(self) -> Iterable["UiNode"]:
+        node = self.parent
+        while node is not None:
+            yield node
+            node = node.parent
+
+
+def adb(*args: str, capture: bool = False) -> str:
+    command = ["adb", *args]
+    if capture:
+        return subprocess.check_output(command, text=True)
+    subprocess.check_call(command)
+    return ""
+
+
+def walk(element: ET.Element, parent: UiNode | None = None) -> Iterable[UiNode]:
+    node = UiNode(element, parent)
+    yield node
+    for child in element:
+        yield from walk(child, node)
+
+
+def dump_nodes() -> list[UiNode]:
+    adb("shell", "uiautomator", "dump", "/sdcard/window.xml")
+    xml = adb("exec-out", "cat", "/sdcard/window.xml", capture=True)
+    return list(walk(ET.fromstring(xml)))
+
+
+def wait_for_text(text: str, timeout: float = 10.0) -> UiNode:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        for node in dump_nodes():
+            if node.text == text:
+                return node
+        time.sleep(0.25)
+    raise RuntimeError(f"timed out waiting for text {text!r}")
+
+
+def wait_for_text_with_scroll(text: str, attempts: int = 6) -> UiNode:
+    for _ in range(attempts):
+        for node in dump_nodes():
+            if node.text == text:
+                return node
+        adb("shell", "input", "swipe", "540", "1900", "540", "900", "250")
+        time.sleep(0.5)
+    raise RuntimeError(f"timed out waiting for text {text!r} after scrolling")
+
+
+def find_clickables_with_text(text: str) -> list[UiNode]:
+    matches: list[UiNode] = []
+    for node in dump_nodes():
+        if node.text != text:
+            continue
+        if node.clickable:
+            matches.append(node)
+            continue
+        for ancestor in node.ancestors():
+            if ancestor.clickable:
+                matches.append(ancestor)
+                break
+    deduped: dict[tuple[int, int, int, int], UiNode] = {}
+    for match in matches:
+        deduped[match.bounds] = match
+    return list(deduped.values())
+
+
+def find_clickable_with_text(text: str, *, lowest: bool = False) -> UiNode:
+    matches = find_clickables_with_text(text)
+    if not matches:
+        raise RuntimeError(f"no clickable node found for text {text!r}")
+    if lowest:
+        return max(matches, key=lambda node: node.bounds[1])
+    return min(matches, key=lambda node: node.bounds[1])
+
+
+def find_edit_text_by_label(label: str) -> UiNode:
+    for node in dump_nodes():
+        if node.text != label:
+            continue
+        for ancestor in node.ancestors():
+            if ancestor.klass == "android.widget.EditText":
+                return ancestor
+    raise RuntimeError(f"no EditText found for label {label!r}")
+
+
+def tap(node: UiNode) -> None:
+    x, y = node.center
+    print(f"tap {node.klass} text={node.text!r} bounds={node.element.attrib.get('bounds')} center=({x},{y})")
+    adb("shell", "input", "tap", str(x), str(y))
+
+
+def tap_text(text: str, *, lowest: bool = False) -> None:
+    tap(find_clickable_with_text(text, lowest=lowest))
+
+
+def set_text_field(label: str, value: str) -> None:
+    tap(find_edit_text_by_label(label))
+    # The script starts from a cleared app install, so fields are empty except
+    # Server URL, which this smoke path intentionally leaves at its default.
+    adb("shell", "input", "text", value.replace(" ", "%s"))
+
+
+def replace_text_field(label: str, value: str) -> None:
+    field = find_edit_text_by_label(label)
+    current = field.text
+    tap(field)
+    adb("shell", "input", "keyevent", "MOVE_END")
+    for _ in range(len(current) + 4):
+        adb("shell", "input", "keyevent", "DEL")
+    adb("shell", "input", "text", value.replace(" ", "%s"))
+
+
+def assert_text(text: str) -> None:
+    wait_for_text(text)
+
+
+def launch(clear_app: bool) -> None:
+    if clear_app:
+        adb("shell", "pm", "clear", PACKAGE)
+    adb("shell", "am", "start", "-n", ACTIVITY)
+
+
+def check_backend_health(server_url: str) -> None:
+    health_url = server_url.rstrip("/") + "/healthz"
+    try:
+        with urllib.request.urlopen(health_url, timeout=3) as response:
+            if response.status != 200:
+                raise RuntimeError(f"{health_url} returned HTTP {response.status}")
+    except (OSError, urllib.error.URLError) as exc:
+        raise RuntimeError(f"backend health check failed for {health_url}: {exc}") from exc
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--username", default=os.environ.get("QM_ANDROID_SMOKE_USERNAME"))
+    parser.add_argument("--password", default=os.environ.get("QM_ANDROID_SMOKE_PASSWORD"))
+    parser.add_argument(
+        "--host-server-url",
+        default=os.environ.get("QM_ANDROID_SMOKE_HOST_SERVER_URL", "http://127.0.0.1:8080"),
+        help="host-side URL used for the preflight health check",
+    )
+    parser.add_argument(
+        "--device-server-url",
+        default=os.environ.get("QM_ANDROID_SMOKE_DEVICE_SERVER_URL", "http://127.0.0.1:8080"),
+        help="server URL written into the Android app during the smoke run",
+    )
+    parser.add_argument(
+        "--preserve-app-data",
+        action="store_true",
+        help="do not clear app data before launching",
+    )
+    args = parser.parse_args()
+
+    if not args.username or not args.password:
+        parser.error("provide --username/--password or QM_ANDROID_SMOKE_USERNAME/QM_ANDROID_SMOKE_PASSWORD")
+
+    check_backend_health(args.host_server_url)
+    adb("reverse", "tcp:8080", "tcp:8080")
+    launch(clear_app=not args.preserve_app_data)
+    wait_for_text("Know what’s in your kitchen.")
+    replace_text_field("Server URL", args.device_server_url)
+    set_text_field("Username", args.username)
+    set_text_field("Password", args.password)
+    adb("shell", "input", "keyevent", "BACK")
+    time.sleep(1.0)
+    tap_text("Sign in", lowest=True)
+
+    assert_text("Inventory")
+    tap_text("Reminders")
+    assert_text("Reminders")
+    tap_text("Open")
+    assert_text("Opened from reminder")
+    assert_text("Reminder target")
+    tap_text("Settings")
+    wait_for_text_with_scroll("Sign out")
+    print("Android UI smoke passed")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

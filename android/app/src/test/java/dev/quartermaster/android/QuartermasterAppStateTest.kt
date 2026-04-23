@@ -75,6 +75,91 @@ class QuartermasterAppStateTest {
         assertNull(appState.pendingInventoryTarget)
     }
 
+    @Test
+    fun `unit helpers prefer product unit within the product family`() = runTest {
+        val appState = QuartermasterAppState(
+            sessionStore = FakeSessionStore(),
+            backend = FakeBackend(
+                meResponse = meResponseJson(
+                    currentHouseholdJson = householdJson("66666666-6666-6666-6666-666666666666", "Home"),
+                    householdsJson = listOf(householdJson("66666666-6666-6666-6666-666666666666", "Home")),
+                ),
+                stock = listOf(stockBatchJson()),
+                locations = listOf(locationJson()),
+                units = listOf(unitJson("kg", "mass"), unitJson("g", "mass"), unitJson("ml", "volume")),
+            ),
+        )
+
+        appState.bootstrap()
+
+        val product = appState.batches.first().product
+        assertEquals(listOf("g", "kg"), appState.unitSymbolsFor(product))
+        assertEquals("g", appState.defaultUnitSymbolFor(product))
+    }
+
+    @Test
+    fun `openReminder keeps the inventory target after refreshing`() = runTest {
+        val reminder = reminderJson()
+        val appState = QuartermasterAppState(
+            sessionStore = FakeSessionStore(),
+            backend = FakeBackend(
+                meResponse = meResponseJson(
+                    currentHouseholdJson = householdJson("66666666-6666-6666-6666-666666666666", "Home"),
+                    householdsJson = listOf(householdJson("66666666-6666-6666-6666-666666666666", "Home")),
+                ),
+                stock = listOf(stockBatchJson()),
+                reminders = listOf(reminder),
+                locations = listOf(locationJson()),
+            ),
+        )
+
+        appState.bootstrap()
+        appState.openReminder(reminder)
+
+        assertEquals(MainTab.Inventory, appState.selectedTab)
+        assertEquals("44444444-4444-4444-4444-444444444444", appState.pendingInventoryTarget?.productId)
+        assertEquals("22222222-2222-2222-2222-222222222222", appState.pendingInventoryTarget?.locationId)
+        assertEquals("33333333-3333-3333-3333-333333333333", appState.pendingInventoryTarget?.batchId)
+    }
+
+    @Test
+    fun `scan action failure clears in-flight state and stores local error`() = runTest {
+        val appState = QuartermasterAppState(
+            sessionStore = FakeSessionStore(),
+            backend = FakeBackend(
+                meResponse = meResponseJson(
+                    currentHouseholdJson = householdJson("66666666-6666-6666-6666-666666666666", "Home"),
+                    householdsJson = listOf(householdJson("66666666-6666-6666-6666-666666666666", "Home")),
+                ),
+                barcodeFailure = ApiFailure(502, "barcode_lookup_failed", "Barcode lookup failed"),
+            ),
+        )
+
+        appState.lookupBarcode("123")
+
+        assertNull(appState.scanActionInFlight)
+        assertEquals("Barcode lookup failed", appState.scanError)
+    }
+
+    @Test
+    fun `authenticated invite deep link opens settings with pending invite context`() = runTest {
+        val appState = QuartermasterAppState(
+            sessionStore = FakeSessionStore(),
+            backend = FakeBackend(
+                meResponse = meResponseJson(
+                    currentHouseholdJson = householdJson("66666666-6666-6666-6666-666666666666", "Home"),
+                    householdsJson = listOf(householdJson("66666666-6666-6666-6666-666666666666", "Home")),
+                ),
+            ),
+        )
+
+        appState.bootstrap()
+        appState.handleDeepLink("quartermaster://join?invite=DEEP1234")
+
+        assertEquals(MainTab.Settings, appState.selectedTab)
+        assertEquals("DEEP1234", appState.pendingInviteContext?.inviteCode)
+    }
+
     private fun meResponseJson(
         currentHouseholdJson: String?,
         householdsJson: List<String>,
@@ -114,6 +199,16 @@ class QuartermasterAppStateTest {
           "name": "Pantry",
           "kind": "pantry",
           "sort_order": 0
+        }
+        """.trimIndent()
+    )
+
+    private fun unitJson(code: String, family: String): UnitDto = json.decodeFromString(
+        """
+        {
+          "code": "$code",
+          "family": "$family",
+          "to_base_milli": 1000
         }
         """.trimIndent()
     )
@@ -184,6 +279,8 @@ class QuartermasterAppStateTest {
         private val stock: List<StockBatchDto> = emptyList(),
         private val reminders: List<ReminderDto> = emptyList(),
         private val locations: List<LocationDto> = emptyList(),
+        private val units: List<UnitDto> = emptyList(),
+        private val barcodeFailure: Throwable? = null,
     ) : QuartermasterBackend {
         override var serverUrl: String = "http://10.0.2.2:8080"
 
@@ -204,7 +301,7 @@ class QuartermasterAppStateTest {
         }
 
         override suspend fun locations(): List<LocationDto> = locations
-        override suspend fun units(): List<UnitDto> = emptyList()
+        override suspend fun units(): List<UnitDto> = units
         override suspend fun listStock(): List<StockBatchDto> = stock
         override suspend fun listEvents(limit: Int): List<StockEventDto> = emptyList()
         override suspend fun listReminders(limit: Int): List<ReminderDto> = reminders
@@ -222,6 +319,7 @@ class QuartermasterAppStateTest {
         override suspend fun searchProducts(query: String): List<ProductDto> = emptyList()
 
         override suspend fun lookupBarcode(barcode: String): BarcodeLookupResponse {
+            barcodeFailure?.let { throw it }
             error("Unused in test")
         }
 

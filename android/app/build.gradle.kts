@@ -48,10 +48,16 @@ android {
         buildConfig = true
     }
 
-    sourceSets["main"].kotlin.srcDir(layout.buildDirectory.dir("generated/openapi/src/main/kotlin").get().asFile)
-
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.kotlin?.addStaticSourceDirectory(
+            layout.buildDirectory.dir("generated/openapi/src/main/kotlin").get().asFile.absolutePath
+        )
     }
 }
 
