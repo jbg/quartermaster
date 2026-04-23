@@ -26,7 +26,9 @@ import dev.quartermaster.android.generated.models.StockListResponse
 import dev.quartermaster.android.generated.models.SwitchHouseholdRequest
 import dev.quartermaster.android.generated.models.TokenPair
 import dev.quartermaster.android.generated.models.UnitDto
+import dev.quartermaster.android.generated.infrastructure.Serializer
 import java.io.IOException
+import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Dispatchers
@@ -47,10 +49,7 @@ class ApiFailure(
 ) : IOException(message)
 
 class QuartermasterApi(private val authStore: AuthStore) {
-    private val json = Json {
-        ignoreUnknownKeys = true
-        explicitNulls = false
-    }
+    private val json = Serializer.kotlinxSerializationJson
     private val refreshMutex = Mutex()
     private val client = OkHttpClient.Builder()
         .addInterceptor(HttpLoggingInterceptor().apply {
@@ -68,7 +67,7 @@ class QuartermasterApi(private val authStore: AuthStore) {
         username: String,
         password: String,
         deviceLabel: String = "Android",
-    ): TokenPair = jsonRequest(
+    ): TokenPair = jsonRequest<TokenPair>(
         method = "POST",
         path = "/auth/login",
         body = LoginRequest(
@@ -85,7 +84,7 @@ class QuartermasterApi(private val authStore: AuthStore) {
         email: String?,
         inviteCode: String?,
         deviceLabel: String = "Android",
-    ): TokenPair = jsonRequest(
+    ): TokenPair = jsonRequest<TokenPair>(
         method = "POST",
         path = "/auth/register",
         body = RegisterRequest(
@@ -106,7 +105,7 @@ class QuartermasterApi(private val authStore: AuthStore) {
     suspend fun switchHousehold(householdId: String): MeResponse = authedJson(
         method = "POST",
         path = "/auth/switch-household",
-        body = SwitchHouseholdRequest(householdId = householdId),
+        body = SwitchHouseholdRequest(householdId = UUID.fromString(householdId)),
     )
 
     suspend fun createHousehold(name: String, timezone: String): MeResponse = authedJson(
@@ -171,6 +170,7 @@ class QuartermasterApi(private val authStore: AuthStore) {
             path = "/devices",
             body = RegisterDeviceRequest(
                 deviceId = deviceId,
+                platform = "android",
                 pushToken = pushToken,
                 pushAuthorization = authorization,
                 appVersion = appVersion,
@@ -193,12 +193,12 @@ class QuartermasterApi(private val authStore: AuthStore) {
         body = request,
     )
 
-    private suspend fun <T> authedJson(
+    private suspend inline fun <reified T> authedJson(
         method: String,
         path: String,
         body: Any? = null,
     ): T = withAuthRetry {
-        jsonRequest(method = method, path = path, body = body, requiresAuth = true)
+        jsonRequest<T>(method = method, path = path, body = body, requiresAuth = true)
     }
 
     private suspend fun authedUnit(
@@ -223,7 +223,7 @@ class QuartermasterApi(private val authStore: AuthStore) {
     private suspend fun refreshTokens(): Boolean = refreshMutex.withLock {
         val refreshToken = authStore.snapshot().refreshToken ?: return false
         return try {
-            val pair: TokenPair = jsonRequest(
+            val pair: TokenPair = jsonRequest<TokenPair>(
                 method = "POST",
                 path = "/auth/refresh",
                 body = RefreshRequest(refreshToken = refreshToken),

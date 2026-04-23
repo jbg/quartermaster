@@ -10,10 +10,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Bell
 import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
@@ -39,7 +38,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
+import dev.quartermaster.android.generated.models.LocationDto
+import dev.quartermaster.android.generated.models.ProductDto
+import dev.quartermaster.android.generated.models.ReminderDto
+import dev.quartermaster.android.generated.models.StockBatchDto
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,7 +66,7 @@ fun QuartermasterApp(appState: QuartermasterAppState) {
                     NavigationBar {
                         listOf(
                             MainTab.Inventory to Pair("Inventory", Icons.Outlined.Inventory2),
-                            MainTab.Reminders to Pair("Reminders", Icons.Outlined.Bell),
+                            MainTab.Reminders to Pair("Reminders", Icons.Outlined.Notifications),
                             MainTab.Scan to Pair("Scan", Icons.Outlined.QrCodeScanner),
                             MainTab.Settings to Pair("Settings", Icons.Outlined.Settings),
                         ).forEach { (tab, labelIcon) ->
@@ -82,7 +86,6 @@ fun QuartermasterApp(appState: QuartermasterAppState) {
                 is AppPhase.LaunchFailed -> MessageScreen(
                     title = "Couldn't resume session",
                     message = phase.message,
-                    actionLabel = "Sign in",
                     modifier = Modifier.padding(padding),
                 )
                 AppPhase.Unauthenticated -> OnboardingScreen(appState, Modifier.padding(padding))
@@ -105,7 +108,9 @@ fun QuartermasterApp(appState: QuartermasterAppState) {
 @Composable
 private fun CenteredLoading(modifier: Modifier = Modifier) {
     Column(
-        modifier = modifier.fillMaxSize().padding(24.dp),
+        modifier = modifier
+            .fillMaxSize()
+            .padding(24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
         CircularProgressIndicator()
@@ -118,18 +123,17 @@ private fun CenteredLoading(modifier: Modifier = Modifier) {
 private fun MessageScreen(
     title: String,
     message: String,
-    actionLabel: String,
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier.fillMaxSize().padding(24.dp),
+        modifier = modifier
+            .fillMaxSize()
+            .padding(24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
         Text(title, style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(12.dp))
         Text(message, style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.height(16.dp))
-        Text(actionLabel, style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -139,23 +143,32 @@ private fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifier
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
-    var inviteCode by remember { mutableStateOf(appState.pendingInviteCode.orEmpty()) }
+    var inviteCode by remember { mutableStateOf(appState.pendingInviteContext?.inviteCode.orEmpty()) }
     var serverUrl by remember { mutableStateOf(appState.serverUrl) }
     var signInMode by remember { mutableStateOf(true) }
 
-    LaunchedEffect(appState.pendingInviteCode) {
-        if (!appState.pendingInviteCode.isNullOrBlank()) {
-            inviteCode = appState.pendingInviteCode.orEmpty()
+    LaunchedEffect(appState.pendingInviteContext) {
+        appState.pendingInviteContext?.let { context ->
+            inviteCode = context.inviteCode.orEmpty()
+            serverUrl = context.serverUrl ?: appState.serverUrl
             signInMode = false
         }
     }
 
     LazyColumn(
-        modifier = modifier.fillMaxSize().padding(16.dp),
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
             Text("Know what’s in your kitchen.", style = MaterialTheme.typography.headlineSmall)
+        }
+        item {
+            Text(
+                "On the Android emulator, the default local server URL uses 10.0.2.2 to reach the host machine running Quartermaster.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -224,9 +237,9 @@ private fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifier
                         }
                     }
                 },
-                enabled = !appState.isBusy && username.isNotBlank() && password.length >= 8,
+                enabled = !appState.authActionInFlight && username.isNotBlank() && password.length >= 8,
             ) {
-                Text(if (signInMode) "Sign in" else "Create household")
+                Text(if (signInMode) "Sign in" else "Create account")
             }
         }
     }
@@ -237,10 +250,18 @@ private fun NoHouseholdScreen(appState: QuartermasterAppState, modifier: Modifie
     val scope = rememberCoroutineScope()
     var householdName by remember { mutableStateOf("") }
     var timezone by remember { mutableStateOf("UTC") }
-    var inviteCode by remember { mutableStateOf(appState.pendingInviteCode.orEmpty()) }
+    var inviteCode by remember { mutableStateOf(appState.pendingInviteContext?.inviteCode.orEmpty()) }
+
+    LaunchedEffect(appState.pendingInviteContext) {
+        if (!appState.pendingInviteContext?.inviteCode.isNullOrBlank()) {
+            inviteCode = appState.pendingInviteContext?.inviteCode.orEmpty()
+        }
+    }
 
     LazyColumn(
-        modifier = modifier.fillMaxSize().padding(16.dp),
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
@@ -248,6 +269,9 @@ private fun NoHouseholdScreen(appState: QuartermasterAppState, modifier: Modifie
         }
         item {
             Text("Create a household, redeem an invite, or switch into an existing membership.")
+        }
+        appState.settingsError?.let { message ->
+            item { ErrorCard("Household action failed", message) }
         }
         item {
             OutlinedTextField(
@@ -267,12 +291,8 @@ private fun NoHouseholdScreen(appState: QuartermasterAppState, modifier: Modifie
         }
         item {
             Button(
-                onClick = {
-                    scope.launch {
-                        appState.createHousehold(householdName, timezone)
-                    }
-                },
-                enabled = !appState.isBusy && householdName.isNotBlank(),
+                onClick = { scope.launch { appState.createHousehold(householdName, timezone) } },
+                enabled = appState.settingsLoadState != LoadState.Loading && householdName.isNotBlank(),
             ) {
                 Text("Create household")
             }
@@ -287,10 +307,8 @@ private fun NoHouseholdScreen(appState: QuartermasterAppState, modifier: Modifie
         }
         item {
             Button(
-                onClick = {
-                    scope.launch { appState.redeemInvite(inviteCode) }
-                },
-                enabled = !appState.isBusy && inviteCode.isNotBlank(),
+                onClick = { scope.launch { appState.redeemInvite(inviteCode) } },
+                enabled = appState.settingsLoadState != LoadState.Loading && inviteCode.isNotBlank(),
             ) {
                 Text("Redeem invite")
             }
@@ -301,14 +319,19 @@ private fun NoHouseholdScreen(appState: QuartermasterAppState, modifier: Modifie
         items(appState.meOrNull?.households.orEmpty(), key = { it.id }) { household ->
             Card {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Column {
                         Text(household.name)
                         Text(household.role.name)
                     }
-                    TextButton(onClick = { scope.launch { appState.switchHousehold(household.id) } }) {
+                    TextButton(
+                        onClick = { scope.launch { appState.switchHousehold(household.id.toString()) } },
+                        enabled = appState.settingsLoadState != LoadState.Loading,
+                    ) {
                         Text("Switch")
                     }
                 }
@@ -319,10 +342,14 @@ private fun NoHouseholdScreen(appState: QuartermasterAppState, modifier: Modifie
 
 @Composable
 private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
-    LaunchedEffect(Unit) { appState.refreshInventory() }
+    LaunchedEffect(appState.currentHouseholdId) {
+        appState.refreshInventory(force = true)
+    }
 
     LazyColumn(
-        modifier = modifier.fillMaxSize().padding(16.dp),
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
@@ -331,18 +358,97 @@ private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier 
                 style = MaterialTheme.typography.headlineSmall,
             )
         }
-        items(appState.locations, key = { it.id }) { location ->
-            Card {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(location.name, style = MaterialTheme.typography.titleMedium)
-                    val locationBatches = appState.batches.filter { it.locationId == location.id }
-                    if (locationBatches.isEmpty()) {
-                        Text("Nothing here yet.")
-                    } else {
-                        locationBatches.forEach { batch ->
-                            Text("${batch.product.name} · ${batch.quantity} ${batch.unit}")
+
+        when {
+            appState.inventoryLoadState == LoadState.Loading && appState.batches.isEmpty() -> {
+                item { Text("Loading inventory…") }
+            }
+            appState.inventoryError != null && appState.batches.isEmpty() -> {
+                item { ErrorCard("Couldn't load inventory", appState.inventoryError!!) }
+            }
+            appState.locations.isEmpty() -> {
+                item { Text("No locations yet.") }
+            }
+        }
+
+        appState.pendingInventoryTarget?.let { target ->
+            val product = appState.batches.firstOrNull { it.product.id.toString() == target.productId }?.product
+            val location = appState.locations.firstOrNull { it.id.toString() == target.locationId }
+            item {
+                Card {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text("Opened from reminder", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            when {
+                                product != null && location != null -> "${product.name} in ${location.name}"
+                                product != null -> product.name
+                                else -> "Looking up the related stock..."
+                            }
+                        )
+                        TextButton(onClick = { appState.clearInventoryTarget() }) {
+                            Text("Dismiss")
                         }
                     }
+                }
+            }
+        }
+
+        val target = appState.pendingInventoryTarget
+        val prioritizedLocations = appState.locations.sortedWith(
+            compareByDescending<LocationDto> { it.id.toString() == target?.locationId }.thenBy { it.name.lowercase() }
+        )
+
+        items(prioritizedLocations, key = { it.id }) { location ->
+            LocationInventoryCard(
+                location = location,
+                batches = appState.batchesForLocation(location.id.toString(), target),
+            )
+        }
+
+        if (appState.history.isNotEmpty()) {
+            item {
+                Text("Recent history", style = MaterialTheme.typography.titleMedium)
+            }
+            items(appState.history.take(10), key = { it.id }) { event ->
+                Card {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text("${event.product.name} · ${event.eventType.name}")
+                        Text("${event.quantityDelta} ${event.unit}")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocationInventoryCard(
+    location: LocationDto,
+    batches: List<StockBatchDto>,
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(location.name, style = MaterialTheme.typography.titleMedium)
+            if (batches.isEmpty()) {
+                Text("Nothing here yet.")
+            } else {
+                batches.forEach { batch ->
+                    Text("${batch.product.name} · ${batch.quantity} ${batch.unit}")
                 }
             }
         }
@@ -352,26 +458,64 @@ private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier 
 @Composable
 private fun ReminderScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) { appState.refreshReminders() }
+
+    LaunchedEffect(appState.currentHouseholdId) {
+        appState.refreshReminders(limit = 50)
+    }
 
     LazyColumn(
-        modifier = modifier.fillMaxSize().padding(16.dp),
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { Text("Reminders", style = MaterialTheme.typography.headlineSmall) }
+
+        when {
+            appState.remindersLoadState == LoadState.Loading && appState.reminders.isEmpty() -> {
+                item { Text("Loading reminders…") }
+            }
+            appState.reminderError != null && appState.reminders.isEmpty() -> {
+                item { ErrorCard("Couldn't load reminders", appState.reminderError!!) }
+            }
+            appState.reminders.isEmpty() -> {
+                item { Text("No due reminders right now.") }
+            }
+        }
+
         items(appState.reminders, key = { it.id }) { reminder ->
-            Card {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(reminder.title, style = MaterialTheme.typography.titleMedium)
-                    Text(reminder.body)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { scope.launch { appState.openReminder(reminder) } }) {
-                            Text("Open")
-                        }
-                        TextButton(onClick = { scope.launch { appState.acknowledgeReminder(reminder.id) } }) {
-                            Text("Acknowledge")
-                        }
-                    }
+            ReminderCard(
+                reminder = reminder,
+                action = appState.reminderActionFor(reminder.id.toString()),
+                onOpen = { scope.launch { appState.openReminder(reminder) } },
+                onAcknowledge = { scope.launch { appState.acknowledgeReminder(reminder.id.toString()) } },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReminderCard(
+    reminder: ReminderDto,
+    action: ReminderAction?,
+    onOpen: () -> Unit,
+    onAcknowledge: () -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(reminder.title, style = MaterialTheme.typography.titleMedium)
+            Text(reminder.body)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onOpen, enabled = action == null) {
+                    Text(if (action == ReminderAction.Open) "Opening..." else "Open")
+                }
+                TextButton(onClick = onAcknowledge, enabled = action == null) {
+                    Text(if (action == ReminderAction.Acknowledge) "Acknowledging..." else "Acknowledge")
                 }
             }
         }
@@ -384,20 +528,35 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
     var barcode by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
     var quantity by remember { mutableStateOf("") }
-    var unit by remember { mutableStateOf("g") }
+    var unit by remember { mutableStateOf("") }
     var expiresOn by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
-    val firstLocation = appState.locations.firstOrNull()?.id
 
-    LaunchedEffect(Unit) {
-        appState.refreshInventory()
+    LaunchedEffect(appState.currentHouseholdId) {
+        appState.refreshInventory(force = appState.locations.isEmpty())
     }
 
+    val selectedProduct = appState.selectedProduct
+    val firstLocation = appState.locations.firstOrNull()?.id
+    val defaultUnit = selectedProduct?.let(appState::defaultUnitSymbolFor)
+    val selectedUnit = unit.ifBlank { defaultUnit.orEmpty() }
+
     LazyColumn(
-        modifier = modifier.fillMaxSize().padding(16.dp),
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { Text("Scan & add stock", style = MaterialTheme.typography.headlineSmall) }
+        item {
+            Text(
+                "The emulator default server uses 10.0.2.2 to reach Quartermaster on this machine. Override the server URL in onboarding for a phone or remote server.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        appState.inventoryError?.let { message ->
+            item { ErrorCard("Inventory refresh failed", message) }
+        }
         item {
             OutlinedTextField(
                 value = barcode,
@@ -409,8 +568,8 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
         }
         item {
             Button(
-                onClick = { scope.launch { appState.lookupBarcode(barcode) } },
-                enabled = barcode.isNotBlank() && !appState.isBusy,
+                onClick = { scope.launch { appState.lookupBarcode(barcode.trim()) } },
+                enabled = barcode.isNotBlank(),
             ) {
                 Text("Look up barcode")
             }
@@ -425,29 +584,18 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
         }
         item {
             Button(
-                onClick = { scope.launch { appState.searchProducts(query) } },
-                enabled = query.isNotBlank() && !appState.isBusy,
+                onClick = { scope.launch { appState.searchProducts(query.trim()) } },
+                enabled = query.isNotBlank(),
             ) {
                 Text("Search")
             }
         }
         items(appState.searchResults, key = { it.id }) { product ->
-            Card {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Column {
-                        Text(product.name)
-                        Text(product.family.name)
-                    }
-                    TextButton(onClick = { appState.selectProduct(product) }) { Text("Use") }
-                }
-            }
+            ProductSearchResultCard(product) { appState.selectProduct(product) }
         }
-        appState.selectedProduct?.let { product ->
+        if (selectedProduct != null) {
             item {
-                Text("Add ${product.name}", style = MaterialTheme.typography.titleMedium)
+                Text("Add ${selectedProduct.name}", style = MaterialTheme.typography.titleMedium)
             }
             item {
                 OutlinedTextField(
@@ -459,7 +607,7 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
             }
             item {
                 OutlinedTextField(
-                    value = unit,
+                    value = selectedUnit,
                     onValueChange = { unit = it },
                     label = { Text("Unit") },
                     modifier = Modifier.fillMaxWidth(),
@@ -487,32 +635,46 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
                         firstLocation?.let { locationId ->
                             scope.launch {
                                 appState.addStock(
-                                    productId = product.id,
-                                    locationId = locationId,
-                                    quantity = quantity,
-                                    unit = unit,
+                                    productId = selectedProduct.id.toString(),
+                                    locationId = locationId.toString(),
+                                    quantity = quantity.trim(),
+                                    unit = selectedUnit.trim(),
                                     expiresOn = expiresOn.takeIf(String::isNotBlank),
                                     note = note.takeIf(String::isNotBlank),
                                 )
+                                quantity = ""
+                                unit = ""
+                                expiresOn = ""
+                                note = ""
                             }
                         }
                     },
-                    enabled = !appState.isBusy && quantity.isNotBlank() && firstLocation != null,
+                    enabled = quantity.isNotBlank() && selectedUnit.isNotBlank() && firstLocation != null,
                 ) {
                     Text("Add stock")
                 }
             }
         }
-        item {
-            Text("Recent history", style = MaterialTheme.typography.titleMedium)
-        }
-        items(appState.history, key = { it.id }) { event ->
-            Card {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("${event.product.name} · ${event.eventType.name}")
-                    Text("${event.quantityDelta} ${event.batchUnit}")
-                }
+    }
+}
+
+@Composable
+private fun ProductSearchResultCard(
+    product: ProductDto,
+    onUse: () -> Unit,
+) {
+    Card {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column {
+                Text(product.name)
+                Text(product.family.name)
             }
+            TextButton(onClick = onUse) { Text("Use") }
         }
     }
 }
@@ -523,16 +685,26 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
     var inviteExpiry by remember { mutableStateOf("2999-01-01T00:00:00.000Z") }
     var inviteMaxUses by remember { mutableStateOf("1") }
 
-    LaunchedEffect(Unit) { appState.loadSettings() }
+    LaunchedEffect(appState.currentHouseholdId) { appState.loadSettings() }
 
     LazyColumn(
-        modifier = modifier.fillMaxSize().padding(16.dp),
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { Text("Settings", style = MaterialTheme.typography.headlineSmall) }
+        appState.settingsError?.let { message ->
+            item { ErrorCard("Settings couldn't refresh", message) }
+        }
         item {
             Card {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     Text(appState.meOrNull?.user?.username ?: "")
                     appState.meOrNull?.user?.email?.let { Text(it) }
                     Text("Household: ${appState.meOrNull?.currentHousehold?.name ?: "None"}")
@@ -547,14 +719,19 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
         items(appState.meOrNull?.households.orEmpty(), key = { it.id }) { household ->
             Card {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Column {
                         Text(household.name)
                         Text(household.role.name)
                     }
-                    TextButton(onClick = { scope.launch { appState.switchHousehold(household.id) } }) {
+                    TextButton(
+                        onClick = { scope.launch { appState.switchHousehold(household.id.toString()) } },
+                        enabled = appState.settingsLoadState != LoadState.Loading,
+                    ) {
                         Text("Switch")
                     }
                 }
@@ -590,14 +767,19 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
                         )
                     }
                 },
-                enabled = !appState.isBusy,
+                enabled = appState.settingsLoadState != LoadState.Loading,
             ) {
                 Text("Create invite")
             }
         }
         items(appState.invites, key = { it.id }) { invite ->
             Card {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     Text(invite.code)
                     Text("Uses ${invite.useCount}/${invite.maxUses}")
                 }
@@ -606,10 +788,41 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
         item {
             Button(
                 onClick = { scope.launch { appState.logout() } },
-                enabled = !appState.isBusy,
+                enabled = !appState.authActionInFlight,
             ) {
                 Text("Sign out")
             }
         }
     }
+}
+
+@Composable
+private fun ErrorCard(title: String, message: String) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(message)
+        }
+    }
+}
+
+private fun QuartermasterAppState.batchesForLocation(
+    locationId: String,
+    target: InventoryTarget?,
+): List<StockBatchDto> {
+    return batches.filter { it.locationId.toString() == locationId }
+        .sortedWith(
+            compareByDescending<StockBatchDto> { it.product.id.toString() == target?.productId }
+                .thenBy { it.product.name.lowercase() }
+                .thenBy { it.expiresOn ?: "9999-12-31" }
+        )
+}
+
+private fun QuartermasterAppState.defaultUnitSymbolFor(product: ProductDto): String? {
+    return units.firstOrNull { it.family == product.family }?.code
 }

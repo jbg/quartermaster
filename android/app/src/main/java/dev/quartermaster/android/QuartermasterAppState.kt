@@ -20,8 +20,8 @@ import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.UnitDto
 import java.util.UUID
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import java.net.URI
+import java.net.URLDecoder
 
 enum class MainTab { Inventory, Reminders, Scan, Settings }
 
@@ -32,15 +32,157 @@ sealed interface AppPhase {
     data class Authenticated(val me: MeResponse) : AppPhase
 }
 
-class QuartermasterAppState(context: Context) {
-    private val authStore = AuthStore(context)
-    private val api = QuartermasterApi(authStore)
+enum class LoadState {
+    Idle,
+    Loading,
+}
 
+enum class ReminderAction {
+    Open,
+    Acknowledge,
+}
+
+data class InviteContext(
+    val inviteCode: String?,
+    val serverUrl: String?,
+)
+
+data class InventoryTarget(
+    val productId: String,
+    val locationId: String,
+    val batchId: String? = null,
+)
+
+sealed interface HouseholdScopedResolution {
+    data object Retry : HouseholdScopedResolution
+    data object FallbackToNoHousehold : HouseholdScopedResolution
+    data class Failed(val message: String) : HouseholdScopedResolution
+}
+
+interface SessionStore {
+    fun snapshot(): SessionSnapshot
+    fun saveServerUrl(url: String)
+    fun saveTokens(accessToken: String, refreshToken: String)
+    fun clearTokens()
+    fun stableDeviceId(): String
+}
+
+interface QuartermasterBackend {
+    var serverUrl: String
+
+    suspend fun me(): MeResponse
+    suspend fun login(username: String, password: String): Unit
+    suspend fun register(username: String, password: String, email: String?, inviteCode: String?): Unit
+    suspend fun logout()
+    suspend fun switchHousehold(householdId: String): MeResponse
+    suspend fun createHousehold(name: String, timezone: String): MeResponse
+    suspend fun redeemInvite(inviteCode: String)
+    suspend fun currentHousehold(): HouseholdDetailDto
+    suspend fun householdInvites(): List<InviteDto>
+    suspend fun createInvite(body: CreateInviteRequest): InviteDto
+    suspend fun locations(): List<LocationDto>
+    suspend fun units(): List<UnitDto>
+    suspend fun listStock(): List<StockBatchDto>
+    suspend fun listEvents(limit: Int = 30): List<StockEventDto>
+    suspend fun listReminders(limit: Int = 50): List<ReminderDto>
+    suspend fun acknowledgeReminder(id: String)
+    suspend fun presentReminder(id: String)
+    suspend fun openReminder(id: String)
+    suspend fun registerDevice(
+        deviceId: String,
+        pushToken: String?,
+        authorization: PushAuthorizationStatus,
+        appVersion: String,
+    )
+
+    suspend fun searchProducts(query: String): List<ProductDto>
+    suspend fun lookupBarcode(barcode: String): BarcodeLookupResponse
+    suspend fun addStock(request: CreateStockRequest): StockBatchDto
+}
+
+class QuartermasterApiBackend(
+    private val api: QuartermasterApi,
+) : QuartermasterBackend {
+    override var serverUrl: String
+        get() = api.serverUrl
+        set(value) {
+            api.serverUrl = value
+        }
+
+    override suspend fun me(): MeResponse = api.me()
+    override suspend fun login(username: String, password: String) {
+        api.login(username = username, password = password)
+    }
+
+    override suspend fun register(
+        username: String,
+        password: String,
+        email: String?,
+        inviteCode: String?,
+    ) {
+        api.register(
+            username = username,
+            password = password,
+            email = email,
+            inviteCode = inviteCode,
+        )
+    }
+
+    override suspend fun logout() {
+        api.logout()
+    }
+
+    override suspend fun switchHousehold(householdId: String): MeResponse =
+        api.switchHousehold(householdId)
+
+    override suspend fun createHousehold(name: String, timezone: String): MeResponse =
+        api.createHousehold(name = name, timezone = timezone)
+
+    override suspend fun redeemInvite(inviteCode: String) {
+        api.redeemInvite(inviteCode)
+    }
+
+    override suspend fun currentHousehold(): HouseholdDetailDto = api.currentHousehold()
+    override suspend fun householdInvites(): List<InviteDto> = api.householdInvites()
+    override suspend fun createInvite(body: CreateInviteRequest): InviteDto = api.createInvite(body)
+    override suspend fun locations(): List<LocationDto> = api.locations()
+    override suspend fun units(): List<UnitDto> = api.units()
+    override suspend fun listStock(): List<StockBatchDto> = api.listStock()
+    override suspend fun listEvents(limit: Int): List<StockEventDto> = api.listEvents(limit)
+    override suspend fun listReminders(limit: Int): List<ReminderDto> = api.listReminders(limit)
+    override suspend fun acknowledgeReminder(id: String) = api.acknowledgeReminder(id)
+    override suspend fun presentReminder(id: String) = api.presentReminder(id)
+    override suspend fun openReminder(id: String) = api.openReminder(id)
+
+    override suspend fun registerDevice(
+        deviceId: String,
+        pushToken: String?,
+        authorization: PushAuthorizationStatus,
+        appVersion: String,
+    ) {
+        api.registerDevice(
+            deviceId = deviceId,
+            pushToken = pushToken,
+            authorization = authorization,
+            appVersion = appVersion,
+        )
+    }
+
+    override suspend fun searchProducts(query: String): List<ProductDto> = api.searchProducts(query)
+    override suspend fun lookupBarcode(barcode: String): BarcodeLookupResponse = api.lookupBarcode(barcode)
+    override suspend fun addStock(request: CreateStockRequest): StockBatchDto = api.addStock(request)
+}
+
+class QuartermasterAppState(
+    private val sessionStore: SessionStore,
+    private val backend: QuartermasterBackend,
+) {
     var phase: AppPhase by mutableStateOf(AppPhase.Launching)
         private set
     var selectedTab by mutableStateOf(MainTab.Inventory)
     var lastError by mutableStateOf<String?>(null)
-    var serverUrl by mutableStateOf(authStore.snapshot().serverUrl)
+        private set
+    var serverUrl by mutableStateOf(sessionStore.snapshot().serverUrl)
         private set
 
     var units by mutableStateOf<List<UnitDto>>(emptyList())
@@ -62,46 +204,73 @@ class QuartermasterAppState(context: Context) {
     var invites by mutableStateOf<List<InviteDto>>(emptyList())
         private set
 
-    var isBusy by mutableStateOf(false)
+    var launchState by mutableStateOf(LoadState.Loading)
         private set
-    var isLoadingInventory by mutableStateOf(false)
+    var authActionInFlight by mutableStateOf(false)
         private set
-    var isLoadingReminders by mutableStateOf(false)
+    var inventoryLoadState by mutableStateOf(LoadState.Idle)
         private set
-    var pendingInviteCode by mutableStateOf<String?>(null)
+    var remindersLoadState by mutableStateOf(LoadState.Idle)
+        private set
+    var settingsLoadState by mutableStateOf(LoadState.Idle)
+        private set
+    var inventoryError by mutableStateOf<String?>(null)
+        private set
+    var reminderError by mutableStateOf<String?>(null)
+        private set
+    var settingsError by mutableStateOf<String?>(null)
         private set
 
+    var pendingInviteContext by mutableStateOf<InviteContext?>(null)
+        private set
+    var pendingInventoryTarget by mutableStateOf<InventoryTarget?>(null)
+        private set
+
+    private var reminderActionInFlight by mutableStateOf<Map<String, ReminderAction>>(emptyMap())
+
+    init {
+        backend.serverUrl = serverUrl
+    }
+
     suspend fun bootstrap() {
-        val snapshot = authStore.snapshot()
+        val snapshot = sessionStore.snapshot()
         serverUrl = snapshot.serverUrl
+        backend.serverUrl = serverUrl
         if (snapshot.accessToken.isNullOrBlank()) {
+            launchState = LoadState.Idle
             phase = AppPhase.Unauthenticated
             return
         }
-        runCatching { api.me() }
-            .onSuccess { applyAuthenticated(it) }
+        runCatching { backend.me() }
+            .onSuccess {
+                applyAuthenticated(it)
+                launchState = LoadState.Idle
+            }
             .onFailure {
-                authStore.clearTokens()
+                sessionStore.clearTokens()
+                clearSessionData()
+                launchState = LoadState.Idle
                 phase = AppPhase.LaunchFailed(it.userFacingMessage())
             }
     }
 
     fun handleDeepLink(uri: Uri) {
-        val invite = uri.getQueryParameter("invite")?.takeIf { it.isNotBlank() }
-        val server = uri.getQueryParameter("server")?.takeIf { it.startsWith("http") }
-        if (server != null) updateServerUrl(server)
-        pendingInviteCode = invite
-        selectedTab = MainTab.Settings
+        parseInviteContext(uri.toString())?.let { context ->
+            context.serverUrl?.let(::updateServerUrl)
+            pendingInviteContext = context
+            selectedTab = MainTab.Settings
+        }
     }
 
     fun updateServerUrl(url: String) {
         serverUrl = url.trim().removeSuffix("/")
-        api.serverUrl = serverUrl
+        sessionStore.saveServerUrl(serverUrl)
+        backend.serverUrl = serverUrl
     }
 
-    suspend fun signIn(username: String, password: String) = busy {
-        api.login(username = username, password = password)
-        applyAuthenticated(api.me())
+    suspend fun signIn(username: String, password: String) = runAuthAction {
+        backend.login(username = username, password = password)
+        applyAuthenticated(backend.me())
     }
 
     suspend fun register(
@@ -109,32 +278,45 @@ class QuartermasterAppState(context: Context) {
         password: String,
         email: String?,
         inviteCode: String?,
-    ) = busy {
-        api.register(username = username, password = password, email = email, inviteCode = inviteCode)
-        applyAuthenticated(api.me())
+    ) = runAuthAction {
+        backend.register(
+            username = username,
+            password = password,
+            email = email,
+            inviteCode = inviteCode,
+        )
+        applyAuthenticated(backend.me())
     }
 
-    suspend fun logout() = busy {
-        api.logout()
-        clearSession()
-        phase = AppPhase.Unauthenticated
+    suspend fun logout() {
+        authActionInFlight = true
+        lastError = null
+        try {
+            backend.logout()
+        } catch (_: Throwable) {
+            // Best effort.
+        } finally {
+            authActionInFlight = false
+            clearSession()
+            phase = AppPhase.Unauthenticated
+        }
     }
 
-    suspend fun switchHousehold(householdId: String) = busy {
-        applyAuthenticated(api.switchHousehold(householdId))
+    suspend fun switchHousehold(householdId: String) = runSettingsAction {
+        applyAuthenticated(backend.switchHousehold(householdId))
     }
 
-    suspend fun createHousehold(name: String, timezone: String) = busy {
-        applyAuthenticated(api.createHousehold(name = name, timezone = timezone))
+    suspend fun createHousehold(name: String, timezone: String) = runSettingsAction {
+        applyAuthenticated(backend.createHousehold(name = name, timezone = timezone))
     }
 
-    suspend fun redeemInvite(code: String) = busy {
-        api.redeemInvite(code)
-        applyAuthenticated(api.me())
+    suspend fun redeemInvite(code: String) = runSettingsAction {
+        backend.redeemInvite(code)
+        applyAuthenticated(backend.me())
     }
 
-    suspend fun createInvite(expiresAt: String, maxUses: Long) = busy {
-        val invite = api.createInvite(
+    suspend fun createInvite(expiresAt: String, maxUses: Long) = runSettingsAction {
+        val invite = backend.createInvite(
             CreateInviteRequest(
                 expiresAt = expiresAt,
                 maxUses = maxUses,
@@ -144,46 +326,70 @@ class QuartermasterAppState(context: Context) {
         invites = listOf(invite) + invites
     }
 
-    suspend fun refreshInventory() = guardHousehold {
-        isLoadingInventory = true
-        try {
-            if (units.isEmpty()) units = api.units()
-            locations = api.locations().sortedBy { it.sortOrder ?: 0L }
-            batches = api.listStock()
-            history = api.listEvents()
-        } finally {
-            isLoadingInventory = false
+    suspend fun refreshInventory(force: Boolean = false) = guardHouseholdScope(
+        onStart = {
+            inventoryLoadState = LoadState.Loading
+            inventoryError = null
+        },
+        onFailure = { inventoryError = it },
+        onFinish = { inventoryLoadState = LoadState.Idle },
+    ) {
+        if (force || units.isEmpty()) {
+            units = backend.units().sortedBy { it.code }
+        }
+        locations = backend.locations().sortedWith(
+            compareBy<LocationDto> { it.sortOrder }.thenBy { it.name.lowercase() }
+        )
+        batches = backend.listStock().sortedWith(
+            compareBy<StockBatchDto> { it.locationId }.thenBy { it.product.name.lowercase() }.thenBy { it.expiresOn ?: "9999-12-31" }
+        )
+        history = backend.listEvents().sortedByDescending { it.createdAt }
+    }
+
+    suspend fun refreshReminders(limit: Int = 50) = guardHouseholdScope(
+        onStart = {
+            remindersLoadState = LoadState.Loading
+            reminderError = null
+        },
+        onFailure = { reminderError = it },
+        onFinish = { remindersLoadState = LoadState.Idle },
+    ) {
+        reminders = backend.listReminders(limit).sortedBy { it.householdFireLocalAt }
+        val inFlightIds = reminderActionInFlight.keys
+        reminders.filter { it.presentedOnDeviceAt == null && !inFlightIds.contains(it.id.toString()) }.forEach { reminder ->
+            runCatching { backend.presentReminder(reminder.id.toString()) }
         }
     }
 
-    suspend fun refreshReminders() = guardHousehold {
-        isLoadingReminders = true
-        try {
-            reminders = api.listReminders()
-            reminders.filter { it.presentedOnDeviceAt == null }.forEach { reminder ->
-                runCatching { api.presentReminder(reminder.id) }
-            }
-        } finally {
-            isLoadingReminders = false
-        }
+    suspend fun loadSettings() = guardHouseholdScope(
+        onStart = {
+            settingsLoadState = LoadState.Loading
+            settingsError = null
+        },
+        onFailure = { settingsError = it },
+        onFinish = { settingsLoadState = LoadState.Idle },
+    ) {
+        householdDetail = backend.currentHousehold()
+        invites = backend.householdInvites().sortedByDescending { it.createdAt }
     }
 
-    suspend fun loadSettings() = guardHousehold {
-        householdDetail = api.currentHousehold()
-        invites = runCatching { api.householdInvites() }.getOrDefault(emptyList())
+    suspend fun searchProducts(query: String) {
+        lastError = null
+        searchResults = if (query.isBlank()) emptyList() else backend.searchProducts(query)
     }
 
-    suspend fun searchProducts(query: String) = busy {
-        searchResults = if (query.isBlank()) emptyList() else api.searchProducts(query)
-    }
-
-    suspend fun lookupBarcode(barcode: String) = busy {
-        val response: BarcodeLookupResponse = api.lookupBarcode(barcode)
+    suspend fun lookupBarcode(barcode: String) {
+        lastError = null
+        val response: BarcodeLookupResponse = backend.lookupBarcode(barcode)
         selectedProduct = response.product
     }
 
     fun selectProduct(product: ProductDto) {
         selectedProduct = product
+    }
+
+    fun clearInventoryTarget() {
+        pendingInventoryTarget = null
     }
 
     suspend fun addStock(
@@ -193,11 +399,11 @@ class QuartermasterAppState(context: Context) {
         unit: String,
         expiresOn: String?,
         note: String?,
-    ) = busy {
-        api.addStock(
+    ) = runInventoryMutation {
+        backend.addStock(
             CreateStockRequest(
-                productId = productId,
-                locationId = locationId,
+                locationId = UUID.fromString(locationId),
+                productId = UUID.fromString(productId),
                 quantity = quantity,
                 unit = unit,
                 expiresOn = expiresOn,
@@ -205,24 +411,36 @@ class QuartermasterAppState(context: Context) {
                 note = note,
             )
         )
-        refreshInventory()
-        refreshReminders()
-    }
-
-    suspend fun acknowledgeReminder(id: String) = busy {
-        api.acknowledgeReminder(id)
-        reminders = reminders.filterNot { it.id == id }
-    }
-
-    suspend fun openReminder(reminder: ReminderDto) = busy {
-        api.openReminder(reminder.id)
+        searchResults = emptyList()
+        selectedProduct = null
+        refreshInventory(force = true)
+        refreshReminders(limit = 50)
         selectedTab = MainTab.Inventory
+    }
+
+    suspend fun acknowledgeReminder(id: String) = runReminderAction(id, ReminderAction.Acknowledge) {
+        backend.acknowledgeReminder(id)
+        reminders = reminders.filterNot { it.id.toString() == id }
+        refreshReminders(limit = 50)
+    }
+
+    suspend fun openReminder(reminder: ReminderDto) = runReminderAction(reminder.id.toString(), ReminderAction.Open) {
+        backend.openReminder(reminder.id.toString())
+        pendingInventoryTarget = InventoryTarget(
+            productId = reminder.productId.toString(),
+            locationId = reminder.locationId.toString(),
+            batchId = reminder.batchId.toString(),
+        )
+        selectedTab = MainTab.Inventory
+        reminders = reminders.filterNot { it.id == reminder.id }
+        refreshInventory(force = true)
+        refreshReminders(limit = 50)
     }
 
     suspend fun registerDevice() {
         runCatching {
-            api.registerDevice(
-                deviceId = UUID.nameUUIDFromBytes("quartermaster-android".toByteArray()).toString(),
+            backend.registerDevice(
+                deviceId = sessionStore.stableDeviceId(),
                 pushToken = null,
                 authorization = PushAuthorizationStatus.DENIED,
                 appVersion = "0.1.0",
@@ -230,45 +448,49 @@ class QuartermasterAppState(context: Context) {
         }
     }
 
+    fun reminderActionFor(id: String): ReminderAction? = reminderActionInFlight[id]
+
     val meOrNull: MeResponse?
         get() = (phase as? AppPhase.Authenticated)?.me
 
     val currentHouseholdId: String?
-        get() = meOrNull?.currentHousehold?.id
+        get() = meOrNull?.currentHousehold?.id?.toString()
+
+    suspend fun resolveHouseholdScopedForbidden(): HouseholdScopedResolution {
+        return try {
+            val me = backend.me()
+            applyAuthenticated(me)
+            if (me.currentHousehold != null) HouseholdScopedResolution.Retry
+            else HouseholdScopedResolution.FallbackToNoHousehold
+        } catch (failure: Throwable) {
+            if (failure is ApiFailure && failure.status == 401) {
+                clearSession()
+                phase = AppPhase.Unauthenticated
+                HouseholdScopedResolution.FallbackToNoHousehold
+            } else {
+                val message = failure.userFacingMessage()
+                lastError = message
+                HouseholdScopedResolution.Failed(message)
+            }
+        }
+    }
 
     private suspend fun applyAuthenticated(me: MeResponse) {
         phase = AppPhase.Authenticated(me)
         lastError = null
-        pendingInviteCode = null
-        registerDevice()
+        pendingInviteContext = null
         if (me.currentHousehold != null) {
-            refreshInventory()
-            refreshReminders()
+            registerDevice()
+            refreshInventory(force = true)
+            refreshReminders(limit = 50)
             loadSettings()
         } else {
-            locations = emptyList()
-            batches = emptyList()
-            reminders = emptyList()
-            history = emptyList()
-            householdDetail = null
+            clearHouseholdScopedData()
         }
     }
 
-    private fun clearSession() {
-        units = emptyList()
-        locations = emptyList()
-        batches = emptyList()
-        reminders = emptyList()
-        history = emptyList()
-        searchResults = emptyList()
-        selectedProduct = null
-        householdDetail = null
-        invites = emptyList()
-        lastError = null
-    }
-
-    private suspend fun busy(block: suspend () -> Unit) {
-        isBusy = true
+    private suspend fun runAuthAction(block: suspend () -> Unit) {
+        authActionInFlight = true
         lastError = null
         try {
             block()
@@ -280,22 +502,176 @@ class QuartermasterAppState(context: Context) {
                 lastError = failure.userFacingMessage()
             }
         } finally {
-            isBusy = false
+            authActionInFlight = false
         }
     }
 
-    private suspend fun guardHousehold(block: suspend () -> Unit) {
-        busy {
-            if (currentHouseholdId == null) return@busy
-            try {
-                block()
-            } catch (failure: ApiFailure) {
-                if (failure.status == 403) {
-                    applyAuthenticated(api.me())
-                } else {
-                    throw failure
-                }
+    private suspend fun runSettingsAction(block: suspend () -> Unit) {
+        settingsLoadState = LoadState.Loading
+        settingsError = null
+        lastError = null
+        try {
+            block()
+        } catch (failure: Throwable) {
+            if (failure is ApiFailure && failure.status == 401) {
+                clearSession()
+                phase = AppPhase.Unauthenticated
+            } else {
+                val message = failure.userFacingMessage()
+                settingsError = message
+                lastError = message
             }
+        } finally {
+            settingsLoadState = LoadState.Idle
+        }
+    }
+
+    private suspend fun runInventoryMutation(block: suspend () -> Unit) {
+        inventoryLoadState = LoadState.Loading
+        inventoryError = null
+        lastError = null
+        try {
+            block()
+        } catch (failure: Throwable) {
+            if (failure is ApiFailure && failure.status == 401) {
+                clearSession()
+                phase = AppPhase.Unauthenticated
+            } else {
+                val message = failure.userFacingMessage()
+                inventoryError = message
+                lastError = message
+            }
+        } finally {
+            inventoryLoadState = LoadState.Idle
+        }
+    }
+
+    private suspend fun runReminderAction(
+        id: String,
+        action: ReminderAction,
+        block: suspend () -> Unit,
+    ) {
+        if (reminderActionInFlight.containsKey(id)) return
+        reminderActionInFlight = reminderActionInFlight + (id to action)
+        lastError = null
+        try {
+            block()
+        } catch (failure: Throwable) {
+            if (failure is ApiFailure && failure.status == 403) {
+                when (resolveHouseholdScopedForbidden()) {
+                    HouseholdScopedResolution.Retry -> {
+                        reminderActionInFlight = reminderActionInFlight - id
+                        runReminderAction(id, action, block)
+                        return
+                    }
+                    HouseholdScopedResolution.FallbackToNoHousehold -> clearHouseholdScopedData()
+                    is HouseholdScopedResolution.Failed -> Unit
+                }
+            } else if (failure is ApiFailure && failure.status == 401) {
+                clearSession()
+                phase = AppPhase.Unauthenticated
+            } else {
+                lastError = failure.userFacingMessage()
+            }
+        } finally {
+            reminderActionInFlight = reminderActionInFlight - id
+        }
+    }
+
+    private suspend fun guardHouseholdScope(
+        onStart: () -> Unit,
+        onFailure: (String) -> Unit,
+        onFinish: () -> Unit,
+        block: suspend () -> Unit,
+    ) {
+        if (currentHouseholdId == null) return
+        onStart()
+        try {
+            block()
+        } catch (failure: Throwable) {
+            if (failure is ApiFailure && failure.status == 403) {
+                when (resolveHouseholdScopedForbidden()) {
+                    HouseholdScopedResolution.Retry -> block()
+                    HouseholdScopedResolution.FallbackToNoHousehold -> clearHouseholdScopedData()
+                    is HouseholdScopedResolution.Failed -> onFailure(failure.userFacingMessage())
+                }
+            } else if (failure is ApiFailure && failure.status == 401) {
+                clearSession()
+                phase = AppPhase.Unauthenticated
+            } else {
+                val message = failure.userFacingMessage()
+                onFailure(message)
+                lastError = message
+            }
+        } finally {
+            onFinish()
+        }
+    }
+
+    private fun clearSession() {
+        sessionStore.clearTokens()
+        clearSessionData()
+    }
+
+    private fun clearSessionData() {
+        clearHouseholdScopedData()
+        searchResults = emptyList()
+        selectedProduct = null
+        pendingInviteContext = null
+        lastError = null
+    }
+
+    private fun clearHouseholdScopedData() {
+        locations = emptyList()
+        batches = emptyList()
+        reminders = emptyList()
+        history = emptyList()
+        householdDetail = null
+        invites = emptyList()
+        pendingInventoryTarget = null
+        inventoryError = null
+        reminderError = null
+        settingsError = null
+        inventoryLoadState = LoadState.Idle
+        remindersLoadState = LoadState.Idle
+        settingsLoadState = LoadState.Idle
+        reminderActionInFlight = emptyMap()
+    }
+
+    companion object {
+        fun fromContext(context: Context): QuartermasterAppState {
+            val store = AuthStore(context)
+            return QuartermasterAppState(
+                sessionStore = store,
+                backend = QuartermasterApiBackend(QuartermasterApi(store)),
+            )
+        }
+
+        fun parseInviteContext(rawUrl: String): InviteContext? {
+            val uri = runCatching { URI(rawUrl) }.getOrNull() ?: return null
+            val isJoinLink =
+                (uri.scheme == "quartermaster" && uri.host == "join") ||
+                    ((uri.scheme == "https" || uri.scheme == "http") && uri.path?.startsWith("/join") == true)
+            if (!isJoinLink) return null
+
+            val query = uri.rawQuery.orEmpty()
+                .split("&")
+                .filter { it.isNotBlank() }
+                .mapNotNull { pair ->
+                    val parts = pair.split("=", limit = 2)
+                    val name = parts.getOrNull(0)?.urlDecode() ?: return@mapNotNull null
+                    val value = parts.getOrNull(1)?.urlDecode().orEmpty()
+                    name to value
+                }
+                .toMap()
+
+            val invite = query["invite"]?.trim()?.takeIf { it.isNotEmpty() }
+            val server = query["server"]
+                ?.trim()
+                ?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+                ?.removeSuffix("/")
+
+            return InviteContext(inviteCode = invite, serverUrl = server)
         }
     }
 }
@@ -304,3 +680,6 @@ private fun Throwable.userFacingMessage(): String = when (this) {
     is ApiFailure -> message
     else -> message ?: "Something went wrong."
 }
+
+private fun String.urlDecode(): String =
+    URLDecoder.decode(this, Charsets.UTF_8.name())

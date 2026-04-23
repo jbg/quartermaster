@@ -11,7 +11,7 @@ data class SessionSnapshot(
     val refreshToken: String?,
 )
 
-class AuthStore(context: Context) {
+class AuthStore(context: Context) : SessionStore {
     private val prefs: SharedPreferences
 
     init {
@@ -27,28 +27,36 @@ class AuthStore(context: Context) {
         )
     }
 
-    fun snapshot(): SessionSnapshot = SessionSnapshot(
+    override fun snapshot(): SessionSnapshot = SessionSnapshot(
         serverUrl = prefs.getString(KEY_SERVER_URL, DEFAULT_SERVER_URL) ?: DEFAULT_SERVER_URL,
         accessToken = prefs.getString(KEY_ACCESS_TOKEN, null),
         refreshToken = prefs.getString(KEY_REFRESH_TOKEN, null),
     )
 
-    fun saveServerUrl(url: String) {
+    override fun saveServerUrl(url: String) {
         prefs.edit().putString(KEY_SERVER_URL, url.trim().removeSuffix("/")).apply()
     }
 
-    fun saveTokens(accessToken: String, refreshToken: String) {
+    override fun saveTokens(accessToken: String, refreshToken: String) {
         prefs.edit()
             .putString(KEY_ACCESS_TOKEN, accessToken)
             .putString(KEY_REFRESH_TOKEN, refreshToken)
             .apply()
     }
 
-    fun clearTokens() {
+    override fun clearTokens() {
         prefs.edit()
             .remove(KEY_ACCESS_TOKEN)
             .remove(KEY_REFRESH_TOKEN)
             .apply()
+    }
+
+    override fun stableDeviceId(): String {
+        val existing = prefs.getString(KEY_DEVICE_ID, null)
+        if (!existing.isNullOrBlank()) return existing
+        val created = java.util.UUID.randomUUID().toString().lowercase()
+        prefs.edit().putString(KEY_DEVICE_ID, created).apply()
+        return created
     }
 
     companion object {
@@ -57,5 +65,6 @@ class AuthStore(context: Context) {
         private const val KEY_SERVER_URL = "server_url"
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_REFRESH_TOKEN = "refresh_token"
+        private const val KEY_DEVICE_ID = "device_id"
     }
 }

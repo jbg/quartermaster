@@ -9,12 +9,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 
 class MainActivity : ComponentActivity() {
+    private var deepLinkHandler: ((Uri) -> Unit)? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         setContent {
-            val appState = remember { QuartermasterAppState(applicationContext) }
+            val appState = remember { QuartermasterAppState.fromContext(applicationContext) }
+            deepLinkHandler = appState::handleDeepLink
             LaunchedEffect(appState) {
                 appState.bootstrap()
                 intent?.data?.let(appState::handleDeepLink)
@@ -26,5 +29,6 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        intent.data?.let { deepLinkHandler?.invoke(it) }
     }
 }
