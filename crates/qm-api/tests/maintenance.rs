@@ -98,6 +98,15 @@ async fn maintenance_route_is_unmounted_without_secret() {
         )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = app
+        .send(
+            Method::POST,
+            "/internal/maintenance/seed-android-smoke",
+            None,
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -176,4 +185,75 @@ async fn sweep_expiry_reminders_reconciles_rows_with_valid_secret() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["inserted"], 1);
     assert_eq!(body["deleted"], 0);
+}
+
+#[tokio::test]
+async fn seed_android_smoke_requires_shared_secret() {
+    let app = TestApp::start(ApiConfig {
+        android_smoke_seed_trigger_secret: Some("smoke-secret".into()),
+        ..ApiConfig::default()
+    })
+    .await;
+
+    let (status, body) = app
+        .send(Method::POST, "/internal/maintenance/seed-android-smoke", None, None)
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body["code"], "unauthorized");
+}
+
+#[tokio::test]
+async fn seed_android_smoke_returns_deterministic_fixture() {
+    let app = TestApp::start(ApiConfig {
+        android_smoke_seed_trigger_secret: Some("smoke-secret".into()),
+        expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy {
+            enabled: false,
+            ..Default::default()
+        },
+        ..ApiConfig::default()
+    })
+    .await;
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        qm_api::routes::maintenance::MAINTENANCE_TOKEN_HEADER,
+        "smoke-secret".parse().unwrap(),
+    );
+
+    let (status, body) = app
+        .send_with_headers(
+            Method::POST,
+            "/internal/maintenance/seed-android-smoke",
+            None,
+            None,
+            headers.clone(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["username"], "android_smoke_18423");
+    assert_eq!(body["password"], "quartermaster-smoke-18423");
+    assert_eq!(body["reminders"].as_array().unwrap().len(), 2);
+
+    let (status, body_again) = app
+        .send_with_headers(
+            Method::POST,
+            "/internal/maintenance/seed-android-smoke",
+            None,
+            None,
+            headers,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body_again["username"], body["username"]);
+    assert_eq!(body_again["invite_code"], body["invite_code"]);
+    assert_eq!(body_again["reminders"].as_array().unwrap().len(), 2);
+
+    let user = qm_db::users::find_by_username(&app.db, "android_smoke_18423")
+        .await
+        .unwrap()
+        .unwrap();
+    let memberships = qm_db::memberships::list_for_user(&app.db, user.id)
+        .await
+        .unwrap();
+    assert_eq!(memberships.len(), 1);
 }

@@ -87,6 +87,7 @@ Quartermaster also supports a few self-hosting hardening knobs:
 | `QM_OFF_CIRCUIT_BREAKER_OPEN_SECONDS`      | `60`                                              | How long OFF stays fail-fast once the breaker opens |
 | `QM_AUTH_SESSION_SWEEP_INTERVAL_SECONDS`   | `0`                                               | Periodic stale-session sweep interval in seconds; `0` disables the in-process timer |
 | `QM_AUTH_SESSION_SWEEP_TRIGGER_SECRET`     | unset                                             | Enables `POST /internal/maintenance/sweep-auth-sessions` when set; callers must supply the shared secret in `X-QM-Maintenance-Token` |
+| `QM_ANDROID_SMOKE_SEED_TRIGGER_SECRET`     | unset                                             | Enables the internal local-testing `POST /internal/maintenance/seed-android-smoke` fixture route; callers must supply the shared secret in `X-QM-Maintenance-Token` |
 | `QM_EXPIRY_REMINDERS_ENABLED`              | `false`                                           | Enables backend-owned expiry reminder generation |
 | `QM_EXPIRY_REMINDER_LEAD_DAYS`             | `1`                                               | How many days before expiry a reminder should fire |
 | `QM_EXPIRY_REMINDER_FIRE_HOUR`             | `9`                                               | Household-local hour when expiry reminders should fire |

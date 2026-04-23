@@ -13,9 +13,45 @@ import androidx.compose.runtime.remember
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
+internal class ReminderIntentRouter(
+    private val handleDeepLink: (Uri) -> Unit,
+    private val handleIntent: suspend (android.content.Intent) -> Unit,
+) {
+    private var lastHandledSignature: String? = null
+
+    suspend fun route(intent: android.content.Intent?) {
+        intent ?: return
+        val signature = intentSignature(intent)
+        if (signature != null && signature == lastHandledSignature) {
+            return
+        }
+        signature?.let { lastHandledSignature = it }
+        intent.data?.let(handleDeepLink)
+        handleIntent(intent)
+    }
+
+    internal fun intentSignature(intent: android.content.Intent): String? {
+        val deepLink = intent.dataString
+        val payload = PushSupport.payloadFromIntent(intent)
+        if (deepLink == null && payload == null) {
+            return null
+        }
+        return buildString {
+            append(deepLink ?: "")
+            append("|")
+            append(payload?.reminderId ?: "")
+            append("|")
+            append(payload?.batchId ?: "")
+            append("|")
+            append(payload?.productId ?: "")
+            append("|")
+            append(payload?.locationId ?: "")
+        }
+    }
+}
+
 class MainActivity : ComponentActivity() {
-    private var deepLinkHandler: ((Uri) -> Unit)? = null
-    private var intentHandler: ((android.content.Intent) -> Unit)? = null
+    private var intentRouter: ReminderIntentRouter? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -30,15 +66,13 @@ class MainActivity : ComponentActivity() {
                     appState.onNotificationPermissionResult(granted)
                 }
             }
-            deepLinkHandler = appState::handleDeepLink
-            intentHandler = { nextIntent ->
-                lifecycleScope.launch {
-                    appState.handleIntent(nextIntent)
-                }
-            }
+            intentRouter = ReminderIntentRouter(
+                handleDeepLink = appState::handleDeepLink,
+                handleIntent = appState::handleIntent,
+            )
             LaunchedEffect(appState) {
                 appState.bootstrap()
-                appState.handleIntent(intent)
+                intentRouter?.route(intent)
             }
             LaunchedEffect(appState.shouldRequestNotificationPermission) {
                 if (appState.shouldRequestNotificationPermission) {
@@ -53,7 +87,8 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        intent.data?.let { deepLinkHandler?.invoke(it) }
-        intentHandler?.invoke(intent)
+        lifecycleScope.launch {
+            intentRouter?.route(intent)
+        }
     }
 }

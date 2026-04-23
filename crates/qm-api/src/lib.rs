@@ -64,6 +64,7 @@ pub struct ApiConfig {
     pub auth_session_sweep_trigger_secret: Option<String>,
     pub expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy,
     pub expiry_reminder_trigger_secret: Option<String>,
+    pub android_smoke_seed_trigger_secret: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -160,6 +161,7 @@ impl Default for ApiConfig {
             auth_session_sweep_trigger_secret: None,
             expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy::default(),
             expiry_reminder_trigger_secret: None,
+            android_smoke_seed_trigger_secret: None,
         }
     }
 }
@@ -348,6 +350,7 @@ pub fn router(state: AppState) -> Router {
         .merge(
             if state.config.auth_session_sweep_trigger_secret.is_some()
                 || state.config.expiry_reminder_trigger_secret.is_some()
+                || state.config.android_smoke_seed_trigger_secret.is_some()
             {
                 routes::maintenance::router()
             } else {

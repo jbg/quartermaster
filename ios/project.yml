@@ -71,3 +71,16 @@ targets:
           CODE_SIGN_ENTITLEMENTS: Quartermaster/QuartermasterDebug.entitlements
         Release:
           CODE_SIGN_ENTITLEMENTS: Quartermaster/QuartermasterRelease.entitlements
+  QuartermasterTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: QuartermasterTests
+    dependencies:
+      - target: Quartermaster
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Quartermaster.app/Quartermaster"
+        BUNDLE_LOADER: "$(TEST_HOST)"

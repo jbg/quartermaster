@@ -87,24 +87,23 @@ The Android app uses the repo-root `openapi.json` as its single API source of tr
    For repeatable UI smoke testing, prefer the UIAutomator driver over manual taps. It finds controls from the accessibility tree by text/label and taps their actual bounds:
 
    ```sh
-   QM_ANDROID_SMOKE_USERNAME=android_smoke_18423 \
-   QM_ANDROID_SMOKE_PASSWORD=quartermaster-smoke-18423 \
+   QM_ANDROID_SMOKE_MAINTENANCE_TOKEN=... \
    ./scripts/smoke_ui.py
    ```
 
-   The script preflights the host backend at `http://127.0.0.1:8080`, runs `adb reverse tcp:8080 tcp:8080`, and rewrites the app's server field to `http://127.0.0.1:8080` inside the emulator. Override the host or device URLs with `QM_ANDROID_SMOKE_HOST_SERVER_URL` and `QM_ANDROID_SMOKE_DEVICE_SERVER_URL` when needed. It also assumes the login already has a household and at least one due reminder so it can verify reminder open → inventory highlight. It clears app data by default; pass `--preserve-app-data` to keep the current emulator session.
+   The script preflights the host backend at `http://127.0.0.1:8080`, runs `adb reverse tcp:8080 tcp:8080`, and rewrites the app's server field to `http://127.0.0.1:8080` inside the emulator. Override the host or device URLs with `QM_ANDROID_SMOKE_HOST_SERVER_URL` and `QM_ANDROID_SMOKE_DEVICE_SERVER_URL` when needed. When `QM_ANDROID_SMOKE_MAINTENANCE_TOKEN` is set, the script first calls the backend-owned `POST /internal/maintenance/seed-android-smoke` fixture route to create or refresh the smoke user, due reminders, and invite code before it verifies reminder acknowledge + notification-open → inventory highlight. It clears app data by default; pass `--preserve-app-data` to keep the current emulator session. You can still supply `QM_ANDROID_SMOKE_USERNAME` / `QM_ANDROID_SMOKE_PASSWORD` manually if you want to skip the fixture route.
 
-   To seed or refresh the local smoke account, stock row, due reminder, and invite code before running the UI driver:
+   To seed or refresh the local smoke account, due reminders, and invite code without launching the UI driver:
 
    ```sh
+   QM_ANDROID_SMOKE_MAINTENANCE_TOKEN=... \
    ./scripts/seed_smoke_data.py
    ```
 
    This helper assumes:
-   - a local backend is already running against the default repo-root `data.db`
-   - the backend is using SQLite, not Postgres
-   - local smoke setup is allowed to force due reminder rows directly in SQLite so the inbox path is deterministic
-   - the helper seeds two due reminders so the smoke driver can cover both acknowledge and open flows in one run
+   - a local backend is already running
+   - `QM_ANDROID_SMOKE_SEED_TRIGGER_SECRET` is set on the backend and the same value is supplied as `QM_ANDROID_SMOKE_MAINTENANCE_TOKEN`
+   - the backend fixture route seeds two due reminders so the smoke driver can cover both acknowledge and notification-open flows in one run
 
 ## Verification
 

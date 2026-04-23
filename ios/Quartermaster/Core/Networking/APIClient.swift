@@ -10,7 +10,7 @@ import OpenAPIURLSession
 /// `Operations.*` machinery. We keep the facade so call sites stay stable
 /// and our tailored error translation (`APIError.server(status:, body:)`)
 /// remains the uniform surface for the rest of the app.
-actor APIClient {
+actor APIClient: AppStateAPI {
     private let client: Client
     private let tokenStore: TokenStore
 

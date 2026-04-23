@@ -9,6 +9,7 @@ the matched node bounds.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import urllib.error
 import urllib.parse
@@ -26,6 +27,13 @@ PACKAGE = "dev.quartermaster.android"
 ACTIVITY = f"{PACKAGE}/.MainActivity"
 BOUNDS_RE = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
 INVITE_CODE_RE = re.compile(r"^[A-Z0-9]{8}$")
+EXTRA_REMINDER_ID = "quartermaster.reminder_id"
+EXTRA_BATCH_ID = "quartermaster.batch_id"
+EXTRA_PRODUCT_ID = "quartermaster.product_id"
+EXTRA_LOCATION_ID = "quartermaster.location_id"
+EXTRA_KIND = "quartermaster.kind"
+EXTRA_TITLE = "quartermaster.title"
+EXTRA_BODY = "quartermaster.body"
 
 
 @dataclass(frozen=True)
@@ -249,6 +257,62 @@ def open_invite_link(invite_code: str, server_url: str) -> None:
     adb("shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", deep_link)
 
 
+def request_fixture(server_url: str, maintenance_token: str) -> dict:
+    request = urllib.request.Request(
+        server_url.rstrip("/") + "/internal/maintenance/seed-android-smoke",
+        data=b"",
+        method="POST",
+        headers={
+            "Accept": "application/json",
+            "X-QM-Maintenance-Token": maintenance_token,
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            payload = response.read().decode()
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(
+            f"fixture request failed with HTTP {exc.code}: {exc.read().decode()}"
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"fixture request failed: {exc}") from exc
+    data = json.loads(payload)
+    if not isinstance(data, dict):
+        raise RuntimeError(f"unexpected fixture response: {data!r}")
+    return data
+
+
+def open_reminder_payload(payload: dict) -> None:
+    adb(
+        "shell",
+        "am",
+        "start",
+        "-n",
+        ACTIVITY,
+        "--es",
+        EXTRA_REMINDER_ID,
+        payload["reminder_id"],
+        "--es",
+        EXTRA_BATCH_ID,
+        payload["batch_id"],
+        "--es",
+        EXTRA_PRODUCT_ID,
+        payload["product_id"],
+        "--es",
+        EXTRA_LOCATION_ID,
+        payload["location_id"],
+        "--es",
+        EXTRA_KIND,
+        payload["kind"],
+        "--es",
+        EXTRA_TITLE,
+        payload["title"],
+        "--es",
+        EXTRA_BODY,
+        payload["body"],
+    )
+
+
 def sign_in(username: str, password: str, server_url: str | None = None) -> None:
     wait_for_text("Know what’s in your kitchen.")
     if server_url is not None:
@@ -276,6 +340,11 @@ def main() -> int:
     parser.add_argument("--username", default=os.environ.get("QM_ANDROID_SMOKE_USERNAME"))
     parser.add_argument("--password", default=os.environ.get("QM_ANDROID_SMOKE_PASSWORD"))
     parser.add_argument(
+        "--maintenance-token",
+        default=os.environ.get("QM_ANDROID_SMOKE_MAINTENANCE_TOKEN"),
+        help="shared secret for /internal/maintenance/seed-android-smoke",
+    )
+    parser.add_argument(
         "--host-server-url",
         default=os.environ.get("QM_ANDROID_SMOKE_HOST_SERVER_URL", "http://127.0.0.1:8080"),
         help="host-side URL used for the preflight health check",
@@ -292,10 +361,17 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if not args.username or not args.password:
-        parser.error("provide --username/--password or QM_ANDROID_SMOKE_USERNAME/QM_ANDROID_SMOKE_PASSWORD")
-
     check_backend_health(args.host_server_url)
+    fixture = None
+    if args.maintenance_token:
+        fixture = request_fixture(args.host_server_url, args.maintenance_token)
+        args.username = fixture["username"]
+        args.password = fixture["password"]
+    if not args.username or not args.password:
+        parser.error(
+            "provide --maintenance-token or --username/--password (or the QM_ANDROID_SMOKE_* env vars)"
+        )
+
     adb("reverse", "tcp:8080", "tcp:8080")
     launch(clear_app=not args.preserve_app_data)
     sign_in(args.username, args.password, args.device_server_url)
@@ -304,15 +380,21 @@ def main() -> int:
     wait_for_clickable_count("Acknowledge", 2, timeout=15.0)
     tap_nth_text("Acknowledge", 0)
     wait_for_clickable_count("Acknowledge", 1, timeout=15.0)
-    tap_text("Open")
+    if fixture is not None:
+        open_reminder_payload(fixture["reminders"][1])
+    else:
+        tap_text("Open")
     assert_text("Opened from reminder")
     assert_text("Reminder target")
     tap_text("Dismiss")
     assert_text_missing("Reminder target")
     tap_text("Settings")
     invite_code = None
-    tap_text("Create invite", lowest=True)
-    invite_code = wait_for_matching_text(INVITE_CODE_RE, timeout=15.0)
+    if fixture is None:
+        tap_text("Create invite", lowest=True)
+        invite_code = wait_for_matching_text(INVITE_CODE_RE, timeout=15.0)
+    else:
+        invite_code = fixture["invite_code"]
     print(f"captured invite code {invite_code}")
     open_invite_link(invite_code, args.device_server_url)
     assert_text("Invite handoff ready")

@@ -3,6 +3,121 @@ import Observation
 import UIKit
 import UserNotifications
 
+protocol AppStateTokenStore: Actor {
+    var accessToken: String? { get async }
+    var refreshToken: String? { get async }
+    func store(_ pair: TokenPair)
+    func clear()
+}
+
+protocol AppStateAPI: Actor {
+    func register(username: String, password: String, email: String?, inviteCode: String?) async throws -> TokenPair
+    func login(username: String, password: String) async throws -> TokenPair
+    func logout() async throws
+    func me() async throws -> Me
+    func switchHousehold(householdID: String) async throws -> Me
+    func createHousehold(name: String, timezone: String) async throws -> Me
+    func currentHousehold() async throws -> HouseholdDetail
+    func updateCurrentHousehold(name: String, timezone: String) async throws -> HouseholdDetail
+    func householdMembers() async throws -> [Member]
+    func removeHouseholdMember(userID: String) async throws
+    func householdInvites() async throws -> [Invite]
+    func createInvite(expiresAt: String, maxUses: Int, role: MembershipRole) async throws -> Invite
+    func revokeInvite(id: String) async throws
+    func redeemInvite(code: String) async throws
+    func locations() async throws -> [Location]
+    func createLocation(name: String, kind: String, sortOrder: Int?) async throws -> Location
+    func updateLocation(id: String, name: String, kind: String, sortOrder: Int) async throws -> Location
+    func deleteLocation(id: String) async throws
+    func units() async throws -> [Unit]
+    func searchProducts(query: String, limit: Int, includeDeleted: Bool) async throws -> [Product]
+    func lookupBarcode(_ barcode: String) async throws -> BarcodeLookupResponse
+    func createProduct(_ request: CreateProductRequest) async throws -> Product
+    func getProduct(id: String) async throws -> Product
+    func updateProduct(id: String, request: UpdateProductRequest) async throws -> Product
+    func deleteProduct(id: String) async throws
+    func refreshProduct(id: String) async throws -> Product
+    func restoreProduct(id: String) async throws -> Product
+    func listStock(locationID: String?, productID: String?, expiringBefore: String?) async throws -> [StockBatch]
+    func getStock(id: String) async throws -> StockBatch
+    func createStock(_ request: CreateStockRequest) async throws -> StockBatch
+    func updateStock(id: String, request: UpdateStockRequest) async throws -> StockBatch
+    func deleteStock(id: String) async throws
+    func consumeStock(_ request: ConsumeRequest) async throws -> ConsumeResponse
+    func listStockEvents(beforeCreatedAt: String?, beforeID: String?, limit: Int) async throws -> StockEventListResponse
+    func listBatchEvents(id: String, beforeCreatedAt: String?, beforeID: String?, limit: Int) async throws -> StockEventListResponse
+    func restoreStock(id: String) async throws -> StockBatch
+    func restoreManyStock(ids: [String]) async throws -> RestoreManyResponse
+    func listReminders(afterFireAt: String?, afterID: String?, limit: Int) async throws -> ReminderListResponse
+    func presentReminder(id: String) async throws
+    func ackReminder(id: String) async throws
+    func openReminder(id: String) async throws
+    func registerDevice(
+        deviceID: String,
+        pushToken: String?,
+        pushAuthorization: PushAuthorizationStatus,
+        appVersion: String?
+    ) async throws
+}
+
+extension AppStateAPI {
+    func searchProducts(query: String) async throws -> [Product] {
+        try await searchProducts(query: query, limit: 20, includeDeleted: false)
+    }
+
+    func searchProducts(query: String, includeDeleted: Bool) async throws -> [Product] {
+        try await searchProducts(query: query, limit: 20, includeDeleted: includeDeleted)
+    }
+
+    func listStock() async throws -> [StockBatch] {
+        try await listStock(locationID: nil, productID: nil, expiringBefore: nil)
+    }
+
+    func listStock(locationID: String?, productID: String?) async throws -> [StockBatch] {
+        try await listStock(locationID: locationID, productID: productID, expiringBefore: nil)
+    }
+
+    func createLocation(name: String, kind: String) async throws -> Location {
+        try await createLocation(name: name, kind: kind, sortOrder: nil)
+    }
+
+    func listStockEvents(limit: Int = 50) async throws -> StockEventListResponse {
+        try await listStockEvents(beforeCreatedAt: nil, beforeID: nil, limit: limit)
+    }
+
+    func listBatchEvents(id: String, limit: Int = 50) async throws -> StockEventListResponse {
+        try await listBatchEvents(id: id, beforeCreatedAt: nil, beforeID: nil, limit: limit)
+    }
+
+    func listReminders(limit: Int = 50) async throws -> ReminderListResponse {
+        try await listReminders(afterFireAt: nil, afterID: nil, limit: limit)
+    }
+
+}
+
+struct AppStateNotifications {
+    var currentAuthorization: @MainActor @Sendable () async -> PushAuthorizationStatus
+    var requestAuthorization: @MainActor @Sendable () async throws -> Bool
+    var registerForRemoteNotifications: @MainActor @Sendable () -> Void
+
+    static let live = Self(
+        currentAuthorization: {
+            await withCheckedContinuation { continuation in
+                UNUserNotificationCenter.current().getNotificationSettings { settings in
+                    continuation.resume(returning: AppState.mapAuthorization(settings.authorizationStatus))
+                }
+            }
+        },
+        requestAuthorization: {
+            try await UNUserNotificationCenter.current()
+                .requestAuthorization(options: [.badge, .sound, .alert])
+        },
+        registerForRemoteNotifications: {
+            UIApplication.shared.registerForRemoteNotifications()
+        }
+    )
+}
+
 @Observable
 @MainActor
 final class AppState {
@@ -39,8 +154,10 @@ final class AppState {
     var pendingInventoryTarget: InventoryTarget?
     var pendingInviteContext: InviteContext?
 
-    private let tokenStore = TokenStore()
-    private(set) var api: APIClient
+    private let tokenStore: any AppStateTokenStore
+    private let apiFactory: ((URL) -> any AppStateAPI)?
+    private let notifications: AppStateNotifications
+    private(set) var api: any AppStateAPI
     private var queuedReminders: [Reminder] = []
     private var reminderActionInFlightIDs = Set<String>()
     private var pushToken: String?
@@ -49,7 +166,24 @@ final class AppState {
     private var hasLoadedReminderInbox = false
 
     init() {
+        let tokenStore = TokenStore()
+        self.tokenStore = tokenStore
+        self.apiFactory = { baseURL in
+            APIClient(baseURL: baseURL, tokenStore: tokenStore)
+        }
+        self.notifications = .live
         self.api = APIClient(baseURL: ServerConfig.defaultURL, tokenStore: tokenStore)
+    }
+
+    init(
+        tokenStore: any AppStateTokenStore,
+        api: any AppStateAPI,
+        notifications: AppStateNotifications
+    ) {
+        self.tokenStore = tokenStore
+        self.api = api
+        self.apiFactory = nil
+        self.notifications = notifications
     }
 
     func bootstrap() async {
@@ -134,7 +268,9 @@ final class AppState {
 
     func updateServerURL(_ url: URL) {
         serverURL = url
-        api = APIClient(baseURL: url, tokenStore: tokenStore)
+        if let apiFactory {
+            api = apiFactory(url)
+        }
     }
 
     func takePendingInviteContext() -> InviteContext? {
@@ -408,22 +544,21 @@ final class AppState {
     }
 
     func refreshNotificationAuthorization() async {
-        pushAuthorization = await notificationAuthorizationStatus()
+        pushAuthorization = await notifications.currentAuthorization()
         if pushAuthorization == .authorized || pushAuthorization == .provisional {
-            UIApplication.shared.registerForRemoteNotifications()
+            notifications.registerForRemoteNotifications()
         }
     }
 
     func requestNotificationAuthorizationIfNeeded() async {
-        pushAuthorization = await notificationAuthorizationStatus()
+        pushAuthorization = await notifications.currentAuthorization()
         guard pushAuthorization == .notDetermined else { return }
         do {
-            let granted = try await UNUserNotificationCenter.current()
-                .requestAuthorization(options: [.badge, .sound, .alert])
+            let granted = try await notifications.requestAuthorization()
             pushAuthorization = granted ? .authorized : .denied
             await registerCurrentDevice()
             if granted {
-                UIApplication.shared.registerForRemoteNotifications()
+                notifications.registerForRemoteNotifications()
             }
         } catch {
             lastError = error.localizedDescription
@@ -580,14 +715,6 @@ final class AppState {
         try await api.me()
     }
 
-    private func notificationAuthorizationStatus() async -> PushAuthorizationStatus {
-        await withCheckedContinuation { continuation in
-            UNUserNotificationCenter.current().getNotificationSettings { settings in
-                continuation.resume(returning: Self.mapAuthorization(settings.authorizationStatus))
-            }
-        }
-    }
-
     private func userMessage(for error: Error) -> String {
         if let apiError = error as? APIError {
             return apiError.userFacingMessage
@@ -595,7 +722,7 @@ final class AppState {
         return error.localizedDescription
     }
 
-    nonisolated private static func mapAuthorization(_ status: UNAuthorizationStatus) -> PushAuthorizationStatus {
+    nonisolated fileprivate static func mapAuthorization(_ status: UNAuthorizationStatus) -> PushAuthorizationStatus {
         switch status {
         case .authorized:
             return .authorized

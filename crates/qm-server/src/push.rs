@@ -710,14 +710,21 @@ fn normalize_fcm_error(status: StatusCode, parsed: Option<&FcmErrorResponse>) ->
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use axum::{
         body::Body,
         http::{Request, StatusCode as AxumStatusCode},
     };
+    use axum::{
+        extract::{Path, State},
+        http::HeaderMap,
+        response::IntoResponse,
+        routing::post,
+        Router,
+    };
     use serde_json::Value;
     use sqlx::Row;
+    use std::{collections::VecDeque, sync::Arc};
+    use tokio::sync::{oneshot, Mutex};
     use tower::util::ServiceExt;
     use uuid::Uuid;
 
@@ -833,6 +840,166 @@ mod tests {
             auth_token: Some("token".into()),
             base_url: Some(base_url),
         }
+    }
+
+    fn disabled_apns_config() -> ApnsConfig {
+        ApnsConfig {
+            enabled: false,
+            environment: ApnsEnvironment::Sandbox,
+            topic: None,
+            auth_token: None,
+            base_url: None,
+        }
+    }
+
+    async fn fcm_config(base_url: String) -> FcmConfig {
+        let config = FcmConfig::new(
+            true,
+            Some("quartermaster-test".into()),
+            Some("/tmp/unused-service-account.json".into()),
+            Some(base_url),
+            Some("http://127.0.0.1:9/token".into()),
+        );
+        *config.auth_cache.lock().await = Some(CachedFcmAccessToken {
+            access_token: "ya29.cached".into(),
+            refresh_at: Instant::now() + Duration::from_secs(60),
+        });
+        config
+    }
+
+    #[derive(Clone, Debug)]
+    struct CapturedProviderRequest {
+        channel: &'static str,
+        path: String,
+        authorization: Option<String>,
+        body: Value,
+    }
+
+    #[derive(Clone, Debug)]
+    struct FakeProviderResponse {
+        status: StatusCode,
+        body: Value,
+        provider_message_id: Option<String>,
+    }
+
+    #[derive(Clone, Default)]
+    struct FakeProviderState {
+        apns_responses: Arc<Mutex<VecDeque<FakeProviderResponse>>>,
+        fcm_responses: Arc<Mutex<VecDeque<FakeProviderResponse>>>,
+        captures: Arc<Mutex<Vec<CapturedProviderRequest>>>,
+    }
+
+    struct FakeProviderServer {
+        state: FakeProviderState,
+        base_url: String,
+        shutdown: Option<oneshot::Sender<()>>,
+        task: tokio::task::JoinHandle<()>,
+    }
+
+    impl FakeProviderServer {
+        async fn start(
+            apns_responses: Vec<FakeProviderResponse>,
+            fcm_responses: Vec<FakeProviderResponse>,
+        ) -> Self {
+            let state = FakeProviderState {
+                apns_responses: Arc::new(Mutex::new(VecDeque::from(apns_responses))),
+                fcm_responses: Arc::new(Mutex::new(VecDeque::from(fcm_responses))),
+                captures: Arc::new(Mutex::new(Vec::new())),
+            };
+            let router = Router::new()
+                .route("/3/device/{token}", post(fake_apns))
+                .route("/v1/projects/{project_id}/messages:send", post(fake_fcm))
+                .with_state(state.clone());
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let base_url = format!("http://{}", listener.local_addr().unwrap());
+            let (shutdown_tx, shutdown_rx) = oneshot::channel();
+            let task = tokio::spawn(async move {
+                let _ = axum::serve(listener, router)
+                    .with_graceful_shutdown(async {
+                        let _ = shutdown_rx.await;
+                    })
+                    .await;
+            });
+            Self {
+                state,
+                base_url,
+                shutdown: Some(shutdown_tx),
+                task,
+            }
+        }
+
+        async fn captures(&self) -> Vec<CapturedProviderRequest> {
+            self.state.captures.lock().await.clone()
+        }
+    }
+
+    impl Drop for FakeProviderServer {
+        fn drop(&mut self) {
+            if let Some(shutdown) = self.shutdown.take() {
+                let _ = shutdown.send(());
+            }
+            self.task.abort();
+        }
+    }
+
+    async fn fake_apns(
+        Path(token): Path<String>,
+        State(state): State<FakeProviderState>,
+        headers: HeaderMap,
+        axum::Json(body): axum::Json<Value>,
+    ) -> impl IntoResponse {
+        state.captures.lock().await.push(CapturedProviderRequest {
+            channel: reminders::CHANNEL_APNS,
+            path: format!("/3/device/{token}"),
+            authorization: headers
+                .get("authorization")
+                .and_then(|value| value.to_str().ok())
+                .map(ToOwned::to_owned),
+            body,
+        });
+        let response = state
+            .apns_responses
+            .lock()
+            .await
+            .pop_front()
+            .unwrap_or(FakeProviderResponse {
+                status: StatusCode::OK,
+                body: json!({}),
+                provider_message_id: Some("default-apns-id".into()),
+            });
+        let mut builder = axum::http::Response::builder().status(response.status);
+        if let Some(message_id) = response.provider_message_id {
+            builder = builder.header("apns-id", message_id);
+        }
+        builder.body(axum::Json(response.body).into_response().into_body()).unwrap()
+    }
+
+    async fn fake_fcm(
+        Path(project_id): Path<String>,
+        State(state): State<FakeProviderState>,
+        headers: HeaderMap,
+        axum::Json(body): axum::Json<Value>,
+    ) -> impl IntoResponse {
+        state.captures.lock().await.push(CapturedProviderRequest {
+            channel: reminders::CHANNEL_FCM,
+            path: format!("/v1/projects/{project_id}/messages:send"),
+            authorization: headers
+                .get("authorization")
+                .and_then(|value| value.to_str().ok())
+                .map(ToOwned::to_owned),
+            body,
+        });
+        let response = state
+            .fcm_responses
+            .lock()
+            .await
+            .pop_front()
+            .unwrap_or(FakeProviderResponse {
+                status: StatusCode::OK,
+                body: json!({"name": "projects/quartermaster-test/messages/default"}),
+                provider_message_id: None,
+            });
+        (response.status, axum::Json(response.body))
     }
 
     async fn metrics_snapshot() -> String {
@@ -972,6 +1139,246 @@ mod tests {
 
         let snapshot = metrics_snapshot().await;
         assert!(snapshot.contains("qm_push_transport_failures_total"));
+    }
+
+    #[tokio::test]
+    async fn run_push_cycle_sends_apns_payload_and_records_provider_message_id() {
+        let (db, household_id, user_id, pantry, product_id) = setup_push_fixture().await;
+        let batch_id = seed_due_reminder(
+            &db,
+            household_id,
+            user_id,
+            pantry,
+            product_id,
+            "token-apns",
+            "ios",
+            "ios-main",
+        )
+        .await;
+        let server = FakeProviderServer::start(
+            vec![FakeProviderResponse {
+                status: StatusCode::OK,
+                body: json!({}),
+                provider_message_id: Some("test-apns-id".into()),
+            }],
+            vec![],
+        )
+        .await;
+
+        run_push_cycle(
+            &db,
+            &reqwest::Client::new(),
+            &apns_config(server.base_url.clone()),
+            &FcmConfig::new(false, None, None, None, None),
+            &worker_config(),
+        )
+        .await
+        .unwrap();
+
+        let captures = server.captures().await;
+        assert_eq!(captures.len(), 1);
+        assert_eq!(captures[0].channel, reminders::CHANNEL_APNS);
+        assert_eq!(captures[0].path, "/3/device/token-apns");
+        assert_eq!(captures[0].authorization.as_deref(), Some("Bearer token"));
+        assert_eq!(captures[0].body["aps"]["alert"]["title"], "Milk expires tomorrow");
+        assert_eq!(captures[0].body["batch_id"], batch_id.to_string());
+
+        let row = sqlx::query(
+            "SELECT status, provider_message_id FROM reminder_delivery ORDER BY attempted_at DESC LIMIT 1",
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), reminders::DELIVERY_STATUS_SUCCEEDED);
+        assert_eq!(row.try_get::<String, _>("provider_message_id").unwrap(), "test-apns-id");
+    }
+
+    #[tokio::test]
+    async fn run_push_cycle_sends_fcm_notification_and_data_payload() {
+        let (db, household_id, user_id, pantry, product_id) = setup_push_fixture().await;
+        let batch_id = seed_due_reminder(
+            &db,
+            household_id,
+            user_id,
+            pantry,
+            product_id,
+            "token-fcm",
+            "android",
+            "android-main",
+        )
+        .await;
+        let server = FakeProviderServer::start(
+            vec![],
+            vec![FakeProviderResponse {
+                status: StatusCode::OK,
+                body: json!({"name": "projects/quartermaster-test/messages/fcm-123"}),
+                provider_message_id: None,
+            }],
+        )
+        .await;
+
+        run_push_cycle(
+            &db,
+            &reqwest::Client::new(),
+            &disabled_apns_config(),
+            &fcm_config(server.base_url.clone()).await,
+            &worker_config(),
+        )
+        .await
+        .unwrap();
+
+        let captures = server.captures().await;
+        assert_eq!(captures.len(), 1);
+        assert_eq!(captures[0].channel, reminders::CHANNEL_FCM);
+        assert_eq!(captures[0].path, "/v1/projects/quartermaster-test/messages:send");
+        assert_eq!(
+            captures[0].authorization.as_deref(),
+            Some("Bearer ya29.cached")
+        );
+        assert_eq!(captures[0].body["message"]["notification"]["title"], "Milk expires tomorrow");
+        assert_eq!(captures[0].body["message"]["android"]["notification"]["channel_id"], "expiry_reminders");
+        assert_eq!(captures[0].body["message"]["data"]["batch_id"], batch_id.to_string());
+
+        let row = sqlx::query(
+            "SELECT status, provider_message_id FROM reminder_delivery ORDER BY attempted_at DESC LIMIT 1",
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), reminders::DELIVERY_STATUS_SUCCEEDED);
+        assert_eq!(
+            row.try_get::<String, _>("provider_message_id").unwrap(),
+            "projects/quartermaster-test/messages/fcm-123"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_push_cycle_records_mixed_fake_provider_outcomes() {
+        let (db, household_id, user_id, pantry, product_id) = setup_push_fixture().await;
+        seed_due_reminder(
+            &db,
+            household_id,
+            user_id,
+            pantry,
+            product_id,
+            "token-ios",
+            "ios",
+            "ios-main",
+        )
+        .await;
+        seed_due_reminder(
+            &db,
+            household_id,
+            user_id,
+            pantry,
+            product_id,
+            "token-android",
+            "android",
+            "android-main",
+        )
+        .await;
+        let server = FakeProviderServer::start(
+            vec![FakeProviderResponse {
+                status: StatusCode::OK,
+                body: json!({}),
+                provider_message_id: Some("mixed-apns-id".into()),
+            }],
+            vec![FakeProviderResponse {
+                status: StatusCode::BAD_REQUEST,
+                body: json!({
+                    "error": {
+                        "code": 400,
+                        "status": "INVALID_ARGUMENT",
+                        "message": "bad token",
+                        "details": [
+                            {
+                                "@type": "type.googleapis.com/google.firebase.fcm.v1.FcmError",
+                                "errorCode": "INVALID_ARGUMENT"
+                            }
+                        ]
+                    }
+                }),
+                provider_message_id: None,
+            }],
+        )
+        .await;
+
+        run_push_cycle(
+            &db,
+            &reqwest::Client::new(),
+            &apns_config(server.base_url.clone()),
+            &fcm_config(server.base_url.clone()).await,
+            &worker_config(),
+        )
+        .await
+        .unwrap();
+
+        let summary = reminders::push_delivery_metrics_summary(
+            &db,
+            &time::format_timestamp(Timestamp::now()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(summary.failed_permanent_count, 1);
+        assert_eq!(summary.invalid_token_count, 1);
+        let captures = server.captures().await;
+        assert_eq!(captures.len(), 4);
+        assert!(captures.iter().any(|capture| capture.channel == reminders::CHANNEL_APNS));
+        assert!(captures.iter().any(|capture| capture.channel == reminders::CHANNEL_FCM));
+    }
+
+    #[tokio::test]
+    async fn run_push_cycle_marks_retryable_provider_failures_with_next_retry() {
+        let (db, household_id, user_id, pantry, product_id) = setup_push_fixture().await;
+        seed_due_reminder(
+            &db,
+            household_id,
+            user_id,
+            pantry,
+            product_id,
+            "token-retry",
+            "android",
+            "android-main",
+        )
+        .await;
+        let server = FakeProviderServer::start(
+            vec![],
+            vec![FakeProviderResponse {
+                status: StatusCode::SERVICE_UNAVAILABLE,
+                body: json!({
+                    "error": {
+                        "code": 503,
+                        "status": "UNAVAILABLE",
+                        "message": "retry later"
+                    }
+                }),
+                provider_message_id: None,
+            }],
+        )
+        .await;
+
+        run_push_cycle(
+            &db,
+            &reqwest::Client::new(),
+            &disabled_apns_config(),
+            &fcm_config(server.base_url.clone()).await,
+            &worker_config(),
+        )
+        .await
+        .unwrap();
+
+        let row = sqlx::query(
+            "SELECT last_push_status, next_retry_at \
+             FROM reminder_device_state ORDER BY updated_at DESC LIMIT 1",
+        )
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            row.try_get::<String, _>("last_push_status").unwrap(),
+            reminders::DELIVERY_STATUS_FAILED_RETRYABLE
+        );
+        assert!(row.try_get::<String, _>("next_retry_at").unwrap().starts_with("20"));
     }
 
     #[tokio::test]

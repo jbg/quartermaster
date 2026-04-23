@@ -4,7 +4,7 @@ import Security
 /// Thin wrapper around Keychain services that stores the access + refresh
 /// token pair. The store is an actor-isolated class so the API client can
 /// safely read/write from background tasks.
-actor TokenStore {
+actor TokenStore: AppStateTokenStore {
     private let service = "com.quartermaster.app.tokens"
     private let accessAccount = "access"
     private let refreshAccount = "refresh"

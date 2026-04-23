@@ -310,6 +310,63 @@ pub async fn ack(
     Ok(exists.is_some())
 }
 
+pub async fn ack_pending_for_products(
+    db: &Database,
+    household_id: Uuid,
+    product_ids: &[Uuid],
+    acked_at: &str,
+) -> Result<u64, sqlx::Error> {
+    if product_ids.is_empty() {
+        return Ok(0);
+    }
+
+    let placeholders = std::iter::repeat_n("?", product_ids.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "UPDATE stock_reminder SET acked_at = ? \
+         WHERE household_id = ? AND acked_at IS NULL AND product_id IN ({placeholders})"
+    );
+    let mut query = sqlx::query(&sql)
+        .bind(acked_at)
+        .bind(household_id.to_string());
+    for product_id in product_ids {
+        query = query.bind(product_id.to_string());
+    }
+    let result = query.execute(&db.pool).await?;
+    Ok(result.rows_affected())
+}
+
+pub async fn force_due_for_batch(
+    db: &Database,
+    batch_id: Uuid,
+    fire_at: &str,
+) -> Result<Option<ReminderRow>, sqlx::Error> {
+    sqlx::query(
+        "UPDATE stock_reminder SET fire_at = ?, acked_at = NULL \
+         WHERE batch_id = ? AND kind = ?",
+    )
+    .bind(fire_at)
+    .bind(batch_id.to_string())
+    .bind(KIND_EXPIRY)
+    .execute(&db.pool)
+    .await?;
+
+    let row = sqlx::query(
+        "SELECT id, household_id, batch_id, product_id, location_id, kind, fire_at, \
+                household_timezone, household_fire_local_at, expires_on, title, body, \
+                created_at, NULL AS presented_on_device_at, NULL AS opened_on_device_at \
+         FROM stock_reminder \
+         WHERE batch_id = ? AND kind = ? AND acked_at IS NULL \
+         ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(batch_id.to_string())
+    .bind(KIND_EXPIRY)
+    .fetch_optional(&db.pool)
+    .await?;
+    row.map(row_to_reminder).transpose()
+}
+
 pub async fn expire_stale_push_claims(
     db: &Database,
     now_rfc3339: &str,
