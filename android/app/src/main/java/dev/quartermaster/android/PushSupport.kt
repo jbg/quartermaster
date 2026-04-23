@@ -208,6 +208,17 @@ object PushSupport {
         )
     }
 
+    fun applyReminderPayload(intent: Intent, payload: ReminderPushPayload): Intent {
+        return intent
+            .putExtra(EXTRA_REMINDER_ID, payload.reminderId)
+            .putExtra(EXTRA_BATCH_ID, payload.batchId)
+            .putExtra(EXTRA_PRODUCT_ID, payload.productId)
+            .putExtra(EXTRA_LOCATION_ID, payload.locationId)
+            .putExtra(EXTRA_KIND, payload.kind)
+            .putExtra(EXTRA_TITLE, payload.title)
+            .putExtra(EXTRA_BODY, payload.body)
+    }
+
     fun payloadFromMap(data: Map<String, String>): ReminderPushPayload? {
         val reminderId = data["reminder_id"] ?: return null
         val batchId = data["batch_id"] ?: return null
@@ -229,15 +240,11 @@ object PushSupport {
 
     fun postReminderNotification(context: Context, payload: ReminderPushPayload) {
         ensureNotificationChannel(context)
-        val intent = Intent(context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            .putExtra(EXTRA_REMINDER_ID, payload.reminderId)
-            .putExtra(EXTRA_BATCH_ID, payload.batchId)
-            .putExtra(EXTRA_PRODUCT_ID, payload.productId)
-            .putExtra(EXTRA_LOCATION_ID, payload.locationId)
-            .putExtra(EXTRA_KIND, payload.kind)
-            .putExtra(EXTRA_TITLE, payload.title)
-            .putExtra(EXTRA_BODY, payload.body)
+        val intent = applyReminderPayload(
+            Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            payload,
+        )
         val pendingIntent = PendingIntent.getActivity(
             context,
             payload.reminderId.hashCode(),

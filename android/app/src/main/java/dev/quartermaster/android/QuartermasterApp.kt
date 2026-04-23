@@ -139,6 +139,64 @@ private fun MessageScreen(
 }
 
 @Composable
+private fun SectionHeader(
+    title: String,
+    body: String? = null,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        body?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+    }
+}
+
+@Composable
+private fun StatusCard(
+    title: String,
+    message: String,
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(message)
+        }
+    }
+}
+
+@Composable
+private fun InviteHandoffCard(
+    inviteCode: String?,
+    onDismiss: (() -> Unit)? = null,
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Invite handoff ready", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (inviteCode.isNullOrBlank()) {
+                    "Quartermaster opened an invite link. Finish the redeem flow below."
+                } else {
+                    "Quartermaster opened an invite link for code $inviteCode. Finish the redeem flow below."
+                }
+            )
+            onDismiss?.let {
+                TextButton(onClick = it) {
+                    Text("Dismiss")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     var username by remember { mutableStateOf("") }
@@ -164,6 +222,14 @@ private fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifier
     ) {
         item {
             Text("Know what’s in your kitchen.", style = MaterialTheme.typography.headlineSmall)
+        }
+        if (appState.hasPendingInviteHandoff) {
+            item {
+                InviteHandoffCard(
+                    inviteCode = appState.pendingInviteCode,
+                    onDismiss = appState::clearPendingInviteContext,
+                )
+            }
         }
         item {
             Text(
@@ -271,51 +337,86 @@ private fun NoHouseholdScreen(appState: QuartermasterAppState, modifier: Modifie
         item {
             Text("Create a household, redeem an invite, or switch into an existing membership.")
         }
+        if (appState.hasPendingInviteHandoff) {
+            item {
+                InviteHandoffCard(
+                    inviteCode = appState.pendingInviteCode,
+                    onDismiss = appState::clearPendingInviteContext,
+                )
+            }
+        }
         appState.settingsError?.let { message ->
             item { ErrorCard("Household action failed", message) }
         }
         item {
-            OutlinedTextField(
-                value = householdName,
-                onValueChange = { householdName = it },
-                label = { Text("Household name") },
-                modifier = Modifier.fillMaxWidth(),
+            SectionHeader(
+                title = "Create household",
+                body = "Open servers can create a new household here. Invite-only servers can still join through the redeem flow below.",
             )
         }
         item {
-            OutlinedTextField(
-                value = timezone,
-                onValueChange = { timezone = it },
-                label = { Text("Timezone") },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        item {
-            Button(
-                onClick = { scope.launch { appState.createHousehold(householdName, timezone) } },
-                enabled = appState.settingsLoadState != LoadState.Loading && householdName.isNotBlank(),
-            ) {
-                Text("Create household")
+            Card {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedTextField(
+                        value = householdName,
+                        onValueChange = { householdName = it },
+                        label = { Text("Household name") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = timezone,
+                        onValueChange = { timezone = it },
+                        label = { Text("Timezone") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(
+                        onClick = { scope.launch { appState.createHousehold(householdName, timezone) } },
+                        enabled = appState.settingsLoadState != LoadState.Loading && householdName.isNotBlank(),
+                    ) {
+                        Text(if (appState.settingsLoadState == LoadState.Loading) "Working..." else "Create household")
+                    }
+                }
             }
         }
         item {
-            OutlinedTextField(
-                value = inviteCode,
-                onValueChange = { inviteCode = it },
-                label = { Text("Invite code") },
-                modifier = Modifier.fillMaxWidth(),
+            SectionHeader(
+                title = "Redeem invite",
+                body = "Use this when another household admin shared a join code with you.",
             )
         }
         item {
-            Button(
-                onClick = { scope.launch { appState.redeemInvite(inviteCode) } },
-                enabled = appState.settingsLoadState != LoadState.Loading && inviteCode.isNotBlank(),
-            ) {
-                Text("Redeem invite")
+            Card {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedTextField(
+                        value = inviteCode,
+                        onValueChange = { inviteCode = it },
+                        label = { Text("Invite code") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(
+                        onClick = { scope.launch { appState.redeemInvite(inviteCode.trim()) } },
+                        enabled = appState.settingsLoadState != LoadState.Loading && inviteCode.isNotBlank(),
+                    ) {
+                        Text(if (appState.settingsLoadState == LoadState.Loading) "Working..." else "Redeem invite")
+                    }
+                }
             }
         }
         item {
-            Text("Available households", style = MaterialTheme.typography.titleMedium)
+            SectionHeader(
+                title = "Available households",
+                body = "Switch into an existing membership without leaving the app.",
+            )
         }
         items(appState.meOrNull?.households.orEmpty(), key = { it.id }) { household ->
             Card {
@@ -359,19 +460,42 @@ private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier 
                 style = MaterialTheme.typography.headlineSmall,
             )
         }
+        if (appState.isInventoryRefreshing) {
+            item {
+                StatusCard(
+                    title = "Refreshing inventory",
+                    message = "Quartermaster is syncing stock, locations, and recent history for this household.",
+                )
+            }
+        }
 
         when {
-            appState.inventoryLoadState == LoadState.Loading && appState.batches.isEmpty() -> {
-                item { Text("Loading inventory…") }
+            appState.inventoryLoadState == LoadState.Loading && !appState.hasLoadedInventoryOnce -> {
+                item {
+                    StatusCard(
+                        title = "Loading inventory",
+                        message = "Fetching locations, batches, and recent stock history for this household.",
+                    )
+                }
             }
-            appState.inventoryError != null && appState.batches.isEmpty() -> {
+            appState.inventoryError != null && !appState.hasLoadedInventoryOnce -> {
                 item { ErrorCard("Couldn't load inventory", appState.inventoryError!!) }
             }
             appState.locations.isEmpty() -> {
-                item { Text("No locations yet. Create one from Settings before adding stock.") }
+                item {
+                    StatusCard(
+                        title = "No locations yet",
+                        message = "Create a location in Settings before adding stock to this household.",
+                    )
+                }
             }
             appState.batches.isEmpty() && appState.inventoryLoadState != LoadState.Loading -> {
-                item { Text("No stock yet. Use Scan to search for a product and add your first batch.") }
+                item {
+                    StatusCard(
+                        title = "Inventory is empty",
+                        message = "Use Scan to search for a product and add your first batch.",
+                    )
+                }
             }
         }
 
@@ -379,25 +503,18 @@ private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier 
             val product = appState.batches.firstOrNull { it.product.id.toString() == target.productId }?.product
             val location = appState.locations.firstOrNull { it.id.toString() == target.locationId }
             item {
-                Card {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text("Opened from reminder", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            when {
-                                product != null && location != null -> "Showing ${product.name} in ${location.name}. The matching batch is highlighted below."
-                                product != null -> product.name
-                                else -> "Looking up the related stock..."
-                            }
-                        )
-                        TextButton(onClick = { appState.clearInventoryTarget() }) {
-                            Text("Dismiss")
-                        }
+                StatusCard(
+                    title = "Opened from reminder",
+                    message = when {
+                        product != null && location != null -> "Showing ${product.name} in ${location.name}. The matching batch stays highlighted until you dismiss this banner."
+                        product != null -> "Showing ${product.name}. Quartermaster is still matching the reminder location."
+                        else -> "Quartermaster is still loading the stock mentioned in this reminder."
                     }
+                )
+            }
+            item {
+                TextButton(onClick = { appState.clearInventoryTarget() }) {
+                    Text("Dismiss")
                 }
             }
         }
@@ -507,13 +624,31 @@ private fun ReminderScreen(appState: QuartermasterAppState, modifier: Modifier =
 
         when {
             appState.remindersLoadState == LoadState.Loading && appState.reminders.isEmpty() -> {
-                item { Text("Loading reminders…") }
+                item {
+                    StatusCard(
+                        title = "Loading reminders",
+                        message = "Fetching the household reminder inbox and marking unseen items as presented on this device.",
+                    )
+                }
             }
             appState.reminderError != null && appState.reminders.isEmpty() -> {
                 item { ErrorCard("Couldn't load reminders", appState.reminderError!!) }
             }
             appState.reminders.isEmpty() -> {
-                item { Text("No due reminders right now. Expiry reminders stay here until someone opens or acknowledges them.") }
+                item {
+                    StatusCard(
+                        title = "No due reminders",
+                        message = "Expiry reminders stay here until someone opens or acknowledges them.",
+                    )
+                }
+            }
+        }
+        if (appState.isRemindersRefreshing && appState.reminders.isNotEmpty()) {
+            item {
+                StatusCard(
+                    title = "Refreshing reminders",
+                    message = "Quartermaster is syncing the latest due reminders for this household.",
+                )
             }
         }
 
@@ -544,6 +679,16 @@ private fun ReminderCard(
         ) {
             Text(reminder.title, style = MaterialTheme.typography.titleMedium)
             Text(reminder.body)
+            if (action != null) {
+                Text(
+                    if (action == ReminderAction.Open) {
+                        "Opening reminder and refreshing inventory…"
+                    } else {
+                        "Acknowledging reminder and removing it from the inbox…"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onOpen, enabled = action == null) {
                     Text(if (action == ReminderAction.Open) "Opening..." else "Open")
@@ -577,11 +722,11 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
     val selectedUnit = unit.ifBlank { selectedProduct?.let(appState::defaultUnitSymbolFor).orEmpty() }
     val selectedLocation = selectedLocationId?.let { id -> locations.firstOrNull { it.id.toString() == id } }
     val addDisabledReason = when {
-        selectedProduct == null -> "Choose a product before adding stock."
-        locations.isEmpty() -> "Create a location before adding stock."
-        selectedLocation == null -> "Choose where this stock lives."
-        quantity.isBlank() -> "Enter a quantity."
-        selectedUnit.isBlank() -> "Choose a unit."
+        selectedProduct == null -> "Choose a product before you try to add stock."
+        locations.isEmpty() -> "Create a household location in Settings before adding stock."
+        selectedLocation == null -> "Choose where this batch lives before saving it."
+        quantity.isBlank() -> "Enter how much stock you are adding."
+        selectedUnit.isBlank() -> "Choose the unit that matches this product family."
         else -> null
     }
 
@@ -619,36 +764,45 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
             item { ErrorCard("Scan action failed", message) }
         }
         item {
-            OutlinedTextField(
-                value = barcode,
-                onValueChange = { barcode = it },
-                label = { Text("Barcode") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
+            SectionHeader(
+                title = "1. Find a product",
+                body = "Look up a barcode or search the product catalog before you add stock.",
             )
         }
         item {
-            Button(
-                onClick = { scope.launch { appState.lookupBarcode(barcode.trim()) } },
-                enabled = barcode.isNotBlank() && appState.scanActionInFlight == null,
-            ) {
-                Text(if (appState.scanActionInFlight == ScanAction.BarcodeLookup) "Looking up..." else "Look up barcode")
-            }
-        }
-        item {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                label = { Text("Search products") },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        item {
-            Button(
-                onClick = { scope.launch { appState.searchProducts(query.trim()) } },
-                enabled = query.isNotBlank() && appState.scanActionInFlight == null,
-            ) {
-                Text(if (appState.scanActionInFlight == ScanAction.ProductSearch) "Searching..." else "Search")
+            Card {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedTextField(
+                        value = barcode,
+                        onValueChange = { barcode = it },
+                        label = { Text("Barcode") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(
+                        onClick = { scope.launch { appState.lookupBarcode(barcode.trim()) } },
+                        enabled = barcode.isNotBlank() && appState.scanActionInFlight == null,
+                    ) {
+                        Text(if (appState.scanActionInFlight == ScanAction.BarcodeLookup) "Looking up..." else "Look up barcode")
+                    }
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        label = { Text("Search products") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(
+                        onClick = { scope.launch { appState.searchProducts(query.trim()) } },
+                        enabled = query.isNotBlank() && appState.scanActionInFlight == null,
+                    ) {
+                        Text(if (appState.scanActionInFlight == ScanAction.ProductSearch) "Searching..." else "Search")
+                    }
+                }
             }
         }
         items(appState.searchResults, key = { it.id }) { product ->
@@ -656,74 +810,85 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
         }
         if (selectedProduct != null) {
             item {
-                Text("Add ${selectedProduct.name}", style = MaterialTheme.typography.titleMedium)
-            }
-            item {
-                SelectionCard(
-                    title = "Location",
-                    options = locations.map { it.id.toString() to it.name },
-                    selected = selectedLocationId,
-                    emptyText = "No locations yet. Add a location from Settings first.",
-                    onSelect = { selectedLocationId = it },
+                SectionHeader(
+                    title = "2. Add ${selectedProduct.name}",
+                    body = "Choose where this stock lives, confirm the unit, then save the batch.",
                 )
             }
             item {
-                OutlinedTextField(
-                    value = quantity,
-                    onValueChange = { quantity = it },
-                    label = { Text("Quantity") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            item {
-                SelectionCard(
-                    title = "Unit",
-                    options = unitChoices.map { it to it },
-                    selected = selectedUnit.takeIf(String::isNotBlank),
-                    emptyText = "No units are available for ${selectedProduct.family.name.lowercase()} products.",
-                    onSelect = { unit = it },
-                )
-            }
-            item {
-                OutlinedTextField(
-                    value = expiresOn,
-                    onValueChange = { expiresOn = it },
-                    label = { Text("Expires on (YYYY-MM-DD)") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            item {
-                OutlinedTextField(
-                    value = note,
-                    onValueChange = { note = it },
-                    label = { Text("Note") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            item {
-                addDisabledReason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                Button(
-                    onClick = {
-                        selectedLocation?.let { location ->
-                            scope.launch {
-                                appState.addStock(
-                                    productId = selectedProduct.id.toString(),
-                                    locationId = location.id.toString(),
-                                    quantity = quantity.trim(),
-                                    unit = selectedUnit.trim(),
-                                    expiresOn = expiresOn.takeIf(String::isNotBlank),
-                                    note = note.takeIf(String::isNotBlank),
-                                )
-                                quantity = ""
-                                unit = ""
-                                expiresOn = ""
-                                note = ""
-                            }
+                Card {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        SelectionCard(
+                            title = "Location",
+                            options = locations.map { it.id.toString() to it.name },
+                            selected = selectedLocationId,
+                            emptyText = "No locations yet. Add a location from Settings first.",
+                            onSelect = { selectedLocationId = it },
+                        )
+                        OutlinedTextField(
+                            value = quantity,
+                            onValueChange = { quantity = it },
+                            label = { Text("Quantity") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        SelectionCard(
+                            title = "Unit",
+                            options = unitChoices.map { it to it },
+                            selected = selectedUnit.takeIf(String::isNotBlank),
+                            emptyText = "No units are available for ${selectedProduct.family.name.lowercase()} products.",
+                            onSelect = { unit = it },
+                        )
+                        Text(
+                            if (selectedUnit.isBlank()) {
+                                "No unit selected yet."
+                            } else {
+                                "Selected unit: $selectedUnit"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        OutlinedTextField(
+                            value = expiresOn,
+                            onValueChange = { expiresOn = it },
+                            label = { Text("Expires on (YYYY-MM-DD)") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = note,
+                            onValueChange = { note = it },
+                            label = { Text("Note") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        addDisabledReason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                        Button(
+                            onClick = {
+                                selectedLocation?.let { location ->
+                                    scope.launch {
+                                        appState.addStock(
+                                            productId = selectedProduct.id.toString(),
+                                            locationId = location.id.toString(),
+                                            quantity = quantity.trim(),
+                                            unit = selectedUnit.trim(),
+                                            expiresOn = expiresOn.takeIf(String::isNotBlank),
+                                            note = note.takeIf(String::isNotBlank),
+                                        )
+                                        quantity = ""
+                                        unit = ""
+                                        expiresOn = ""
+                                        note = ""
+                                        selectedLocationId = null
+                                    }
+                                }
+                            },
+                            enabled = addDisabledReason == null && appState.scanActionInFlight == null,
+                        ) {
+                            Text(if (appState.scanActionInFlight == ScanAction.AddStock) "Adding..." else "Add stock")
                         }
-                    },
-                    enabled = addDisabledReason == null && appState.scanActionInFlight == null,
-                ) {
-                    Text(if (appState.scanActionInFlight == ScanAction.AddStock) "Adding..." else "Add stock")
+                    }
                 }
             }
         }
@@ -772,8 +937,22 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { Text("Settings", style = MaterialTheme.typography.headlineSmall) }
+        if (appState.isSettingsRefreshing) {
+            item {
+                StatusCard(
+                    title = "Refreshing settings",
+                    message = "Quartermaster is syncing household details and invite state for this session.",
+                )
+            }
+        }
         appState.settingsError?.let { message ->
             item { ErrorCard("Settings couldn't refresh", message) }
+        }
+        item {
+            SectionHeader(
+                title = "Current session",
+                body = "Account identity, current household, and server details for this device session.",
+            )
         }
         item {
             Card {
@@ -789,6 +968,20 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
                     Text("Timezone: ${appState.meOrNull?.currentHousehold?.timezone ?: "UTC"}")
                     Text("Server: ${appState.serverUrl}")
                 }
+            }
+        }
+        item {
+            SectionHeader(
+                title = "Household actions",
+                body = "Switch households or bring a new invite into the current account.",
+            )
+        }
+        if (appState.hasPendingInviteHandoff) {
+            item {
+                InviteHandoffCard(
+                    inviteCode = appState.pendingInviteCode,
+                    onDismiss = appState::clearPendingInviteContext,
+                )
             }
         }
         item {
@@ -833,6 +1026,12 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
             ) {
                 Text(if (appState.settingsLoadState == LoadState.Loading) "Working..." else "Redeem invite")
             }
+        }
+        item {
+            SectionHeader(
+                title = "Invites",
+                body = "Create a join code for another person, then verify it from the list below.",
+            )
         }
         item {
             Text("Create invite", style = MaterialTheme.typography.titleMedium)
@@ -881,6 +1080,12 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
                     Text("Uses ${invite.useCount}/${invite.maxUses}")
                 }
             }
+        }
+        item {
+            SectionHeader(
+                title = "Session actions",
+                body = "Sign out on this device without affecting other sessions.",
+            )
         }
         item {
             Button(

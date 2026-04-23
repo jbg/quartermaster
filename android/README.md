@@ -63,8 +63,9 @@ The Android app uses the repo-root `openapi.json` as its single API source of tr
    - run the Android app in an emulator
    - sign in with the seeded smoke account
    - verify inventory and reminders refresh
-   - open a reminder and confirm Inventory highlights the related batch
-   - create an invite and open a join link to confirm invite handoff
+   - acknowledge one due reminder and confirm it disappears from the inbox
+   - open a second due reminder and confirm Inventory highlights the related batch
+   - dismiss the reminder banner, create an invite, and open a join link to confirm invite handoff
    - sign out, then sign back in and confirm session recovery
 
    To open a custom-scheme invite link in the emulator:
@@ -102,7 +103,8 @@ The Android app uses the repo-root `openapi.json` as its single API source of tr
    This helper assumes:
    - a local backend is already running against the default repo-root `data.db`
    - the backend is using SQLite, not Postgres
-   - local smoke setup is allowed to force one reminder row due in SQLite so the inbox path is deterministic
+   - local smoke setup is allowed to force due reminder rows directly in SQLite so the inbox path is deterministic
+   - the helper seeds two due reminders so the smoke driver can cover both acknowledge and open flows in one run
 
 ## Verification
 

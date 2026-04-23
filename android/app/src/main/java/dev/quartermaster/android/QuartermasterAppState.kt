@@ -217,6 +217,12 @@ class QuartermasterAppState(
         private set
     var authActionInFlight by mutableStateOf(false)
         private set
+    var hasLoadedInventoryOnce by mutableStateOf(false)
+        private set
+    var hasLoadedRemindersOnce by mutableStateOf(false)
+        private set
+    var hasLoadedSettingsOnce by mutableStateOf(false)
+        private set
     var inventoryLoadState by mutableStateOf(LoadState.Idle)
         private set
     var remindersLoadState by mutableStateOf(LoadState.Idle)
@@ -280,6 +286,10 @@ class QuartermasterAppState(
     suspend fun handleIntent(intent: Intent?) {
         intent?.data?.let(::handleDeepLink)
         val payload = PushSupport.payloadFromIntent(intent) ?: return
+        handleReminderPayload(payload)
+    }
+
+    suspend fun handleReminderPayload(payload: ReminderPushPayload) {
         pendingInventoryTarget = InventoryTarget(
             productId = payload.productId,
             locationId = payload.locationId,
@@ -391,6 +401,7 @@ class QuartermasterAppState(
             compareBy<StockBatchDto> { it.locationId }.thenBy { it.product.name.lowercase() }.thenBy { it.expiresOn ?: "9999-12-31" }
         )
         history = backend.listEvents().sortedByDescending { it.createdAt }
+        hasLoadedInventoryOnce = true
     }
 
     suspend fun refreshReminders(limit: Int = 50) = guardHouseholdScope(
@@ -406,6 +417,7 @@ class QuartermasterAppState(
         reminders.filter { it.presentedOnDeviceAt == null && !inFlightIds.contains(it.id.toString()) }.forEach { reminder ->
             runCatching { backend.presentReminder(reminder.id.toString()) }
         }
+        hasLoadedRemindersOnce = true
     }
 
     suspend fun loadSettings() = guardHouseholdScope(
@@ -418,6 +430,7 @@ class QuartermasterAppState(
     ) {
         householdDetail = backend.currentHousehold()
         invites = backend.householdInvites().sortedByDescending { it.createdAt }
+        hasLoadedSettingsOnce = true
     }
 
     suspend fun searchProducts(query: String) {
@@ -440,6 +453,10 @@ class QuartermasterAppState(
 
     fun clearInventoryTarget() {
         pendingInventoryTarget = null
+    }
+
+    fun clearPendingInviteContext() {
+        pendingInviteContext = null
     }
 
     suspend fun addStock(
@@ -527,6 +544,21 @@ class QuartermasterAppState(
 
     val currentHouseholdId: String?
         get() = meOrNull?.currentHousehold?.id?.toString()
+
+    val isInventoryRefreshing: Boolean
+        get() = inventoryLoadState == LoadState.Loading && hasLoadedInventoryOnce
+
+    val isRemindersRefreshing: Boolean
+        get() = remindersLoadState == LoadState.Loading && hasLoadedRemindersOnce
+
+    val isSettingsRefreshing: Boolean
+        get() = settingsLoadState == LoadState.Loading && hasLoadedSettingsOnce
+
+    val pendingInviteCode: String?
+        get() = pendingInviteContext?.inviteCode
+
+    val hasPendingInviteHandoff: Boolean
+        get() = pendingInviteContext != null
 
     suspend fun resolveHouseholdScopedForbidden(): HouseholdScopedResolution {
         return try {
@@ -726,6 +758,9 @@ class QuartermasterAppState(
         householdDetail = null
         invites = emptyList()
         pendingInventoryTarget = null
+        hasLoadedInventoryOnce = false
+        hasLoadedRemindersOnce = false
+        hasLoadedSettingsOnce = false
         inventoryError = null
         reminderError = null
         settingsError = null

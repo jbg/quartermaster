@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 import re
 import subprocess
@@ -24,6 +25,7 @@ from typing import Iterable
 PACKAGE = "dev.quartermaster.android"
 ACTIVITY = f"{PACKAGE}/.MainActivity"
 BOUNDS_RE = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
+INVITE_CODE_RE = re.compile(r"^[A-Z0-9]{8}$")
 
 
 @dataclass(frozen=True)
@@ -94,6 +96,22 @@ def wait_for_text(text: str, timeout: float = 10.0) -> UiNode:
     raise RuntimeError(f"timed out waiting for text {text!r}")
 
 
+def wait_for_condition(description: str, predicate, timeout: float = 10.0):
+    deadline = time.monotonic() + timeout
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            value = predicate()
+            if value:
+                return value
+        except Exception as exc:  # pragma: no cover - best effort in smoke script
+            last_error = exc
+        time.sleep(0.25)
+    if last_error is not None:
+        raise RuntimeError(f"timed out waiting for {description}: {last_error}") from last_error
+    raise RuntimeError(f"timed out waiting for {description}")
+
+
 def wait_for_text_with_scroll(text: str, attempts: int = 6) -> UiNode:
     for _ in range(attempts):
         for node in dump_nodes():
@@ -131,6 +149,13 @@ def find_clickable_with_text(text: str, *, lowest: bool = False) -> UiNode:
     return min(matches, key=lambda node: node.bounds[1])
 
 
+def find_nth_clickable_with_text(text: str, index: int) -> UiNode:
+    matches = sorted(find_clickables_with_text(text), key=lambda node: node.bounds[1])
+    if index >= len(matches):
+        raise RuntimeError(f"expected at least {index + 1} clickable nodes for text {text!r}, found {len(matches)}")
+    return matches[index]
+
+
 def find_edit_text_by_label(label: str) -> UiNode:
     for node in dump_nodes():
         if node.text != label:
@@ -149,6 +174,10 @@ def tap(node: UiNode) -> None:
 
 def tap_text(text: str, *, lowest: bool = False) -> None:
     tap(find_clickable_with_text(text, lowest=lowest))
+
+
+def tap_nth_text(text: str, index: int) -> None:
+    tap(find_nth_clickable_with_text(text, index))
 
 
 def set_text_field(label: str, value: str) -> None:
@@ -172,10 +201,64 @@ def assert_text(text: str) -> None:
     wait_for_text(text)
 
 
+def assert_text_missing(text: str, timeout: float = 10.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not any(node.text == text for node in dump_nodes()):
+            return
+        time.sleep(0.25)
+    raise RuntimeError(f"text {text!r} still present after {timeout} seconds")
+
+
+def count_clickables(text: str) -> int:
+    return len(find_clickables_with_text(text))
+
+
+def wait_for_clickable_count(text: str, expected: int, timeout: float = 10.0) -> None:
+    wait_for_condition(
+        f"{expected} clickable nodes for {text!r}",
+        lambda: count_clickables(text) == expected,
+        timeout=timeout,
+    )
+
+
+def first_text_matching(pattern: re.Pattern[str]) -> str | None:
+    for node in dump_nodes():
+        if pattern.fullmatch(node.text):
+            return node.text
+    return None
+
+
+def wait_for_matching_text(pattern: re.Pattern[str], timeout: float = 10.0) -> str:
+    return wait_for_condition(
+        f"text matching {pattern.pattern}",
+        lambda: first_text_matching(pattern),
+        timeout=timeout,
+    )
+
+
 def launch(clear_app: bool) -> None:
     if clear_app:
         adb("shell", "pm", "clear", PACKAGE)
     adb("shell", "am", "start", "-n", ACTIVITY)
+
+
+def open_invite_link(invite_code: str, server_url: str) -> None:
+    encoded_server = urllib.parse.quote(server_url, safe="")
+    deep_link = f"quartermaster://join?invite={invite_code}&server={encoded_server}"
+    adb("shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", deep_link)
+
+
+def sign_in(username: str, password: str, server_url: str | None = None) -> None:
+    wait_for_text("Know what’s in your kitchen.")
+    if server_url is not None:
+        replace_text_field("Server URL", server_url)
+    replace_text_field("Username", username)
+    replace_text_field("Password", password)
+    adb("shell", "input", "keyevent", "BACK")
+    time.sleep(1.0)
+    tap_text("Sign in", lowest=True)
+    assert_text("Inventory")
 
 
 def check_backend_health(server_url: str) -> None:
@@ -215,22 +298,30 @@ def main() -> int:
     check_backend_health(args.host_server_url)
     adb("reverse", "tcp:8080", "tcp:8080")
     launch(clear_app=not args.preserve_app_data)
-    wait_for_text("Know what’s in your kitchen.")
-    replace_text_field("Server URL", args.device_server_url)
-    set_text_field("Username", args.username)
-    set_text_field("Password", args.password)
-    adb("shell", "input", "keyevent", "BACK")
-    time.sleep(1.0)
-    tap_text("Sign in", lowest=True)
-
-    assert_text("Inventory")
+    sign_in(args.username, args.password, args.device_server_url)
     tap_text("Reminders")
     assert_text("Reminders")
+    wait_for_clickable_count("Acknowledge", 2, timeout=15.0)
+    tap_nth_text("Acknowledge", 0)
+    wait_for_clickable_count("Acknowledge", 1, timeout=15.0)
     tap_text("Open")
     assert_text("Opened from reminder")
     assert_text("Reminder target")
+    tap_text("Dismiss")
+    assert_text_missing("Reminder target")
     tap_text("Settings")
+    invite_code = None
+    tap_text("Create invite", lowest=True)
+    invite_code = wait_for_matching_text(INVITE_CODE_RE, timeout=15.0)
+    print(f"captured invite code {invite_code}")
+    open_invite_link(invite_code, args.device_server_url)
+    assert_text("Invite handoff ready")
+    assert_text(invite_code)
     wait_for_text_with_scroll("Sign out")
+    tap_text("Sign out", lowest=True)
+    sign_in(args.username, args.password)
+    tap_text("Settings")
+    wait_for_text_with_scroll("Switch household")
     print("Android UI smoke passed")
     return 0
 

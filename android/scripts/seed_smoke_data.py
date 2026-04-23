@@ -2,9 +2,9 @@
 """Seed repeatable local smoke data for the Android emulator flow.
 
 This helper is intentionally local-only. It talks to the running Quartermaster
-backend over HTTP, then uses the repo's default SQLite database to force one
-expiry reminder due so the Android UI smoke can exercise the inbox path without
-waiting for wall-clock reminder timing.
+backend over HTTP, then uses the repo's default SQLite database to force due
+expiry reminders so the Android UI smoke can exercise both reminder actions
+without waiting for wall-clock reminder timing.
 """
 
 from __future__ import annotations
@@ -236,6 +236,7 @@ def main() -> int:
     parser.add_argument("--timezone", default="UTC")
     parser.add_argument("--household-name", default="My Household")
     parser.add_argument("--product-name", default="Smoke Rice")
+    parser.add_argument("--second-product-name", default="Smoke Beans")
     parser.add_argument(
         "--db-path",
         default=str(Path(__file__).resolve().parents[2] / "data.db"),
@@ -254,32 +255,35 @@ def main() -> int:
     assert isinstance(me["current_household"], dict)
     household = me["current_household"]
     pantry = ensure_pantry(client)
-    product = create_product(client, args.product_name)
     expires_on = (dt.date.today() + dt.timedelta(days=1)).isoformat()
-    batch = create_stock_batch(
-        client,
-        product_id=product["id"],
-        location_id=pantry["id"],
-        expires_on=expires_on,
-        note="Android smoke seed",
-    )
     invite = create_invite(client)
-    force_due_reminder(
-        db_path,
-        household_id=household["id"],
-        household_timezone=household["timezone"],
-        batch_id=batch["id"],
-        product_id=product["id"],
-        product_name=product["name"],
-        location_id=pantry["id"],
-        location_name=pantry["name"],
-        expires_on=expires_on,
-    )
+    seeded_products = [args.product_name, args.second_product_name]
+    for index, product_name in enumerate(seeded_products, start=1):
+        product = create_product(client, product_name)
+        batch = create_stock_batch(
+            client,
+            product_id=product["id"],
+            location_id=pantry["id"],
+            expires_on=expires_on,
+            note=f"Android smoke seed {index}",
+        )
+        force_due_reminder(
+            db_path,
+            household_id=household["id"],
+            household_timezone=household["timezone"],
+            batch_id=batch["id"],
+            product_id=product["id"],
+            product_name=product["name"],
+            location_id=pantry["id"],
+            location_name=pantry["name"],
+            expires_on=expires_on,
+        )
 
     print("Android smoke data ready")
     print(f"username={args.username}")
     print(f"password={args.password}")
     print(f"invite_code={invite['code']}")
+    print("reminder_count=2")
     print(f"server_url={args.server_url}")
     print(f"device_server_url=http://127.0.0.1:8080")
     return 0
