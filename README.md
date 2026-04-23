@@ -223,7 +223,17 @@ The sweeper endpoints repair drift. They do not replace the running push worker.
 
 ## Tests
 
-`cargo test --workspace` is the default fast verification pass.
+Sandbox-safe verification:
+
+- `cargo test --workspace`
+- `cargo xtask verify-release-config`
+
+Host-only verification:
+
+- `cd android && gradle testDebugUnitTest assembleDebug`
+- `xcodebuild -project ios/Quartermaster.xcodeproj -scheme Quartermaster -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' -skipPackagePluginValidation test`
+
+Run the Android and iOS commands from a normal macOS shell. They depend on host-native Gradle/Xcode toolchains plus emulator/simulator support and are not the right source of truth from inside the Codex sandbox.
 
 `cargo xtask verify-release-config` checks that the env-driven backend AASA identity matches the env-driven iOS release identity and associated-domain host.
 

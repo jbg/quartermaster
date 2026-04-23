@@ -23,6 +23,8 @@ The checked-in CI build uses:
 
 If GitHub-hosted macOS images drift and that simulator runtime disappears, update the workflow and this note together.
 
+Simulator-backed `xcodebuild` runs are host-only checks. Run them from a normal macOS shell, not from inside the Codex sandbox.
+
 ## Running against a local backend
 
 1. Start the backend in another terminal:
@@ -81,3 +83,17 @@ Quartermaster/
 - `APIClient` is an actor façade over the generated client. A 401 on an authenticated request triggers one serialized refresh attempt, then retries.
 - `GET /auth/me` now exposes `current_household` as a nullable object; use that shared shape instead of flattening active-household fields in client code.
 - The default base URL is `http://localhost:8080` in the simulator; override it on the Onboarding screen when connecting to a self-hosted instance.
+
+## Verification
+
+Host-only iOS reminder-state verification:
+
+```sh
+xcodebuild -project ios/Quartermaster.xcodeproj \
+  -scheme Quartermaster \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' \
+  -skipPackagePluginValidation \
+  test
+```
+
+This should execute `QuartermasterTests/AppStateReminderTests.swift`, not just build the test bundle.

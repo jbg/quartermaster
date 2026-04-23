@@ -379,51 +379,55 @@ final class AppState {
             }
         }
 
-        do {
-            let response = try await api.listReminders(limit: limit)
-            hasLoadedReminderInbox = true
-            reminderInboxError = nil
-            applyReminderSnapshot(response.items)
-            let existingIDs = Set(queuedReminders.map(\.id) + (activeReminder.map { [$0.id] } ?? []))
-            for reminder in response.items
-            where reminder.presentedOnDeviceAt == nil
-                && !existingIDs.contains(reminder.id)
-                && !reminderActionInFlightIDs.contains(reminder.id)
-            {
-                try? await api.presentReminder(id: reminder.id)
-                queuedReminders.append(reminder)
-            }
-            presentNextReminderIfNeeded()
-        } catch let apiError as APIError {
-            if case .unauthorized = apiError {
-                await tokenStore.clear()
-                units = []
-                clearReminderState(clearLoadingState: true)
-                phase = .unauthenticated
+        var requestMode = mode
+        while true {
+            do {
+                let response = try await api.listReminders(limit: limit)
+                hasLoadedReminderInbox = true
+                reminderInboxError = nil
+                applyReminderSnapshot(response.items)
+                let existingIDs = Set(queuedReminders.map(\.id) + (activeReminder.map { [$0.id] } ?? []))
+                for reminder in response.items
+                where reminder.presentedOnDeviceAt == nil
+                    && !existingIDs.contains(reminder.id)
+                    && !reminderActionInFlightIDs.contains(reminder.id)
+                {
+                    try? await api.presentReminder(id: reminder.id)
+                    queuedReminders.append(reminder)
+                }
+                presentNextReminderIfNeeded()
                 return
-            }
-            if case .server(status: 403, _) = apiError {
-                switch await resolveHouseholdScopedForbidden() {
-                case .retry:
-                    await syncDueReminders(
-                        limit: limit,
-                        mode: mode == .silent ? .silent : .userInitiated
-                    )
-                case .fallbackToNoHousehold:
+            } catch let apiError as APIError {
+                if case .unauthorized = apiError {
+                    await tokenStore.clear()
+                    units = []
                     clearReminderState(clearLoadingState: true)
-                case .failed(let message):
-                    if mode != .silent {
-                        reminderInboxError = message
+                    phase = .unauthenticated
+                    return
+                }
+                if case .server(status: 403, _) = apiError {
+                    switch await resolveHouseholdScopedForbidden() {
+                    case .retry:
+                        requestMode = requestMode == .silent ? .silent : .userInitiated
+                        continue
+                    case .fallbackToNoHousehold:
+                        clearReminderState(clearLoadingState: true)
+                    case .failed(let message):
+                        if requestMode != .silent {
+                            reminderInboxError = message
+                        }
                     }
+                    return
+                }
+                if requestMode != .silent {
+                    reminderInboxError = apiError.userFacingMessage
                 }
                 return
-            }
-            if mode != .silent {
-                reminderInboxError = apiError.userFacingMessage
-            }
-        } catch {
-            if mode != .silent {
-                reminderInboxError = error.localizedDescription
+            } catch {
+                if requestMode != .silent {
+                    reminderInboxError = error.localizedDescription
+                }
+                return
             }
         }
     }

@@ -113,12 +113,24 @@ From `android/`:
 gradle testDebugUnitTest assembleDebug
 ```
 
+This is a host-only check. Run it from a normal macOS shell with a working JDK and Android SDK, not from inside the Codex sandbox.
+
+Expected local environment:
+
+- Java 17 available on `PATH`
+- `sdk.dir` configured in `android/local.properties`
+- Android SDK rooted at either `/opt/homebrew/share/android-commandlinetools` or `~/Library/Android/sdk`
+
+If `gradle testDebugUnitTest` fails in the sandbox with `Failed to load native library 'libnative-platform.dylib' for Mac OS X aarch64`, rerun it on the host before changing Gradle config. The host run is the source of truth for this repo.
+
 If generated OpenAPI source wiring changes, verify from a clean app build directory:
 
 ```sh
 rm -rf app/build
 gradle assembleDebug
 ```
+
+The emulator smoke path is also host-only because it depends on `adb`, a running emulator, and host backend access outside the sandbox.
 
 ## Generated client
 

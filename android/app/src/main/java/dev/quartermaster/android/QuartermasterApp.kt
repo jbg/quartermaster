@@ -30,6 +30,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,6 +39,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
@@ -47,7 +51,32 @@ import dev.quartermaster.android.generated.models.ReminderDto
 import dev.quartermaster.android.generated.models.StockBatchDto
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+private object SmokeTag {
+    const val OnboardingScreen = "smoke-onboarding-screen"
+    const val InventoryScreen = "smoke-inventory-screen"
+    const val ReminderScreen = "smoke-reminder-screen"
+    const val SettingsScreen = "smoke-settings-screen"
+    const val ServerUrlField = "smoke-server-url-field"
+    const val UsernameField = "smoke-username-field"
+    const val PasswordField = "smoke-password-field"
+    const val SignInButton = "smoke-sign-in-button"
+    const val RemindersTab = "smoke-tab-reminders"
+    const val SettingsTab = "smoke-tab-settings"
+    const val ReminderOpenedBanner = "smoke-reminder-opened-banner"
+    const val ReminderOpenedDismissButton = "smoke-reminder-opened-dismiss"
+    const val InviteHandoffCard = "smoke-invite-handoff-card"
+    const val SwitchHouseholdHeader = "smoke-switch-household-header"
+    const val SignOutButton = "smoke-sign-out-button"
+    const val CreateInviteButton = "smoke-create-invite-button"
+
+    fun reminderCard(id: String) = "smoke-reminder-card-$id"
+    fun reminderAckButton(id: String) = "smoke-reminder-ack-$id"
+    fun reminderOpenButton(id: String) = "smoke-reminder-open-$id"
+    fun inviteCode(code: String) = "smoke-invite-code-$code"
+    fun reminderTarget(batchId: String) = "smoke-reminder-target-$batchId"
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 fun QuartermasterApp(appState: QuartermasterAppState) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -58,6 +87,7 @@ fun QuartermasterApp(appState: QuartermasterAppState) {
 
     MaterialTheme {
         Scaffold(
+            modifier = Modifier.semantics { testTagsAsResourceId = true },
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
             topBar = {
                 TopAppBar(title = { Text("Quartermaster") })
@@ -72,6 +102,13 @@ fun QuartermasterApp(appState: QuartermasterAppState) {
                             MainTab.Settings to Pair("Settings", Icons.Outlined.Settings),
                         ).forEach { (tab, labelIcon) ->
                             NavigationBarItem(
+                                modifier = Modifier.testTag(
+                                    when (tab) {
+                                        MainTab.Reminders -> SmokeTag.RemindersTab
+                                        MainTab.Settings -> SmokeTag.SettingsTab
+                                        else -> "main-tab-${tab.name.lowercase()}"
+                                    }
+                                ),
                                 selected = appState.selectedTab == tab,
                                 onClick = { appState.selectedTab = tab },
                                 icon = { androidx.compose.material3.Icon(labelIcon.second, contentDescription = labelIcon.first) },
@@ -153,10 +190,11 @@ private fun SectionHeader(
 private fun StatusCard(
     title: String,
     message: String,
+    modifier: Modifier = Modifier,
 ) {
     Card {
         Column(
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxWidth()
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -175,6 +213,7 @@ private fun InviteHandoffCard(
     Card {
         Column(
             modifier = Modifier
+                .testTag(SmokeTag.InviteHandoffCard)
                 .fillMaxWidth()
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -185,7 +224,11 @@ private fun InviteHandoffCard(
                     "Quartermaster opened an invite link. Finish the redeem flow below."
                 } else {
                     "Quartermaster opened an invite link for code $inviteCode. Finish the redeem flow below."
-                }
+                },
+                modifier = inviteCode
+                    ?.takeIf(String::isNotBlank)
+                    ?.let { Modifier.testTag(SmokeTag.inviteCode(it)) }
+                    ?: Modifier
             )
             onDismiss?.let {
                 TextButton(onClick = it) {
@@ -216,6 +259,7 @@ private fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifier
 
     LazyColumn(
         modifier = modifier
+            .testTag(SmokeTag.OnboardingScreen)
             .fillMaxSize()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -251,7 +295,9 @@ private fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifier
                     appState.updateServerUrl(it)
                 },
                 label = { Text("Server URL") },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(SmokeTag.ServerUrlField),
             )
         }
         item {
@@ -259,7 +305,9 @@ private fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifier
                 value = username,
                 onValueChange = { username = it },
                 label = { Text("Username") },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(SmokeTag.UsernameField),
             )
         }
         item {
@@ -267,7 +315,9 @@ private fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifier
                 value = password,
                 onValueChange = { password = it },
                 label = { Text("Password") },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(SmokeTag.PasswordField),
             )
         }
         if (!signInMode) {
@@ -290,6 +340,7 @@ private fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifier
         }
         item {
             Button(
+                modifier = Modifier.testTag(SmokeTag.SignInButton),
                 onClick = {
                     scope.launch {
                         if (signInMode) {
@@ -327,6 +378,7 @@ private fun NoHouseholdScreen(appState: QuartermasterAppState, modifier: Modifie
 
     LazyColumn(
         modifier = modifier
+            .testTag(SmokeTag.InventoryScreen)
             .fillMaxSize()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -450,6 +502,7 @@ private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier 
 
     LazyColumn(
         modifier = modifier
+            .testTag(SmokeTag.SettingsScreen)
             .fillMaxSize()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -509,11 +562,15 @@ private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier 
                         product != null && location != null -> "Showing ${product.name} in ${location.name}. The matching batch stays highlighted until you dismiss this banner."
                         product != null -> "Showing ${product.name}. Quartermaster is still matching the reminder location."
                         else -> "Quartermaster is still loading the stock mentioned in this reminder."
-                    }
+                    },
+                    modifier = Modifier.testTag(SmokeTag.ReminderOpenedBanner)
                 )
             }
             item {
-                TextButton(onClick = { appState.clearInventoryTarget() }) {
+                TextButton(
+                    modifier = Modifier.testTag(SmokeTag.ReminderOpenedDismissButton),
+                    onClick = { appState.clearInventoryTarget() }
+                ) {
                     Text("Dismiss")
                 }
             }
@@ -596,7 +653,11 @@ private fun LocationInventoryCard(
                             Text("${batch.product.name} · ${batch.quantity} ${batch.unit}")
                             batch.expiresOn?.let { Text("Expires $it") }
                             if (isTargetBatch) {
-                                Text("Reminder target", style = MaterialTheme.typography.labelMedium)
+                                Text(
+                                    "Reminder target",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.testTag(SmokeTag.reminderTarget(batch.id.toString()))
+                                )
                             }
                         }
                     }
@@ -616,6 +677,7 @@ private fun ReminderScreen(appState: QuartermasterAppState, modifier: Modifier =
 
     LazyColumn(
         modifier = modifier
+            .testTag(SmokeTag.ReminderScreen)
             .fillMaxSize()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -673,6 +735,7 @@ private fun ReminderCard(
     Card {
         Column(
             modifier = Modifier
+                .testTag(SmokeTag.reminderCard(reminder.id.toString()))
                 .fillMaxWidth()
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -690,10 +753,18 @@ private fun ReminderCard(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onOpen, enabled = action == null) {
+                Button(
+                    modifier = Modifier.testTag(SmokeTag.reminderOpenButton(reminder.id.toString())),
+                    onClick = onOpen,
+                    enabled = action == null
+                ) {
                     Text(if (action == ReminderAction.Open) "Opening..." else "Open")
                 }
-                TextButton(onClick = onAcknowledge, enabled = action == null) {
+                TextButton(
+                    modifier = Modifier.testTag(SmokeTag.reminderAckButton(reminder.id.toString())),
+                    onClick = onAcknowledge,
+                    enabled = action == null
+                ) {
                     Text(if (action == ReminderAction.Acknowledge) "Acknowledging..." else "Acknowledge")
                 }
             }
@@ -985,7 +1056,11 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
             }
         }
         item {
-            Text("Switch household", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Switch household",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.testTag(SmokeTag.SwitchHouseholdHeader),
+            )
         }
         items(appState.meOrNull?.households.orEmpty(), key = { it.id }) { household ->
             Card {
@@ -1055,6 +1130,7 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
         }
         item {
             Button(
+                modifier = Modifier.testTag(SmokeTag.CreateInviteButton),
                 onClick = {
                     scope.launch {
                         appState.createInvite(
@@ -1089,6 +1165,7 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
         }
         item {
             Button(
+                modifier = Modifier.testTag(SmokeTag.SignOutButton),
                 onClick = { scope.launch { appState.logout() } },
                 enabled = !appState.authActionInFlight,
             ) {

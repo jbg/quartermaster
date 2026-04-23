@@ -54,6 +54,10 @@ class UiNode:
         return self.element.attrib.get("clickable") == "true"
 
     @property
+    def resource_id(self) -> str:
+        return self.element.attrib.get("resource-id", "")
+
+    @property
     def bounds(self) -> tuple[int, int, int, int]:
         raw = self.element.attrib.get("bounds", "")
         match = BOUNDS_RE.fullmatch(raw)
@@ -104,6 +108,21 @@ def wait_for_text(text: str, timeout: float = 10.0) -> UiNode:
     raise RuntimeError(f"timed out waiting for text {text!r}")
 
 
+def node_has_tag(node: UiNode, tag: str) -> bool:
+    resource_id = node.resource_id
+    return resource_id == tag or resource_id.endswith(f"/{tag}")
+
+
+def wait_for_tag(tag: str, timeout: float = 10.0) -> UiNode:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        for node in dump_nodes():
+            if node_has_tag(node, tag):
+                return node
+        time.sleep(0.25)
+    raise RuntimeError(f"timed out waiting for tag {tag!r}")
+
+
 def wait_for_condition(description: str, predicate, timeout: float = 10.0):
     deadline = time.monotonic() + timeout
     last_error: Exception | None = None
@@ -148,6 +167,47 @@ def find_clickables_with_text(text: str) -> list[UiNode]:
     return list(deduped.values())
 
 
+def find_clickables_with_tag(tag: str) -> list[UiNode]:
+    matches: list[UiNode] = []
+    for node in dump_nodes():
+        if not node_has_tag(node, tag):
+            continue
+        if node.clickable:
+            matches.append(node)
+            continue
+        for ancestor in node.ancestors():
+            if ancestor.clickable:
+                matches.append(ancestor)
+                break
+    deduped: dict[tuple[int, int, int, int], UiNode] = {}
+    for match in matches:
+        deduped[match.bounds] = match
+    return list(deduped.values())
+
+
+def find_clickables_with_tag_prefix(prefix: str) -> list[UiNode]:
+    matches: list[UiNode] = []
+    for node in dump_nodes():
+        resource_id = node.resource_id
+        if not (
+            resource_id == prefix
+            or resource_id.endswith(f"/{prefix}")
+            or resource_id.endswith(prefix)
+        ):
+            continue
+        if node.clickable:
+            matches.append(node)
+            continue
+        for ancestor in node.ancestors():
+            if ancestor.clickable:
+                matches.append(ancestor)
+                break
+    deduped: dict[tuple[int, int, int, int], UiNode] = {}
+    for match in matches:
+        deduped[match.bounds] = match
+    return list(deduped.values())
+
+
 def find_clickable_with_text(text: str, *, lowest: bool = False) -> UiNode:
     matches = find_clickables_with_text(text)
     if not matches:
@@ -155,6 +215,22 @@ def find_clickable_with_text(text: str, *, lowest: bool = False) -> UiNode:
     if lowest:
         return max(matches, key=lambda node: node.bounds[1])
     return min(matches, key=lambda node: node.bounds[1])
+
+
+def find_clickable_with_tag(tag: str, *, lowest: bool = False) -> UiNode:
+    matches = find_clickables_with_tag(tag)
+    if not matches:
+        raise RuntimeError(f"no clickable node found for tag {tag!r}")
+    if lowest:
+        return max(matches, key=lambda node: node.bounds[1])
+    return min(matches, key=lambda node: node.bounds[1])
+
+
+def find_clickable_with_tag_prefix(prefix: str) -> UiNode:
+    matches = sorted(find_clickables_with_tag_prefix(prefix), key=lambda node: node.bounds[1])
+    if not matches:
+        raise RuntimeError(f"no clickable node found for tag prefix {prefix!r}")
+    return matches[0]
 
 
 def find_nth_clickable_with_text(text: str, index: int) -> UiNode:
@@ -174,6 +250,13 @@ def find_edit_text_by_label(label: str) -> UiNode:
     raise RuntimeError(f"no EditText found for label {label!r}")
 
 
+def find_edit_text_by_tag(tag: str) -> UiNode:
+    for node in dump_nodes():
+        if node_has_tag(node, tag):
+            return node
+    raise RuntimeError(f"no EditText found for tag {tag!r}")
+
+
 def tap(node: UiNode) -> None:
     x, y = node.center
     print(f"tap {node.klass} text={node.text!r} bounds={node.element.attrib.get('bounds')} center=({x},{y})")
@@ -182,6 +265,14 @@ def tap(node: UiNode) -> None:
 
 def tap_text(text: str, *, lowest: bool = False) -> None:
     tap(find_clickable_with_text(text, lowest=lowest))
+
+
+def tap_tag(tag: str, *, lowest: bool = False) -> None:
+    tap(find_clickable_with_tag(tag, lowest=lowest))
+
+
+def tap_first_tag_prefix(prefix: str) -> None:
+    tap(find_clickable_with_tag_prefix(prefix))
 
 
 def tap_nth_text(text: str, index: int) -> None:
@@ -205,6 +296,16 @@ def replace_text_field(label: str, value: str) -> None:
     adb("shell", "input", "text", value.replace(" ", "%s"))
 
 
+def replace_text_field_by_tag(tag: str, value: str) -> None:
+    field = find_edit_text_by_tag(tag)
+    current = field.text
+    tap(field)
+    adb("shell", "input", "keyevent", "MOVE_END")
+    for _ in range(len(current) + 4):
+        adb("shell", "input", "keyevent", "DEL")
+    adb("shell", "input", "text", value.replace(" ", "%s"))
+
+
 def assert_text(text: str) -> None:
     wait_for_text(text)
 
@@ -216,6 +317,15 @@ def assert_text_missing(text: str, timeout: float = 10.0) -> None:
             return
         time.sleep(0.25)
     raise RuntimeError(f"text {text!r} still present after {timeout} seconds")
+
+
+def assert_tag_missing(tag: str, timeout: float = 10.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not any(node_has_tag(node, tag) for node in dump_nodes()):
+            return
+        time.sleep(0.25)
+    raise RuntimeError(f"tag {tag!r} still present after {timeout} seconds")
 
 
 def count_clickables(text: str) -> int:
@@ -314,15 +424,15 @@ def open_reminder_payload(payload: dict) -> None:
 
 
 def sign_in(username: str, password: str, server_url: str | None = None) -> None:
-    wait_for_text("Know what’s in your kitchen.")
+    wait_for_tag("smoke-onboarding-screen")
     if server_url is not None:
-        replace_text_field("Server URL", server_url)
-    replace_text_field("Username", username)
-    replace_text_field("Password", password)
+        replace_text_field_by_tag("smoke-server-url-field", server_url)
+    replace_text_field_by_tag("smoke-username-field", username)
+    replace_text_field_by_tag("smoke-password-field", password)
     adb("shell", "input", "keyevent", "BACK")
     time.sleep(1.0)
-    tap_text("Sign in", lowest=True)
-    assert_text("Inventory")
+    tap_tag("smoke-sign-in-button")
+    wait_for_tag("smoke-inventory-screen")
 
 
 def check_backend_health(server_url: str) -> None:
@@ -375,35 +485,54 @@ def main() -> int:
     adb("reverse", "tcp:8080", "tcp:8080")
     launch(clear_app=not args.preserve_app_data)
     sign_in(args.username, args.password, args.device_server_url)
-    tap_text("Reminders")
-    assert_text("Reminders")
-    wait_for_clickable_count("Acknowledge", 2, timeout=15.0)
-    tap_nth_text("Acknowledge", 0)
-    wait_for_clickable_count("Acknowledge", 1, timeout=15.0)
+    tap_tag("smoke-tab-reminders")
+    wait_for_tag("smoke-reminder-screen")
+    if fixture is not None:
+        first_reminder_id = fixture["reminders"][0]["reminder_id"]
+        ack_tag = f"smoke-reminder-ack-{first_reminder_id}"
+        wait_for_tag(ack_tag, timeout=15.0)
+        tap_tag(ack_tag)
+        assert_tag_missing(ack_tag, timeout=15.0)
+    else:
+        wait_for_condition(
+            "a reminder acknowledge action",
+            lambda: bool(find_clickables_with_tag_prefix("smoke-reminder-ack-")),
+            timeout=15.0,
+        )
+        first_ack = find_clickables_with_tag_prefix("smoke-reminder-ack-")[0]
+        ack_tag = first_ack.resource_id.split("/")[-1]
+        tap(first_ack)
+        assert_tag_missing(ack_tag, timeout=15.0)
     if fixture is not None:
         open_reminder_payload(fixture["reminders"][1])
     else:
-        tap_text("Open")
-    assert_text("Opened from reminder")
-    assert_text("Reminder target")
-    tap_text("Dismiss")
-    assert_text_missing("Reminder target")
-    tap_text("Settings")
+        tap_first_tag_prefix("smoke-reminder-open-")
+    wait_for_tag("smoke-reminder-opened-banner")
+    if fixture is not None:
+        wait_for_tag(f"smoke-reminder-target-{fixture['reminders'][1]['batch_id']}")
+    else:
+        assert_text("Reminder target")
+    tap_tag("smoke-reminder-opened-dismiss")
+    if fixture is not None:
+        assert_tag_missing(f"smoke-reminder-target-{fixture['reminders'][1]['batch_id']}")
+    else:
+        assert_text_missing("Reminder target")
+    tap_tag("smoke-tab-settings")
     invite_code = None
     if fixture is None:
-        tap_text("Create invite", lowest=True)
+        tap_tag("smoke-create-invite-button")
         invite_code = wait_for_matching_text(INVITE_CODE_RE, timeout=15.0)
     else:
         invite_code = fixture["invite_code"]
     print(f"captured invite code {invite_code}")
     open_invite_link(invite_code, args.device_server_url)
-    assert_text("Invite handoff ready")
+    wait_for_tag("smoke-invite-handoff-card")
     assert_text(invite_code)
-    wait_for_text_with_scroll("Sign out")
-    tap_text("Sign out", lowest=True)
+    wait_for_tag("smoke-sign-out-button")
+    tap_tag("smoke-sign-out-button")
     sign_in(args.username, args.password)
-    tap_text("Settings")
-    wait_for_text_with_scroll("Switch household")
+    tap_tag("smoke-tab-settings")
+    wait_for_tag("smoke-switch-household-header")
     print("Android UI smoke passed")
     return 0
 
