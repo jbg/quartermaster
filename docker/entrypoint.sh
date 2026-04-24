@@ -2,6 +2,7 @@
 set -eu
 
 OPTIONS_FILE="/data/options.json"
+APP_USER="quartermaster"
 
 export QM_DATABASE_URL="${QM_DATABASE_URL:-sqlite:///data/data.db?mode=rwc}"
 
@@ -9,7 +10,7 @@ set_from_options() {
   option_name="$1"
   env_name="$2"
 
-  if [ ! -f "$OPTIONS_FILE" ]; then
+  if [ ! -r "$OPTIONS_FILE" ]; then
     return
   fi
 
@@ -33,5 +34,11 @@ set_from_options "auth_session_sweep_interval_seconds" "QM_AUTH_SESSION_SWEEP_IN
 set_from_options "expiry_reminder_sweep_interval_seconds" "QM_EXPIRY_REMINDER_SWEEP_INTERVAL_SECONDS"
 set_from_options "log_format" "QM_LOG_FORMAT"
 set_from_options "rust_log" "RUST_LOG"
+
+if [ "$(id -u)" = "0" ]; then
+  mkdir -p /data
+  chown -R "$APP_USER:$APP_USER" /data
+  exec gosu "$APP_USER" "$@"
+fi
 
 exec "$@"
