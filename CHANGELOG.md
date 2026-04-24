@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/jbg/quartermaster/compare/0.3.0...0.4.0) (2026-04-24)
+
+
+### Features
+
+* add web location management settings ([4160c4e](https://github.com/jbg/quartermaster/commit/4160c4e0c5d43ceef678ab39c2e98782d7626a76))
+
 ## [0.3.0](https://github.com/jbg/quartermaster/compare/0.2.0...0.3.0) (2026-04-24)
 
 
