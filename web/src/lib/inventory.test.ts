@@ -1,17 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildStockUpdateRequest,
   canRestoreBatch,
   isDepleted,
   loadInventory,
   productPreferredUnit,
   productSource,
   selectBatchAfterRefresh,
+  stockEditFields,
   stockExpiry,
   stockLocation,
   stockName,
   stockUnit,
   unitChoicesForFamily,
-  validateAddStockInput
+  validateAddStockInput,
+  validateStockEditInput
 } from './inventory';
 
 describe('inventory helpers', () => {
@@ -116,5 +119,94 @@ describe('inventory helpers', () => {
       'Enter a positive stock quantity.'
     );
     expect(validateAddStockInput({ product, quantity: '2.5', locationId: 'pantry' })).toBeNull();
+  });
+
+  it('hydrates batch edit fields from generated and compatibility field names', () => {
+    expect(
+      stockEditFields({
+        id: 'batch-1',
+        product: { name: 'Rice' },
+        quantity: '2',
+        locationId: 'pantry',
+        expiresOn: '2026-05-01',
+        openedOn: '2026-04-01',
+        note: 'top shelf'
+      })
+    ).toEqual({
+      quantity: '2',
+      locationId: 'pantry',
+      expiresOn: '2026-05-01',
+      openedOn: '2026-04-01',
+      note: 'top shelf'
+    });
+  });
+
+  it('validates stock edit quantity and location before submit', () => {
+    const valid = {
+      quantity: '1.5',
+      locationId: 'pantry',
+      expiresOn: '',
+      openedOn: '',
+      note: ''
+    };
+
+    expect(validateStockEditInput(valid)).toBeNull();
+    expect(validateStockEditInput({ ...valid, quantity: '' })).toBe(
+      'Enter a positive stock quantity.'
+    );
+    expect(validateStockEditInput({ ...valid, quantity: 'nope' })).toBe(
+      'Enter a positive stock quantity.'
+    );
+    expect(validateStockEditInput({ ...valid, quantity: '-1' })).toBe(
+      'Enter a positive stock quantity.'
+    );
+    expect(validateStockEditInput({ ...valid, quantity: '0' })).toBe(
+      'Enter a positive stock quantity.'
+    );
+    expect(validateStockEditInput({ ...valid, locationId: '' })).toBe(
+      'Choose a location before saving.'
+    );
+  });
+
+  it('builds minimal stock update requests and explicit clears', () => {
+    const batch = {
+      id: 'batch-1',
+      product: { name: 'Rice' },
+      quantity: '2',
+      location_id: 'pantry',
+      expires_on: '2026-05-01',
+      opened_on: '2026-04-01',
+      note: 'top shelf'
+    };
+
+    expect(
+      buildStockUpdateRequest(batch, {
+        quantity: '1.5',
+        locationId: 'freezer',
+        expiresOn: '2026-06-01',
+        openedOn: '',
+        note: ''
+      })
+    ).toEqual({
+      quantity: '1.5',
+      location_id: 'freezer',
+      expires_on: '2026-06-01',
+      opened_on: null,
+      note: null
+    });
+
+    expect(buildStockUpdateRequest(batch, stockEditFields(batch))).toEqual({});
+    expect(
+      buildStockUpdateRequest(
+        { id: 'batch-2', product: { name: 'Beans' }, quantity: '3', location_id: 'pantry' },
+        {
+          quantity: '3',
+          locationId: 'pantry',
+          expiresOn: '',
+          openedOn: '',
+          note: ''
+        }
+      )
+    ).toEqual({});
   });
 });

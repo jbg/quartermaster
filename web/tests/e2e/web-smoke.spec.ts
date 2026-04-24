@@ -67,8 +67,28 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
   await expect(page.getByRole('button', { name: /Smoke Oats Web/ })).toBeVisible();
   await page.getByLabel('Stock quantity').fill('2');
   await page.locator('.stock-create-form').getByLabel('Unit').selectOption('kg');
-  await page.getByRole('button', { name: 'Add stock' }).last().click();
-  await expect(page.getByRole('button', { name: /Smoke Oats/ })).toBeVisible();
+  await page.locator('.stock-create-form').getByRole('button', { name: 'Add stock' }).click();
+  await page
+    .locator('.inventory-list')
+    .getByRole('button', { name: /Smoke Oats/ })
+    .click();
+  await expect(page.getByTestId('detail-quantity')).toHaveText('2 kg');
+
+  await page.getByRole('button', { name: 'Edit' }).click();
+  await page.locator('.stock-edit-form').getByLabel('Stock quantity').fill('1.5');
+  await page.locator('.stock-edit-form').getByLabel('Expiry date').fill('2026-05-01');
+  await page.locator('.stock-edit-form').getByLabel('Opened date').fill('2026-04-20');
+  await page.locator('.stock-edit-form').getByLabel('Note').fill('Breakfast shelf');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByTestId('detail-quantity')).toHaveText('1.5 kg');
+  await expect(
+    page.locator('.detail-region').getByText('2026-05-01', { exact: true })
+  ).toBeVisible();
+  await expect(
+    page.locator('.detail-region').getByText('2026-04-20', { exact: true })
+  ).toBeVisible();
+  await expect(page.locator('.detail-region').getByText('Breakfast shelf')).toBeVisible();
+  await expect(page.getByText('adjust')).toBeVisible();
 
   const firstReminder = fixture.reminders[0];
   await page.getByRole('button', { name: 'Open' }).first().click();

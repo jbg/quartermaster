@@ -18,7 +18,8 @@ import {
   stockGet,
   stockList,
   stockListBatchEvents,
-  stockRestore
+  stockRestore,
+  stockUpdate
 } from './generated/sdk.gen';
 import { client } from './generated/client.gen';
 import type { SessionTransport, StoredSession } from './session-core';
@@ -77,6 +78,9 @@ export function generatedTransport(): SessionTransport {
     },
     stockGet(id) {
       return stockGet({ path: { id } });
+    },
+    stockUpdate(id, body) {
+      return stockUpdate({ path: { id }, body });
     },
     stockListBatchEvents(id, query) {
       return stockListBatchEvents({ path: { id }, query });
