@@ -1,19 +1,24 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "release-type": "rust",
+  "release-type": "node",
   "include-v-in-tag": false,
   "include-component-in-tag": false,
   "tag-separator": "",
   "packages": {
     ".": {
       "package-name": "quartermaster",
-      "release-type": "rust",
+      "release-type": "node",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         {
-          "type": "json",
-          "path": "package.json",
-          "jsonpath": "$.version"
+          "type": "toml",
+          "path": "Cargo.toml",
+          "jsonpath": "$.workspace.package.version"
+        },
+        {
+          "type": "toml",
+          "path": "Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value==\"qm-api\" || @.name.value==\"qm-core\" || @.name.value==\"qm-db\" || @.name.value==\"qm-server\")].version"
         },
         {
           "type": "json",
