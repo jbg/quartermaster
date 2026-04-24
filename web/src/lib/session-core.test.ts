@@ -47,6 +47,15 @@ describe('QuartermasterSession', () => {
     ).toBe('http://homeassistant.local:8123/api/hassio_ingress/quartermaster-token');
   });
 
+  it('drops the settings route from the ingress default server URL', () => {
+    expect(
+      defaultServerUrl({
+        origin: 'http://homeassistant.local:8123',
+        pathname: '/api/hassio_ingress/quartermaster-token/settings'
+      })
+    ).toBe('http://homeassistant.local:8123/api/hassio_ingress/quartermaster-token');
+  });
+
   it('refreshes once and retries an authenticated request after a 401', async () => {
     const storage = memoryStorage({
       serverUrl: 'http://localhost:8080',
@@ -88,6 +97,15 @@ describe('QuartermasterSession', () => {
         throw new Error('unused');
       },
       async locationsList() {
+        throw new Error('unused');
+      },
+      async locationsCreate() {
+        throw new Error('unused');
+      },
+      async locationsUpdate() {
+        throw new Error('unused');
+      },
+      async locationsDelete() {
         throw new Error('unused');
       },
       async productSearch() {
@@ -171,6 +189,15 @@ describe('QuartermasterSession', () => {
       async locationsList() {
         throw new Error('unused');
       },
+      async locationsCreate() {
+        throw new Error('unused');
+      },
+      async locationsUpdate() {
+        throw new Error('unused');
+      },
+      async locationsDelete() {
+        throw new Error('unused');
+      },
       async productSearch() {
         throw new Error('unused');
       },
@@ -252,6 +279,24 @@ describe('QuartermasterSession', () => {
       async locationsList() {
         throw new Error('unused');
       },
+      async locationsCreate(body) {
+        calls.push(`location-create:${body.name}:${body.kind}:${body.sort_order ?? 'auto'}`);
+        return {
+          data: { id: 'location-1', name: body.name, kind: body.kind, sort_order: 3 },
+          response: { status: 201 }
+        };
+      },
+      async locationsUpdate(id, body) {
+        calls.push(`location-update:${id}:${body.name}:${body.kind}:${body.sort_order}`);
+        return {
+          data: { id, name: body.name, kind: body.kind, sort_order: body.sort_order },
+          response: { status: 200 }
+        };
+      },
+      async locationsDelete(id) {
+        calls.push(`location-delete:${id}`);
+        return { response: { status: 204 } };
+      },
       async productSearch(query) {
         calls.push(`search:${query.q}:${query.limit}`);
         return {
@@ -325,6 +370,13 @@ describe('QuartermasterSession', () => {
 
     const session = new QuartermasterSession(storage, transport);
 
+    await expect(session.locationsCreate({ name: 'Shelf', kind: 'pantry' })).resolves.toMatchObject(
+      { name: 'Shelf' }
+    );
+    await expect(
+      session.locationsUpdate('location-1', { name: 'Cold Shelf', kind: 'fridge', sort_order: 2 })
+    ).resolves.toMatchObject({ kind: 'fridge', sort_order: 2 });
+    await expect(session.locationsDelete('location-1')).resolves.toBeUndefined();
     await expect(session.productSearch({ q: 'rice', limit: 12 })).resolves.toMatchObject({
       items: [{ name: 'Rice' }]
     });
@@ -343,6 +395,9 @@ describe('QuartermasterSession', () => {
       session.stockUpdate('batch-1', { quantity: '1.5', expires_on: '2026-05-01' })
     ).resolves.toMatchObject({ id: 'batch-1', quantity: '1.5' });
     expect(calls).toEqual([
+      'location-create:Shelf:pantry:auto',
+      'location-update:location-1:Cold Shelf:fridge:2',
+      'location-delete:location-1',
       'search:rice:12',
       'product:Manual Rice:mass',
       'stock:product-2:2:kg',

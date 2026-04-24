@@ -1,5 +1,6 @@
 <script lang="ts">
   import { browser } from '$app/environment';
+  import { onMount } from 'svelte';
   import { generatedTransport } from '$lib/api';
   import {
     batchProductId,
@@ -30,6 +31,7 @@
     validateStockEditInput,
     type InventoryState
   } from '$lib/inventory';
+  import { sortLocations } from '$lib/locations';
   import {
     actionDone,
     emptyReminderState,
@@ -129,7 +131,7 @@
   );
   const manualProductUnitChoices = $derived(unitChoicesForFamily(manualProductFamily));
 
-  $effect(() => {
+  onMount(() => {
     if (!browser) {
       return;
     }
@@ -176,12 +178,12 @@
     }
     try {
       const rows = await session.locationsList();
-      locations = rows;
+      locations = sortLocations(rows);
       locationNames = Object.fromEntries(
-        rows.map((location: Location) => [location.id, location.name])
+        locations.map((location: Location) => [location.id, location.name])
       );
-      if (!addStockLocationId && rows[0]) {
-        addStockLocationId = rows[0].id;
+      if (!addStockLocationId && locations[0]) {
+        addStockLocationId = locations[0].id;
       }
     } catch {
       locations = [];
@@ -666,7 +668,10 @@
       <h1>Kitchen inventory</h1>
     </div>
     {#if authenticated}
-      <button class="ghost-button" type="button" onclick={logout}>Log out</button>
+      <div class="heading-actions">
+        <a class="secondary-action" href="settings">Settings</a>
+        <button class="ghost-button" type="button" onclick={logout}>Log out</button>
+      </div>
     {/if}
   </header>
 

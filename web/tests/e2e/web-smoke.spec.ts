@@ -58,6 +58,53 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
   await expect(page.getByRole('button', { name: /Smoke Rice/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /Smoke Beans/ })).toBeVisible();
 
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Locations' })).toBeVisible();
+
+  await page.getByTestId('location-name-input').fill('Smoke Shelf');
+  await page.getByTestId('location-kind-select').selectOption('pantry');
+  await page.getByTestId('location-create').click();
+  await expect(page.getByTestId('location-row-Smoke Shelf')).toBeVisible();
+
+  await page.getByTestId('location-name-input').fill('Smoke Empty');
+  await page.getByTestId('location-kind-select').selectOption('pantry');
+  await page.getByTestId('location-create').click();
+  await expect(page.getByTestId('location-row-Smoke Empty')).toBeVisible();
+
+  await page.getByTestId('location-move-down-Smoke Shelf').click();
+  await expect(page.getByTestId('settings-location-list').locator('.location-row h3')).toHaveText([
+    'Pantry',
+    'Fridge',
+    'Freezer',
+    'Smoke Empty',
+    'Smoke Shelf'
+  ]);
+  await page.getByTestId('location-move-up-Smoke Shelf').click();
+  await expect(page.getByTestId('settings-location-list').locator('.location-row h3')).toHaveText([
+    'Pantry',
+    'Fridge',
+    'Freezer',
+    'Smoke Shelf',
+    'Smoke Empty'
+  ]);
+
+  await page.getByTestId('location-edit-Smoke Shelf').click();
+  await page.getByTestId('location-name-input').fill('Smoke Shelf Renamed');
+  await page.getByTestId('location-save-edit').click();
+  await expect(page.getByTestId('location-row-Smoke Shelf Renamed')).toBeVisible();
+
+  await page.getByTestId('location-delete-Smoke Empty').click();
+  await page.getByTestId('location-delete-confirm').click();
+  await expect(page.getByTestId('location-row-Smoke Empty')).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  await expect(page.getByTestId('location-row-Smoke Shelf Renamed')).toBeVisible();
+
+  await page.getByRole('link', { name: 'Inventory' }).click();
+  await expect(page.getByRole('heading', { name: 'Batches' })).toBeVisible();
+
   await page.getByRole('button', { name: 'Add stock' }).click();
   await page.getByLabel('Product name').fill('Smoke Oats');
   await page.getByLabel('Brand').fill('Web');
@@ -67,14 +114,22 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
   await expect(page.getByRole('button', { name: /Smoke Oats Web/ })).toBeVisible();
   await page.getByLabel('Stock quantity').fill('2');
   await page.locator('.stock-create-form').getByLabel('Unit').selectOption('kg');
+  await page
+    .locator('.stock-create-form')
+    .getByLabel('Location')
+    .selectOption({ label: 'Smoke Shelf Renamed' });
   await page.locator('.stock-create-form').getByRole('button', { name: 'Add stock' }).click();
   await page
     .locator('.inventory-list')
     .getByRole('button', { name: /Smoke Oats/ })
     .click();
   await expect(page.getByTestId('detail-quantity')).toHaveText('2 kg');
+  await expect(page.locator('.detail-region').getByText('Smoke Shelf Renamed')).toBeVisible();
 
   await page.getByRole('button', { name: 'Edit' }).click();
+  await expect(page.locator('.stock-edit-form').getByLabel('Location')).toContainText(
+    'Smoke Shelf Renamed'
+  );
   await page.locator('.stock-edit-form').getByLabel('Stock quantity').fill('1.5');
   await page.locator('.stock-edit-form').getByLabel('Expiry date').fill('2026-05-01');
   await page.locator('.stock-edit-form').getByLabel('Opened date').fill('2026-04-20');
@@ -89,6 +144,14 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
   ).toBeVisible();
   await expect(page.locator('.detail-region').getByText('Breakfast shelf')).toBeVisible();
   await expect(page.getByText('adjust')).toBeVisible();
+
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await page.getByTestId('location-delete-Smoke Shelf Renamed').click();
+  await page.getByTestId('location-delete-confirm').click();
+  await expect(
+    page.getByText('This location still has active stock. Move, consume, or discard it first.')
+  ).toBeVisible();
+  await page.getByRole('link', { name: 'Inventory' }).click();
 
   const firstReminder = fixture.reminders[0];
   await page.getByRole('button', { name: 'Open' }).first().click();
