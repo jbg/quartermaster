@@ -1,5 +1,6 @@
 package dev.quartermaster.android
 
+import dev.quartermaster.android.generated.infrastructure.Serializer
 import dev.quartermaster.android.generated.models.BarcodeLookupResponse
 import dev.quartermaster.android.generated.models.CreateInviteRequest
 import dev.quartermaster.android.generated.models.CreateStockRequest
@@ -13,7 +14,6 @@ import dev.quartermaster.android.generated.models.ReminderDto
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.UnitDto
-import dev.quartermaster.android.generated.infrastructure.Serializer
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -26,9 +26,10 @@ class QuartermasterAppStateTest {
 
     @Test
     fun `parseInviteContext accepts custom join scheme and trims values`() {
-        val context = QuartermasterAppState.parseInviteContext(
-            "quartermaster://join?invite=%20ABCD1234%20&server=http%3A%2F%2F10.0.2.2%3A8080%2F"
-        )
+        val context =
+            QuartermasterAppState.parseInviteContext(
+                "quartermaster://join?invite=%20ABCD1234%20&server=http%3A%2F%2F10.0.2.2%3A8080%2F",
+            )
 
         assertEquals("ABCD1234", context?.inviteCode)
         assertEquals("http://10.0.2.2:8080", context?.serverUrl)
@@ -36,9 +37,10 @@ class QuartermasterAppStateTest {
 
     @Test
     fun `parseInviteContext accepts browser join link`() {
-        val context = QuartermasterAppState.parseInviteContext(
-            "https://quartermaster.example.com/join?invite=ZXCV9876&server=https%3A%2F%2Fexample.com"
-        )
+        val context =
+            QuartermasterAppState.parseInviteContext(
+                "https://quartermaster.example.com/join?invite=ZXCV9876&server=https%3A%2F%2Fexample.com",
+            )
 
         assertEquals("ZXCV9876", context?.inviteCode)
         assertEquals("https://example.com", context?.serverUrl)
@@ -46,27 +48,30 @@ class QuartermasterAppStateTest {
 
     @Test
     fun `parseInviteContext ignores unrelated urls`() {
-        val context = QuartermasterAppState.parseInviteContext(
-            "https://quartermaster.example.com/inventory"
-        )
+        val context =
+            QuartermasterAppState.parseInviteContext(
+                "https://quartermaster.example.com/inventory",
+            )
 
         assertNull(context)
     }
 
     @Test
     fun `bootstrap restores household scoped data and marks sections loaded`() = runTest {
-        val backend = FakeBackend(
-            meResponse = meResponseJson(),
-            stock = listOf(stockBatchJson()),
-            reminders = listOf(reminderJson()),
-            locations = listOf(locationJson()),
-            units = listOf(unitJson("g", "mass")),
-            householdDetail = householdDetailJson(),
-        )
-        val appState = QuartermasterAppState(
-            sessionStore = FakeSessionStore(),
-            backend = backend,
-        )
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                stock = listOf(stockBatchJson()),
+                reminders = listOf(reminderJson()),
+                locations = listOf(locationJson()),
+                units = listOf(unitJson("g", "mass")),
+                householdDetail = householdDetailJson(),
+            )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend = backend,
+            )
 
         appState.bootstrap()
 
@@ -80,15 +85,17 @@ class QuartermasterAppStateTest {
 
     @Test
     fun `logout clears household scoped state invite handoff and enters unauthenticated phase`() = runTest {
-        val appState = QuartermasterAppState(
-            sessionStore = FakeSessionStore(),
-            backend = FakeBackend(
-                meResponse = meResponseJson(),
-                stock = listOf(stockBatchJson()),
-                reminders = listOf(reminderJson()),
-                locations = listOf(locationJson()),
-            ),
-        )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    stock = listOf(stockBatchJson()),
+                    reminders = listOf(reminderJson()),
+                    locations = listOf(locationJson()),
+                ),
+            )
 
         appState.bootstrap()
         appState.handleDeepLink("quartermaster://join?invite=DEEP1234")
@@ -106,13 +113,15 @@ class QuartermasterAppStateTest {
 
     @Test
     fun `logout still clears session when backend logout throws`() = runTest {
-        val appState = QuartermasterAppState(
-            sessionStore = FakeSessionStore(),
-            backend = FakeBackend(
-                meResponse = meResponseJson(),
-                logoutFailure = RuntimeException("boom"),
-            ),
-        )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    logoutFailure = RuntimeException("boom"),
+                ),
+            )
 
         appState.bootstrap()
         appState.logout()
@@ -124,15 +133,17 @@ class QuartermasterAppStateTest {
 
     @Test
     fun `unit helpers prefer product unit within the product family`() = runTest {
-        val appState = QuartermasterAppState(
-            sessionStore = FakeSessionStore(),
-            backend = FakeBackend(
-                meResponse = meResponseJson(),
-                stock = listOf(stockBatchJson()),
-                locations = listOf(locationJson()),
-                units = listOf(unitJson("kg", "mass"), unitJson("g", "mass"), unitJson("ml", "volume")),
-            ),
-        )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    stock = listOf(stockBatchJson()),
+                    locations = listOf(locationJson()),
+                    units = listOf(unitJson("kg", "mass"), unitJson("g", "mass"), unitJson("ml", "volume")),
+                ),
+            )
 
         appState.bootstrap()
 
@@ -144,15 +155,17 @@ class QuartermasterAppStateTest {
     @Test
     fun `openReminder keeps the inventory target after refreshing`() = runTest {
         val reminder = reminderJson()
-        val appState = QuartermasterAppState(
-            sessionStore = FakeSessionStore(),
-            backend = FakeBackend(
-                meResponse = meResponseJson(),
-                stock = listOf(stockBatchJson()),
-                reminders = listOf(reminder),
-                locations = listOf(locationJson()),
-            ),
-        )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    stock = listOf(stockBatchJson()),
+                    reminders = listOf(reminder),
+                    locations = listOf(locationJson()),
+                ),
+            )
 
         appState.bootstrap()
         appState.openReminder(reminder)
@@ -168,18 +181,21 @@ class QuartermasterAppStateTest {
     @Test
     fun `acknowledgeReminder removes reminder and refreshes due list`() = runTest {
         val firstReminder = reminderJson()
-        val secondReminder = reminderJson(
-            id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-            title = "Use beans soon",
-        )
-        val backend = FakeBackend(
-            meResponse = meResponseJson(),
-            reminders = listOf(firstReminder, secondReminder),
-        )
-        val appState = QuartermasterAppState(
-            sessionStore = FakeSessionStore(),
-            backend = backend,
-        )
+        val secondReminder =
+            reminderJson(
+                id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                title = "Use beans soon",
+            )
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                reminders = listOf(firstReminder, secondReminder),
+            )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend = backend,
+            )
 
         appState.bootstrap()
         appState.acknowledgeReminder(firstReminder.id.toString())
@@ -192,14 +208,16 @@ class QuartermasterAppStateTest {
     @Test
     fun `reminder action failure clears in flight state and stores local error`() = runTest {
         val reminder = reminderJson()
-        val appState = QuartermasterAppState(
-            sessionStore = FakeSessionStore(),
-            backend = FakeBackend(
-                meResponse = meResponseJson(),
-                reminders = listOf(reminder),
-                openReminderFailure = ApiFailure(502, "open_reminder_failed", "Reminder open failed"),
-            ),
-        )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    reminders = listOf(reminder),
+                    openReminderFailure = ApiFailure(502, "open_reminder_failed", "Reminder open failed"),
+                ),
+            )
 
         appState.bootstrap()
         appState.openReminder(reminder)
@@ -211,13 +229,15 @@ class QuartermasterAppStateTest {
 
     @Test
     fun `scan action failure clears in flight state and stores local error`() = runTest {
-        val appState = QuartermasterAppState(
-            sessionStore = FakeSessionStore(),
-            backend = FakeBackend(
-                meResponse = meResponseJson(),
-                barcodeFailure = ApiFailure(502, "barcode_lookup_failed", "Barcode lookup failed"),
-            ),
-        )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    barcodeFailure = ApiFailure(502, "barcode_lookup_failed", "Barcode lookup failed"),
+                ),
+            )
 
         appState.lookupBarcode("123")
 
@@ -227,10 +247,11 @@ class QuartermasterAppStateTest {
 
     @Test
     fun `authenticated invite deep link opens settings with pending invite context`() = runTest {
-        val appState = QuartermasterAppState(
-            sessionStore = FakeSessionStore(),
-            backend = FakeBackend(meResponse = meResponseJson()),
-        )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend = FakeBackend(meResponse = meResponseJson()),
+            )
 
         appState.bootstrap()
         appState.handleDeepLink("quartermaster://join?invite=DEEP1234")
@@ -241,10 +262,11 @@ class QuartermasterAppStateTest {
 
     @Test
     fun `unauthenticated invite deep link stores pending invite context for onboarding`() = runTest {
-        val appState = QuartermasterAppState(
-            sessionStore = FakeSessionStore(accessToken = null, refreshToken = null),
-            backend = FakeBackend(meResponse = meResponseJson()),
-        )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(accessToken = null, refreshToken = null),
+                backend = FakeBackend(meResponse = meResponseJson()),
+            )
 
         appState.bootstrap()
         appState.handleDeepLink("quartermaster://join?invite=DEEP1234&server=http%3A%2F%2F10.0.2.2%3A8080")
@@ -256,16 +278,18 @@ class QuartermasterAppStateTest {
 
     @Test
     fun `handleReminderPayload opens reminder and refreshes when authenticated`() = runTest {
-        val backend = FakeBackend(
-            meResponse = meResponseJson(),
-            stock = listOf(stockBatchJson()),
-            reminders = listOf(reminderJson()),
-            locations = listOf(locationJson()),
-        )
-        val appState = QuartermasterAppState(
-            sessionStore = FakeSessionStore(),
-            backend = backend,
-        )
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                stock = listOf(stockBatchJson()),
+                reminders = listOf(reminderJson()),
+                locations = listOf(locationJson()),
+            )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend = backend,
+            )
 
         appState.bootstrap()
         appState.handleReminderPayload(reminderPayload())
@@ -280,10 +304,11 @@ class QuartermasterAppStateTest {
     @Test
     fun `handleReminderPayload stores target without opening reminder when unauthenticated`() = runTest {
         val backend = FakeBackend(meResponse = meResponseJson())
-        val appState = QuartermasterAppState(
-            sessionStore = FakeSessionStore(accessToken = null, refreshToken = null),
-            backend = backend,
-        )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(accessToken = null, refreshToken = null),
+                backend = backend,
+            )
 
         appState.bootstrap()
         appState.handleReminderPayload(reminderPayload())
@@ -296,17 +321,19 @@ class QuartermasterAppStateTest {
 
     @Test
     fun `successful addStock clears selection and returns to inventory`() = runTest {
-        val backend = FakeBackend(
-            meResponse = meResponseJson(),
-            stock = listOf(stockBatchJson()),
-            locations = listOf(locationJson()),
-            units = listOf(unitJson("g", "mass")),
-            searchResults = listOf(productDtoJson()),
-        )
-        val appState = QuartermasterAppState(
-            sessionStore = FakeSessionStore(),
-            backend = backend,
-        )
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                stock = listOf(stockBatchJson()),
+                locations = listOf(locationJson()),
+                units = listOf(unitJson("g", "mass")),
+                searchResults = listOf(productDtoJson()),
+            )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend = backend,
+            )
 
         appState.bootstrap()
         appState.searchProducts("flour")
@@ -356,11 +383,15 @@ class QuartermasterAppStateTest {
               "households": $households,
               "public_base_url": "https://quartermaster.example.com"
             }
-            """.trimIndent()
+            """.trimIndent(),
         )
     }
 
-    private fun householdJson(id: String, name: String): String = """
+    private fun householdJson(
+        id: String,
+        name: String,
+    ): String =
+        """
         {
           "id": "$id",
           "name": "$name",
@@ -368,70 +399,73 @@ class QuartermasterAppStateTest {
           "role": "admin",
           "joined_at": "2026-04-22T12:00:00Z"
         }
-    """.trimIndent()
+        """.trimIndent()
 
     private fun householdDetailJson(): HouseholdDetailDto = json.decodeFromString(
         """
-        {
-          "id": "66666666-6666-6666-6666-666666666666",
-          "name": "Home",
-          "timezone": "UTC",
-          "members": []
-        }
-        """.trimIndent()
+            {
+              "id": "66666666-6666-6666-6666-666666666666",
+              "name": "Home",
+              "timezone": "UTC",
+              "members": []
+            }
+        """.trimIndent(),
     )
 
     private fun locationJson(): LocationDto = json.decodeFromString(
         """
-        {
-          "id": "22222222-2222-2222-2222-222222222222",
-          "name": "Pantry",
-          "kind": "pantry",
-          "sort_order": 0
-        }
-        """.trimIndent()
+            {
+              "id": "22222222-2222-2222-2222-222222222222",
+              "name": "Pantry",
+              "kind": "pantry",
+              "sort_order": 0
+            }
+        """.trimIndent(),
     )
 
-    private fun unitJson(code: String, family: String): UnitDto = json.decodeFromString(
+    private fun unitJson(
+        code: String,
+        family: String,
+    ): UnitDto = json.decodeFromString(
         """
-        {
-          "code": "$code",
-          "family": "$family",
-          "to_base_milli": 1000
-        }
-        """.trimIndent()
+            {
+              "code": "$code",
+              "family": "$family",
+              "to_base_milli": 1000
+            }
+        """.trimIndent(),
     )
 
     private fun stockBatchJson(): StockBatchDto = json.decodeFromString(
         """
-        {
-          "id": "33333333-3333-3333-3333-333333333333",
-          "product": {
-            "id": "44444444-4444-4444-4444-444444444444",
-            "name": "Flour",
-            "family": "mass",
-            "preferred_unit": "g",
-            "source": "manual"
-          },
-          "location_id": "22222222-2222-2222-2222-222222222222",
-          "initial_quantity": "1000",
-          "quantity": "900",
-          "unit": "g",
-          "created_at": "2026-04-22T12:00:00Z"
-        }
-        """.trimIndent()
+            {
+              "id": "33333333-3333-3333-3333-333333333333",
+              "product": {
+                "id": "44444444-4444-4444-4444-444444444444",
+                "name": "Flour",
+                "family": "mass",
+                "preferred_unit": "g",
+                "source": "manual"
+              },
+              "location_id": "22222222-2222-2222-2222-222222222222",
+              "initial_quantity": "1000",
+              "quantity": "900",
+              "unit": "g",
+              "created_at": "2026-04-22T12:00:00Z"
+            }
+        """.trimIndent(),
     )
 
     private fun productDtoJson(): ProductDto = json.decodeFromString(
         """
-        {
-          "id": "44444444-4444-4444-4444-444444444444",
-          "name": "Flour",
-          "family": "mass",
-          "preferred_unit": "g",
-          "source": "manual"
-        }
-        """.trimIndent()
+            {
+              "id": "44444444-4444-4444-4444-444444444444",
+              "name": "Flour",
+              "family": "mass",
+              "preferred_unit": "g",
+              "source": "manual"
+            }
+        """.trimIndent(),
     )
 
     private fun reminderJson(
@@ -439,30 +473,31 @@ class QuartermasterAppStateTest {
         title: String = "Use flour soon",
     ): ReminderDto = json.decodeFromString(
         """
-        {
-          "id": "$id",
-          "kind": "expiry",
-          "title": "$title",
-          "body": "Pantry flour expires tomorrow.",
-          "fire_at": "2026-04-23T09:00:00Z",
-          "household_timezone": "UTC",
-          "household_fire_local_at": "2026-04-23T09:00:00",
-          "batch_id": "33333333-3333-3333-3333-333333333333",
-          "product_id": "44444444-4444-4444-4444-444444444444",
-          "location_id": "22222222-2222-2222-2222-222222222222"
-        }
-        """.trimIndent()
+            {
+              "id": "$id",
+              "kind": "expiry",
+              "title": "$title",
+              "body": "Pantry flour expires tomorrow.",
+              "fire_at": "2026-04-23T09:00:00Z",
+              "household_timezone": "UTC",
+              "household_fire_local_at": "2026-04-23T09:00:00",
+              "batch_id": "33333333-3333-3333-3333-333333333333",
+              "product_id": "44444444-4444-4444-4444-444444444444",
+              "location_id": "22222222-2222-2222-2222-222222222222"
+            }
+        """.trimIndent(),
     )
 
     private class FakeSessionStore(
         accessToken: String? = "access",
         refreshToken: String? = "refresh",
     ) : SessionStore {
-        private var snapshot = SessionSnapshot(
-            serverUrl = "http://10.0.2.2:8080",
-            accessToken = accessToken,
-            refreshToken = refreshToken,
-        )
+        private var snapshot =
+            SessionSnapshot(
+                serverUrl = "http://10.0.2.2:8080",
+                accessToken = accessToken,
+                refreshToken = refreshToken,
+            )
 
         override fun snapshot(): SessionSnapshot = snapshot
 
@@ -470,7 +505,10 @@ class QuartermasterAppStateTest {
             snapshot = snapshot.copy(serverUrl = url)
         }
 
-        override fun saveTokens(accessToken: String, refreshToken: String) {
+        override fun saveTokens(
+            accessToken: String,
+            refreshToken: String,
+        ) {
             snapshot = snapshot.copy(accessToken = accessToken, refreshToken = refreshToken)
         }
 
@@ -503,20 +541,33 @@ class QuartermasterAppStateTest {
         val addStockRequests = mutableListOf<CreateStockRequest>()
 
         override suspend fun me(): MeResponse = meResponse
-        override suspend fun login(username: String, password: String) = Unit
-        override suspend fun register(username: String, password: String, email: String?, inviteCode: String?) = Unit
+
+        override suspend fun login(
+            username: String,
+            password: String,
+        ) = Unit
+
+        override suspend fun register(
+            username: String,
+            password: String,
+            email: String?,
+            inviteCode: String?,
+        ) = Unit
 
         override suspend fun logout() {
             logoutFailure?.let { throw it }
         }
 
         override suspend fun switchHousehold(householdId: String): MeResponse = meResponse
-        override suspend fun createHousehold(name: String, timezone: String): MeResponse = meResponse
+
+        override suspend fun createHousehold(
+            name: String,
+            timezone: String,
+        ): MeResponse = meResponse
+
         override suspend fun redeemInvite(inviteCode: String) = Unit
 
-        override suspend fun currentHousehold(): HouseholdDetailDto {
-            return householdDetail ?: error("Unused in test")
-        }
+        override suspend fun currentHousehold(): HouseholdDetailDto = householdDetail ?: error("Unused in test")
 
         override suspend fun householdInvites(): List<InviteDto> = emptyList()
 
@@ -525,9 +576,13 @@ class QuartermasterAppStateTest {
         }
 
         override suspend fun locations(): List<LocationDto> = locations
+
         override suspend fun units(): List<UnitDto> = units
+
         override suspend fun listStock(): List<StockBatchDto> = stockState.toList()
+
         override suspend fun listEvents(limit: Int): List<StockEventDto> = emptyList()
+
         override suspend fun listReminders(limit: Int): List<ReminderDto> = reminderState.toList()
 
         override suspend fun acknowledgeReminder(id: String) {

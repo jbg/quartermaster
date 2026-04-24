@@ -3,8 +3,8 @@ package dev.quartermaster.android
 import android.Manifest
 import android.net.Uri
 import android.os.Bundle
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -59,17 +59,19 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val appState = remember { QuartermasterAppState.fromContext(applicationContext) }
-            val permissionLauncher = rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.RequestPermission(),
-            ) { granted ->
-                lifecycleScope.launch {
-                    appState.onNotificationPermissionResult(granted)
+            val permissionLauncher =
+                rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestPermission(),
+                ) { granted ->
+                    lifecycleScope.launch {
+                        appState.onNotificationPermissionResult(granted)
+                    }
                 }
-            }
-            intentRouter = ReminderIntentRouter(
-                handleDeepLink = appState::handleDeepLink,
-                handleIntent = appState::handleIntent,
-            )
+            intentRouter =
+                ReminderIntentRouter(
+                    handleDeepLink = appState::handleDeepLink,
+                    handleIntent = appState::handleIntent,
+                )
             LaunchedEffect(appState) {
                 appState.bootstrap()
                 intentRouter?.route(intent)

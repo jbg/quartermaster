@@ -1,5 +1,5 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.openapitools.generator.gradle.plugin.tasks.GenerateTask
 
 plugins {
@@ -12,9 +12,10 @@ plugins {
 android {
     namespace = "dev.quartermaster.android"
     compileSdk {
-        version = release(37) {
-            minorApiLevel = 0
-        }
+        version =
+            release(37) {
+                minorApiLevel = 0
+            }
     }
 
     defaultConfig {
@@ -65,7 +66,10 @@ android {
 androidComponents {
     onVariants { variant ->
         variant.sources.kotlin?.addStaticSourceDirectory(
-            layout.buildDirectory.dir("generated/openapi/src/main/kotlin").get().asFile.absolutePath
+            layout.buildDirectory
+                .dir("generated/openapi/src/main/kotlin")
+                .get()
+                .asFile.absolutePath,
         )
     }
 }
@@ -79,7 +83,12 @@ kotlin {
 openApiGenerate {
     generatorName.set("kotlin")
     inputSpec.set(rootProject.file("../openapi.json").absolutePath)
-    outputDir.set(layout.buildDirectory.dir("generated/openapi").get().asFile.absolutePath)
+    outputDir.set(
+        layout.buildDirectory
+            .dir("generated/openapi")
+            .get()
+            .asFile.absolutePath,
+    )
     packageName.set("dev.quartermaster.android.generated")
     apiPackage.set("dev.quartermaster.android.generated.api")
     modelPackage.set("dev.quartermaster.android.generated.models")
@@ -94,7 +103,7 @@ openApiGenerate {
             "useNonAsciiHeaders" to "false",
             "parcelizeModels" to "false",
             "omitGradleWrapper" to "true",
-        )
+        ),
     )
     globalProperties.set(
         mapOf(
@@ -102,13 +111,18 @@ openApiGenerate {
             "apiDocs" to "false",
             "modelTests" to "false",
             "apiTests" to "false",
-        )
+        ),
     )
 }
 
 tasks.withType<GenerateTask>().configureEach {
     doLast {
-        delete(layout.buildDirectory.dir("generated/openapi/.openapi-generator").get().asFile)
+        delete(
+            layout.buildDirectory
+                .dir("generated/openapi/.openapi-generator")
+                .get()
+                .asFile,
+        )
     }
 }
 

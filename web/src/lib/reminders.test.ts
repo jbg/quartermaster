@@ -57,7 +57,9 @@ describe('reminder helpers', () => {
       'reminder-1'
     );
 
-    expect(reminderBatchId({ id: 'reminder-1', title: 'Rice', body: 'Due', batchId: 'batch-1' })).toBe('batch-1');
+    expect(
+      reminderBatchId({ id: 'reminder-1', title: 'Rice', body: 'Due', batchId: 'batch-1' })
+    ).toBe('batch-1');
     expect(done.actionIds.has('reminder-1')).toBe(false);
   });
 });

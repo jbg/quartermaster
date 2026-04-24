@@ -6,6 +6,8 @@
   "packageManager": "pnpm@10.33.2",
   "scripts": {
     "dev": "vite dev",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "generate:api": "openapi-ts",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "build": "vite build",
@@ -24,6 +26,8 @@
     "@types/node": "22.16.5",
     "svelte-check": "4.3.1",
     "typescript": "5.8.3",
+    "prettier": "3.6.2",
+    "prettier-plugin-svelte": "3.4.0",
     "@playwright/test": "1.56.1",
     "vitest": "3.2.4"
   },

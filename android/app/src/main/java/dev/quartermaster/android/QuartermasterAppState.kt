@@ -13,17 +13,17 @@ import dev.quartermaster.android.generated.models.CreateStockRequest
 import dev.quartermaster.android.generated.models.HouseholdDetailDto
 import dev.quartermaster.android.generated.models.InviteDto
 import dev.quartermaster.android.generated.models.LocationDto
-import dev.quartermaster.android.generated.models.MembershipRole
 import dev.quartermaster.android.generated.models.MeResponse
+import dev.quartermaster.android.generated.models.MembershipRole
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
 import dev.quartermaster.android.generated.models.ReminderDto
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.UnitDto
-import java.util.UUID
 import java.net.URI
 import java.net.URLDecoder
+import java.util.UUID
 
 enum class MainTab { Inventory, Reminders, Scan, Settings }
 
@@ -140,11 +140,9 @@ class QuartermasterApiBackend(
         api.logout()
     }
 
-    override suspend fun switchHousehold(householdId: String): MeResponse =
-        api.switchHousehold(householdId)
+    override suspend fun switchHousehold(householdId: String): MeResponse = api.switchHousehold(householdId)
 
-    override suspend fun createHousehold(name: String, timezone: String): MeResponse =
-        api.createHousehold(name = name, timezone = timezone)
+    override suspend fun createHousehold(name: String, timezone: String): MeResponse = api.createHousehold(name = name, timezone = timezone)
 
     override suspend fun redeemInvite(inviteCode: String) {
         api.redeemInvite(inviteCode)
@@ -378,7 +376,7 @@ class QuartermasterAppState(
                 expiresAt = expiresAt,
                 maxUses = maxUses,
                 roleGranted = MembershipRole.MEMBER,
-            )
+            ),
         )
         invites = listOf(invite) + invites
     }
@@ -395,10 +393,10 @@ class QuartermasterAppState(
             units = backend.units().sortedBy { it.code }
         }
         locations = backend.locations().sortedWith(
-            compareBy<LocationDto> { it.sortOrder }.thenBy { it.name.lowercase() }
+            compareBy<LocationDto> { it.sortOrder }.thenBy { it.name.lowercase() },
         )
         batches = backend.listStock().sortedWith(
-            compareBy<StockBatchDto> { it.locationId }.thenBy { it.product.name.lowercase() }.thenBy { it.expiresOn ?: "9999-12-31" }
+            compareBy<StockBatchDto> { it.locationId }.thenBy { it.product.name.lowercase() }.thenBy { it.expiresOn ?: "9999-12-31" },
         )
         history = backend.listEvents().sortedByDescending { it.createdAt }
         hasLoadedInventoryOnce = true
@@ -476,7 +474,7 @@ class QuartermasterAppState(
                 expiresOn = expiresOn,
                 openedOn = null,
                 note = note,
-            )
+            ),
         )
         searchResults = emptyList()
         selectedProduct = null
@@ -526,10 +524,9 @@ class QuartermasterAppState(
 
     fun reminderActionFor(id: String): ReminderAction? = reminderActionInFlight[id]
 
-    fun unitSymbolsFor(product: ProductDto): List<String> =
-        units.filter { it.family == product.family }
-            .sortedBy { it.code }
-            .map { it.code }
+    fun unitSymbolsFor(product: ProductDto): List<String> = units.filter { it.family == product.family }
+        .sortedBy { it.code }
+        .map { it.code }
 
     fun defaultUnitSymbolFor(product: ProductDto): String? {
         val symbols = unitSymbolsFor(product)
@@ -560,22 +557,23 @@ class QuartermasterAppState(
     val hasPendingInviteHandoff: Boolean
         get() = pendingInviteContext != null
 
-    suspend fun resolveHouseholdScopedForbidden(): HouseholdScopedResolution {
-        return try {
-            val me = backend.me()
-            applyAuthenticated(me)
-            if (me.currentHousehold != null) HouseholdScopedResolution.Retry
-            else HouseholdScopedResolution.FallbackToNoHousehold
-        } catch (failure: Throwable) {
-            if (failure is ApiFailure && failure.status == 401) {
-                clearSession()
-                phase = AppPhase.Unauthenticated
-                HouseholdScopedResolution.FallbackToNoHousehold
-            } else {
-                val message = failure.userFacingMessage()
-                lastError = message
-                HouseholdScopedResolution.Failed(message)
-            }
+    suspend fun resolveHouseholdScopedForbidden(): HouseholdScopedResolution = try {
+        val me = backend.me()
+        applyAuthenticated(me)
+        if (me.currentHousehold != null) {
+            HouseholdScopedResolution.Retry
+        } else {
+            HouseholdScopedResolution.FallbackToNoHousehold
+        }
+    } catch (failure: Throwable) {
+        if (failure is ApiFailure && failure.status == 401) {
+            clearSession()
+            phase = AppPhase.Unauthenticated
+            HouseholdScopedResolution.FallbackToNoHousehold
+        } else {
+            val message = failure.userFacingMessage()
+            lastError = message
+            HouseholdScopedResolution.Failed(message)
         }
     }
 
@@ -778,7 +776,7 @@ class QuartermasterAppState(
         val authorization = PushSupport.currentAuthorization(context)
         shouldRequestNotificationPermission =
             authorization == PushAuthorizationStatus.NOT_DETERMINED &&
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
         if (authorization != PushAuthorizationStatus.NOT_DETERMINED) {
             PushSupport.syncDeviceRegistration(
                 context = context,
@@ -833,5 +831,4 @@ private fun Throwable.userFacingMessage(): String = when (this) {
     else -> message ?: "Something went wrong."
 }
 
-private fun String.urlDecode(): String =
-    URLDecoder.decode(this, Charsets.UTF_8.name())
+private fun String.urlDecode(): String = URLDecoder.decode(this, Charsets.UTF_8.name())

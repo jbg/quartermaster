@@ -55,7 +55,13 @@ export function reminderPresentedAt(reminder: Reminder): string | null {
 }
 
 export function reminderFireAt(reminder: Reminder): string {
-  return reminder.household_fire_local_at ?? reminder.householdFireLocalAt ?? reminder.fire_at ?? reminder.fireAt ?? '';
+  return (
+    reminder.household_fire_local_at ??
+    reminder.householdFireLocalAt ??
+    reminder.fire_at ??
+    reminder.fireAt ??
+    ''
+  );
 }
 
 export function optimisticAckStart(state: ReminderState, id: string): ReminderState {
@@ -69,7 +75,11 @@ export function optimisticAckStart(state: ReminderState, id: string): ReminderSt
   };
 }
 
-export function optimisticAckRollback(state: ReminderState, reminder: Reminder, message: string): ReminderState {
+export function optimisticAckRollback(
+  state: ReminderState,
+  reminder: Reminder,
+  message: string
+): ReminderState {
   const actionIds = new Set(state.actionIds);
   actionIds.delete(reminder.id);
   const items = state.items.some((item) => item.id === reminder.id)

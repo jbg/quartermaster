@@ -12,12 +12,12 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.google.android.gms.tasks.Task
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
-import com.google.android.gms.tasks.Task
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -79,21 +79,22 @@ object PushSupport {
     private const val EXTRA_TITLE = "quartermaster.title"
     private const val EXTRA_BODY = "quartermaster.body"
 
-    fun isFirebaseConfigured(): Boolean =
-        BuildConfig.FIREBASE_PROJECT_ID.isNotBlank() &&
-            BuildConfig.FIREBASE_APPLICATION_ID.isNotBlank() &&
-            BuildConfig.FIREBASE_API_KEY.isNotBlank() &&
-            BuildConfig.FIREBASE_SENDER_ID.isNotBlank()
+    fun isFirebaseConfigured(): Boolean = BuildConfig.FIREBASE_PROJECT_ID.isNotBlank() &&
+        BuildConfig.FIREBASE_APPLICATION_ID.isNotBlank() &&
+        BuildConfig.FIREBASE_API_KEY.isNotBlank() &&
+        BuildConfig.FIREBASE_SENDER_ID.isNotBlank()
 
     fun initialize(context: Context): Boolean {
         if (!isFirebaseConfigured()) return false
         if (FirebaseApp.getApps(context).isNotEmpty()) return true
-        val options = FirebaseOptions.Builder()
-            .setProjectId(BuildConfig.FIREBASE_PROJECT_ID)
-            .setApplicationId(BuildConfig.FIREBASE_APPLICATION_ID)
-            .setApiKey(BuildConfig.FIREBASE_API_KEY)
-            .setGcmSenderId(BuildConfig.FIREBASE_SENDER_ID)
-            .build()
+        val options =
+            FirebaseOptions
+                .Builder()
+                .setProjectId(BuildConfig.FIREBASE_PROJECT_ID)
+                .setApplicationId(BuildConfig.FIREBASE_APPLICATION_ID)
+                .setApiKey(BuildConfig.FIREBASE_API_KEY)
+                .setGcmSenderId(BuildConfig.FIREBASE_SENDER_ID)
+                .build()
         FirebaseApp.initializeApp(context, options)
         return true
     }
@@ -101,23 +102,25 @@ object PushSupport {
     fun ensureNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Expiry reminders",
-            NotificationManager.IMPORTANCE_HIGH,
-        ).apply {
-            description = "Quartermaster expiry and stock reminders"
-        }
+        val channel =
+            NotificationChannel(
+                CHANNEL_ID,
+                "Expiry reminders",
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                description = "Quartermaster expiry and stock reminders"
+            }
         manager.createNotificationChannel(channel)
     }
 
     fun currentAuthorization(context: Context): PushAuthorizationStatus {
         if (!isFirebaseConfigured()) return PushAuthorizationStatus.DENIED
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val granted = ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.POST_NOTIFICATIONS,
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val granted =
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
             if (granted) return PushAuthorizationStatus.AUTHORIZED
             return if (prefs(context).getBoolean(KEY_PERMISSION_PROMPTED, false)) {
                 PushAuthorizationStatus.DENIED
@@ -149,13 +152,14 @@ object PushSupport {
         val resolvedBackend = backend ?: QuartermasterApiBackend(QuartermasterApi(authStore))
         val resolvedDeviceId = deviceId ?: authStore.stableDeviceId()
         val authorization = authorizationOverride ?: currentAuthorization(appContext)
-        val token = if (authorization == PushAuthorizationStatus.AUTHORIZED ||
-            authorization == PushAuthorizationStatus.PROVISIONAL
-        ) {
-            pushTokenOverride ?: currentToken(appContext)
-        } else {
-            null
-        }
+        val token =
+            if (authorization == PushAuthorizationStatus.AUTHORIZED ||
+                authorization == PushAuthorizationStatus.PROVISIONAL
+            ) {
+                pushTokenOverride ?: currentToken(appContext)
+            } else {
+                null
+            }
         runCatching {
             resolvedBackend.registerDevice(
                 deviceId = resolvedDeviceId,
@@ -180,7 +184,10 @@ object PushSupport {
         )
     }
 
-    suspend fun presentReminder(context: Context, reminderId: String) {
+    suspend fun presentReminder(
+        context: Context,
+        reminderId: String,
+    ) {
         val authStore = AuthStore(context.applicationContext)
         if (authStore.snapshot().accessToken.isNullOrBlank()) return
         runCatching {
@@ -208,16 +215,17 @@ object PushSupport {
         )
     }
 
-    fun applyReminderPayload(intent: Intent, payload: ReminderPushPayload): Intent {
-        return intent
-            .putExtra(EXTRA_REMINDER_ID, payload.reminderId)
-            .putExtra(EXTRA_BATCH_ID, payload.batchId)
-            .putExtra(EXTRA_PRODUCT_ID, payload.productId)
-            .putExtra(EXTRA_LOCATION_ID, payload.locationId)
-            .putExtra(EXTRA_KIND, payload.kind)
-            .putExtra(EXTRA_TITLE, payload.title)
-            .putExtra(EXTRA_BODY, payload.body)
-    }
+    fun applyReminderPayload(
+        intent: Intent,
+        payload: ReminderPushPayload,
+    ): Intent = intent
+        .putExtra(EXTRA_REMINDER_ID, payload.reminderId)
+        .putExtra(EXTRA_BATCH_ID, payload.batchId)
+        .putExtra(EXTRA_PRODUCT_ID, payload.productId)
+        .putExtra(EXTRA_LOCATION_ID, payload.locationId)
+        .putExtra(EXTRA_KIND, payload.kind)
+        .putExtra(EXTRA_TITLE, payload.title)
+        .putExtra(EXTRA_BODY, payload.body)
 
     fun payloadFromMap(data: Map<String, String>): ReminderPushPayload? {
         val reminderId = data["reminder_id"] ?: return null
@@ -238,27 +246,34 @@ object PushSupport {
         )
     }
 
-    fun postReminderNotification(context: Context, payload: ReminderPushPayload) {
+    fun postReminderNotification(
+        context: Context,
+        payload: ReminderPushPayload,
+    ) {
         ensureNotificationChannel(context)
-        val intent = applyReminderPayload(
-            Intent(context, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            payload,
-        )
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            payload.reminderId.hashCode(),
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(payload.title)
-            .setContentText(payload.body)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .build()
+        val intent =
+            applyReminderPayload(
+                Intent(context, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                payload,
+            )
+        val pendingIntent =
+            PendingIntent.getActivity(
+                context,
+                payload.reminderId.hashCode(),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        val notification =
+            NotificationCompat
+                .Builder(context, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(payload.title)
+                .setContentText(payload.body)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .build()
         NotificationManagerCompat.from(context).notify(payload.reminderId.hashCode(), notification)
     }
 
@@ -267,8 +282,7 @@ object PushSupport {
         return runCatching { FirebaseMessaging.getInstance().token.await() }.getOrNull()
     }
 
-    private fun prefs(context: Context): SharedPreferences =
-        context.getSharedPreferences(PUSH_PREFS, Context.MODE_PRIVATE)
+    private fun prefs(context: Context): SharedPreferences = context.getSharedPreferences(PUSH_PREFS, Context.MODE_PRIVATE)
 }
 
 private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { continuation ->
