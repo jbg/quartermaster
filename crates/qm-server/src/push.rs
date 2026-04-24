@@ -957,21 +957,24 @@ mod tests {
                 .map(ToOwned::to_owned),
             body,
         });
-        let response = state
-            .apns_responses
-            .lock()
-            .await
-            .pop_front()
-            .unwrap_or(FakeProviderResponse {
-                status: StatusCode::OK,
-                body: json!({}),
-                provider_message_id: Some("default-apns-id".into()),
-            });
+        let response =
+            state
+                .apns_responses
+                .lock()
+                .await
+                .pop_front()
+                .unwrap_or(FakeProviderResponse {
+                    status: StatusCode::OK,
+                    body: json!({}),
+                    provider_message_id: Some("default-apns-id".into()),
+                });
         let mut builder = axum::http::Response::builder().status(response.status);
         if let Some(message_id) = response.provider_message_id {
             builder = builder.header("apns-id", message_id);
         }
-        builder.body(axum::Json(response.body).into_response().into_body()).unwrap()
+        builder
+            .body(axum::Json(response.body).into_response().into_body())
+            .unwrap()
     }
 
     async fn fake_fcm(
@@ -989,16 +992,17 @@ mod tests {
                 .map(ToOwned::to_owned),
             body,
         });
-        let response = state
-            .fcm_responses
-            .lock()
-            .await
-            .pop_front()
-            .unwrap_or(FakeProviderResponse {
-                status: StatusCode::OK,
-                body: json!({"name": "projects/quartermaster-test/messages/default"}),
-                provider_message_id: None,
-            });
+        let response =
+            state
+                .fcm_responses
+                .lock()
+                .await
+                .pop_front()
+                .unwrap_or(FakeProviderResponse {
+                    status: StatusCode::OK,
+                    body: json!({"name": "projects/quartermaster-test/messages/default"}),
+                    provider_message_id: None,
+                });
         (response.status, axum::Json(response.body))
     }
 
@@ -1180,7 +1184,10 @@ mod tests {
         assert_eq!(captures[0].channel, reminders::CHANNEL_APNS);
         assert_eq!(captures[0].path, "/3/device/token-apns");
         assert_eq!(captures[0].authorization.as_deref(), Some("Bearer token"));
-        assert_eq!(captures[0].body["aps"]["alert"]["title"], "Milk expires tomorrow");
+        assert_eq!(
+            captures[0].body["aps"]["alert"]["title"],
+            "Milk expires tomorrow"
+        );
         assert_eq!(captures[0].body["batch_id"], batch_id.to_string());
 
         let row = sqlx::query(
@@ -1189,8 +1196,14 @@ mod tests {
         .fetch_one(&db.pool)
         .await
         .unwrap();
-        assert_eq!(row.try_get::<String, _>("status").unwrap(), reminders::DELIVERY_STATUS_SUCCEEDED);
-        assert_eq!(row.try_get::<String, _>("provider_message_id").unwrap(), "test-apns-id");
+        assert_eq!(
+            row.try_get::<String, _>("status").unwrap(),
+            reminders::DELIVERY_STATUS_SUCCEEDED
+        );
+        assert_eq!(
+            row.try_get::<String, _>("provider_message_id").unwrap(),
+            "test-apns-id"
+        );
     }
 
     #[tokio::test]
@@ -1230,14 +1243,26 @@ mod tests {
         let captures = server.captures().await;
         assert_eq!(captures.len(), 1);
         assert_eq!(captures[0].channel, reminders::CHANNEL_FCM);
-        assert_eq!(captures[0].path, "/v1/projects/quartermaster-test/messages:send");
+        assert_eq!(
+            captures[0].path,
+            "/v1/projects/quartermaster-test/messages:send"
+        );
         assert_eq!(
             captures[0].authorization.as_deref(),
             Some("Bearer ya29.cached")
         );
-        assert_eq!(captures[0].body["message"]["notification"]["title"], "Milk expires tomorrow");
-        assert_eq!(captures[0].body["message"]["android"]["notification"]["channel_id"], "expiry_reminders");
-        assert_eq!(captures[0].body["message"]["data"]["batch_id"], batch_id.to_string());
+        assert_eq!(
+            captures[0].body["message"]["notification"]["title"],
+            "Milk expires tomorrow"
+        );
+        assert_eq!(
+            captures[0].body["message"]["android"]["notification"]["channel_id"],
+            "expiry_reminders"
+        );
+        assert_eq!(
+            captures[0].body["message"]["data"]["batch_id"],
+            batch_id.to_string()
+        );
 
         let row = sqlx::query(
             "SELECT status, provider_message_id FROM reminder_delivery ORDER BY attempted_at DESC LIMIT 1",
@@ -1245,7 +1270,10 @@ mod tests {
         .fetch_one(&db.pool)
         .await
         .unwrap();
-        assert_eq!(row.try_get::<String, _>("status").unwrap(), reminders::DELIVERY_STATUS_SUCCEEDED);
+        assert_eq!(
+            row.try_get::<String, _>("status").unwrap(),
+            reminders::DELIVERY_STATUS_SUCCEEDED
+        );
         assert_eq!(
             row.try_get::<String, _>("provider_message_id").unwrap(),
             "projects/quartermaster-test/messages/fcm-123"
@@ -1323,8 +1351,12 @@ mod tests {
         assert_eq!(summary.invalid_token_count, 1);
         let captures = server.captures().await;
         assert_eq!(captures.len(), 4);
-        assert!(captures.iter().any(|capture| capture.channel == reminders::CHANNEL_APNS));
-        assert!(captures.iter().any(|capture| capture.channel == reminders::CHANNEL_FCM));
+        assert!(captures
+            .iter()
+            .any(|capture| capture.channel == reminders::CHANNEL_APNS));
+        assert!(captures
+            .iter()
+            .any(|capture| capture.channel == reminders::CHANNEL_FCM));
     }
 
     #[tokio::test]
@@ -1378,7 +1410,10 @@ mod tests {
             row.try_get::<String, _>("last_push_status").unwrap(),
             reminders::DELIVERY_STATUS_FAILED_RETRYABLE
         );
-        assert!(row.try_get::<String, _>("next_retry_at").unwrap().starts_with("20"));
+        assert!(row
+            .try_get::<String, _>("next_retry_at")
+            .unwrap()
+            .starts_with("20"));
     }
 
     #[tokio::test]

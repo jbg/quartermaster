@@ -425,28 +425,43 @@ pub fn router(state: AppState) -> Router {
 }
 
 fn web_router(dist_dir: PathBuf) -> Router {
-    let fallback_file = dist_dir.join("200.html");
+    let files = WebFiles {
+        index: dist_dir.join("index.html"),
+        join: dist_dir.join("join.html"),
+        fallback: dist_dir.join("200.html"),
+    };
     Router::new()
         .nest_service("/_app", ServeDir::new(dist_dir.join("_app")))
-        .route("/", get(serve_web_app))
-        .route("/join", get(serve_web_app))
+        .route("/", get(serve_web_index))
+        .route("/join", get(serve_web_join))
         .fallback(web_fallback)
-        .with_state(fallback_file)
+        .with_state(files)
 }
 
-async fn serve_web_app(State(fallback_file): State<PathBuf>) -> impl IntoResponse {
-    serve_web_file(fallback_file).await
+#[derive(Clone)]
+struct WebFiles {
+    index: PathBuf,
+    join: PathBuf,
+    fallback: PathBuf,
+}
+
+async fn serve_web_index(State(files): State<WebFiles>) -> impl IntoResponse {
+    serve_web_file(files.index).await
+}
+
+async fn serve_web_join(State(files): State<WebFiles>) -> impl IntoResponse {
+    serve_web_file(files.join).await
 }
 
 async fn web_fallback(
     method: Method,
     uri: Uri,
-    State(fallback_file): State<PathBuf>,
+    State(files): State<WebFiles>,
 ) -> impl IntoResponse {
     if method != Method::GET || is_api_path(uri.path()) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    serve_web_file(fallback_file).await
+    serve_web_file(files.fallback).await
 }
 
 async fn serve_web_file(fallback_file: PathBuf) -> axum::response::Response {
