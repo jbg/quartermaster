@@ -125,7 +125,7 @@ jobs:
           QUARTERMASTER_IOS_DEVELOPMENT_TEAM: CIQUARTERMASTER
           QUARTERMASTER_IOS_BUNDLE_ID: dev.quartermaster.ci
           QUARTERMASTER_ASSOCIATED_DOMAIN: ci.quartermaster.example.com
-        run: ./scripts/generate-release-config.sh
+        run: sh scripts/generate-release-config.sh
 
       - name: Install XcodeGen
         run: brew install xcodegen
