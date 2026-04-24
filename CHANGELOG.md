@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/jbg/quartermaster/compare/0.2.0...0.3.0) (2026-04-24)
+
+
+### Features
+
+* **web:** add stock batch editing ([501ce10](https://github.com/jbg/quartermaster/commit/501ce1077a7012016330314e3f1a93f330a37153))
+
+
+### Bug Fixes
+
+* allow home assistant add-on data access ([6c182ad](https://github.com/jbg/quartermaster/commit/6c182ad51e494141e5ccfe02fbb75c1b5a5db694))
+
 ## [0.2.0](https://github.com/jbg/quartermaster/compare/0.1.2...0.2.0) (2026-04-24)
 
 
