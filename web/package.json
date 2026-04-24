@@ -1,0 +1,31 @@
+{
+  "name": "@quartermaster/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "dev": "vite dev",
+    "generate:api": "openapi-ts",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "build": "vite build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sveltejs/adapter-static": "3.0.10",
+    "@sveltejs/kit": "2.42.2",
+    "@sveltejs/vite-plugin-svelte": "6.1.4",
+    "svelte": "5.38.10",
+    "vite": "7.1.12"
+  },
+  "devDependencies": {
+    "@hey-api/openapi-ts": "0.94.1",
+    "@types/node": "22.16.5",
+    "svelte-check": "4.3.1",
+    "typescript": "5.8.3",
+    "vitest": "3.2.4"
+  },
+  "volta": {
+    "node": "25.9.0"
+  }
+}

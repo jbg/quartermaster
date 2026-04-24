@@ -4,11 +4,14 @@ use axum::http::{Method, StatusCode};
 use qm_api::{ApiConfig, IosReleaseIdentity, RegistrationMode};
 use serde_json::Value;
 use support::TestApp;
+use uuid::Uuid;
 
 #[tokio::test]
-async fn join_landing_renders_invite_and_server() {
+async fn join_landing_is_served_from_web_dist_when_configured() {
+    let web_dist = test_web_dist();
     let app = TestApp::start(ApiConfig {
         registration_mode: RegistrationMode::Open,
+        web_dist_dir: Some(web_dist.clone()),
         ..ApiConfig::default()
     })
     .await;
@@ -25,10 +28,41 @@ async fn join_landing_renders_invite_and_server() {
         headers.get("content-type").unwrap(),
         "text/html; charset=utf-8"
     );
-    assert!(raw.contains("ABCD1234"));
-    assert!(raw.contains("https://example.com"));
-    assert!(raw.contains("quartermaster://join"));
-    assert!(raw.contains("Open in Quartermaster"));
+    assert!(raw.contains("quartermaster-web-shell"));
+
+    let _ = std::fs::remove_dir_all(web_dist);
+}
+
+#[tokio::test]
+async fn api_routes_win_over_web_fallback() {
+    let web_dist = test_web_dist();
+    let app = TestApp::start(ApiConfig {
+        web_dist_dir: Some(web_dist.clone()),
+        ..ApiConfig::default()
+    })
+    .await;
+
+    let (status, body) = app.send(Method::GET, "/auth/me", None, None).await;
+
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body["code"], "unauthorized");
+
+    let _ = std::fs::remove_dir_all(web_dist);
+}
+
+#[tokio::test]
+async fn missing_web_dist_does_not_break_api_routes() {
+    let missing = std::env::temp_dir().join(format!("qm-missing-web-{}", Uuid::now_v7()));
+    let app = TestApp::start(ApiConfig {
+        web_dist_dir: Some(missing),
+        ..ApiConfig::default()
+    })
+    .await;
+
+    let (status, _, raw) = app.raw(Method::GET, "/healthz").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(raw.contains("ok"));
 }
 
 #[tokio::test]
@@ -74,4 +108,15 @@ async fn apple_app_site_association_is_not_served_without_ios_identity() {
 
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert!(raw.is_empty());
+}
+
+fn test_web_dist() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("qm-web-{}", Uuid::now_v7()));
+    std::fs::create_dir_all(dir.join("_app")).unwrap();
+    std::fs::write(
+        dir.join("200.html"),
+        "<!doctype html><title>Quartermaster</title><main>quartermaster-web-shell</main>",
+    )
+    .unwrap();
+    dir
 }

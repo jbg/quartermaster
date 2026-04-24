@@ -39,6 +39,12 @@ Packages/
 android/.gradle/
 android/local.properties
 
+# Web / pnpm / SvelteKit
+node_modules/
+web/node_modules/
+web/.svelte-kit/
+web/build/
+
 # Generated Swift clients (regenerated from openapi.json at build time)
 ios/Quartermaster/Generated/
 

@@ -32,6 +32,7 @@ Early work in progress. v1 is being built toward an "empty pantry" first vertica
 ├── xtask/                  developer tasks (export-openapi, …)
 ├── openapi.json            generated spec (canonical copy, for external consumers + CI drift check)
 ├── android/                Jetpack Compose app + generated Retrofit client
+├── web/                    SvelteKit web shell + generated TypeScript client
 └── ios/Quartermaster/      SwiftUI app — consumes openapi.json via a build-tool plugin
     └── openapi.json        second copy, read by the Xcode plugin (kept in sync by xtask)
 ```
@@ -112,6 +113,7 @@ Quartermaster also supports a few self-hosting hardening knobs:
 | `QM_METRICS_ENABLED`                       | `false`                                           | Enables internal Prometheus metrics exposure |
 | `QM_METRICS_BIND`                          | `127.0.0.1:9091`                                  | Bind address for the dedicated `push-worker` metrics/health server |
 | `QM_METRICS_TRIGGER_SECRET`                | unset                                             | Required when metrics are enabled; callers must supply it in `X-QM-Maintenance-Token` for `GET /internal/metrics` |
+| `QM_WEB_DIST_DIR`                          | `web/build`                                       | Optional path to the built SvelteKit static web shell served by the API process |
 
 When `QM_PUBLIC_BASE_URL` is set, Quartermaster validates it strictly at startup: it must be an `https://` origin with no path, query, or fragment. The server normalizes a trailing slash away before exposing it to clients.
 
@@ -230,6 +232,7 @@ Sandbox-safe verification:
 
 Host-only verification:
 
+- `pnpm install --frozen-lockfile && pnpm -C web generate:api && pnpm -C web check && pnpm -C web test && pnpm -C web build`
 - `cd android && gradle testDebugUnitTest assembleDebug`
 - `xcodebuild -project ios/Quartermaster.xcodeproj -scheme Quartermaster -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' -skipPackagePluginValidation test`
 
@@ -297,6 +300,28 @@ cargo xtask export-openapi
 Writes `openapi.json` at the repo root **and** at `ios/Quartermaster/openapi.json`. The iOS target's Xcode build-tool plugin reads the second copy; the first is the canonical one (external consumers, CI drift check). Commit both so the iOS build stays hermetic.
 
 Re-run this after any change to a Rust DTO, route, or enum — the next iOS build will regenerate `Components.Schemas.*` and the generated `Client` automatically.
+
+## Web shell
+
+The web app lives in `web/` and uses SvelteKit, TypeScript, pnpm, and a generated TypeScript client from the repo-root `openapi.json`. Volta pins Node 25 and pnpm in `package.json`; set `VOLTA_FEATURE_PNPM=1` in shells or CI environments that need Volta's pnpm shim.
+
+Local development:
+
+```sh
+pnpm install
+pnpm -C web generate:api
+pnpm -C web dev
+```
+
+The development server can talk to a local backend by entering `http://localhost:8080` in the web app's server URL field. For production/self-hosted use, build the static shell and let `qm-server` serve it:
+
+```sh
+pnpm -C web generate:api
+pnpm -C web build
+cargo run -p qm-server
+```
+
+By default the server looks for `web/build`. Set `QM_WEB_DIST_DIR` to point at a different built web directory. The container image builds the web shell and serves it from `/app/web`.
 
 Invite-backed registration and `POST /invites/redeem` are transactional: creating the user/membership and consuming the invite happen together, and redeeming an invite for a household the user already belongs to is treated as an idempotent no-op rather than consuming another use.
 

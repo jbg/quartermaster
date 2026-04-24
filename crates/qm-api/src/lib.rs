@@ -1,11 +1,18 @@
 //! HTTP surface for Quartermaster.
 
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use axum::{extract::MatchedPath, routing::get, Json, Router};
+use axum::{
+    extract::{MatchedPath, State},
+    http::{Method, StatusCode, Uri},
+    response::{Html, IntoResponse},
+    routing::get,
+    Json, Router,
+};
 use tower::ServiceBuilder;
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
+    services::ServeDir,
     trace::{DefaultOnFailure, DefaultOnResponse, TraceLayer},
     LatencyUnit,
 };
@@ -65,6 +72,7 @@ pub struct ApiConfig {
     pub expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy,
     pub expiry_reminder_trigger_secret: Option<String>,
     pub android_smoke_seed_trigger_secret: Option<String>,
+    pub web_dist_dir: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -162,6 +170,7 @@ impl Default for ApiConfig {
             expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy::default(),
             expiry_reminder_trigger_secret: None,
             android_smoke_seed_trigger_secret: None,
+            web_dist_dir: None,
         }
     }
 }
@@ -217,7 +226,6 @@ impl Modify for SecurityAddon {
     ),
     paths(
         routes::health::healthz,
-        routes::join::join_landing,
         routes::accounts::register,
         routes::accounts::login,
         routes::accounts::refresh,
@@ -327,7 +335,8 @@ pub struct ApiDoc;
 
 pub fn router(state: AppState) -> Router {
     let openapi_spec = ApiDoc::openapi();
-    Router::new()
+    let web_dist_dir = state.config.web_dist_dir.clone();
+    let app = Router::new()
         .merge(routes::health::router())
         .merge(routes::join::router())
         .merge(routes::accounts::router(RateLimitLayerState::new(
@@ -406,7 +415,72 @@ pub fn router(state: AppState) -> Router {
                         ),
                 ),
         )
-        .with_state(state)
+        .with_state(state);
+
+    if let Some(web_dist_dir) = web_dist_dir {
+        app.merge(web_router(web_dist_dir))
+    } else {
+        app
+    }
+}
+
+fn web_router(dist_dir: PathBuf) -> Router {
+    let fallback_file = dist_dir.join("200.html");
+    Router::new()
+        .nest_service("/_app", ServeDir::new(dist_dir.join("_app")))
+        .route("/", get(serve_web_app))
+        .route("/join", get(serve_web_app))
+        .fallback(web_fallback)
+        .with_state(fallback_file)
+}
+
+async fn serve_web_app(State(fallback_file): State<PathBuf>) -> impl IntoResponse {
+    serve_web_file(fallback_file).await
+}
+
+async fn web_fallback(
+    method: Method,
+    uri: Uri,
+    State(fallback_file): State<PathBuf>,
+) -> impl IntoResponse {
+    if method != Method::GET || is_api_path(uri.path()) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    serve_web_file(fallback_file).await
+}
+
+async fn serve_web_file(fallback_file: PathBuf) -> axum::response::Response {
+    match tokio::fs::read_to_string(fallback_file).await {
+        Ok(body) => Html(body).into_response(),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            StatusCode::NOT_FOUND.into_response()
+        }
+        Err(err) => {
+            tracing::error!(?err, "failed to read web fallback");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+fn is_api_path(path: &str) -> bool {
+    path == "/healthz"
+        || path == "/openapi.json"
+        || path == "/docs"
+        || path.starts_with("/docs/")
+        || path == "/.well-known/apple-app-site-association"
+        || path.starts_with("/auth/")
+        || path.starts_with("/devices/")
+        || path.starts_with("/households/")
+        || path == "/locations"
+        || path.starts_with("/locations/")
+        || path == "/units"
+        || path.starts_with("/units/")
+        || path.starts_with("/products/")
+        || path == "/stock"
+        || path.starts_with("/stock/")
+        || path == "/reminders"
+        || path.starts_with("/reminders/")
+        || path.starts_with("/internal/")
 }
 
 #[cfg(test)]

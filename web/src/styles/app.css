@@ -1,0 +1,294 @@
+:root {
+  color: #18201c;
+  background: #f7f8f4;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, rgba(232, 238, 232, 0.8), rgba(247, 248, 244, 0) 22rem),
+    #f7f8f4;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app-shell {
+  width: min(1180px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 28px 0 56px;
+}
+
+.topbar,
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.topbar h1,
+.section-heading h2,
+.sidebar h2,
+.empty-state h2,
+.join-panel h1 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.topbar h1 {
+  font-size: 32px;
+}
+
+.eyebrow {
+  margin: 0 0 5px;
+  color: #58645f;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.panel,
+.sidebar,
+.inventory-region,
+.join-panel {
+  border: 1px solid #d9ded6;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 16px 40px rgba(30, 39, 31, 0.07);
+}
+
+.auth-layout {
+  display: grid;
+  min-height: 62vh;
+  place-items: center;
+}
+
+.auth-panel {
+  display: grid;
+  width: min(430px, 100%);
+  gap: 16px;
+  padding: 24px;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 8px;
+  background: #e8ece7;
+}
+
+.segmented button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #50605a;
+}
+
+.segmented button.active {
+  background: #ffffff;
+  color: #17221d;
+  box-shadow: 0 1px 4px rgba(20, 32, 24, 0.12);
+}
+
+label {
+  display: grid;
+  gap: 7px;
+  color: #334039;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+input,
+select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #c7d0c7;
+  border-radius: 7px;
+  background: #fff;
+  color: #18201c;
+  padding: 0 11px;
+}
+
+.primary-action,
+.secondary-action,
+.ghost-button,
+.household-list button {
+  min-height: 42px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  padding: 0 14px;
+  font-weight: 750;
+}
+
+.primary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #234a35;
+  color: #fff;
+  text-decoration: none;
+}
+
+.primary-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.secondary-action,
+.household-list button {
+  background: #eef2ea;
+  color: #223329;
+  border-color: #cfd8ce;
+}
+
+.ghost-button {
+  background: transparent;
+  border-color: #cbd3ca;
+  color: #26362d;
+}
+
+.error-text {
+  margin: 0;
+  color: #9b2f2f;
+  font-weight: 700;
+}
+
+.muted {
+  color: #66716b;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.sidebar,
+.inventory-region,
+.empty-state {
+  padding: 20px;
+}
+
+.sidebar {
+  align-self: start;
+  display: grid;
+  gap: 18px;
+}
+
+.inventory-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.stock-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 72px;
+  padding: 14px 16px;
+  border: 1px solid #e0e5df;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.stock-row h3,
+.stock-row p {
+  margin: 0;
+}
+
+.stock-row p {
+  margin-top: 4px;
+  color: #66716b;
+}
+
+.stock-row.depleted {
+  background: #f5f1ec;
+  color: #706153;
+}
+
+.household-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.join-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px 16px;
+}
+
+.join-panel {
+  width: min(560px, 100%);
+  padding: 28px;
+}
+
+.join-panel .lede {
+  color: #48564f;
+}
+
+.detail-grid {
+  display: grid;
+  gap: 14px;
+  margin: 24px 0 18px;
+}
+
+.detail-grid h2 {
+  margin: 0 0 7px;
+  font-size: 14px;
+}
+
+code {
+  display: block;
+  padding: 12px;
+  border-radius: 7px;
+  background: #eef2ea;
+  color: #1e3026;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    width: min(100vw - 20px, 1180px);
+    padding-top: 18px;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .stock-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

@@ -704,43 +704,6 @@
         ]
       }
     },
-    "/join": {
-      "get": {
-        "tags": [
-          "accounts"
-        ],
-        "operationId": "invite_join_landing",
-        "parameters": [
-          {
-            "name": "invite",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          {
-            "name": "server",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "HTML invite landing page"
-          }
-        }
-      }
-    },
     "/locations": {
       "get": {
         "tags": [

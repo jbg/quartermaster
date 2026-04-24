@@ -77,6 +77,7 @@ struct RawConfig {
     metrics_enabled: bool,
     metrics_bind: String,
     metrics_trigger_secret: Option<String>,
+    web_dist_dir: Option<String>,
 }
 
 impl Default for RawConfig {
@@ -134,6 +135,7 @@ impl Default for RawConfig {
             metrics_enabled: false,
             metrics_bind: "127.0.0.1:9091".into(),
             metrics_trigger_secret: None,
+            web_dist_dir: Some("web/build".into()),
         }
     }
 }
@@ -296,6 +298,11 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
     )?;
     let metrics_trigger_secret =
         normalize_optional_secret(raw.metrics_trigger_secret, "QM_METRICS_TRIGGER_SECRET")?;
+    let web_dist_dir = raw
+        .web_dist_dir
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from);
     let metrics_bind = raw
         .metrics_bind
         .parse()
@@ -347,6 +354,7 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         },
         expiry_reminder_trigger_secret,
         android_smoke_seed_trigger_secret,
+        web_dist_dir,
     });
 
     Ok(LoadedConfig {

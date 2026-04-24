@@ -139,6 +139,45 @@ jobs:
         working-directory: android
         run: gradle :app:assembleDebug :app:testDebugUnitTest
 
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: volta-cli/action@v4
+        with:
+          node-version: "25"
+
+      - name: Install pnpm with Volta
+        env:
+          VOLTA_FEATURE_PNPM: "1"
+        run: volta install pnpm@10.33.2
+
+      - name: Install web dependencies
+        env:
+          VOLTA_FEATURE_PNPM: "1"
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate web API client
+        env:
+          VOLTA_FEATURE_PNPM: "1"
+        run: pnpm -C web generate:api
+
+      - name: Check web app
+        env:
+          VOLTA_FEATURE_PNPM: "1"
+        run: pnpm -C web check
+
+      - name: Test web app
+        env:
+          VOLTA_FEATURE_PNPM: "1"
+        run: pnpm -C web test
+
+      - name: Build web app
+        env:
+          VOLTA_FEATURE_PNPM: "1"
+        run: pnpm -C web build
+
   docker-build:
     runs-on: ubuntu-latest
     steps:
