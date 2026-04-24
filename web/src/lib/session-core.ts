@@ -19,9 +19,16 @@ export interface MeResponse {
   };
 }
 
+export interface Location {
+  id: string;
+  name: string;
+  kind?: string;
+}
+
 export interface StockBatch {
   id: string;
   product?: {
+    id?: string;
     name?: string;
     unit_family?: string;
     unitFamily?: string;
@@ -37,19 +44,104 @@ export interface StockBatch {
       };
   unit_code?: string;
   unitCode?: string;
+  note?: string | null;
+  created_at?: string;
+  createdAt?: string;
+  initial_quantity?: string | number;
+  initialQuantity?: string | number;
   location?: {
     name?: string;
   } | null;
+  location_id?: string;
+  locationId?: string;
   location_name?: string | null;
   locationName?: string | null;
   expires_on?: string | null;
   expiresOn?: string | null;
+  opened_on?: string | null;
+  openedOn?: string | null;
   depleted_at?: string | null;
   depletedAt?: string | null;
 }
 
 export interface StockListResponse {
   items?: StockBatch[];
+}
+
+export interface StockEvent {
+  id: string;
+  event_type?: 'add' | 'consume' | 'adjust' | 'discard' | 'restore';
+  eventType?: 'add' | 'consume' | 'adjust' | 'discard' | 'restore';
+  quantity_delta?: string;
+  quantityDelta?: string;
+  unit?: string;
+  batch_expires_on?: string | null;
+  batchExpiresOn?: string | null;
+  note?: string | null;
+  created_at?: string;
+  createdAt?: string;
+  created_by_username?: string | null;
+  createdByUsername?: string | null;
+  batch_id?: string;
+  batchId?: string;
+  product?: {
+    name?: string;
+  };
+  consume_request_id?: string | null;
+  consumeRequestId?: string | null;
+}
+
+export interface StockEventListResponse {
+  items?: StockEvent[];
+  next_before?: string | null;
+  nextBefore?: string | null;
+  next_before_id?: string | null;
+  nextBeforeId?: string | null;
+}
+
+export interface Reminder {
+  id: string;
+  kind?: string;
+  title: string;
+  body: string;
+  fire_at?: string;
+  fireAt?: string;
+  household_timezone?: string;
+  householdTimezone?: string;
+  household_fire_local_at?: string;
+  householdFireLocalAt?: string;
+  expires_on?: string | null;
+  expiresOn?: string | null;
+  batch_id?: string;
+  batchId?: string;
+  product_id?: string;
+  productId?: string;
+  location_id?: string;
+  locationId?: string;
+  presented_on_device_at?: string | null;
+  presentedOnDeviceAt?: string | null;
+  opened_on_device_at?: string | null;
+  openedOnDeviceAt?: string | null;
+}
+
+export interface ReminderListResponse {
+  items?: Reminder[];
+  next_after_fire_at?: string | null;
+  nextAfterFireAt?: string | null;
+  next_after_id?: string | null;
+  nextAfterId?: string | null;
+}
+
+export interface ConsumeRequest {
+  product_id: string;
+  location_id?: string | null;
+  quantity: string;
+  unit: string;
+}
+
+export interface ConsumeResponse {
+  consume_request_id?: string;
+  consumeRequestId?: string;
 }
 
 export interface ApiResult<T> {
@@ -85,7 +177,17 @@ export interface SessionTransport {
   logout(): Promise<ApiResult<void>>;
   me(): Promise<ApiResult<MeResponse>>;
   switchHousehold(body: { household_id: string }): Promise<ApiResult<MeResponse>>;
-  stockList(): Promise<ApiResult<StockListResponse>>;
+  locationsList(): Promise<ApiResult<Location[]>>;
+  stockList(query?: { include_depleted?: boolean | null }): Promise<ApiResult<StockListResponse>>;
+  stockGet(id: string): Promise<ApiResult<StockBatch>>;
+  stockListBatchEvents(id: string, query?: { before_created_at?: string | null; before_id?: string | null; limit?: number | null }): Promise<ApiResult<StockEventListResponse>>;
+  stockConsume(body: ConsumeRequest): Promise<ApiResult<ConsumeResponse>>;
+  stockDelete(id: string): Promise<ApiResult<void>>;
+  stockRestore(id: string): Promise<ApiResult<StockBatch>>;
+  remindersList(query?: { after_fire_at?: string | null; after_id?: string | null; limit?: number | null }): Promise<ApiResult<ReminderListResponse>>;
+  remindersPresent(id: string): Promise<ApiResult<void>>;
+  remindersOpen(id: string): Promise<ApiResult<void>>;
+  remindersAck(id: string): Promise<ApiResult<void>>;
 }
 
 export class ApiFailure extends Error {
@@ -203,8 +305,51 @@ export class QuartermasterSession {
     return this.authed(() => this.transport.switchHousehold({ household_id: householdId }));
   }
 
-  stockList(): Promise<StockListResponse> {
-    return this.authed(() => this.transport.stockList());
+  locationsList(): Promise<Location[]> {
+    return this.authed(() => this.transport.locationsList());
+  }
+
+  stockList(query?: { include_depleted?: boolean | null }): Promise<StockListResponse> {
+    return this.authed(() => this.transport.stockList(query));
+  }
+
+  stockGet(id: string): Promise<StockBatch> {
+    return this.authed(() => this.transport.stockGet(id));
+  }
+
+  stockListBatchEvents(
+    id: string,
+    query?: { before_created_at?: string | null; before_id?: string | null; limit?: number | null }
+  ): Promise<StockEventListResponse> {
+    return this.authed(() => this.transport.stockListBatchEvents(id, query));
+  }
+
+  stockConsume(body: ConsumeRequest): Promise<ConsumeResponse> {
+    return this.authed(() => this.transport.stockConsume(body));
+  }
+
+  stockDelete(id: string): Promise<void> {
+    return this.authed(() => this.transport.stockDelete(id));
+  }
+
+  stockRestore(id: string): Promise<StockBatch> {
+    return this.authed(() => this.transport.stockRestore(id));
+  }
+
+  remindersList(query?: { after_fire_at?: string | null; after_id?: string | null; limit?: number | null }): Promise<ReminderListResponse> {
+    return this.authed(() => this.transport.remindersList(query));
+  }
+
+  remindersPresent(id: string): Promise<void> {
+    return this.authed(() => this.transport.remindersPresent(id));
+  }
+
+  remindersOpen(id: string): Promise<void> {
+    return this.authed(() => this.transport.remindersOpen(id));
+  }
+
+  remindersAck(id: string): Promise<void> {
+    return this.authed(() => this.transport.remindersAck(id));
   }
 
   private async authed<T>(run: () => Promise<ApiResult<T>>): Promise<T> {

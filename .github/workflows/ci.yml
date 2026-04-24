@@ -148,6 +148,10 @@ jobs:
         with:
           node-version: "25"
 
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
       - name: Install pnpm with Volta
         env:
           VOLTA_FEATURE_PNPM: "1"
@@ -177,6 +181,16 @@ jobs:
         env:
           VOLTA_FEATURE_PNPM: "1"
         run: pnpm -C web build
+
+      - name: Install Playwright browser
+        env:
+          VOLTA_FEATURE_PNPM: "1"
+        run: pnpm -C web exec playwright install --with-deps chromium
+
+      - name: Run web browser smoke
+        env:
+          VOLTA_FEATURE_PNPM: "1"
+        run: pnpm -C web test:e2e
 
   docker-build:
     runs-on: ubuntu-latest

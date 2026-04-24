@@ -7,7 +7,8 @@
     "web:generate": "pnpm -C web generate:api",
     "web:check": "pnpm -C web check",
     "web:build": "pnpm -C web build",
-    "web:test": "pnpm -C web test"
+    "web:test": "pnpm -C web test",
+    "web:test:e2e": "pnpm -C web test:e2e"
   },
   "volta": {
     "node": "25.9.0",

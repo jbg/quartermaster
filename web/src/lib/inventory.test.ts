@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { isDepleted, loadInventory, stockExpiry, stockLocation, stockName, stockUnit } from './inventory';
+import {
+  canRestoreBatch,
+  isDepleted,
+  loadInventory,
+  selectBatchAfterRefresh,
+  stockExpiry,
+  stockLocation,
+  stockName,
+  stockUnit
+} from './inventory';
 
 describe('inventory helpers', () => {
   it('loads stock into a loaded state', async () => {
@@ -41,5 +50,29 @@ describe('inventory helpers', () => {
     expect(stockLocation(batch)).toBe('No location');
     expect(stockExpiry(batch)).toBe('2026-05-01');
     expect(isDepleted(batch)).toBe(true);
+    expect(isDepleted({ id: 'batch-2', product: { name: 'Flour' }, quantity: '0' })).toBe(true);
+  });
+
+  it('gates restore to depleted batches whose latest event is discard', () => {
+    const batch = {
+      id: 'batch-1',
+      product: { name: 'Rice' },
+      depleted_at: '2026-04-01T00:00:00Z'
+    };
+
+    expect(canRestoreBatch(batch, [{ id: 'event-1', event_type: 'discard' }])).toBe(true);
+    expect(canRestoreBatch(batch, [{ id: 'event-2', event_type: 'consume' }])).toBe(false);
+    expect(canRestoreBatch({ ...batch, depleted_at: null }, [{ id: 'event-1', event_type: 'discard' }])).toBe(false);
+  });
+
+  it('keeps the preferred selection after inventory refresh when possible', () => {
+    const items = [
+      { id: 'batch-1', product: { name: 'Rice' } },
+      { id: 'batch-2', product: { name: 'Beans' } }
+    ];
+
+    expect(selectBatchAfterRefresh(items, 'batch-2')?.id).toBe('batch-2');
+    expect(selectBatchAfterRefresh(items, 'missing')?.id).toBe('batch-1');
+    expect(selectBatchAfterRefresh([], 'batch-2')).toBeNull();
   });
 });

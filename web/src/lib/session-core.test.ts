@@ -57,7 +57,37 @@ describe('QuartermasterSession', () => {
       async switchHousehold() {
         throw new Error('unused');
       },
+      async locationsList() {
+        throw new Error('unused');
+      },
       async stockList() {
+        throw new Error('unused');
+      },
+      async stockGet() {
+        throw new Error('unused');
+      },
+      async stockListBatchEvents() {
+        throw new Error('unused');
+      },
+      async stockConsume() {
+        throw new Error('unused');
+      },
+      async stockDelete() {
+        throw new Error('unused');
+      },
+      async stockRestore() {
+        throw new Error('unused');
+      },
+      async remindersList() {
+        throw new Error('unused');
+      },
+      async remindersPresent() {
+        throw new Error('unused');
+      },
+      async remindersOpen() {
+        throw new Error('unused');
+      },
+      async remindersAck() {
         throw new Error('unused');
       }
     };
@@ -96,7 +126,37 @@ describe('QuartermasterSession', () => {
       async switchHousehold() {
         throw new Error('unused');
       },
+      async locationsList() {
+        throw new Error('unused');
+      },
       async stockList() {
+        throw new Error('unused');
+      },
+      async stockGet() {
+        throw new Error('unused');
+      },
+      async stockListBatchEvents() {
+        throw new Error('unused');
+      },
+      async stockConsume() {
+        throw new Error('unused');
+      },
+      async stockDelete() {
+        throw new Error('unused');
+      },
+      async stockRestore() {
+        throw new Error('unused');
+      },
+      async remindersList() {
+        throw new Error('unused');
+      },
+      async remindersPresent() {
+        throw new Error('unused');
+      },
+      async remindersOpen() {
+        throw new Error('unused');
+      },
+      async remindersAck() {
         throw new Error('unused');
       }
     };

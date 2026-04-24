@@ -72,6 +72,7 @@ pub fn router() -> Router<AppState> {
             "/internal/maintenance/seed-android-smoke",
             post(seed_android_smoke),
         )
+        .route("/internal/maintenance/seed-smoke", post(seed_smoke))
 }
 
 async fn sweep_auth_sessions(
@@ -166,6 +167,19 @@ async fn seed_android_smoke(
     Ok((StatusCode::OK, Json(payload)))
 }
 
+async fn seed_smoke(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> ApiResult<(StatusCode, Json<SeedAndroidSmokeResponse>)> {
+    require_maintenance_secret(
+        &headers,
+        state.config.android_smoke_seed_trigger_secret.as_deref(),
+    )?;
+
+    let payload = build_android_smoke_fixture(&state).await?;
+    Ok((StatusCode::OK, Json(payload)))
+}
+
 fn require_maintenance_secret(headers: &HeaderMap, expected: Option<&str>) -> ApiResult<()> {
     let provided = headers
         .get(MAINTENANCE_TOKEN_HEADER)
@@ -218,7 +232,9 @@ async fn build_android_smoke_fixture(
             ANDROID_SMOKE_REMINDER_FIRE_AT,
         )
         .await?
-        .ok_or_else(|| ApiError::BadRequest("android smoke reminder fixture was not created".into()))?;
+        .ok_or_else(|| {
+            ApiError::BadRequest("android smoke reminder fixture was not created".into())
+        })?;
         reminders.push(AndroidSmokeReminderSeed {
             reminder_id: reminder.id,
             batch_id: reminder.batch_id,
@@ -254,8 +270,9 @@ async fn find_or_create_smoke_user(
         return Ok(existing);
     }
 
-    let password_hash = crate::auth::hash_password(ANDROID_SMOKE_PASSWORD)
-        .map_err(|err| ApiError::BadRequest(format!("failed to hash android smoke password: {err}")))?;
+    let password_hash = crate::auth::hash_password(ANDROID_SMOKE_PASSWORD).map_err(|err| {
+        ApiError::BadRequest(format!("failed to hash android smoke password: {err}"))
+    })?;
     qm_db::users::create(
         db,
         ANDROID_SMOKE_USERNAME,
@@ -278,8 +295,8 @@ async fn find_or_create_smoke_household(
         return Ok(existing.membership.household_id);
     }
 
-    let household = qm_db::households::create(db, ANDROID_SMOKE_HOUSEHOLD_NAME, ANDROID_SMOKE_TIMEZONE)
-        .await?;
+    let household =
+        qm_db::households::create(db, ANDROID_SMOKE_HOUSEHOLD_NAME, ANDROID_SMOKE_TIMEZONE).await?;
     qm_db::locations::seed_defaults(db, household.id).await?;
     qm_db::memberships::insert(db, household.id, user_id, "admin").await?;
     Ok(household.id)
@@ -308,10 +325,14 @@ async fn existing_smoke_product_ids(
 ) -> Result<Vec<Uuid>, ApiError> {
     let mut ids = Vec::new();
     for (product_name, _) in ANDROID_SMOKE_PRODUCTS {
-        if let Some(product) = qm_db::products::search_with_deleted(db, household_id, product_name, 20, true)
-            .await?
-            .into_iter()
-            .find(|product| product.name == product_name && product.created_by_household_id == Some(household_id))
+        if let Some(product) =
+            qm_db::products::search_with_deleted(db, household_id, product_name, 20, true)
+                .await?
+                .into_iter()
+                .find(|product| {
+                    product.name == product_name
+                        && product.created_by_household_id == Some(household_id)
+                })
         {
             ids.push(product.id);
         }
@@ -324,10 +345,14 @@ async fn find_or_create_smoke_product(
     household_id: Uuid,
     product_name: &str,
 ) -> Result<qm_db::products::ProductRow, ApiError> {
-    if let Some(existing) = qm_db::products::search_with_deleted(db, household_id, product_name, 20, true)
-        .await?
-        .into_iter()
-        .find(|product| product.name == product_name && product.created_by_household_id == Some(household_id))
+    if let Some(existing) =
+        qm_db::products::search_with_deleted(db, household_id, product_name, 20, true)
+            .await?
+            .into_iter()
+            .find(|product| {
+                product.name == product_name
+                    && product.created_by_household_id == Some(household_id)
+            })
     {
         if existing.deleted_at.is_none() {
             return Ok(existing);

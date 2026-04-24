@@ -5,7 +5,17 @@ import {
   authRefresh,
   authRegister,
   authSwitchHousehold,
-  stockList
+  locationsList,
+  remindersAck,
+  remindersList,
+  remindersOpen,
+  remindersPresent,
+  stockConsume,
+  stockDelete,
+  stockGet,
+  stockList,
+  stockListBatchEvents,
+  stockRestore
 } from './generated/sdk.gen';
 import { client } from './generated/client.gen';
 import type { SessionTransport, StoredSession } from './session-core';
@@ -47,8 +57,38 @@ export function generatedTransport(): SessionTransport {
     switchHousehold(body) {
       return authSwitchHousehold({ body });
     },
-    stockList() {
-      return stockList();
+    locationsList() {
+      return locationsList();
+    },
+    stockList(query) {
+      return stockList({ query });
+    },
+    stockGet(id) {
+      return stockGet({ path: { id } });
+    },
+    stockListBatchEvents(id, query) {
+      return stockListBatchEvents({ path: { id }, query });
+    },
+    stockConsume(body) {
+      return stockConsume({ body });
+    },
+    stockDelete(id) {
+      return stockDelete({ path: { id } });
+    },
+    stockRestore(id) {
+      return stockRestore({ path: { id } });
+    },
+    remindersList(query) {
+      return remindersList({ query });
+    },
+    remindersPresent(id) {
+      return remindersPresent({ path: { id } });
+    },
+    remindersOpen(id) {
+      return remindersOpen({ path: { id } });
+    },
+    remindersAck(id) {
+      return remindersAck({ path: { id } });
     }
   };
 }

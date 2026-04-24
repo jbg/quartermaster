@@ -107,6 +107,10 @@ async fn maintenance_route_is_unmounted_without_secret() {
         )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = app
+        .send(Method::POST, "/internal/maintenance/seed-smoke", None, None)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -196,7 +200,18 @@ async fn seed_android_smoke_requires_shared_secret() {
     .await;
 
     let (status, body) = app
-        .send(Method::POST, "/internal/maintenance/seed-android-smoke", None, None)
+        .send(
+            Method::POST,
+            "/internal/maintenance/seed-android-smoke",
+            None,
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body["code"], "unauthorized");
+
+    let (status, body) = app
+        .send(Method::POST, "/internal/maintenance/seed-smoke", None, None)
         .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["code"], "unauthorized");
@@ -237,7 +252,7 @@ async fn seed_android_smoke_returns_deterministic_fixture() {
     let (status, body_again) = app
         .send_with_headers(
             Method::POST,
-            "/internal/maintenance/seed-android-smoke",
+            "/internal/maintenance/seed-smoke",
             None,
             None,
             headers,

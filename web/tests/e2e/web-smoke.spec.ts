@@ -1,0 +1,122 @@
+import { expect, test, type Page } from '@playwright/test';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(__dirname, '../../..');
+const serverUrl = 'http://127.0.0.1:19080';
+const maintenanceToken = 'web-smoke-secret';
+
+let server: ChildProcessWithoutNullStreams | null = null;
+let tempDir = '';
+let fixture: SmokeFixture;
+
+interface SmokeFixture {
+  username: string;
+  password: string;
+  invite_code: string;
+  reminders: Array<{
+    reminder_id: string;
+    batch_id: string;
+    title: string;
+  }>;
+}
+
+test.beforeAll(async () => {
+  tempDir = mkdtempSync(resolve(tmpdir(), 'quartermaster-web-smoke-'));
+  server = spawn('cargo', ['run', '-p', 'qm-server'], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      QM_BIND: '127.0.0.1:19080',
+      QM_DATABASE_URL: `sqlite://${resolve(tempDir, 'smoke.db')}?mode=rwc`,
+      QM_WEB_DIST_DIR: resolve(repoRoot, 'web/build'),
+      QM_ANDROID_SMOKE_SEED_TRIGGER_SECRET: maintenanceToken,
+      RUST_LOG: 'warn'
+    }
+  });
+
+  server.stdout.on('data', (data) => process.stdout.write(`[qm-server] ${data}`));
+  server.stderr.on('data', (data) => process.stderr.write(`[qm-server] ${data}`));
+
+  await waitForHealth();
+  fixture = await seedSmokeData();
+});
+
+test.afterAll(async () => {
+  server?.kill('SIGTERM');
+  rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('supports inventory review reminders and stock cleanup actions', async ({ page }) => {
+  await login(page);
+
+  await expect(page.getByRole('heading', { name: 'Batches' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Smoke Rice/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Smoke Beans/ })).toBeVisible();
+
+  const firstReminder = fixture.reminders[0];
+  await page.getByRole('button', { name: 'Open' }).first().click();
+  await expect(page.getByRole('heading', { name: /Smoke/ }).last()).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'History' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Ack' }).first().click();
+  await expect(page.getByText(firstReminder.title)).toHaveCount(0);
+
+  await page.getByLabel('Consume quantity').fill('10');
+  await page.getByRole('button', { name: 'Consume' }).click();
+  await expect(page.getByTestId('detail-quantity')).toHaveText('490 g');
+
+  await page.getByRole('button', { name: 'Discard' }).click();
+  await expect(page.getByText('Depleted')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Restore' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Restore' }).click();
+  await expect(page.getByText('In stock')).toBeVisible();
+});
+
+test('renders the join browser fallback from the served app', async ({ page }) => {
+  await page.goto(`/join?invite=${fixture.invite_code}&server=${encodeURIComponent(serverUrl)}`);
+  await expect(page.getByRole('heading', { name: 'Join Quartermaster' })).toBeVisible();
+  await expect(page.getByText(fixture.invite_code)).toBeVisible();
+});
+
+async function login(page: Page) {
+  await page.goto('/');
+  await page.getByLabel('Server URL').fill(serverUrl);
+  await page.getByLabel('Username').fill(fixture.username);
+  await page.getByLabel('Password').fill(fixture.password);
+  await page.getByRole('button', { name: 'Log in' }).click();
+}
+
+async function waitForHealth() {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${serverUrl}/healthz`);
+      if (response.ok) {
+        return;
+      }
+    } catch {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+    }
+  }
+  throw new Error('qm-server did not become healthy in time');
+}
+
+async function seedSmokeData(): Promise<SmokeFixture> {
+  const response = await fetch(`${serverUrl}/internal/maintenance/seed-smoke`, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'x-qm-maintenance-token': maintenanceToken
+    }
+  });
+  if (!response.ok) {
+    throw new Error(`smoke fixture failed with HTTP ${response.status}: ${await response.text()}`);
+  }
+  return (await response.json()) as SmokeFixture;
+}
