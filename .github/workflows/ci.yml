@@ -198,11 +198,21 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Build container image
-        run: docker build -t quartermaster:ci .
+        run: >-
+          docker build
+          --build-arg BUILD_VERSION=0.0.0-ci
+          --build-arg HASS_ARCH=amd64
+          --build-arg VCS_REF=${{ github.sha }}
+          --build-arg BUILD_DATE=1970-01-01T00:00:00Z
+          -t quartermaster:ci
+          .
 
       - name: Smoke test container
         run: |
-          docker run -d --name qm-smoke -p 18080:8080 -e QM_DATABASE_URL=sqlite:///data/data.db?mode=rwc quartermaster:ci
+          test "$(docker inspect quartermaster:ci --format '{{ index .Config.Labels "io.hass.version" }}')" = "0.0.0-ci"
+          test "$(docker inspect quartermaster:ci --format '{{ index .Config.Labels "io.hass.type" }}')" = "app"
+          test "$(docker inspect quartermaster:ci --format '{{ index .Config.Labels "io.hass.arch" }}')" = "amd64"
+          docker run -d --name qm-smoke -p 18080:8080 quartermaster:ci
           trap "docker logs qm-smoke; docker rm -f qm-smoke" EXIT
           sleep 5
           curl --fail http://127.0.0.1:18080/healthz
