@@ -90,11 +90,11 @@
       return;
     }
     const created = new QuartermasterSession(
-      createBrowserSessionStorage(window.localStorage, window.location.origin),
+      createBrowserSessionStorage(window.localStorage, window.location),
       generatedTransport()
     );
     session = created;
-    serverUrl = created.snapshot().serverUrl || window.location.origin;
+    serverUrl = created.snapshot().serverUrl;
     if (created.snapshot().accessToken) {
       authenticated = true;
       void refreshMe();

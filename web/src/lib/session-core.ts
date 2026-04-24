@@ -199,8 +199,32 @@ export class ApiFailure extends Error {
   }
 }
 
-export function defaultServerUrl(locationOrigin = ''): string {
-  return locationOrigin || '';
+export interface BrowserLocationLike {
+  origin: string;
+  pathname?: string;
+}
+
+const WEB_ROUTE_SEGMENTS = new Set(['join']);
+
+function trimTrailingSlashes(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
+function ingressBasePath(pathname = ''): string {
+  const normalized = `/${pathname}`.replace(/\/+/g, '/');
+  const segments = normalized.split('/').filter(Boolean);
+  const last = segments.at(-1);
+  if (last && WEB_ROUTE_SEGMENTS.has(last)) {
+    segments.pop();
+  }
+  return segments.length > 0 ? `/${segments.join('/')}` : '';
+}
+
+export function defaultServerUrl(location: BrowserLocationLike | string = ''): string {
+  if (typeof location === 'string') {
+    return trimTrailingSlashes(location);
+  }
+  return trimTrailingSlashes(`${location.origin}${ingressBasePath(location.pathname)}`);
 }
 
 export function tokenPairAccess(pair: TokenPair): string {
@@ -217,13 +241,13 @@ export function currentHousehold(me: MeResponse): HouseholdSummary | null {
 
 export function createBrowserSessionStorage(
   localStorage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>,
-  locationOrigin: string
+  location: BrowserLocationLike | string
 ): SessionStorage {
   return {
     read() {
       return {
         serverUrl:
-          localStorage.getItem('quartermaster.serverUrl')?.trim() || defaultServerUrl(locationOrigin),
+          localStorage.getItem('quartermaster.serverUrl')?.trim() || defaultServerUrl(location),
         accessToken: localStorage.getItem('quartermaster.accessToken'),
         refreshToken: localStorage.getItem('quartermaster.refreshToken')
       };

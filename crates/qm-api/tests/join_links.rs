@@ -114,6 +114,16 @@ fn test_web_dist() -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("qm-web-{}", Uuid::now_v7()));
     std::fs::create_dir_all(dir.join("_app")).unwrap();
     std::fs::write(
+        dir.join("index.html"),
+        "<!doctype html><title>Quartermaster</title><main>quartermaster-web-shell</main>",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("join.html"),
+        "<!doctype html><title>Quartermaster</title><main>quartermaster-web-shell</main>",
+    )
+    .unwrap();
+    std::fs::write(
         dir.join("200.html"),
         "<!doctype html><title>Quartermaster</title><main>quartermaster-web-shell</main>",
     )

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { QuartermasterSession, type SessionStorage, type SessionTransport, type StoredSession } from './session-core';
+import {
+  QuartermasterSession,
+  defaultServerUrl,
+  type SessionStorage,
+  type SessionTransport,
+  type StoredSession
+} from './session-core';
 
 function memoryStorage(initial: StoredSession): SessionStorage & { value: StoredSession } {
   return {
@@ -17,6 +23,28 @@ function memoryStorage(initial: StoredSession): SessionStorage & { value: Stored
 }
 
 describe('QuartermasterSession', () => {
+  it('uses the current origin as the default server URL', () => {
+    expect(defaultServerUrl({ origin: 'http://localhost:8080', pathname: '/' })).toBe('http://localhost:8080');
+  });
+
+  it('preserves a Home Assistant ingress path in the default server URL', () => {
+    expect(
+      defaultServerUrl({
+        origin: 'http://homeassistant.local:8123',
+        pathname: '/api/hassio_ingress/quartermaster-token/'
+      })
+    ).toBe('http://homeassistant.local:8123/api/hassio_ingress/quartermaster-token');
+  });
+
+  it('drops SPA route segments from the ingress default server URL', () => {
+    expect(
+      defaultServerUrl({
+        origin: 'http://homeassistant.local:8123',
+        pathname: '/api/hassio_ingress/quartermaster-token/join'
+      })
+    ).toBe('http://homeassistant.local:8123/api/hassio_ingress/quartermaster-token');
+  });
+
   it('refreshes once and retries an authenticated request after a 401', async () => {
     const storage = memoryStorage({
       serverUrl: 'http://localhost:8080',
