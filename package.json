@@ -4,6 +4,7 @@
   "private": true,
   "packageManager": "pnpm@10.33.2",
   "scripts": {
+    "hooks:install": "lefthook install",
     "web:generate": "pnpm -C web generate:api",
     "web:check": "pnpm -C web check",
     "web:build": "pnpm -C web build",
@@ -13,5 +14,10 @@
   "volta": {
     "node": "25.9.0",
     "pnpm": "10.33.2"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
+    "lefthook": "^2.1.6"
   }
 }
