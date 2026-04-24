@@ -5,7 +5,10 @@ import {
   authRefresh,
   authRegister,
   authSwitchHousehold,
+  locationsCreate,
+  locationsDelete,
   locationsList,
+  locationsUpdate,
   productCreate,
   productSearch,
   remindersAck,
@@ -63,6 +66,15 @@ export function generatedTransport(): SessionTransport {
     },
     locationsList() {
       return locationsList();
+    },
+    locationsCreate(body) {
+      return locationsCreate({ body });
+    },
+    locationsUpdate(id, body) {
+      return locationsUpdate({ path: { id }, body });
+    },
+    locationsDelete(id) {
+      return locationsDelete({ path: { id } });
     },
     productSearch(query) {
       return productSearch({ query });

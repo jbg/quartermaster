@@ -23,6 +23,8 @@ export interface Location {
   id: string;
   name: string;
   kind?: string;
+  sort_order?: number;
+  sortOrder?: number;
 }
 
 export type UnitFamily = 'mass' | 'volume' | 'count';
@@ -179,6 +181,18 @@ export interface CreateStockRequest {
   note?: string | null;
 }
 
+export interface CreateLocationRequest {
+  name: string;
+  kind: string;
+  sort_order?: number | null;
+}
+
+export interface UpdateLocationRequest {
+  name: string;
+  kind: string;
+  sort_order: number;
+}
+
 export interface UpdateStockRequest {
   quantity?: string | null;
   location_id?: string | null;
@@ -221,6 +235,9 @@ export interface SessionTransport {
   me(): Promise<ApiResult<MeResponse>>;
   switchHousehold(body: { household_id: string }): Promise<ApiResult<MeResponse>>;
   locationsList(): Promise<ApiResult<Location[]>>;
+  locationsCreate(body: CreateLocationRequest): Promise<ApiResult<Location>>;
+  locationsUpdate(id: string, body: UpdateLocationRequest): Promise<ApiResult<Location>>;
+  locationsDelete(id: string): Promise<ApiResult<void>>;
   productSearch(query: {
     q: string;
     limit?: number | null;
@@ -250,7 +267,8 @@ export interface SessionTransport {
 export class ApiFailure extends Error {
   constructor(
     public readonly status: number,
-    message = `Request failed with HTTP ${status}`
+    message = `Request failed with HTTP ${status}`,
+    public readonly code: string | null = null
   ) {
     super(message);
   }
@@ -262,6 +280,7 @@ export interface BrowserLocationLike {
 }
 
 const WEB_ROUTE_SEGMENTS = new Set(['join']);
+const WEB_ROUTE_PATHS = new Set(['settings']);
 
 function trimTrailingSlashes(value: string): string {
   return value.replace(/\/+$/, '');
@@ -271,7 +290,7 @@ function ingressBasePath(pathname = ''): string {
   const normalized = `/${pathname}`.replace(/\/+/g, '/');
   const segments = normalized.split('/').filter(Boolean);
   const last = segments.at(-1);
-  if (last && WEB_ROUTE_SEGMENTS.has(last)) {
+  if (last && (WEB_ROUTE_SEGMENTS.has(last) || WEB_ROUTE_PATHS.has(last))) {
     segments.pop();
   }
   return segments.length > 0 ? `/${segments.join('/')}` : '';
@@ -393,6 +412,18 @@ export class QuartermasterSession {
 
   locationsList(): Promise<Location[]> {
     return this.authed(() => this.transport.locationsList());
+  }
+
+  locationsCreate(body: CreateLocationRequest): Promise<Location> {
+    return this.authed(() => this.transport.locationsCreate(body));
+  }
+
+  locationsUpdate(id: string, body: UpdateLocationRequest): Promise<Location> {
+    return this.authed(() => this.transport.locationsUpdate(id, body));
+  }
+
+  locationsDelete(id: string): Promise<void> {
+    return this.authed(() => this.transport.locationsDelete(id));
   }
 
   productSearch(query: { q: string; limit?: number | null }): Promise<ProductSearchResponse> {
@@ -519,5 +550,9 @@ export function unwrap<T>(result: ApiResult<T>): T {
   if (result.data !== undefined) {
     return result.data;
   }
-  throw new ApiFailure(result.response?.status ?? 0);
+  if (result.response?.status === 204) {
+    return undefined as T;
+  }
+  const body = result.error as { code?: string; message?: string } | undefined;
+  throw new ApiFailure(result.response?.status ?? 0, body?.message, body?.code ?? null);
 }
