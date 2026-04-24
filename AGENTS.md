@@ -36,6 +36,7 @@ These are enforced in code, but the *why* lives here. Respect them.
 - **`TODO.md` is gitignored by design.** Treat it as a personal scratchpad for the current working session. Don't refer to it from tracked code or docs.
 - **`xcodegen generate`** (in `ios/`) regenerates the `.xcodeproj` from `project.yml`. Re-run after any `project.yml` edit, and also after adding new Swift source files or source-group structure that Xcode needs to see.
 - **Use Conventional Commits for every commit message.** Release Please derives versions from commit subjects: `fix:` for patch, `feat:` for minor, and `type!:` or a `BREAKING CHANGE:` footer for major. Use non-release types like `chore:`, `docs:`, `test:`, or `refactor:` when the change should not bump the product version.
+- **Format before committing.** Run the relevant formatter for your change, or `pnpm format` at the repo root when in doubt. CI enforces Rust (`cargo fmt`), Swift (`swift-format`), Kotlin (`spotless`/`ktlint`), and web (`prettier`) formatting.
 
 ## Verification
 

@@ -45,6 +45,12 @@ importers:
       '@types/node':
         specifier: 22.16.5
         version: 22.16.5
+      prettier:
+        specifier: 3.6.2
+        version: 3.6.2
+      prettier-plugin-svelte:
+        specifier: 3.4.0
+        version: 3.4.0(prettier@3.6.2)(svelte@5.38.10)
       svelte-check:
         specifier: 4.3.1
         version: 4.3.1(picomatch@4.0.4)(svelte@5.38.10)(typescript@5.8.3)
@@ -1121,6 +1127,17 @@ packages:
   powershell-utils@0.1.0:
     resolution: {integrity: sha512-dM0jVuXJPsDN6DvRpea484tCUaMiXWjuCn++HGTqUWzGDjv5tZkEZldAJ/UMlqRYGFrD/etByo4/xOuC/snX2A==}
     engines: {node: '>=20'}
+
+  prettier-plugin-svelte@3.4.0:
+    resolution: {integrity: sha512-pn1ra/0mPObzqoIQn/vUTR3ZZI6UuZ0sHqMK5x2jMLGrs53h0sXhkVuDcrlssHwIMk7FYrMjHBPoUSyyEEDlBQ==}
+    peerDependencies:
+      prettier: ^3.0.0
+      svelte: ^3.2.0 || ^4.0.0-next.0 || ^5.0.0-next.0
+
+  prettier@3.6.2:
+    resolution: {integrity: sha512-I7AIg5boAr5R0FFtJ6rCfD+LFsWHp81dolrFD8S79U9tb8Az2nGrJncnMSnys+bpQJfRUzqs9hnA81OAA3hCuQ==}
+    engines: {node: '>=14'}
+    hasBin: true
 
   rc9@2.1.2:
     resolution: {integrity: sha512-btXCnMmRIBINM2LDZoEmOogIZU7Qe7zn4BpomSKZ/ykbLObuBdvG+mFq11DL6fjH1DRwHhrlgtYWG96bJiC7Cg==}
@@ -2293,6 +2310,13 @@ snapshots:
       source-map-js: 1.2.1
 
   powershell-utils@0.1.0: {}
+
+  prettier-plugin-svelte@3.4.0(prettier@3.6.2)(svelte@5.38.10):
+    dependencies:
+      prettier: 3.6.2
+      svelte: 5.38.10
+
+  prettier@3.6.2: {}
 
   rc9@2.1.2:
     dependencies:

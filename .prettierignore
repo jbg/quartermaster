@@ -1,0 +1,11 @@
+target/
+web/build/
+web/.svelte-kit/
+web/src/lib/generated/
+web/test-results/
+android/.gradle/
+android/build/
+android/app/build/
+ios/Quartermaster.xcodeproj/
+ios/DerivedData/
+node_modules/

@@ -11,20 +11,25 @@ data class SessionSnapshot(
     val refreshToken: String?,
 )
 
-class AuthStore(context: Context) : SessionStore {
+class AuthStore(
+    context: Context,
+) : SessionStore {
     private val prefs: SharedPreferences
 
     init {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        prefs = EncryptedSharedPreferences.create(
-            context,
-            "quartermaster-session",
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+        val masterKey =
+            MasterKey
+                .Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+        prefs =
+            EncryptedSharedPreferences.create(
+                context,
+                "quartermaster-session",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
     }
 
     override fun snapshot(): SessionSnapshot = SessionSnapshot(
@@ -37,15 +42,20 @@ class AuthStore(context: Context) : SessionStore {
         prefs.edit().putString(KEY_SERVER_URL, url.trim().removeSuffix("/")).apply()
     }
 
-    override fun saveTokens(accessToken: String, refreshToken: String) {
-        prefs.edit()
+    override fun saveTokens(
+        accessToken: String,
+        refreshToken: String,
+    ) {
+        prefs
+            .edit()
             .putString(KEY_ACCESS_TOKEN, accessToken)
             .putString(KEY_REFRESH_TOKEN, refreshToken)
             .apply()
     }
 
     override fun clearTokens() {
-        prefs.edit()
+        prefs
+            .edit()
             .remove(KEY_ACCESS_TOKEN)
             .remove(KEY_REFRESH_TOKEN)
             .apply()
@@ -54,7 +64,11 @@ class AuthStore(context: Context) : SessionStore {
     override fun stableDeviceId(): String {
         val existing = prefs.getString(KEY_DEVICE_ID, null)
         if (!existing.isNullOrBlank()) return existing
-        val created = java.util.UUID.randomUUID().toString().lowercase()
+        val created =
+            java.util.UUID
+                .randomUUID()
+                .toString()
+                .lowercase()
         prefs.edit().putString(KEY_DEVICE_ID, created).apply()
         return created
     }

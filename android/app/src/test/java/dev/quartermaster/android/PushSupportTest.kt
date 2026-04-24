@@ -15,12 +15,13 @@ import org.robolectric.annotation.Config
 class PushSupportTest {
     @Test
     fun `payloadFromMap rejects incomplete payload`() {
-        val payload = PushSupport.payloadFromMap(
-            mapOf(
-                "reminder_id" to "55555555-5555-5555-5555-555555555555",
-                "batch_id" to "33333333-3333-3333-3333-333333333333",
+        val payload =
+            PushSupport.payloadFromMap(
+                mapOf(
+                    "reminder_id" to "55555555-5555-5555-5555-555555555555",
+                    "batch_id" to "33333333-3333-3333-3333-333333333333",
+                ),
             )
-        )
 
         assertNull(payload)
     }
@@ -37,16 +38,18 @@ class PushSupportTest {
     fun `reminder intent router routes deep link and payload once per signature`() = runTest {
         val seenDeepLinks = mutableListOf<Uri>()
         val seenReminderIds = mutableListOf<String>()
-        val router = ReminderIntentRouter(
-            handleDeepLink = seenDeepLinks::add,
-            handleIntent = { intent ->
-                PushSupport.payloadFromIntent(intent)?.let { seenReminderIds += it.reminderId }
-            },
-        )
-        val intent = PushSupport.applyReminderPayload(
-            Intent(Intent.ACTION_VIEW, Uri.parse("quartermaster://join?invite=DEEP1234")),
-            reminderPayload(),
-        )
+        val router =
+            ReminderIntentRouter(
+                handleDeepLink = seenDeepLinks::add,
+                handleIntent = { intent ->
+                    PushSupport.payloadFromIntent(intent)?.let { seenReminderIds += it.reminderId }
+                },
+            )
+        val intent =
+            PushSupport.applyReminderPayload(
+                Intent(Intent.ACTION_VIEW, Uri.parse("quartermaster://join?invite=DEEP1234")),
+                reminderPayload(),
+            )
 
         router.route(intent)
         router.route(intent)
@@ -58,17 +61,19 @@ class PushSupportTest {
     @Test
     fun `reminder intent router distinguishes different payloads`() = runTest {
         val seenReminderIds = mutableListOf<String>()
-        val router = ReminderIntentRouter(
-            handleDeepLink = {},
-            handleIntent = { intent ->
-                PushSupport.payloadFromIntent(intent)?.let { seenReminderIds += it.reminderId }
-            },
-        )
+        val router =
+            ReminderIntentRouter(
+                handleDeepLink = {},
+                handleIntent = { intent ->
+                    PushSupport.payloadFromIntent(intent)?.let { seenReminderIds += it.reminderId }
+                },
+            )
         val first = PushSupport.applyReminderPayload(Intent(), reminderPayload())
-        val second = PushSupport.applyReminderPayload(
-            Intent(),
-            reminderPayload(reminderId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
-        )
+        val second =
+            PushSupport.applyReminderPayload(
+                Intent(),
+                reminderPayload(reminderId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            )
 
         router.route(first)
         router.route(second)
@@ -82,9 +87,7 @@ class PushSupportTest {
         )
     }
 
-    private fun reminderPayload(
-        reminderId: String = "55555555-5555-5555-5555-555555555555",
-    ) = ReminderPushPayload(
+    private fun reminderPayload(reminderId: String = "55555555-5555-5555-5555-555555555555") = ReminderPushPayload(
         reminderId = reminderId,
         batchId = "33333333-3333-3333-3333-333333333333",
         productId = "44444444-4444-4444-4444-444444444444",

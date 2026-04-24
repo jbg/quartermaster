@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Notifications
@@ -30,7 +31,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,12 +38,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.ProductDto
@@ -107,7 +107,7 @@ fun QuartermasterApp(appState: QuartermasterAppState) {
                                         MainTab.Reminders -> SmokeTag.RemindersTab
                                         MainTab.Settings -> SmokeTag.SettingsTab
                                         else -> "main-tab-${tab.name.lowercase()}"
-                                    }
+                                    },
                                 ),
                                 selected = appState.selectedTab == tab,
                                 onClick = { appState.selectedTab = tab },
@@ -228,7 +228,7 @@ private fun InviteHandoffCard(
                 modifier = inviteCode
                     ?.takeIf(String::isNotBlank)
                     ?.let { Modifier.testTag(SmokeTag.inviteCode(it)) }
-                    ?: Modifier
+                    ?: Modifier,
             )
             onDismiss?.let {
                 TextButton(onClick = it) {
@@ -563,13 +563,13 @@ private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier 
                         product != null -> "Showing ${product.name}. Quartermaster is still matching the reminder location."
                         else -> "Quartermaster is still loading the stock mentioned in this reminder."
                     },
-                    modifier = Modifier.testTag(SmokeTag.ReminderOpenedBanner)
+                    modifier = Modifier.testTag(SmokeTag.ReminderOpenedBanner),
                 )
             }
             item {
                 TextButton(
                     modifier = Modifier.testTag(SmokeTag.ReminderOpenedDismissButton),
-                    onClick = { appState.clearInventoryTarget() }
+                    onClick = { appState.clearInventoryTarget() },
                 ) {
                     Text("Dismiss")
                 }
@@ -578,7 +578,7 @@ private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier 
 
         val target = appState.pendingInventoryTarget
         val prioritizedLocations = appState.locations.sortedWith(
-            compareByDescending<LocationDto> { it.id.toString() == target?.locationId }.thenBy { it.name.lowercase() }
+            compareByDescending<LocationDto> { it.id.toString() == target?.locationId }.thenBy { it.name.lowercase() },
         )
 
         items(prioritizedLocations, key = { it.id }) { location ->
@@ -641,8 +641,8 @@ private fun LocationInventoryCard(
                                 MaterialTheme.colorScheme.secondaryContainer
                             } else {
                                 MaterialTheme.colorScheme.surfaceVariant
-                            }
-                        )
+                            },
+                        ),
                     ) {
                         Column(
                             modifier = Modifier
@@ -656,7 +656,7 @@ private fun LocationInventoryCard(
                                 Text(
                                     "Reminder target",
                                     style = MaterialTheme.typography.labelMedium,
-                                    modifier = Modifier.testTag(SmokeTag.reminderTarget(batch.id.toString()))
+                                    modifier = Modifier.testTag(SmokeTag.reminderTarget(batch.id.toString())),
                                 )
                             }
                         }
@@ -756,14 +756,14 @@ private fun ReminderCard(
                 Button(
                     modifier = Modifier.testTag(SmokeTag.reminderOpenButton(reminder.id.toString())),
                     onClick = onOpen,
-                    enabled = action == null
+                    enabled = action == null,
                 ) {
                     Text(if (action == ReminderAction.Open) "Opening..." else "Open")
                 }
                 TextButton(
                     modifier = Modifier.testTag(SmokeTag.reminderAckButton(reminder.id.toString())),
                     onClick = onAcknowledge,
-                    enabled = action == null
+                    enabled = action == null,
                 ) {
                     Text(if (action == ReminderAction.Acknowledge) "Acknowledging..." else "Acknowledge")
                 }
@@ -1233,11 +1233,9 @@ private fun SelectionCard(
 private fun QuartermasterAppState.batchesForLocation(
     locationId: String,
     target: InventoryTarget?,
-): List<StockBatchDto> {
-    return batches.filter { it.locationId.toString() == locationId }
-        .sortedWith(
-            compareByDescending<StockBatchDto> { it.product.id.toString() == target?.productId }
-                .thenBy { it.product.name.lowercase() }
-                .thenBy { it.expiresOn ?: "9999-12-31" }
-        )
-}
+): List<StockBatchDto> = batches.filter { it.locationId.toString() == locationId }
+    .sortedWith(
+        compareByDescending<StockBatchDto> { it.product.id.toString() == target?.productId }
+            .thenBy { it.product.name.lowercase() }
+            .thenBy { it.expiresOn ?: "9999-12-31" },
+    )

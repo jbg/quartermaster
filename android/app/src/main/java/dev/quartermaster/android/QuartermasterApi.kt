@@ -1,5 +1,6 @@
 package dev.quartermaster.android
 
+import dev.quartermaster.android.generated.infrastructure.Serializer
 import dev.quartermaster.android.generated.models.BarcodeLookupResponse
 import dev.quartermaster.android.generated.models.CreateHouseholdRequest
 import dev.quartermaster.android.generated.models.CreateInviteRequest
@@ -13,8 +14,8 @@ import dev.quartermaster.android.generated.models.MemberDto
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.ProductSearchResponse
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
-import dev.quartermaster.android.generated.models.RefreshRequest
 import dev.quartermaster.android.generated.models.RedeemInviteRequest
+import dev.quartermaster.android.generated.models.RefreshRequest
 import dev.quartermaster.android.generated.models.RegisterDeviceRequest
 import dev.quartermaster.android.generated.models.RegisterRequest
 import dev.quartermaster.android.generated.models.ReminderDto
@@ -26,21 +27,19 @@ import dev.quartermaster.android.generated.models.StockListResponse
 import dev.quartermaster.android.generated.models.SwitchHouseholdRequest
 import dev.quartermaster.android.generated.models.TokenPair
 import dev.quartermaster.android.generated.models.UnitDto
-import dev.quartermaster.android.generated.infrastructure.Serializer
-import java.io.IOException
-import java.util.UUID
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.logging.HttpLoggingInterceptor
+import java.io.IOException
+import java.util.UUID
 
 class ApiFailure(
     val status: Int,
@@ -48,14 +47,19 @@ class ApiFailure(
     override val message: String,
 ) : IOException(message)
 
-class QuartermasterApi(private val authStore: AuthStore) {
+class QuartermasterApi(
+    private val authStore: AuthStore,
+) {
     private val json = Serializer.kotlinxSerializationJson
     private val refreshMutex = Mutex()
-    private val client = OkHttpClient.Builder()
-        .addInterceptor(HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BASIC
-        })
-        .build()
+    private val client =
+        OkHttpClient
+            .Builder()
+            .addInterceptor(
+                HttpLoggingInterceptor().apply {
+                    level = HttpLoggingInterceptor.Level.BASIC
+                },
+            ).build()
 
     var serverUrl: String
         get() = authStore.snapshot().serverUrl
@@ -70,7 +74,8 @@ class QuartermasterApi(private val authStore: AuthStore) {
     ): TokenPair = jsonRequest<TokenPair>(
         method = "POST",
         path = "/auth/login",
-        body = LoginRequest(
+        body =
+        LoginRequest(
             username = username,
             password = password,
             deviceLabel = deviceLabel,
@@ -87,7 +92,8 @@ class QuartermasterApi(private val authStore: AuthStore) {
     ): TokenPair = jsonRequest<TokenPair>(
         method = "POST",
         path = "/auth/register",
-        body = RegisterRequest(
+        body =
+        RegisterRequest(
             username = username,
             password = password,
             email = email,
@@ -108,7 +114,10 @@ class QuartermasterApi(private val authStore: AuthStore) {
         body = SwitchHouseholdRequest(householdId = UUID.fromString(householdId)),
     )
 
-    suspend fun createHousehold(name: String, timezone: String): MeResponse = authedJson(
+    suspend fun createHousehold(
+        name: String,
+        timezone: String,
+    ): MeResponse = authedJson(
         method = "POST",
         path = "/households",
         body = CreateHouseholdRequest(name = name, timezone = timezone),
@@ -138,14 +147,11 @@ class QuartermasterApi(private val authStore: AuthStore) {
 
     suspend fun units(): List<UnitDto> = authedJson("GET", "/units")
 
-    suspend fun listStock(): List<StockBatchDto> =
-        authedJson<StockListResponse>("GET", "/stock").items
+    suspend fun listStock(): List<StockBatchDto> = authedJson<StockListResponse>("GET", "/stock").items
 
-    suspend fun listEvents(limit: Int = 30): List<StockEventDto> =
-        authedJson<StockEventListResponse>("GET", "/stock/events?limit=$limit").items
+    suspend fun listEvents(limit: Int = 30): List<StockEventDto> = authedJson<StockEventListResponse>("GET", "/stock/events?limit=$limit").items
 
-    suspend fun listReminders(limit: Int = 50): List<ReminderDto> =
-        authedJson<ReminderListResponse>("GET", "/reminders?limit=$limit").items
+    suspend fun listReminders(limit: Int = 50): List<ReminderDto> = authedJson<ReminderListResponse>("GET", "/reminders?limit=$limit").items
 
     suspend fun acknowledgeReminder(id: String) {
         authedUnit("POST", "/reminders/$id/ack")
@@ -168,7 +174,8 @@ class QuartermasterApi(private val authStore: AuthStore) {
         authedUnit(
             method = "POST",
             path = "/devices/register",
-            body = RegisterDeviceRequest(
+            body =
+            RegisterDeviceRequest(
                 deviceId = deviceId,
                 platform = "android",
                 pushToken = pushToken,
@@ -178,14 +185,12 @@ class QuartermasterApi(private val authStore: AuthStore) {
         )
     }
 
-    suspend fun searchProducts(query: String): List<ProductDto> =
-        authedJson<ProductSearchResponse>(
-            "GET",
-            "/products/search?query=${query.urlEncode()}&limit=20"
-        ).items
+    suspend fun searchProducts(query: String): List<ProductDto> = authedJson<ProductSearchResponse>(
+        "GET",
+        "/products/search?query=${query.urlEncode()}&limit=20",
+    ).items
 
-    suspend fun lookupBarcode(barcode: String): BarcodeLookupResponse =
-        authedJson("GET", "/products/by-barcode/${barcode.urlEncode()}")
+    suspend fun lookupBarcode(barcode: String): BarcodeLookupResponse = authedJson("GET", "/products/by-barcode/${barcode.urlEncode()}")
 
     suspend fun addStock(request: CreateStockRequest): StockBatchDto = authedJson(
         method = "POST",
@@ -223,12 +228,13 @@ class QuartermasterApi(private val authStore: AuthStore) {
     private suspend fun refreshTokens(): Boolean = refreshMutex.withLock {
         val refreshToken = authStore.snapshot().refreshToken ?: return false
         return try {
-            val pair: TokenPair = jsonRequest<TokenPair>(
-                method = "POST",
-                path = "/auth/refresh",
-                body = RefreshRequest(refreshToken = refreshToken),
-                requiresAuth = false,
-            )
+            val pair: TokenPair =
+                jsonRequest<TokenPair>(
+                    method = "POST",
+                    path = "/auth/refresh",
+                    body = RefreshRequest(refreshToken = refreshToken),
+                    requiresAuth = false,
+                )
             authStore.saveTokens(pair.accessToken, pair.refreshToken)
             true
         } catch (_: Exception) {
@@ -268,34 +274,39 @@ class QuartermasterApi(private val authStore: AuthStore) {
         requiresAuth: Boolean,
     ): String {
         val snapshot = authStore.snapshot()
-        val requestBuilder = Request.Builder()
-            .url(snapshot.serverUrl.removeSuffix("/") + path)
-            .header("Accept", "application/json")
+        val requestBuilder =
+            Request
+                .Builder()
+                .url(snapshot.serverUrl.removeSuffix("/") + path)
+                .header("Accept", "application/json")
 
         if (requiresAuth) {
             val token = snapshot.accessToken ?: throw ApiFailure(401, null, "Not signed in")
             requestBuilder.header("Authorization", "Bearer $token")
         }
 
-        val requestBody = body?.let {
-            encodeBody(it)
-                .toRequestBody(JSON_MEDIA_TYPE)
-        }
+        val requestBody =
+            body?.let {
+                encodeBody(it)
+                    .toRequestBody(JSON_MEDIA_TYPE)
+            }
 
-        val request = when (method) {
-            "GET" -> requestBuilder.get().build()
-            "POST" -> requestBuilder.post(requestBody ?: EMPTY_JSON_BODY).build()
-            "PATCH" -> requestBuilder.patch(requestBody ?: EMPTY_JSON_BODY).build()
-            "DELETE" -> requestBuilder.delete(requestBody).build()
-            else -> error("Unsupported method $method")
-        }
+        val request =
+            when (method) {
+                "GET" -> requestBuilder.get().build()
+                "POST" -> requestBuilder.post(requestBody ?: EMPTY_JSON_BODY).build()
+                "PATCH" -> requestBuilder.patch(requestBody ?: EMPTY_JSON_BODY).build()
+                "DELETE" -> requestBuilder.delete(requestBody).build()
+                else -> error("Unsupported method $method")
+            }
 
         client.newCall(request).execute().use { response ->
             val payload = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                val error = payload.takeIf(String::isNotBlank)?.let {
-                    runCatching { json.decodeFromString<ApiErrorBody>(it) }.getOrNull()
-                }
+                val error =
+                    payload.takeIf(String::isNotBlank)?.let {
+                        runCatching { json.decodeFromString<ApiErrorBody>(it) }.getOrNull()
+                    }
                 throw ApiFailure(
                     status = response.code,
                     code = error?.code,

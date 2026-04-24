@@ -16,6 +16,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+
       - name: Run workspace tests
         run: cargo test --workspace
 
@@ -130,6 +133,12 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Install swift-format
+        run: brew install swift-format
+
+      - name: Check Swift formatting
+        run: swift-format lint --strict --recursive ios/Quartermaster
+
       - name: Generate Xcode project
         working-directory: ios
         run: xcodegen generate
@@ -160,6 +169,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.4.1"
+
+      - name: Check Kotlin formatting
+        working-directory: android
+        run: gradle spotlessCheck
 
       - name: Build Android app
         working-directory: android
@@ -192,6 +205,11 @@ jobs:
         env:
           VOLTA_FEATURE_PNPM: "1"
         run: pnpm -C web generate:api
+
+      - name: Check web formatting
+        env:
+          VOLTA_FEATURE_PNPM: "1"
+        run: pnpm -C web format:check
 
       - name: Check web app
         env:
