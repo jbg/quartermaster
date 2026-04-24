@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   build-platform:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
@@ -46,15 +46,15 @@ jobs:
           - platform: linux/amd64
             platform_slug: linux-amd64
             hass_arch: amd64
+            runner: ubuntu-24.04
           - platform: linux/arm64
             platform_slug: linux-arm64
             hass_arch: aarch64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.release_tag || github.ref }}
-
-      - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3
 
@@ -145,7 +145,7 @@ jobs:
 
   publish-manifest:
     if: github.event_name == 'release' || github.event_name == 'workflow_call' || inputs.release_tag != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs:
       - build-platform
     outputs:
@@ -203,7 +203,7 @@ jobs:
 
   update-home-assistant-app:
     if: github.event_name == 'release' || github.event_name == 'workflow_call' || inputs.release_tag != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs:
       - publish-manifest
     permissions:
