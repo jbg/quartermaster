@@ -1,264 +1,30 @@
 # Quartermaster
 
-A mobile-first, self-hostable kitchen inventory management system.
+Quartermaster is a self-hosted kitchen inventory app for households.
 
-Quartermaster tells you what's in your kitchen, what's about to expire, and lets you add stock quickly by scanning a barcode. That's it. No recipes, no meal planning, no to-do lists — at least not for now. It's a leaner, inventory-focused alternative to [Grocy](https://grocy.info).
+It helps you keep track of what is in your pantry, fridge, and freezer; what is about to expire; and what needs to be used up. You can add stock manually, search existing products, scan barcodes on supported mobile devices, group stock by location, review inventory history, and receive expiry reminders.
+
+There is no hosted Quartermaster service today. To use it, you run your own Quartermaster server and connect the mobile or web clients to it.
 
 ## Status
 
-Early work in progress. v1 is being built toward an "empty pantry" first vertical slice.
+Quartermaster is pre-1.0 and still changing, but it is far enough along for adventurous self-hosters to try with real household data.
 
-## Architecture
+- **Server:** Rust API, SQLite by default, optional Postgres, Docker image support, local accounts, invite-based household sharing, barcode lookup, stock history, reminders, push-worker support, and optional Prometheus metrics.
+- **iOS:** Native SwiftUI client is the primary client. It supports onboarding, sign-in, household switching, inventory, stock creation/editing/consumption, barcode scanning on physical devices, history, settings, invite links, and reminders.
+- **Android:** Native Jetpack Compose client exists and can connect to self-hosted servers. It supports the core account, inventory, reminder, and invite flows, with push configuration available for self-hosters who provide Firebase details.
+- **Web:** A SvelteKit web shell is included and can be served by the API process. It is useful for basic self-hosted access and smoke testing, but the mobile apps are the main experience.
 
-- **Backend:** Rust (Axum + SQLx + Tokio), single self-hosted binary
-- **Database:** SQLite by default (one `.db` file), Postgres optional via config
-- **Mobile:** native clients. iOS first (SwiftUI, iOS 26, Liquid Glass), then Android, then web. iOS types + HTTP client are generated at Xcode build time from the checked-in OpenAPI spec via [swift-openapi-generator](https://github.com/apple/swift-openapi-generator); the Android app generates its Retrofit client from that same checked-in spec during the Gradle build.
-- **Products / barcodes:** [OpenFoodFacts](https://world.openfoodfacts.org) with local cache; manual entry always available
-- **Auth:** local accounts with household invite codes; opaque access + refresh tokens
-- **Households:** users may belong to multiple households; the active one is the most recently joined membership (with `household.id` as the deterministic tiebreak when timestamps match)
-- **License:** Apache-2.0
+Quartermaster is intentionally narrow: it is inventory software, not recipe planning, grocery automation, or a general household task app.
 
-## Repository layout
+## What You Need
 
-```
-.
-├── Cargo.toml              workspace manifest
-├── crates/
-│   ├── qm-core/            domain logic (units, batches, errors) — no I/O
-│   ├── qm-db/              SQLx repos + migrations
-│   ├── qm-api/             Axum handlers, middleware, OpenAPI
-│   │   └── tests/          integration tests grouped by behavior (auth, invites, households, stock, products, request IDs, barcode lookup)
-│   └── qm-server/          the shipped binary
-├── xtask/                  developer tasks (export-openapi, …)
-├── openapi.json            generated spec (canonical copy, for external consumers + CI drift check)
-├── android/                Jetpack Compose app + generated Retrofit client
-├── web/                    SvelteKit web shell + generated TypeScript client
-└── ios/Quartermaster/      SwiftUI app — consumes openapi.json via a build-tool plugin
-    └── openapi.json        second copy, read by the Xcode plugin (kept in sync by xtask)
-```
+- A machine that can run an OCI container, or a Rust toolchain if you want to run from source.
+- A persistent database location. SQLite is the simplest option and stores everything in one file.
+- A reverse proxy with HTTPS if you want to use it outside your home network.
+- Optional: APNs and/or Firebase Cloud Messaging credentials if you want push notifications instead of only in-app reminder inboxes.
 
-## Running the backend
-
-```sh
-cargo run -p qm-server
-```
-
-The server listens on `0.0.0.0:8080` and creates `data.db` in the working directory by default. Override with environment variables:
-
-| Variable                | Default                     | Meaning                                      |
-|-------------------------|-----------------------------|----------------------------------------------|
-| `QM_BIND`               | `0.0.0.0:8080`              | Bind address                                 |
-| `QM_DATABASE_URL`       | `sqlite://data.db?mode=rwc` | SQLx connection string (SQLite or Postgres)  |
-| `QM_LOG_FORMAT`         | `text`                      | Log formatter: `text` or `json`              |
-| `QM_REGISTRATION_MODE`  | `first_run_only`            | `first_run_only` \| `invite_only` \| `open`  |
-| `QM_PUBLIC_BASE_URL`    | unset                       | Public HTTPS origin used in invite/share links |
-| `QM_IOS_TEAM_ID`        | unset                       | Optional Apple Team ID for serving the AASA payload; required only when publishing universal-link identity |
-| `QM_IOS_BUNDLE_ID`      | unset                       | Optional iOS bundle identifier for serving the AASA payload; required only when publishing universal-link identity |
-| `RUST_LOG`              | `info`                      | Tracing filter                               |
-
-Then probe it:
-
-```sh
-curl http://localhost:8080/healthz
-open http://localhost:8080/docs      # Swagger UI (when built with default features)
-```
-
-Every HTTP response includes an `X-Request-Id` header. If a client supplies one, Quartermaster propagates it; otherwise the server generates one. Authenticated request spans also record the resolved `user_id` and `household_id`, and `QM_LOG_FORMAT=json` switches logs to newline-delimited JSON for structured ingestion.
-
-Users may belong to multiple households. The active household is session-scoped: each logged-in device/session keeps its own selected household, and `POST /auth/switch-household` changes that selection for the current session only.
-
-Quartermaster also supports a few self-hosting hardening knobs:
-
-| Variable                                   | Default                                           | Meaning |
-|--------------------------------------------|---------------------------------------------------|---------|
-| `QM_RATE_LIMIT_CLIENT_IP_MODE`            | `socket`                                          | `socket` for direct client IPs, or `x-forwarded-for` when a trusted reverse proxy rewrites that header |
-| `QM_RATE_LIMIT_TRUSTED_PROXY_CIDRS`       | unset                                             | Comma-separated CIDRs whose socket IPs are allowed to supply `X-Forwarded-For` |
-| `QM_RATE_LIMIT_AUTH_PER_MINUTE`            | `10`                                              | Per-client auth request refill rate |
-| `QM_RATE_LIMIT_AUTH_BURST`                 | `5`                                               | Per-client auth burst bucket size |
-| `QM_RATE_LIMIT_BARCODE_PER_MINUTE`         | `60`                                              | Per-client barcode lookup refill rate |
-| `QM_RATE_LIMIT_BARCODE_BURST`              | `20`                                              | Per-client barcode lookup burst bucket size |
-| `QM_RATE_LIMIT_HISTORY_PER_MINUTE`         | `120`                                             | Per-client history request refill rate |
-| `QM_RATE_LIMIT_HISTORY_BURST`              | `40`                                              | Per-client history burst bucket size |
-| `QM_OFF_API_BASE_URL`                      | `https://world.openfoodfacts.org/api/v2/product`  | Open Food Facts API base URL |
-| `QM_PUBLIC_BASE_URL`                       | unset                                             | Public base URL for invite/share links |
-| `QM_OFF_TIMEOUT_SECONDS`                   | `5`                                               | Timeout for one OFF HTTP request |
-| `QM_OFF_MAX_RETRIES`                       | `2`                                               | Retries for transient OFF failures |
-| `QM_OFF_RETRY_BASE_DELAY_MS`               | `200`                                             | Base backoff delay for OFF retries |
-| `QM_OFF_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `5`                                               | Consecutive transient OFF failures before opening the breaker |
-| `QM_OFF_CIRCUIT_BREAKER_OPEN_SECONDS`      | `60`                                              | How long OFF stays fail-fast once the breaker opens |
-| `QM_AUTH_SESSION_SWEEP_INTERVAL_SECONDS`   | `0`                                               | Periodic stale-session sweep interval in seconds; `0` disables the in-process timer |
-| `QM_AUTH_SESSION_SWEEP_TRIGGER_SECRET`     | unset                                             | Enables `POST /internal/maintenance/sweep-auth-sessions` when set; callers must supply the shared secret in `X-QM-Maintenance-Token` |
-| `QM_ANDROID_SMOKE_SEED_TRIGGER_SECRET`     | unset                                             | Enables the internal local-testing `POST /internal/maintenance/seed-android-smoke` fixture route; callers must supply the shared secret in `X-QM-Maintenance-Token` |
-| `QM_EXPIRY_REMINDERS_ENABLED`              | `false`                                           | Enables backend-owned expiry reminder generation |
-| `QM_EXPIRY_REMINDER_LEAD_DAYS`             | `1`                                               | How many days before expiry a reminder should fire |
-| `QM_EXPIRY_REMINDER_FIRE_HOUR`             | `9`                                               | Household-local hour when expiry reminders should fire |
-| `QM_EXPIRY_REMINDER_FIRE_MINUTE`           | `0`                                               | Household-local minute when expiry reminders should fire |
-| `QM_EXPIRY_REMINDER_SWEEP_INTERVAL_SECONDS`| `0`                                               | Periodic reminder reconciliation interval in seconds; `0` disables the in-process timer |
-| `QM_EXPIRY_REMINDER_TRIGGER_SECRET`        | unset                                             | Enables `POST /internal/maintenance/sweep-expiry-reminders` when set; callers must supply the shared secret in `X-QM-Maintenance-Token` |
-| `QM_PUSH_WORKER_ENABLED`                   | `false`                                           | Runs the reminder push delivery worker inside the main API process when `true` and at least one push provider is configured |
-| `QM_PUSH_WORKER_POLL_INTERVAL_SECONDS`     | `30`                                              | How often the worker scans for due reminder deliveries |
-| `QM_PUSH_WORKER_BATCH_SIZE`                | `25`                                              | Maximum reminder/device deliveries to claim in one cycle |
-| `QM_PUSH_WORKER_CLAIM_TTL_SECONDS`         | `60`                                              | How long a claimed delivery stays reserved before it is considered stale |
-| `QM_PUSH_WORKER_RETRY_BACKOFF_SECONDS`     | `300`                                             | Retry delay after a retryable push failure or expired claim |
-| `QM_APNS_ENABLED`                          | `false`                                           | Enables APNs delivery support |
-| `QM_APNS_ENVIRONMENT`                      | `sandbox`                                         | APNs environment: `sandbox` or `production` |
-| `QM_APNS_TOPIC`                            | unset                                             | APNs topic / bundle identifier used for reminder notifications |
-| `QM_APNS_AUTH_TOKEN`                       | unset                                             | APNs bearer token; must be supplied when APNs is enabled |
-| `QM_APNS_BASE_URL`                         | unset                                             | Optional APNs base URL override for local development or testing |
-| `QM_FCM_ENABLED`                           | `false`                                           | Enables FCM delivery support for Android reminder notifications |
-| `QM_FCM_PROJECT_ID`                        | unset                                             | Firebase project ID used in the FCM v1 send path |
-| `QM_FCM_SERVICE_ACCOUNT_JSON_PATH`         | unset                                             | Path to a Firebase service-account JSON file used for OAuth token minting |
-| `QM_FCM_BASE_URL`                          | unset                                             | Optional FCM base URL override for local development or testing |
-| `QM_FCM_TOKEN_URL`                         | unset                                             | Optional OAuth token URL override for local development or testing |
-| `QM_METRICS_ENABLED`                       | `false`                                           | Enables internal Prometheus metrics exposure |
-| `QM_METRICS_BIND`                          | `127.0.0.1:9091`                                  | Bind address for the dedicated `push-worker` metrics/health server |
-| `QM_METRICS_TRIGGER_SECRET`                | unset                                             | Required when metrics are enabled; callers must supply it in `X-QM-Maintenance-Token` for `GET /internal/metrics` |
-| `QM_WEB_DIST_DIR`                          | `web/build`                                       | Optional path to the built SvelteKit static web shell served by the API process |
-
-When `QM_PUBLIC_BASE_URL` is set, Quartermaster validates it strictly at startup: it must be an `https://` origin with no path, query, or fragment. The server normalizes a trailing slash away before exposing it to clients.
-
-Keep `QM_RATE_LIMIT_CLIENT_IP_MODE=socket` for direct deployments or simple local setups. Switch to `x-forwarded-for` only when Quartermaster sits behind a trusted reverse proxy that overwrites `X-Forwarded-For`, and set `QM_RATE_LIMIT_TRUSTED_PROXY_CIDRS` to the proxy subnet(s). Quartermaster ignores `X-Forwarded-For` unless the connecting peer IP matches one of those trusted CIDRs.
-
-Stale `auth_session` rows are still cleaned up opportunistically during auth flows. For long-lived deployments you can also opt into a periodic in-process sweep with `QM_AUTH_SESSION_SWEEP_INTERVAL_SECONDS`, or keep the timer disabled and trigger `POST /internal/maintenance/sweep-auth-sessions` from external automation. That maintenance route is intentionally not part of the public OpenAPI surface.
-
-Expiry reminders are also backend-owned in the current v1 design: the server computes reminder timing and wording once, stores pending reminder rows, and clients poll `GET /reminders` rather than reimplementing the policy locally. `QM_EXPIRY_REMINDER_FIRE_HOUR` and `QM_EXPIRY_REMINDER_FIRE_MINUTE` are interpreted in each household's configured timezone, then stored canonically in UTC.
-
-## Reminder Delivery
-
-Quartermaster's reminder delivery pipeline has two pieces:
-
-- the main API process, which owns stock mutations, reminder reconciliation, and the reminder inbox API
-- the push worker, which claims due reminder/device deliveries, sends APNs and/or FCM requests, and writes durable delivery attempts
-
-You can run the worker in either deployment shape:
-
-- integrated mode: run `cargo run -p qm-server` with `QM_PUSH_WORKER_ENABLED=true`
-- split mode: run the API normally and start a second process with `cargo run -p qm-server -- push-worker`
-
-`push-worker` mode requires at least one configured push provider. For iOS that means `QM_APNS_ENABLED=true` plus `QM_APNS_TOPIC`; for Android that means `QM_FCM_ENABLED=true` plus `QM_FCM_PROJECT_ID` and `QM_FCM_SERVICE_ACCOUNT_JSON_PATH`. In split deployments, the sweeper remains a repair tool for drift; the worker is still the primary delivery path.
-
-For a hosted deployment walkthrough, maintenance examples, and an operator troubleshooting checklist, see [docs/hosted-reminders.md](docs/hosted-reminders.md).
-
-### Metrics and Health
-
-When `QM_METRICS_ENABLED=true`, Quartermaster exposes an internal Prometheus scrape surface protected by `X-QM-Maintenance-Token`:
-
-- API process: `GET /internal/metrics` on the normal API bind address
-- dedicated worker: `GET /internal/metrics` and `GET /healthz` on `QM_METRICS_BIND`
-
-These routes are intentionally internal-only and are not part of the public OpenAPI contract.
-
-The worker publishes counters and gauges for:
-
-- cycle count and cycle failures
-- claimed deliveries, claim conflicts, and expired claims
-- push attempts by channel/outcome (`succeeded`, `failed_retryable`, `failed_permanent`)
-- transport failures before any provider response
-- send/cycle latency histograms
-- due reminder count, retry-due count, active claim count, permanent/retryable failure counts, invalid-token count, and oldest due reminder age
-
-Healthy delivery usually looks like:
-
-- `qm_push_worker_last_cycle_completed_timestamp_seconds` continuing to advance
-- `qm_reminders_oldest_due_age_seconds` staying low
-- `qm_push_deliveries_active_claim_count` briefly rising during sends and then draining
-- `qm_push_devices_with_invalid_token_count` staying near zero
-
-Potential trouble signs are:
-
-- oldest-due age growing steadily
-- retry-due count or active-claim count staying elevated for long periods
-- frequent claim conflicts across multiple workers
-- permanent token failures accumulating faster than devices refresh their push tokens
-
-A permanent invalid-token failure means the server has stopped retrying that reminder for that exact device token. Delivery resumes automatically if the client later re-registers the device with a new token.
-
-Example Prometheus scrape config:
-
-```yaml
-scrape_configs:
-  - job_name: quartermaster-api
-    metrics_path: /internal/metrics
-    static_configs:
-      - targets: ["quartermaster.example.com:8080"]
-    headers:
-      X-QM-Maintenance-Token: "${QM_METRICS_TRIGGER_SECRET}"
-
-  - job_name: quartermaster-push-worker
-    metrics_path: /internal/metrics
-    static_configs:
-      - targets: ["127.0.0.1:9091"]
-    headers:
-      X-QM-Maintenance-Token: "${QM_METRICS_TRIGGER_SECRET}"
-```
-
-For small hosted deployments, the default worker timings are intentionally conservative:
-
-- `QM_PUSH_WORKER_POLL_INTERVAL_SECONDS=30`
-- `QM_PUSH_WORKER_CLAIM_TTL_SECONDS=60`
-- `QM_PUSH_WORKER_RETRY_BACKOFF_SECONDS=300`
-
-Those defaults are a good starting point unless backlog age or retry volume shows they need tuning.
-
-### Production-Shaped Reminder Setup
-
-For small hosted deployments, the recommended v1 shape is:
-
-- API process with `QM_METRICS_ENABLED=true`
-- separate `cargo run -p qm-server -- push-worker` process
-- APNs configured on the worker
-- maintenance triggers enabled for auth-session and reminder sweeps
-
-Example maintenance calls:
-
-```sh
-curl -X POST \
-  -H "X-QM-Maintenance-Token: $QM_AUTH_SESSION_SWEEP_TRIGGER_SECRET" \
-  https://quartermaster.example.com/internal/maintenance/sweep-auth-sessions
-
-curl -X POST \
-  -H "X-QM-Maintenance-Token: $QM_EXPIRY_REMINDER_TRIGGER_SECRET" \
-  https://quartermaster.example.com/internal/maintenance/sweep-expiry-reminders
-```
-
-The sweeper endpoints repair drift. They do not replace the running push worker.
-
-## Tests
-
-Sandbox-safe verification:
-
-- `cargo test --workspace`
-- `cargo xtask verify-release-config`
-
-Host-only verification:
-
-- `pnpm install --frozen-lockfile && pnpm -C web generate:api && pnpm -C web check && pnpm -C web test && pnpm -C web build`
-- `cd android && gradle testDebugUnitTest assembleDebug`
-- `xcodebuild -project ios/Quartermaster.xcodeproj -scheme Quartermaster -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' -skipPackagePluginValidation test`
-
-Run the Android and iOS commands from a normal macOS shell. They depend on host-native Gradle/Xcode toolchains plus emulator/simulator support and are not the right source of truth from inside the Codex sandbox.
-
-`cargo xtask verify-release-config` checks that the env-driven backend AASA identity matches the env-driven iOS release identity and associated-domain host.
-
-Use `cargo xtask verify-release-config` after any change to:
-
-- `QM_PUBLIC_BASE_URL`
-- the backend Apple App Site Association payload
-- `ios/project.yml` team ID, bundle ID, or associated-domain identity wiring
-
-If you changed reminder scheduling, reminder delivery, or hosted push-worker wiring, validate with `cargo test --workspace` and then do one split-worker smoke test locally (`cargo run -p qm-server` plus `cargo run -p qm-server -- push-worker`).
-
-Postgres coverage uses the shared test harness in `qm-db::test_support`:
-
-- `QM_POSTGRES_TEST_URL` points at an existing Postgres server and makes the tests create an isolated throwaway database inside it.
-- `QM_RUN_POSTGRES_TESTS=1` tells the harness to start its own containerized Postgres instance when available locally.
-- `QM_REQUIRE_POSTGRES_TESTS=1` turns Postgres availability into a hard failure instead of silently skipping those cases. CI uses this for the dedicated Postgres lanes.
-
-The `qm-api` integration tests live under `crates/qm-api/tests/` and are organized by what they cover, not by implementation milestone. Keep new test files behavior-oriented too: for example `invites.rs`, `households.rs`, and `stock_lifecycle.rs`, not `phase7.rs` or `*_slice.rs`.
-
-## Container image
-
-The repository ships a generic `Dockerfile` for self-hosting platforms that can run OCI images.
+## Quick Start With Docker
 
 Build the image:
 
@@ -266,7 +32,7 @@ Build the image:
 docker build -t quartermaster:latest .
 ```
 
-Run it directly:
+Run it with a persistent SQLite volume:
 
 ```sh
 docker run --rm \
@@ -276,85 +42,165 @@ docker run --rm \
   quartermaster:latest
 ```
 
-The image contract is intentionally small:
+Then open:
 
-- configuration is done through `QM_*` environment variables
-- the app listens on port `8080`
-- `/data` is the recommended writable mount point for SQLite
-- `docker compose` is optional convenience, not the deployment model
+- `http://localhost:8080/healthz` for a health check
+- `http://localhost:8080/docs` for the API explorer
+- `http://localhost:8080/` for the built web shell, when present in the image
 
-An example `compose.yaml` is included for local or small-server setups:
+An example Compose file is included for small local setups:
 
 ```sh
 docker compose up --build
 ```
 
-If you deploy on another platform such as Fly.io, Nomad, Kubernetes, or systemd+Podman, use the same image and environment-variable contract rather than treating Compose as special.
+Compose is only convenience. The deployment contract is the same everywhere: run the image, expose port `8080`, set `QM_*` environment variables, and mount persistent storage for SQLite if you use it.
 
-## Regenerating the OpenAPI spec
-
-```sh
-cargo xtask export-openapi
-```
-
-Writes `openapi.json` at the repo root **and** at `ios/Quartermaster/openapi.json`. The iOS target's Xcode build-tool plugin reads the second copy; the first is the canonical one (external consumers, CI drift check). Commit both so the iOS build stays hermetic.
-
-Re-run this after any change to a Rust DTO, route, or enum — the next iOS build will regenerate `Components.Schemas.*` and the generated `Client` automatically.
-
-## Web shell
-
-The web app lives in `web/` and uses SvelteKit, TypeScript, pnpm, and a generated TypeScript client from the repo-root `openapi.json`. Volta pins Node 25 and pnpm in `package.json`; set `VOLTA_FEATURE_PNPM=1` in shells or CI environments that need Volta's pnpm shim.
-
-Local development:
+## Running From Source
 
 ```sh
-pnpm install
-pnpm -C web generate:api
-pnpm -C web dev
-```
-
-The development server can talk to a local backend by entering `http://localhost:8080` in the web app's server URL field. For production/self-hosted use, build the static shell and let `qm-server` serve it:
-
-```sh
-pnpm -C web generate:api
-pnpm -C web build
 cargo run -p qm-server
 ```
 
-By default the server looks for `web/build`. Set `QM_WEB_DIST_DIR` to point at a different built web directory. The container image builds the web shell and serves it from `/app/web`.
+By default the server listens on `0.0.0.0:8080` and creates `data.db` in the current directory.
 
-Invite-backed registration and `POST /invites/redeem` are transactional: creating the user/membership and consuming the invite happen together, and redeeming an invite for a household the user already belongs to is treated as an idempotent no-op rather than consuming another use.
+## First Setup
 
-## Universal Links
+The default registration mode is `first_run_only`. That means the first person can create an account and household, then further users should join by invite.
 
-HTTPS invite links are built from `QM_PUBLIC_BASE_URL` when it is set. For direct app-opening on iOS, that public HTTPS origin must also serve `/.well-known/apple-app-site-association`, and the app build must include a matching `applinks:` associated domain. Quartermaster keeps `/join` as the browser fallback so shared links still work when the app is not installed.
+1. Start the server.
+2. Open the iOS app, Android app, or web shell.
+3. Enter your server URL.
+4. Create the first account and household.
+5. Create invite codes from Settings for other household members.
 
-Release builds of the iOS app fail if `DEVELOPMENT_TEAM`, `PRODUCT_BUNDLE_IDENTIFIER`, or `QUARTERMASTER_ASSOCIATED_DOMAIN` are missing or malformed. Local development can keep using the custom `quartermaster://` scheme without setting `QM_PUBLIC_BASE_URL`, and the backend only serves the AASA payload when `QM_IOS_TEAM_ID` plus `QM_IOS_BUNDLE_ID` are configured.
+Users can belong to multiple households. Each signed-in session keeps its own selected household, and switching households only affects that current session.
 
-Quartermaster supports one explicit v1 release identity story:
+## Configuration
 
-- one production `QM_PUBLIC_BASE_URL`
-- one associated-domain host
-- one env-driven iOS team ID + bundle ID pairing
+Common settings:
 
-Keep those aligned and use `cargo xtask verify-release-config` as the drift check rather than checking Apple release identity into the repo.
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `QM_BIND` | `0.0.0.0:8080` | Server bind address |
+| `QM_DATABASE_URL` | `sqlite://data.db?mode=rwc` | SQLite or Postgres connection string |
+| `QM_LOG_FORMAT` | `text` | `text` or `json` logs |
+| `QM_REGISTRATION_MODE` | `first_run_only` | `first_run_only`, `invite_only`, or `open` |
+| `QM_PUBLIC_BASE_URL` | unset | Public HTTPS origin for invite/share links |
+| `QM_WEB_DIST_DIR` | `web/build` | Built web shell directory served by the API process |
+| `RUST_LOG` | `info` | Tracing filter |
+
+Rate limiting and reverse proxies:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `QM_RATE_LIMIT_CLIENT_IP_MODE` | `socket` | Use `socket` directly, or `x-forwarded-for` behind a trusted reverse proxy |
+| `QM_RATE_LIMIT_TRUSTED_PROXY_CIDRS` | unset | Comma-separated trusted proxy CIDRs allowed to supply `X-Forwarded-For` |
+| `QM_RATE_LIMIT_AUTH_PER_MINUTE` | `10` | Per-client auth refill rate |
+| `QM_RATE_LIMIT_AUTH_BURST` | `5` | Per-client auth burst |
+| `QM_RATE_LIMIT_BARCODE_PER_MINUTE` | `60` | Per-client barcode lookup refill rate |
+| `QM_RATE_LIMIT_BARCODE_BURST` | `20` | Per-client barcode lookup burst |
+| `QM_RATE_LIMIT_HISTORY_PER_MINUTE` | `120` | Per-client history refill rate |
+| `QM_RATE_LIMIT_HISTORY_BURST` | `40` | Per-client history burst |
+
+Barcode lookup tuning:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `QM_OFF_API_BASE_URL` | `https://world.openfoodfacts.org/api/v2/product` | Barcode product API base URL |
+| `QM_OFF_TIMEOUT_SECONDS` | `5` | Timeout for one barcode lookup request |
+| `QM_OFF_MAX_RETRIES` | `2` | Retry count for transient lookup failures |
+| `QM_OFF_RETRY_BASE_DELAY_MS` | `200` | Base retry backoff |
+| `QM_OFF_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `5` | Consecutive transient failures before fail-fast mode |
+| `QM_OFF_CIRCUIT_BREAKER_OPEN_SECONDS` | `60` | Fail-fast duration |
+
+Reminder settings:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `QM_EXPIRY_REMINDERS_ENABLED` | `false` | Enables backend expiry reminder generation |
+| `QM_EXPIRY_REMINDER_LEAD_DAYS` | `1` | Days before expiry when reminders fire |
+| `QM_EXPIRY_REMINDER_FIRE_HOUR` | `9` | Household-local reminder hour |
+| `QM_EXPIRY_REMINDER_FIRE_MINUTE` | `0` | Household-local reminder minute |
+| `QM_EXPIRY_REMINDER_SWEEP_INTERVAL_SECONDS` | `0` | In-process reminder reconciliation interval; `0` disables it |
+| `QM_EXPIRY_REMINDER_TRIGGER_SECRET` | unset | Enables the internal manual reminder sweep endpoint |
+
+Household expiry dates are calendar dates in the household timezone. Reminder fire times are computed in that same household-local timezone and stored as UTC instants.
+
+## Push Reminders
+
+Quartermaster has a durable reminder inbox even without push notifications. Clients can poll due reminders and users explicitly acknowledge them.
+
+Push delivery is optional. It can run in the main API process:
+
+```sh
+QM_PUSH_WORKER_ENABLED=true cargo run -p qm-server
+```
+
+Or as a separate worker process:
+
+```sh
+cargo run -p qm-server -- push-worker
+```
+
+Push-related settings:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `QM_PUSH_WORKER_ENABLED` | `false` | Run the push worker inside the API process |
+| `QM_PUSH_WORKER_POLL_INTERVAL_SECONDS` | `30` | Worker polling interval |
+| `QM_PUSH_WORKER_BATCH_SIZE` | `25` | Max deliveries claimed per cycle |
+| `QM_PUSH_WORKER_CLAIM_TTL_SECONDS` | `60` | Claim timeout before retry |
+| `QM_PUSH_WORKER_RETRY_BACKOFF_SECONDS` | `300` | Retry delay after retryable failures |
+| `QM_APNS_ENABLED` | `false` | Enable iOS APNs delivery |
+| `QM_APNS_ENVIRONMENT` | `sandbox` | `sandbox` or `production` |
+| `QM_APNS_TOPIC` | unset | APNs topic / bundle identifier |
+| `QM_APNS_AUTH_TOKEN` | unset | APNs bearer token |
+| `QM_FCM_ENABLED` | `false` | Enable Android FCM delivery |
+| `QM_FCM_PROJECT_ID` | unset | Firebase project ID |
+| `QM_FCM_SERVICE_ACCOUNT_JSON_PATH` | unset | Firebase service-account JSON path |
+
+For a fuller reminder deployment walkthrough, see [docs/hosted-reminders.md](docs/hosted-reminders.md).
+
+## Metrics And Maintenance
+
+Quartermaster exposes a small set of internal maintenance hooks when you configure shared secrets. These routes are not part of the public API contract.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `QM_AUTH_SESSION_SWEEP_INTERVAL_SECONDS` | `0` | Periodic stale-session sweep interval; `0` disables it |
+| `QM_AUTH_SESSION_SWEEP_TRIGGER_SECRET` | unset | Enables manual auth-session sweeping |
+| `QM_METRICS_ENABLED` | `false` | Enables internal Prometheus metrics |
+| `QM_METRICS_BIND` | `127.0.0.1:9091` | Dedicated metrics/health bind for split worker mode |
+| `QM_METRICS_TRIGGER_SECRET` | unset | Required token for `GET /internal/metrics` |
+
+When metrics are enabled, callers must supply `X-QM-Maintenance-Token`.
+
+## Invite Links And iOS Universal Links
+
+If `QM_PUBLIC_BASE_URL` is set, it must be an `https://` origin with no path, query, or fragment. Quartermaster uses it for browser-friendly invite links.
+
+For iOS Universal Links, configure:
+
+| Variable | Meaning |
+| --- | --- |
+| `QM_IOS_TEAM_ID` | Apple Team ID used in the AASA payload |
+| `QM_IOS_BUNDLE_ID` | iOS bundle identifier used in the AASA payload |
+
+The iOS app build also needs a matching associated-domain entitlement. Without that setup, invite links still work through the browser fallback and manual invite entry.
+
+## Clients
+
+The native clients are not distributed through public app stores yet. For now, self-hosters build them from this repository:
+
+- iOS setup lives in [ios/README.md](ios/README.md).
+- Android setup lives in [android/README.md](android/README.md).
+- The web shell is built into the container image and can also be built from `web/`.
 
 ## Contributing
 
-The v1 scope is intentionally narrow — see the status section. Please open an issue to discuss feature ideas before writing code.
-
-## Open Food Facts & ODbL
-
-Barcode lookups hit the [Open Food Facts](https://world.openfoodfacts.org) public API, and the server caches the result locally in `barcode_cache`. That table stores the looked-up barcode, the linked Quartermaster product ID when one exists, the raw OFF JSON payload for successful lookups, the fetch timestamp, and a miss flag for negative cache entries.
-
-Open Food Facts data is licensed under the [Open Database Licence (ODbL) v1.0](https://opendatacommons.org/licenses/odbl/1-0/). For most private self-hosting, that is low risk: if you are only using Quartermaster for your own household and not redistributing the database or derived exports, the usual ODbL sharing triggers are unlikely to apply.
-
-The obligations matter more if you redistribute a Quartermaster database, publish hosted exports built from cached OFF data, or ship backups/dumps outside your private household use. In those cases, review OFF attribution and ODbL share-alike requirements before distributing the data. Quartermaster does not currently automate that compliance work for operators.
-
-## Self-Hosting Note
-
-If you plan to publish database snapshots, host a shared/public Quartermaster service, or export cached barcode data outside your private deployment, review the Open Food Facts / ODbL obligations first. The cached OFF payloads live in your application database, so backup and export workflows can become the point where redistribution rules matter.
+Development setup, test commands, API generation, and repository conventions live in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE).
