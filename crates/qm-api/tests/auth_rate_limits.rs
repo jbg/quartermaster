@@ -15,7 +15,7 @@ async fn login_is_rate_limited_per_client_ip() {
         )
         .unwrap()],
         rate_limit_auth: qm_api::RateLimitConfig {
-            requests_per_minute: 60,
+            requests_per_minute: 1,
             burst: 1,
         },
         ..ApiConfig::default()
@@ -59,7 +59,7 @@ async fn stock_history_is_rate_limited_per_client_ip() {
         )
         .unwrap()],
         rate_limit_history: qm_api::RateLimitConfig {
-            requests_per_minute: 60,
+            requests_per_minute: 1,
             burst: 1,
         },
         ..ApiConfig::default()
@@ -93,7 +93,7 @@ async fn socket_mode_ignores_forwarded_headers() {
     let app = TestApp::start(ApiConfig {
         rate_limit_client_ip_mode: ClientIpMode::Socket,
         rate_limit_auth: qm_api::RateLimitConfig {
-            requests_per_minute: 60,
+            requests_per_minute: 1,
             burst: 1,
         },
         ..ApiConfig::default()
@@ -136,7 +136,7 @@ async fn forwarded_mode_falls_back_when_header_is_blank() {
         )
         .unwrap()],
         rate_limit_auth: qm_api::RateLimitConfig {
-            requests_per_minute: 60,
+            requests_per_minute: 1,
             burst: 1,
         },
         ..ApiConfig::default()
@@ -179,7 +179,7 @@ async fn forwarded_mode_ignores_header_from_untrusted_peer() {
         )
         .unwrap()],
         rate_limit_auth: qm_api::RateLimitConfig {
-            requests_per_minute: 60,
+            requests_per_minute: 1,
             burst: 1,
         },
         ..ApiConfig::default()

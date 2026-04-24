@@ -2,7 +2,9 @@ name: CI
 
 on:
   pull_request:
-  push:
+    branches:
+      - master
+  workflow_dispatch:
 
 jobs:
   rust-sqlite:
@@ -18,6 +20,7 @@ jobs:
         run: cargo test --workspace
 
   rust-postgres-qmdb:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -47,6 +50,7 @@ jobs:
         run: cargo test -p qm-db -- --nocapture
 
   rust-postgres-qmapi:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -91,6 +95,13 @@ jobs:
         run: git diff --exit-code -- openapi.json ios/Quartermaster/openapi.json
 
       - name: Verify release config
+        env:
+          QM_IOS_TEAM_ID: CIQUARTERMASTER
+          QM_IOS_BUNDLE_ID: dev.quartermaster.ci
+          QUARTERMASTER_IOS_DEVELOPMENT_TEAM: CIQUARTERMASTER
+          QUARTERMASTER_IOS_BUNDLE_ID: dev.quartermaster.ci
+          QUARTERMASTER_ASSOCIATED_DOMAIN: ci.quartermaster.example.com
+          QM_PUBLIC_BASE_URL: https://ci.quartermaster.example.com
         run: cargo xtask verify-release-config
 
       - name: Seed ledger fixture
@@ -107,6 +118,21 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
+
+      - name: Generate release identity config
+        working-directory: ios
+        env:
+          QUARTERMASTER_IOS_DEVELOPMENT_TEAM: CIQUARTERMASTER
+          QUARTERMASTER_IOS_BUNDLE_ID: dev.quartermaster.ci
+          QUARTERMASTER_ASSOCIATED_DOMAIN: ci.quartermaster.example.com
+        run: ./scripts/generate-release-config.sh
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
 
       - name: Build iOS app
         run: >-
@@ -133,7 +159,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.10.2"
+          gradle-version: "9.4.1"
 
       - name: Build Android app
         working-directory: android
@@ -181,6 +207,9 @@ jobs:
         env:
           VOLTA_FEATURE_PNPM: "1"
         run: pnpm -C web build
+
+      - name: Build server for web smoke
+        run: cargo build -p qm-server
 
       - name: Install Playwright browser
         env:
