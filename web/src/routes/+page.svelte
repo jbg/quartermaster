@@ -3,6 +3,7 @@
   import { generatedTransport } from '$lib/api';
   import {
     batchProductId,
+    buildStockUpdateRequest,
     canRestoreBatch,
     emptyInventoryState,
     eventActor,
@@ -16,6 +17,7 @@
     productSource,
     selectBatchAfterRefresh,
     stockCreated,
+    stockEditFields,
     stockExpiry,
     stockInitialQuantity,
     stockLocation,
@@ -25,6 +27,7 @@
     stockUnit,
     unitChoicesForFamily,
     validateAddStockInput,
+    validateStockEditInput,
     type InventoryState
   } from '$lib/inventory';
   import {
@@ -87,6 +90,14 @@
   let consumeQuantity = $state('');
   let stockActionBusy = $state<string | null>(null);
   let stockActionError = $state<string | null>(null);
+  let stockEditOpen = $state(false);
+  let stockEditQuantity = $state('');
+  let stockEditLocationId = $state('');
+  let stockEditExpiresOn = $state('');
+  let stockEditOpenedOn = $state('');
+  let stockEditNote = $state('');
+  let stockEditBusy = $state(false);
+  let stockEditError = $state<string | null>(null);
   let highlightBatchId = $state<string | null>(null);
   let addStockOpen = $state(false);
   let productSearchQuery = $state('');
@@ -312,6 +323,7 @@
     selectedBatch = batch;
     selectedBatchId = batch.id;
     stockActionError = null;
+    closeStockEdit();
     await refreshBatchDetail(batch.id);
   }
 
@@ -378,12 +390,70 @@
     }
   }
 
+  function hydrateStockEdit(batch: StockBatch) {
+    const fields = stockEditFields(batch);
+    stockEditQuantity = fields.quantity;
+    stockEditLocationId = fields.locationId;
+    stockEditExpiresOn = fields.expiresOn;
+    stockEditOpenedOn = fields.openedOn;
+    stockEditNote = fields.note;
+    stockEditError = null;
+  }
+
+  function openStockEdit() {
+    if (!selectedBatch || isDepleted(selectedBatch)) {
+      return;
+    }
+    hydrateStockEdit(selectedBatch);
+    stockEditOpen = true;
+  }
+
+  function closeStockEdit() {
+    stockEditOpen = false;
+    stockEditBusy = false;
+    stockEditError = null;
+  }
+
+  async function submitStockEdit() {
+    if (!session || !selectedBatch || isDepleted(selectedBatch)) {
+      return;
+    }
+    const fields = {
+      quantity: stockEditQuantity,
+      locationId: stockEditLocationId,
+      expiresOn: stockEditExpiresOn,
+      openedOn: stockEditOpenedOn,
+      note: stockEditNote
+    };
+    const validationError = validateStockEditInput(fields);
+    if (validationError) {
+      stockEditError = validationError;
+      return;
+    }
+    stockEditBusy = true;
+    stockEditError = null;
+    try {
+      const updated = await session.stockUpdate(
+        selectedBatch.id,
+        buildStockUpdateRequest(selectedBatch, fields)
+      );
+      stockEditOpen = false;
+      highlightBatchId = updated.id;
+      await refreshWorkspace(updated.id);
+    } catch {
+      stockEditError = 'Stock could not be updated.';
+    } finally {
+      stockEditBusy = false;
+    }
+  }
+
   async function discardSelected() {
     if (!session || !selectedBatch) {
       return;
     }
     stockActionBusy = 'discard';
     stockActionError = null;
+    closeStockEdit();
     try {
       await session.stockDelete(selectedBatch.id);
       await refreshWorkspace(selectedBatch.id);
@@ -565,6 +635,7 @@
     consumeQuantity = '';
     stockActionBusy = null;
     stockActionError = null;
+    closeStockEdit();
     highlightBatchId = null;
     resetAddStockForm();
     addStockOpen = false;
@@ -989,9 +1060,19 @@
               <p class="eyebrow">{isDepleted(selectedBatch) ? 'Depleted' : 'In stock'}</p>
               <h2>{stockName(selectedBatch)}</h2>
             </div>
-            <strong data-testid="detail-quantity"
-              >{selectedBatch.quantity ?? '?'} {stockUnit(selectedBatch)}</strong
-            >
+            <div class="heading-actions">
+              {#if !isDepleted(selectedBatch)}
+                <button
+                  class="secondary-action small"
+                  type="button"
+                  disabled={stockActionBusy !== null || stockEditBusy}
+                  onclick={openStockEdit}>{stockEditOpen ? 'Reset edit' : 'Edit'}</button
+                >
+              {/if}
+              <strong data-testid="detail-quantity"
+                >{selectedBatch.quantity ?? '?'} {stockUnit(selectedBatch)}</strong
+              >
+            </div>
           </div>
 
           <dl class="detail-grid">
@@ -1021,6 +1102,68 @@
             </div>
           </dl>
 
+          {#if stockEditOpen && !isDepleted(selectedBatch)}
+            <form
+              class="action-panel stock-edit-form"
+              onsubmit={(event) => {
+                event.preventDefault();
+                void submitStockEdit();
+              }}
+            >
+              <div class="section-heading compact">
+                <div>
+                  <p class="eyebrow">Correction</p>
+                  <h2>Edit batch</h2>
+                </div>
+              </div>
+              <label>
+                Stock quantity
+                <input bind:value={stockEditQuantity} inputmode="decimal" />
+              </label>
+              <label>
+                Unit
+                <input value={stockUnit(selectedBatch)} readonly />
+              </label>
+              <label>
+                Location
+                <select bind:value={stockEditLocationId}>
+                  {#each locations as location}
+                    <option value={location.id}>{location.name}</option>
+                  {/each}
+                </select>
+              </label>
+              <label>
+                Expiry date
+                <input bind:value={stockEditExpiresOn} type="date" />
+              </label>
+              <label>
+                Opened date
+                <input bind:value={stockEditOpenedOn} type="date" />
+              </label>
+              <label>
+                Note
+                <input bind:value={stockEditNote} />
+              </label>
+              {#if stockEditError}
+                <p class="error-text">{stockEditError}</p>
+              {/if}
+              <div class="stock-actions">
+                <button
+                  class="primary-action"
+                  type="submit"
+                  disabled={stockEditBusy || stockActionBusy !== null || locations.length === 0}
+                  >{stockEditBusy ? 'Saving...' : 'Save changes'}</button
+                >
+                <button
+                  class="ghost-button"
+                  type="button"
+                  disabled={stockEditBusy}
+                  onclick={closeStockEdit}>Cancel</button
+                >
+              </div>
+            </form>
+          {/if}
+
           <form
             class="action-panel"
             onsubmit={(event) => {
@@ -1034,26 +1177,27 @@
                 bind:value={consumeQuantity}
                 inputmode="decimal"
                 placeholder={`Amount in ${stockUnit(selectedBatch)}`}
-                disabled={isDepleted(selectedBatch)}
+                disabled={isDepleted(selectedBatch) || stockEditBusy}
               />
             </label>
             <div class="stock-actions">
               <button
                 class="primary-action"
                 type="submit"
-                disabled={stockActionBusy !== null || isDepleted(selectedBatch)}>Consume</button
+                disabled={stockActionBusy !== null || stockEditBusy || isDepleted(selectedBatch)}
+                >Consume</button
               >
               <button
                 class="secondary-action"
                 type="button"
-                disabled={stockActionBusy !== null || isDepleted(selectedBatch)}
+                disabled={stockActionBusy !== null || stockEditBusy || isDepleted(selectedBatch)}
                 onclick={discardSelected}>Discard</button
               >
               {#if restoreAvailable}
                 <button
                   class="secondary-action"
                   type="button"
-                  disabled={stockActionBusy !== null}
+                  disabled={stockActionBusy !== null || stockEditBusy}
                   onclick={restoreSelected}>Restore</button
                 >
               {/if}

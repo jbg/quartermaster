@@ -179,6 +179,14 @@ export interface CreateStockRequest {
   note?: string | null;
 }
 
+export interface UpdateStockRequest {
+  quantity?: string | null;
+  location_id?: string | null;
+  expires_on?: string | null;
+  opened_on?: string | null;
+  note?: string | null;
+}
+
 export interface ApiResult<T> {
   data?: T;
   error?: unknown;
@@ -221,6 +229,7 @@ export interface SessionTransport {
   stockList(query?: { include_depleted?: boolean | null }): Promise<ApiResult<StockListResponse>>;
   stockCreate(body: CreateStockRequest): Promise<ApiResult<StockBatch>>;
   stockGet(id: string): Promise<ApiResult<StockBatch>>;
+  stockUpdate(id: string, body: UpdateStockRequest): Promise<ApiResult<StockBatch>>;
   stockListBatchEvents(
     id: string,
     query?: { before_created_at?: string | null; before_id?: string | null; limit?: number | null }
@@ -404,6 +413,10 @@ export class QuartermasterSession {
 
   stockGet(id: string): Promise<StockBatch> {
     return this.authed(() => this.transport.stockGet(id));
+  }
+
+  stockUpdate(id: string, body: UpdateStockRequest): Promise<StockBatch> {
+    return this.authed(() => this.transport.stockUpdate(id, body));
   }
 
   stockListBatchEvents(

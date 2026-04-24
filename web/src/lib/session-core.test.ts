@@ -105,6 +105,9 @@ describe('QuartermasterSession', () => {
       async stockGet() {
         throw new Error('unused');
       },
+      async stockUpdate() {
+        throw new Error('unused');
+      },
       async stockListBatchEvents() {
         throw new Error('unused');
       },
@@ -181,6 +184,9 @@ describe('QuartermasterSession', () => {
         throw new Error('unused');
       },
       async stockGet() {
+        throw new Error('unused');
+      },
+      async stockUpdate() {
         throw new Error('unused');
       },
       async stockListBatchEvents() {
@@ -278,6 +284,19 @@ describe('QuartermasterSession', () => {
       async stockGet() {
         throw new Error('unused');
       },
+      async stockUpdate(id, body) {
+        calls.push(`update:${id}:${body.quantity}:${body.expires_on}`);
+        return {
+          data: {
+            id,
+            product: { id: 'product-2', name: 'Rice', unit_family: 'mass' },
+            quantity: body.quantity ?? '2',
+            unit: 'kg',
+            expires_on: body.expires_on
+          },
+          response: { status: 200 }
+        };
+      },
       async stockListBatchEvents() {
         throw new Error('unused');
       },
@@ -320,6 +339,14 @@ describe('QuartermasterSession', () => {
         unit: 'kg'
       })
     ).resolves.toMatchObject({ id: 'batch-1' });
-    expect(calls).toEqual(['search:rice:12', 'product:Manual Rice:mass', 'stock:product-2:2:kg']);
+    await expect(
+      session.stockUpdate('batch-1', { quantity: '1.5', expires_on: '2026-05-01' })
+    ).resolves.toMatchObject({ id: 'batch-1', quantity: '1.5' });
+    expect(calls).toEqual([
+      'search:rice:12',
+      'product:Manual Rice:mass',
+      'stock:product-2:2:kg',
+      'update:batch-1:1.5:2026-05-01'
+    ]);
   });
 });

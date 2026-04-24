@@ -3,13 +3,22 @@ import type {
   QuartermasterSession,
   StockBatch,
   StockEvent,
-  UnitFamily
+  UnitFamily,
+  UpdateStockRequest
 } from './session-core';
 
 export interface InventoryState {
   status: 'idle' | 'loading' | 'loaded' | 'error';
   items: StockBatch[];
   error: string | null;
+}
+
+export interface StockEditFields {
+  quantity: string;
+  locationId: string;
+  expiresOn: string;
+  openedOn: string;
+  note: string;
 }
 
 export const emptyInventoryState: InventoryState = {
@@ -69,11 +78,19 @@ export function stockLocationId(batch: StockBatch): string | null {
 }
 
 export function stockExpiry(batch: StockBatch): string {
-  return batch.expires_on ?? batch.expiresOn ?? 'No expiry date';
+  return stockExpiryValue(batch) ?? 'No expiry date';
 }
 
 export function stockOpened(batch: StockBatch): string {
-  return batch.opened_on ?? batch.openedOn ?? 'Not marked opened';
+  return stockOpenedValue(batch) ?? 'Not marked opened';
+}
+
+export function stockExpiryValue(batch: StockBatch): string | null {
+  return batch.expires_on ?? batch.expiresOn ?? null;
+}
+
+export function stockOpenedValue(batch: StockBatch): string | null {
+  return batch.opened_on ?? batch.openedOn ?? null;
 }
 
 export function stockCreated(batch: StockBatch): string {
@@ -163,4 +180,74 @@ export function validateAddStockInput(input: {
     return 'Enter a positive stock quantity.';
   }
   return null;
+}
+
+export function stockEditFields(batch: StockBatch): StockEditFields {
+  return {
+    quantity: batch.quantity === undefined || batch.quantity === null ? '' : String(batch.quantity),
+    locationId: stockLocationId(batch) ?? '',
+    expiresOn: stockExpiryValue(batch) ?? '',
+    openedOn: stockOpenedValue(batch) ?? '',
+    note: batch.note ?? ''
+  };
+}
+
+export function validateStockEditInput(input: StockEditFields): string | null {
+  const quantity = Number(input.quantity.trim());
+  if (!input.quantity.trim() || !Number.isFinite(quantity) || quantity <= 0) {
+    return 'Enter a positive stock quantity.';
+  }
+  if (!input.locationId) {
+    return 'Choose a location before saving.';
+  }
+  return null;
+}
+
+export function buildStockUpdateRequest(
+  batch: StockBatch,
+  input: StockEditFields
+): UpdateStockRequest {
+  const request: UpdateStockRequest = {};
+  const quantity = input.quantity.trim();
+  const currentQuantity =
+    batch.quantity === undefined || batch.quantity === null ? '' : String(batch.quantity);
+  if (quantity !== currentQuantity) {
+    request.quantity = quantity;
+  }
+
+  const currentLocationId = stockLocationId(batch) ?? '';
+  if (input.locationId && input.locationId !== currentLocationId) {
+    request.location_id = input.locationId;
+  }
+
+  applyOptionalDate(request, 'expires_on', stockExpiryValue(batch), input.expiresOn);
+  applyOptionalDate(request, 'opened_on', stockOpenedValue(batch), input.openedOn);
+
+  const currentNote = batch.note ?? null;
+  const nextNote = input.note.trim();
+  if (nextNote) {
+    if (nextNote !== currentNote) {
+      request.note = nextNote;
+    }
+  } else if (currentNote !== null) {
+    request.note = null;
+  }
+
+  return request;
+}
+
+function applyOptionalDate(
+  request: UpdateStockRequest,
+  key: 'expires_on' | 'opened_on',
+  currentValue: string | null,
+  nextValue: string
+) {
+  const trimmed = nextValue.trim();
+  if (trimmed) {
+    if (trimmed !== currentValue) {
+      request[key] = trimmed;
+    }
+  } else if (currentValue !== null) {
+    request[key] = null;
+  }
 }
