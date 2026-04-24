@@ -24,7 +24,9 @@ function memoryStorage(initial: StoredSession): SessionStorage & { value: Stored
 
 describe('QuartermasterSession', () => {
   it('uses the current origin as the default server URL', () => {
-    expect(defaultServerUrl({ origin: 'http://localhost:8080', pathname: '/' })).toBe('http://localhost:8080');
+    expect(defaultServerUrl({ origin: 'http://localhost:8080', pathname: '/' })).toBe(
+      'http://localhost:8080'
+    );
   });
 
   it('preserves a Home Assistant ingress path in the default server URL', () => {
@@ -88,7 +90,16 @@ describe('QuartermasterSession', () => {
       async locationsList() {
         throw new Error('unused');
       },
+      async productSearch() {
+        throw new Error('unused');
+      },
+      async productCreate() {
+        throw new Error('unused');
+      },
       async stockList() {
+        throw new Error('unused');
+      },
+      async stockCreate() {
         throw new Error('unused');
       },
       async stockGet() {
@@ -157,7 +168,16 @@ describe('QuartermasterSession', () => {
       async locationsList() {
         throw new Error('unused');
       },
+      async productSearch() {
+        throw new Error('unused');
+      },
+      async productCreate() {
+        throw new Error('unused');
+      },
       async stockList() {
+        throw new Error('unused');
+      },
+      async stockCreate() {
         throw new Error('unused');
       },
       async stockGet() {
@@ -194,5 +214,112 @@ describe('QuartermasterSession', () => {
     await expect(session.me()).rejects.toMatchObject({ status: 401 });
     expect(storage.value.accessToken).toBeNull();
     expect(storage.value.refreshToken).toBeNull();
+  });
+
+  it('passes product and stock creation calls through the authenticated transport', async () => {
+    const storage = memoryStorage({
+      serverUrl: 'http://localhost:8080',
+      accessToken: 'access',
+      refreshToken: 'refresh'
+    });
+    const calls: string[] = [];
+    const transport: SessionTransport = {
+      configure() {},
+      async login() {
+        throw new Error('unused');
+      },
+      async register() {
+        throw new Error('unused');
+      },
+      async refresh() {
+        throw new Error('unused');
+      },
+      async logout() {
+        return { response: { status: 204 } };
+      },
+      async me() {
+        throw new Error('unused');
+      },
+      async switchHousehold() {
+        throw new Error('unused');
+      },
+      async locationsList() {
+        throw new Error('unused');
+      },
+      async productSearch(query) {
+        calls.push(`search:${query.q}:${query.limit}`);
+        return {
+          data: { items: [{ id: 'product-1', name: 'Rice', family: 'mass', preferred_unit: 'g' }] },
+          response: { status: 200 }
+        };
+      },
+      async productCreate(body) {
+        calls.push(`product:${body.name}:${body.family}`);
+        return {
+          data: { id: 'product-2', name: body.name, family: body.family, preferred_unit: 'kg' },
+          response: { status: 201 }
+        };
+      },
+      async stockList() {
+        throw new Error('unused');
+      },
+      async stockCreate(body) {
+        calls.push(`stock:${body.product_id}:${body.quantity}:${body.unit}`);
+        return {
+          data: {
+            id: 'batch-1',
+            product: { id: body.product_id, name: 'Rice', unit_family: 'mass' },
+            quantity: body.quantity,
+            unit: body.unit
+          },
+          response: { status: 201 }
+        };
+      },
+      async stockGet() {
+        throw new Error('unused');
+      },
+      async stockListBatchEvents() {
+        throw new Error('unused');
+      },
+      async stockConsume() {
+        throw new Error('unused');
+      },
+      async stockDelete() {
+        throw new Error('unused');
+      },
+      async stockRestore() {
+        throw new Error('unused');
+      },
+      async remindersList() {
+        throw new Error('unused');
+      },
+      async remindersPresent() {
+        throw new Error('unused');
+      },
+      async remindersOpen() {
+        throw new Error('unused');
+      },
+      async remindersAck() {
+        throw new Error('unused');
+      }
+    };
+
+    const session = new QuartermasterSession(storage, transport);
+
+    await expect(session.productSearch({ q: 'rice', limit: 12 })).resolves.toMatchObject({
+      items: [{ name: 'Rice' }]
+    });
+    await expect(
+      session.productCreate({ name: 'Manual Rice', family: 'mass', preferred_unit: 'kg' })
+    ).resolves.toMatchObject({ name: 'Manual Rice' });
+    await expect(
+      session.stockCreate({
+        product_id: 'product-2',
+        location_id: 'pantry',
+        quantity: '2',
+        unit: 'kg'
+      })
+    ).resolves.toMatchObject({ id: 'batch-1' });
+    expect(calls).toEqual(['search:rice:12', 'product:Manual Rice:mass', 'stock:product-2:2:kg']);
   });
 });

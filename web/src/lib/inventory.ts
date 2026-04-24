@@ -1,4 +1,10 @@
-import type { QuartermasterSession, StockBatch, StockEvent } from './session-core';
+import type {
+  Product,
+  QuartermasterSession,
+  StockBatch,
+  StockEvent,
+  UnitFamily
+} from './session-core';
 
 export interface InventoryState {
   status: 'idle' | 'loading' | 'loaded' | 'error';
@@ -12,7 +18,15 @@ export const emptyInventoryState: InventoryState = {
   error: null
 };
 
-export async function loadInventory(session: Pick<QuartermasterSession, 'stockList'>): Promise<InventoryState> {
+export const unitChoicesByFamily: Record<UnitFamily, string[]> = {
+  mass: ['g', 'kg'],
+  volume: ['ml', 'l'],
+  count: ['piece']
+};
+
+export async function loadInventory(
+  session: Pick<QuartermasterSession, 'stockList'>
+): Promise<InventoryState> {
   try {
     const response = await session.stockList({ include_depleted: true });
     return {
@@ -38,7 +52,12 @@ export function stockName(batch: StockBatch): string {
 }
 
 export function stockUnit(batch: StockBatch): string {
-  return (typeof batch.unit === 'string' ? batch.unit : batch.unit?.code) ?? batch.unit_code ?? batch.unitCode ?? '';
+  return (
+    (typeof batch.unit === 'string' ? batch.unit : batch.unit?.code) ??
+    batch.unit_code ??
+    batch.unitCode ??
+    ''
+  );
 }
 
 export function stockLocation(batch: StockBatch): string {
@@ -67,7 +86,8 @@ export function stockInitialQuantity(batch: StockBatch): string {
 }
 
 export function isDepleted(batch: StockBatch): boolean {
-  const quantity = batch.quantity === undefined || batch.quantity === null ? null : Number(batch.quantity);
+  const quantity =
+    batch.quantity === undefined || batch.quantity === null ? null : Number(batch.quantity);
   return Boolean(batch.depleted_at ?? batch.depletedAt) || quantity === 0;
 }
 
@@ -98,7 +118,10 @@ export function canRestoreBatch(batch: StockBatch | null, events: StockEvent[]):
   return eventType(events[0]) === 'discard';
 }
 
-export function selectBatchAfterRefresh(items: StockBatch[], preferredId: string | null): StockBatch | null {
+export function selectBatchAfterRefresh(
+  items: StockBatch[],
+  preferredId: string | null
+): StockBatch | null {
   if (preferredId) {
     const preferred = items.find((item) => item.id === preferredId);
     if (preferred) {
@@ -106,4 +129,38 @@ export function selectBatchAfterRefresh(items: StockBatch[], preferredId: string
     }
   }
   return items[0] ?? null;
+}
+
+export function productBrand(product: Product): string {
+  return product.brand?.trim() ?? '';
+}
+
+export function productPreferredUnit(product: Product): string {
+  return product.preferred_unit ?? product.preferredUnit ?? unitChoicesByFamily[product.family][0];
+}
+
+export function productSource(product: Product): string {
+  return product.source === 'openfoodfacts' ? 'OpenFoodFacts' : 'Manual';
+}
+
+export function unitChoicesForFamily(family: UnitFamily): string[] {
+  return unitChoicesByFamily[family];
+}
+
+export function validateAddStockInput(input: {
+  product: Product | null;
+  quantity: string;
+  locationId: string;
+}): string | null {
+  if (!input.product) {
+    return 'Select or create a product first.';
+  }
+  if (!input.locationId) {
+    return 'Choose a location before adding stock.';
+  }
+  const quantity = Number(input.quantity.trim());
+  if (!input.quantity.trim() || !Number.isFinite(quantity) || quantity <= 0) {
+    return 'Enter a positive stock quantity.';
+  }
+  return null;
 }

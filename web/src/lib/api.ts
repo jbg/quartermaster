@@ -6,11 +6,14 @@ import {
   authRegister,
   authSwitchHousehold,
   locationsList,
+  productCreate,
+  productSearch,
   remindersAck,
   remindersList,
   remindersOpen,
   remindersPresent,
   stockConsume,
+  stockCreate,
   stockDelete,
   stockGet,
   stockList,
@@ -60,8 +63,17 @@ export function generatedTransport(): SessionTransport {
     locationsList() {
       return locationsList();
     },
+    productSearch(query) {
+      return productSearch({ query });
+    },
+    productCreate(body) {
+      return productCreate({ body });
+    },
     stockList(query) {
       return stockList({ query });
+    },
+    stockCreate(body) {
+      return stockCreate({ body });
     },
     stockGet(id) {
       return stockGet({ path: { id } });
