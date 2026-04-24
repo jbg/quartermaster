@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "rust",
+  "include-v-in-tag": false,
+  "include-component-in-tag": false,
+  "tag-separator": "",
+  "packages": {
+    ".": {
+      "package-name": "quartermaster",
+      "release-type": "rust",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "package.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "web/package.json",
+          "jsonpath": "$.version"
+        }
+      ]
+    }
+  }
+}
