@@ -11,6 +11,9 @@
     eventType,
     isDepleted,
     loadInventory,
+    productBrand,
+    productPreferredUnit,
+    productSource,
     selectBatchAfterRefresh,
     stockCreated,
     stockExpiry,
@@ -20,6 +23,8 @@
     stockName,
     stockOpened,
     stockUnit,
+    unitChoicesForFamily,
+    validateAddStockInput,
     type InventoryState
   } from '$lib/inventory';
   import {
@@ -38,9 +43,11 @@
     QuartermasterSession,
     type Location,
     type MeResponse,
+    type Product,
     type Reminder,
     type StockBatch,
-    type StockEvent
+    type StockEvent,
+    type UnitFamily
   } from '$lib/session-core';
 
   interface HistoryState {
@@ -72,6 +79,7 @@
   let authenticated = $state(false);
   let inventory = $state<InventoryState>(emptyInventoryState);
   let reminders = $state<ReminderState>(emptyReminderState);
+  let locations = $state<Location[]>([]);
   let locationNames = $state<Record<string, string>>({});
   let selectedBatchId = $state<string | null>(null);
   let selectedBatch = $state<StockBatch | null>(null);
@@ -80,10 +88,35 @@
   let stockActionBusy = $state<string | null>(null);
   let stockActionError = $state<string | null>(null);
   let highlightBatchId = $state<string | null>(null);
+  let addStockOpen = $state(false);
+  let productSearchQuery = $state('');
+  let productSearchStatus = $state<'idle' | 'loading' | 'loaded' | 'error'>('idle');
+  let productSearchResults = $state<Product[]>([]);
+  let selectedProduct = $state<Product | null>(null);
+  let manualProductName = $state('');
+  let manualProductBrand = $state('');
+  let manualProductFamily = $state<UnitFamily>('mass');
+  let manualProductUnit = $state('g');
+  let addStockQuantity = $state('');
+  let addStockUnit = $state('g');
+  let addStockLocationId = $state('');
+  let addStockExpiresOn = $state('');
+  let addStockOpenedOn = $state('');
+  let addStockNote = $state('');
+  let addStockBusy = $state(false);
+  let addStockError = $state<string | null>(null);
+  let manualProductBusy = $state(false);
+  let manualProductError = $state<string | null>(null);
 
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
   const households = $derived(me?.households ?? []);
   const restoreAvailable = $derived(canRestoreBatch(selectedBatch, history.items));
+  const addStockUnitChoices = $derived(
+    selectedProduct
+      ? unitChoicesForFamily(selectedProduct.family)
+      : unitChoicesForFamily(manualProductFamily)
+  );
+  const manualProductUnitChoices = $derived(unitChoicesForFamily(manualProductFamily));
 
   $effect(() => {
     if (!browser) {
@@ -132,8 +165,15 @@
     }
     try {
       const rows = await session.locationsList();
-      locationNames = Object.fromEntries(rows.map((location: Location) => [location.id, location.name]));
+      locations = rows;
+      locationNames = Object.fromEntries(
+        rows.map((location: Location) => [location.id, location.name])
+      );
+      if (!addStockLocationId && rows[0]) {
+        addStockLocationId = rows[0].id;
+      }
     } catch {
+      locations = [];
       locationNames = {};
     }
   }
@@ -370,9 +410,154 @@
     }
   }
 
+  function openAddStock() {
+    addStockOpen = true;
+    addStockError = null;
+    manualProductError = null;
+    if (!addStockLocationId && locations[0]) {
+      addStockLocationId = locations[0].id;
+    }
+  }
+
+  function closeAddStock() {
+    addStockOpen = false;
+    resetAddStockForm();
+  }
+
+  function resetAddStockForm() {
+    productSearchQuery = '';
+    productSearchStatus = 'idle';
+    productSearchResults = [];
+    selectedProduct = null;
+    manualProductName = '';
+    manualProductBrand = '';
+    manualProductFamily = 'mass';
+    manualProductUnit = 'g';
+    addStockQuantity = '';
+    addStockUnit = 'g';
+    addStockLocationId = locations[0]?.id ?? '';
+    addStockExpiresOn = '';
+    addStockOpenedOn = '';
+    addStockNote = '';
+    addStockBusy = false;
+    addStockError = null;
+    manualProductBusy = false;
+    manualProductError = null;
+  }
+
+  async function searchProducts() {
+    if (!session) {
+      return;
+    }
+    const query = productSearchQuery.trim();
+    selectedProduct = null;
+    addStockError = null;
+    if (!query) {
+      productSearchStatus = 'idle';
+      productSearchResults = [];
+      return;
+    }
+    productSearchStatus = 'loading';
+    try {
+      const response = await session.productSearch({ q: query, limit: 12 });
+      productSearchResults = response.items ?? [];
+      productSearchStatus = 'loaded';
+    } catch {
+      productSearchResults = [];
+      productSearchStatus = 'error';
+    }
+  }
+
+  function chooseProduct(product: Product) {
+    selectedProduct = product;
+    addStockUnit = productPreferredUnit(product);
+    addStockError = null;
+  }
+
+  function setManualProductFamily(family: string) {
+    if (family !== 'mass' && family !== 'volume' && family !== 'count') {
+      return;
+    }
+    manualProductFamily = family;
+    manualProductUnit = unitChoicesForFamily(family)[0];
+  }
+
+  async function createManualProduct() {
+    if (!session) {
+      return;
+    }
+    const name = manualProductName.trim();
+    if (!name) {
+      manualProductError = 'Enter a product name.';
+      return;
+    }
+    manualProductBusy = true;
+    manualProductError = null;
+    try {
+      const product = await session.productCreate({
+        name,
+        brand: manualProductBrand.trim() || null,
+        family: manualProductFamily,
+        preferred_unit: manualProductUnit,
+        barcode: null,
+        image_url: null
+      });
+      chooseProduct(product);
+      productSearchResults = [
+        product,
+        ...productSearchResults.filter((item) => item.id !== product.id)
+      ];
+      productSearchStatus = 'loaded';
+      productSearchQuery = product.name;
+      manualProductName = '';
+      manualProductBrand = '';
+    } catch {
+      manualProductError = 'Product could not be created.';
+    } finally {
+      manualProductBusy = false;
+    }
+  }
+
+  async function submitAddStock() {
+    if (!session) {
+      return;
+    }
+    const validationError = validateAddStockInput({
+      product: selectedProduct,
+      quantity: addStockQuantity,
+      locationId: addStockLocationId
+    });
+    if (validationError) {
+      addStockError = validationError;
+      return;
+    }
+    addStockBusy = true;
+    addStockError = null;
+    try {
+      const created = await session.stockCreate({
+        product_id: selectedProduct!.id,
+        location_id: addStockLocationId,
+        quantity: addStockQuantity.trim(),
+        unit: addStockUnit,
+        expires_on: addStockExpiresOn || null,
+        opened_on: addStockOpenedOn || null,
+        note: addStockNote.trim() || null
+      });
+      addStockOpen = false;
+      resetAddStockForm();
+      highlightBatchId = created.id;
+      await refreshWorkspace(created.id);
+    } catch {
+      addStockError = 'Stock could not be added.';
+    } finally {
+      addStockBusy = false;
+    }
+  }
+
   function clearHouseholdState() {
     inventory = emptyInventoryState;
     reminders = emptyReminderState;
+    locations = [];
     locationNames = {};
     selectedBatch = null;
     selectedBatchId = null;
@@ -381,6 +566,8 @@
     stockActionBusy = null;
     stockActionError = null;
     highlightBatchId = null;
+    resetAddStockForm();
+    addStockOpen = false;
   }
 
   function formatDateTime(value: string | undefined | null): string {
@@ -414,10 +601,24 @@
 
   {#if !authenticated}
     <section class="auth-layout">
-      <form class="panel auth-panel" onsubmit={(event) => { event.preventDefault(); void submitAuth(); }}>
+      <form
+        class="panel auth-panel"
+        onsubmit={(event) => {
+          event.preventDefault();
+          void submitAuth();
+        }}
+      >
         <div class="segmented">
-          <button class:active={authMode === 'login'} type="button" onclick={() => (authMode = 'login')}>Login</button>
-          <button class:active={authMode === 'register'} type="button" onclick={() => (authMode = 'register')}>Register</button>
+          <button
+            class:active={authMode === 'login'}
+            type="button"
+            onclick={() => (authMode = 'login')}>Login</button
+          >
+          <button
+            class:active={authMode === 'register'}
+            type="button"
+            onclick={() => (authMode = 'register')}>Register</button
+          >
         </div>
 
         <label>
@@ -430,7 +631,13 @@
         </label>
         <label>
           Password
-          <input bind:value={password} type="password" autocomplete={authMode === 'login' ? 'current-password' : 'new-password'} required minlength="8" />
+          <input
+            bind:value={password}
+            type="password"
+            autocomplete={authMode === 'login' ? 'current-password' : 'new-password'}
+            required
+            minlength="8"
+          />
         </label>
 
         {#if authMode === 'register'}
@@ -448,7 +655,11 @@
           <p class="error-text">{authError}</p>
         {/if}
 
-        <button class="primary-action" type="submit" disabled={authBusy || !username || password.length < 8}>
+        <button
+          class="primary-action"
+          type="submit"
+          disabled={authBusy || !username || password.length < 8}
+        >
           {authBusy ? 'Working...' : authMode === 'login' ? 'Log in' : 'Create account'}
         </button>
       </form>
@@ -460,7 +671,9 @@
       {#if households.length > 0}
         <div class="household-list">
           {#each households as household}
-            <button type="button" onclick={() => switchHousehold(household.id)}>{household.name}</button>
+            <button type="button" onclick={() => switchHousehold(household.id)}
+              >{household.name}</button
+            >
           {/each}
         </div>
       {:else}
@@ -468,6 +681,195 @@
       {/if}
     </section>
   {:else if me && activeHousehold}
+    {#if addStockOpen}
+      <section class="panel add-stock-panel" aria-labelledby="add-stock-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">New batch</p>
+            <h2 id="add-stock-heading">Add stock</h2>
+          </div>
+          <button class="ghost-button" type="button" onclick={closeAddStock}>Close</button>
+        </div>
+
+        <div class="add-stock-grid">
+          <section class="add-stock-column" aria-labelledby="product-picker-heading">
+            <div class="section-heading compact">
+              <div>
+                <p class="eyebrow">Product</p>
+                <h3 id="product-picker-heading">Find existing</h3>
+              </div>
+            </div>
+            <form
+              class="inline-form"
+              onsubmit={(event) => {
+                event.preventDefault();
+                void searchProducts();
+              }}
+            >
+              <label>
+                Product search
+                <input bind:value={productSearchQuery} placeholder="Rice, pasta, beans..." />
+              </label>
+              <button
+                class="secondary-action"
+                type="submit"
+                disabled={!productSearchQuery.trim() || productSearchStatus === 'loading'}
+              >
+                {productSearchStatus === 'loading' ? 'Searching...' : 'Search'}
+              </button>
+            </form>
+
+            {#if productSearchStatus === 'error'}
+              <p class="error-text">Products could not be searched.</p>
+            {:else if productSearchStatus === 'loaded' && productSearchResults.length === 0}
+              <p class="muted">No matching products.</p>
+            {:else if productSearchResults.length > 0}
+              <div class="product-results">
+                {#each productSearchResults as product}
+                  <button
+                    class:active={selectedProduct?.id === product.id}
+                    class="product-result"
+                    type="button"
+                    onclick={() => chooseProduct(product)}
+                  >
+                    <div>
+                      <h4>{product.name}</h4>
+                      <p>
+                        {productBrand(product) || 'No brand'} · {product.family} · {productPreferredUnit(
+                          product
+                        )}
+                      </p>
+                    </div>
+                    <span>{productSource(product)}</span>
+                  </button>
+                {/each}
+              </div>
+            {/if}
+
+            <div class="manual-product">
+              <div class="section-heading compact">
+                <div>
+                  <p class="eyebrow">Manual</p>
+                  <h3>Create product</h3>
+                </div>
+              </div>
+              <form
+                class="manual-product-form"
+                onsubmit={(event) => {
+                  event.preventDefault();
+                  void createManualProduct();
+                }}
+              >
+                <label>
+                  Product name
+                  <input bind:value={manualProductName} required />
+                </label>
+                <label>
+                  Brand
+                  <input bind:value={manualProductBrand} />
+                </label>
+                <label>
+                  Product family
+                  <select
+                    value={manualProductFamily}
+                    onchange={(event) => setManualProductFamily(event.currentTarget.value)}
+                  >
+                    <option value="mass">Mass</option>
+                    <option value="volume">Volume</option>
+                    <option value="count">Count</option>
+                  </select>
+                </label>
+                <label>
+                  Preferred unit
+                  <select bind:value={manualProductUnit}>
+                    {#each manualProductUnitChoices as unit}
+                      <option value={unit}>{unit}</option>
+                    {/each}
+                  </select>
+                </label>
+                <button
+                  class="secondary-action"
+                  type="submit"
+                  disabled={manualProductBusy || !manualProductName.trim()}
+                >
+                  {manualProductBusy ? 'Creating...' : 'Create product'}
+                </button>
+                {#if manualProductError}
+                  <p class="error-text">{manualProductError}</p>
+                {/if}
+              </form>
+            </div>
+          </section>
+
+          <form
+            class="add-stock-column stock-create-form"
+            onsubmit={(event) => {
+              event.preventDefault();
+              void submitAddStock();
+            }}
+          >
+            <div class="section-heading compact">
+              <div>
+                <p class="eyebrow">Batch</p>
+                <h3>Stock details</h3>
+              </div>
+            </div>
+
+            <div class="selected-product">
+              <span>Selected product</span>
+              <strong>{selectedProduct ? selectedProduct.name : 'None selected'}</strong>
+            </div>
+
+            <label>
+              Stock quantity
+              <input bind:value={addStockQuantity} inputmode="decimal" placeholder="1" />
+            </label>
+            <label>
+              Unit
+              <select bind:value={addStockUnit} disabled={!selectedProduct}>
+                {#each addStockUnitChoices as unit}
+                  <option value={unit}>{unit}</option>
+                {/each}
+              </select>
+            </label>
+            <label>
+              Location
+              <select bind:value={addStockLocationId}>
+                {#each locations as location}
+                  <option value={location.id}>{location.name}</option>
+                {/each}
+              </select>
+            </label>
+            {#if locations.length === 0}
+              <p class="error-text">No locations are available for this household.</p>
+            {/if}
+            <label>
+              Expiry date
+              <input bind:value={addStockExpiresOn} type="date" />
+            </label>
+            <label>
+              Opened date
+              <input bind:value={addStockOpenedOn} type="date" />
+            </label>
+            <label>
+              Note
+              <input bind:value={addStockNote} />
+            </label>
+            {#if addStockError}
+              <p class="error-text">{addStockError}</p>
+            {/if}
+            <button
+              class="primary-action"
+              type="submit"
+              disabled={addStockBusy || locations.length === 0}
+            >
+              {addStockBusy ? 'Adding...' : 'Add stock'}
+            </button>
+          </form>
+        </div>
+      </section>
+    {/if}
+
     <section class="workspace">
       <aside class="sidebar">
         <div>
@@ -477,14 +879,21 @@
         {#if households.length > 1}
           <label>
             Switch household
-            <select onchange={(event) => switchHousehold(event.currentTarget.value)} value={activeHousehold.id}>
+            <select
+              onchange={(event) => switchHousehold(event.currentTarget.value)}
+              value={activeHousehold.id}
+            >
               {#each households as household}
                 <option value={household.id}>{household.name}</option>
               {/each}
             </select>
           </label>
         {/if}
-        <button class="secondary-action" type="button" onclick={() => refreshWorkspace(selectedBatchId)}>Refresh</button>
+        <button
+          class="secondary-action"
+          type="button"
+          onclick={() => refreshWorkspace(selectedBatchId)}>Refresh</button
+        >
 
         <section class="inbox-region" aria-labelledby="reminder-heading">
           <div class="section-heading compact">
@@ -511,8 +920,18 @@
                     <span>{reminderFireAt(reminder)}</span>
                   </div>
                   <div class="row-actions">
-                    <button class="secondary-action small" type="button" disabled={reminders.actionIds.has(reminder.id)} onclick={() => openReminder(reminder)}>Open</button>
-                    <button class="ghost-button small" type="button" disabled={reminders.actionIds.has(reminder.id)} onclick={() => ackReminder(reminder)}>Ack</button>
+                    <button
+                      class="secondary-action small"
+                      type="button"
+                      disabled={reminders.actionIds.has(reminder.id)}
+                      onclick={() => openReminder(reminder)}>Open</button
+                    >
+                    <button
+                      class="ghost-button small"
+                      type="button"
+                      disabled={reminders.actionIds.has(reminder.id)}
+                      onclick={() => ackReminder(reminder)}>Ack</button
+                    >
                   </div>
                 </article>
               {/each}
@@ -527,7 +946,12 @@
             <p class="eyebrow">Inventory</p>
             <h2>Batches</h2>
           </div>
-          <span>{inventory.items.length} batches</span>
+          <div class="heading-actions">
+            <span>{inventory.items.length} batches</span>
+            <button class="primary-action small" type="button" onclick={openAddStock}
+              >Add stock</button
+            >
+          </div>
         </div>
 
         {#if inventory.status === 'loading'}
@@ -565,7 +989,9 @@
               <p class="eyebrow">{isDepleted(selectedBatch) ? 'Depleted' : 'In stock'}</p>
               <h2>{stockName(selectedBatch)}</h2>
             </div>
-            <strong data-testid="detail-quantity">{selectedBatch.quantity ?? '?'} {stockUnit(selectedBatch)}</strong>
+            <strong data-testid="detail-quantity"
+              >{selectedBatch.quantity ?? '?'} {stockUnit(selectedBatch)}</strong
+            >
           </div>
 
           <dl class="detail-grid">
@@ -595,16 +1021,41 @@
             </div>
           </dl>
 
-          <form class="action-panel" onsubmit={(event) => { event.preventDefault(); void consumeSelected(); }}>
+          <form
+            class="action-panel"
+            onsubmit={(event) => {
+              event.preventDefault();
+              void consumeSelected();
+            }}
+          >
             <label>
               Consume quantity
-              <input bind:value={consumeQuantity} inputmode="decimal" placeholder={`Amount in ${stockUnit(selectedBatch)}`} disabled={isDepleted(selectedBatch)} />
+              <input
+                bind:value={consumeQuantity}
+                inputmode="decimal"
+                placeholder={`Amount in ${stockUnit(selectedBatch)}`}
+                disabled={isDepleted(selectedBatch)}
+              />
             </label>
             <div class="stock-actions">
-              <button class="primary-action" type="submit" disabled={stockActionBusy !== null || isDepleted(selectedBatch)}>Consume</button>
-              <button class="secondary-action" type="button" disabled={stockActionBusy !== null || isDepleted(selectedBatch)} onclick={discardSelected}>Discard</button>
+              <button
+                class="primary-action"
+                type="submit"
+                disabled={stockActionBusy !== null || isDepleted(selectedBatch)}>Consume</button
+              >
+              <button
+                class="secondary-action"
+                type="button"
+                disabled={stockActionBusy !== null || isDepleted(selectedBatch)}
+                onclick={discardSelected}>Discard</button
+              >
               {#if restoreAvailable}
-                <button class="secondary-action" type="button" disabled={stockActionBusy !== null} onclick={restoreSelected}>Restore</button>
+                <button
+                  class="secondary-action"
+                  type="button"
+                  disabled={stockActionBusy !== null}
+                  onclick={restoreSelected}>Restore</button
+                >
               {/if}
             </div>
             {#if stockActionError}
@@ -641,7 +1092,12 @@
                 {/each}
               </div>
               {#if history.nextBefore && history.nextBeforeId}
-                <button class="secondary-action" type="button" disabled={history.status === 'loading'} onclick={loadMoreHistory}>Load more</button>
+                <button
+                  class="secondary-action"
+                  type="button"
+                  disabled={history.status === 'loading'}
+                  onclick={loadMoreHistory}>Load more</button
+                >
               {/if}
               {#if history.error}
                 <p class="error-text">{history.error}</p>

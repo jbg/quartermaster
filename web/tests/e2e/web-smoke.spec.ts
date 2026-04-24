@@ -58,6 +58,18 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
   await expect(page.getByRole('button', { name: /Smoke Rice/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /Smoke Beans/ })).toBeVisible();
 
+  await page.getByRole('button', { name: 'Add stock' }).click();
+  await page.getByLabel('Product name').fill('Smoke Oats');
+  await page.getByLabel('Brand').fill('Web');
+  await page.getByLabel('Product family').selectOption('mass');
+  await page.getByLabel('Preferred unit').selectOption('kg');
+  await page.getByRole('button', { name: 'Create product' }).click();
+  await expect(page.getByRole('button', { name: /Smoke Oats Web/ })).toBeVisible();
+  await page.getByLabel('Stock quantity').fill('2');
+  await page.locator('.stock-create-form').getByLabel('Unit').selectOption('kg');
+  await page.getByRole('button', { name: 'Add stock' }).last().click();
+  await expect(page.getByRole('button', { name: /Smoke Oats/ })).toBeVisible();
+
   const firstReminder = fixture.reminders[0];
   await page.getByRole('button', { name: 'Open' }).first().click();
   await expect(page.getByRole('heading', { name: /Smoke/ }).last()).toBeVisible();

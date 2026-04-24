@@ -25,6 +25,22 @@ export interface Location {
   kind?: string;
 }
 
+export type UnitFamily = 'mass' | 'volume' | 'count';
+
+export interface Product {
+  id: string;
+  name: string;
+  brand?: string | null;
+  family: UnitFamily;
+  preferred_unit?: string;
+  preferredUnit?: string;
+  source?: 'openfoodfacts' | 'manual';
+}
+
+export interface ProductSearchResponse {
+  items?: Product[];
+}
+
 export interface StockBatch {
   id: string;
   product?: {
@@ -144,6 +160,25 @@ export interface ConsumeResponse {
   consumeRequestId?: string;
 }
 
+export interface CreateProductRequest {
+  name: string;
+  brand?: string | null;
+  family: UnitFamily;
+  preferred_unit?: string | null;
+  barcode?: string | null;
+  image_url?: string | null;
+}
+
+export interface CreateStockRequest {
+  product_id: string;
+  location_id: string;
+  quantity: string;
+  unit: string;
+  expires_on?: string | null;
+  opened_on?: string | null;
+  note?: string | null;
+}
+
 export interface ApiResult<T> {
   data?: T;
   error?: unknown;
@@ -178,13 +213,26 @@ export interface SessionTransport {
   me(): Promise<ApiResult<MeResponse>>;
   switchHousehold(body: { household_id: string }): Promise<ApiResult<MeResponse>>;
   locationsList(): Promise<ApiResult<Location[]>>;
+  productSearch(query: {
+    q: string;
+    limit?: number | null;
+  }): Promise<ApiResult<ProductSearchResponse>>;
+  productCreate(body: CreateProductRequest): Promise<ApiResult<Product>>;
   stockList(query?: { include_depleted?: boolean | null }): Promise<ApiResult<StockListResponse>>;
+  stockCreate(body: CreateStockRequest): Promise<ApiResult<StockBatch>>;
   stockGet(id: string): Promise<ApiResult<StockBatch>>;
-  stockListBatchEvents(id: string, query?: { before_created_at?: string | null; before_id?: string | null; limit?: number | null }): Promise<ApiResult<StockEventListResponse>>;
+  stockListBatchEvents(
+    id: string,
+    query?: { before_created_at?: string | null; before_id?: string | null; limit?: number | null }
+  ): Promise<ApiResult<StockEventListResponse>>;
   stockConsume(body: ConsumeRequest): Promise<ApiResult<ConsumeResponse>>;
   stockDelete(id: string): Promise<ApiResult<void>>;
   stockRestore(id: string): Promise<ApiResult<StockBatch>>;
-  remindersList(query?: { after_fire_at?: string | null; after_id?: string | null; limit?: number | null }): Promise<ApiResult<ReminderListResponse>>;
+  remindersList(query?: {
+    after_fire_at?: string | null;
+    after_id?: string | null;
+    limit?: number | null;
+  }): Promise<ApiResult<ReminderListResponse>>;
   remindersPresent(id: string): Promise<ApiResult<void>>;
   remindersOpen(id: string): Promise<ApiResult<void>>;
   remindersAck(id: string): Promise<ApiResult<void>>;
@@ -301,7 +349,12 @@ export class QuartermasterSession {
     this.storeTokenResult(result);
   }
 
-  async register(username: string, password: string, email: string, inviteCode: string): Promise<void> {
+  async register(
+    username: string,
+    password: string,
+    email: string,
+    inviteCode: string
+  ): Promise<void> {
     const result = await this.transport.register({
       username,
       password,
@@ -333,8 +386,20 @@ export class QuartermasterSession {
     return this.authed(() => this.transport.locationsList());
   }
 
+  productSearch(query: { q: string; limit?: number | null }): Promise<ProductSearchResponse> {
+    return this.authed(() => this.transport.productSearch(query));
+  }
+
+  productCreate(body: CreateProductRequest): Promise<Product> {
+    return this.authed(() => this.transport.productCreate(body));
+  }
+
   stockList(query?: { include_depleted?: boolean | null }): Promise<StockListResponse> {
     return this.authed(() => this.transport.stockList(query));
+  }
+
+  stockCreate(body: CreateStockRequest): Promise<StockBatch> {
+    return this.authed(() => this.transport.stockCreate(body));
   }
 
   stockGet(id: string): Promise<StockBatch> {
@@ -360,7 +425,11 @@ export class QuartermasterSession {
     return this.authed(() => this.transport.stockRestore(id));
   }
 
-  remindersList(query?: { after_fire_at?: string | null; after_id?: string | null; limit?: number | null }): Promise<ReminderListResponse> {
+  remindersList(query?: {
+    after_fire_at?: string | null;
+    after_id?: string | null;
+    limit?: number | null;
+  }): Promise<ReminderListResponse> {
     return this.authed(() => this.transport.remindersList(query));
   }
 
