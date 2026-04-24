@@ -33,7 +33,7 @@ ARG VCS_REF=unknown
 ARG BUILD_DATE=unknown
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates jq \
+    && apt-get install -y --no-install-recommends ca-certificates gosu jq \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --create-home --home-dir /app quartermaster \
     && mkdir -p /data \
@@ -58,7 +58,6 @@ LABEL io.hass.version="${BUILD_VERSION}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.licenses="Apache-2.0"
 
-USER quartermaster
 EXPOSE 8080
 VOLUME ["/data"]
 
