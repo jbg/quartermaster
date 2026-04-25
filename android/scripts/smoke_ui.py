@@ -517,6 +517,15 @@ def main() -> int:
         assert_tag_missing(f"smoke-reminder-target-{fixture['reminders'][1]['batch_id']}")
     else:
         assert_text_missing("Reminder target")
+    if fixture is not None:
+        lifecycle_batch_id = fixture["reminders"][1]["batch_id"]
+        tap_tag(f"smoke-inventory-batch-{lifecycle_batch_id}")
+        wait_for_tag(f"smoke-selected-batch-{lifecycle_batch_id}")
+        tap_tag(f"smoke-batch-discard-{lifecycle_batch_id}")
+        wait_for_tag(f"smoke-batch-restore-{lifecycle_batch_id}", timeout=15.0)
+        tap_tag(f"smoke-batch-restore-{lifecycle_batch_id}")
+        assert_tag_missing(f"smoke-batch-restore-{lifecycle_batch_id}", timeout=15.0)
+        wait_for_tag(f"smoke-batch-consume-{lifecycle_batch_id}", timeout=15.0)
     tap_tag("smoke-tab-settings")
     invite_code = None
     if fixture is None:

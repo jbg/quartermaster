@@ -2,6 +2,9 @@ package dev.quartermaster.android
 
 import dev.quartermaster.android.generated.infrastructure.Serializer
 import dev.quartermaster.android.generated.models.BarcodeLookupResponse
+import dev.quartermaster.android.generated.models.ConsumeRequest
+import dev.quartermaster.android.generated.models.ConsumeResponse
+import dev.quartermaster.android.generated.models.ConsumedBatchDto
 import dev.quartermaster.android.generated.models.CreateInviteRequest
 import dev.quartermaster.android.generated.models.CreateStockRequest
 import dev.quartermaster.android.generated.models.HouseholdDetailDto
@@ -13,6 +16,7 @@ import dev.quartermaster.android.generated.models.PushAuthorizationStatus
 import dev.quartermaster.android.generated.models.ReminderDto
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
+import dev.quartermaster.android.generated.models.StockEventType
 import dev.quartermaster.android.generated.models.UnitDto
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -20,6 +24,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.UUID
 
 class QuartermasterAppStateTest {
     private val json = Serializer.kotlinxSerializationJson
@@ -355,6 +360,145 @@ class QuartermasterAppStateTest {
         assertEquals(1, backend.addStockRequests.size)
     }
 
+    @Test
+    fun `selectBatch loads batch events and exposes selected batch metadata`() = runTest {
+        val batch = stockBatchJson()
+        val event = stockEventJson()
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    stock = listOf(batch),
+                    locations = listOf(locationJson()),
+                    batchEvents = mapOf(batch.id.toString() to listOf(event)),
+                ),
+            )
+
+        appState.bootstrap()
+        appState.selectBatch(batch.id.toString())
+
+        assertEquals(batch.id.toString(), appState.selectedBatchId)
+        assertEquals(batch, appState.selectedBatch)
+        assertEquals("Pantry", appState.locationNameFor(batch.locationId.toString()))
+        assertEquals(listOf(event), appState.selectedBatchEvents)
+    }
+
+    @Test
+    fun `consumeSelectedBatch records request and refreshes inventory reminders and events`() = runTest {
+        val batch = stockBatchJson()
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                stock = listOf(batch),
+                reminders = listOf(reminderJson()),
+                locations = listOf(locationJson()),
+                batchEvents = mapOf(batch.id.toString() to listOf(stockEventJson(eventType = "consume", quantityDelta = "-100"))),
+            )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend = backend,
+            )
+
+        appState.bootstrap()
+        appState.selectBatch(batch.id.toString())
+        appState.consumeSelectedBatch("100")
+
+        assertEquals(1, backend.consumeStockRequests.size)
+        val request = backend.consumeStockRequests.single()
+        assertEquals(batch.product.id, request.productId)
+        assertEquals(batch.locationId, request.locationId)
+        assertEquals("100", request.quantity)
+        assertEquals("g", request.unit)
+        assertEquals(batch.id.toString(), appState.selectedBatchId)
+        assertTrue(appState.hasLoadedInventoryOnce)
+        assertTrue(appState.hasLoadedRemindersOnce)
+        assertEquals(StockEventType.CONSUME, appState.selectedBatchEvents.first().eventType)
+    }
+
+    @Test
+    fun `discard and restore update stock action state and restore gating`() = runTest {
+        val batch = stockBatchJson()
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                stock = listOf(batch),
+                locations = listOf(locationJson()),
+            )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend = backend,
+            )
+
+        appState.bootstrap()
+        appState.selectBatch(batch.id.toString())
+        assertFalse(appState.canRestoreBatch(batch))
+
+        appState.discardBatch(batch.id.toString())
+
+        assertEquals(listOf(batch.id.toString()), backend.discardedBatchIds)
+        assertTrue(appState.canRestoreBatch(appState.selectedBatch))
+
+        appState.restoreBatch(batch.id.toString())
+
+        assertEquals(listOf(batch.id.toString()), backend.restoredBatchIds)
+        assertFalse(appState.isBatchDepleted(appState.selectedBatch!!))
+        assertFalse(appState.canRestoreBatch(appState.selectedBatch))
+        assertNull(appState.stockActionFor(batch.id.toString()))
+    }
+
+    @Test
+    fun `stock action failure clears in flight state and stores inventory error`() = runTest {
+        val batch = stockBatchJson()
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    stock = listOf(batch),
+                    locations = listOf(locationJson()),
+                    discardFailure = ApiFailure(409, "batch_not_restorable", "Could not discard batch"),
+                ),
+            )
+
+        appState.bootstrap()
+        appState.selectBatch(batch.id.toString())
+        appState.discardBatch(batch.id.toString())
+
+        assertNull(appState.stockActionFor(batch.id.toString()))
+        assertEquals("Could not discard batch", appState.inventoryError)
+        assertEquals("Could not discard batch", appState.lastError)
+    }
+
+    @Test
+    fun `logout clears selected batch history and stock action state`() = runTest {
+        val batch = stockBatchJson()
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    stock = listOf(batch),
+                    locations = listOf(locationJson()),
+                    batchEvents = mapOf(batch.id.toString() to listOf(stockEventJson())),
+                ),
+            )
+
+        appState.bootstrap()
+        appState.selectBatch(batch.id.toString())
+        appState.logout()
+
+        assertNull(appState.selectedBatchId)
+        assertTrue(appState.selectedBatchEvents.isEmpty())
+        assertNull(appState.selectedBatchEventError)
+        assertNull(appState.stockActionFor(batch.id.toString()))
+    }
+
     private fun reminderPayload(): ReminderPushPayload = ReminderPushPayload(
         reminderId = "55555555-5555-5555-5555-555555555555",
         batchId = "33333333-3333-3333-3333-333333333333",
@@ -456,6 +600,31 @@ class QuartermasterAppStateTest {
         """.trimIndent(),
     )
 
+    private fun stockEventJson(
+        id: String = "77777777-7777-7777-7777-777777777777",
+        eventType: String = "add",
+        quantityDelta: String = "1000",
+    ): StockEventDto = json.decodeFromString(
+        """
+            {
+              "id": "$id",
+              "event_type": "$eventType",
+              "quantity_delta": "$quantityDelta",
+              "unit": "g",
+              "created_at": "2026-04-22T12:00:00Z",
+              "created_by_username": "alice",
+              "batch_id": "33333333-3333-3333-3333-333333333333",
+              "product": {
+                "id": "44444444-4444-4444-4444-444444444444",
+                "name": "Flour",
+                "family": "mass",
+                "preferred_unit": "g",
+                "source": "manual"
+              }
+            }
+        """.trimIndent(),
+    )
+
     private fun productDtoJson(): ProductDto = json.decodeFromString(
         """
             {
@@ -519,7 +688,7 @@ class QuartermasterAppStateTest {
         override fun stableDeviceId(): String = "android-device-1"
     }
 
-    private class FakeBackend(
+    private inner class FakeBackend(
         private val meResponse: MeResponse,
         stock: List<StockBatchDto> = emptyList(),
         reminders: List<ReminderDto> = emptyList(),
@@ -527,18 +696,24 @@ class QuartermasterAppStateTest {
         private val units: List<UnitDto> = emptyList(),
         private val householdDetail: HouseholdDetailDto? = null,
         private val searchResults: List<ProductDto> = emptyList(),
+        batchEvents: Map<String, List<StockEventDto>> = emptyMap(),
         private val barcodeFailure: Throwable? = null,
         private val openReminderFailure: Throwable? = null,
+        private val discardFailure: Throwable? = null,
         private val logoutFailure: Throwable? = null,
     ) : QuartermasterBackend {
         override var serverUrl: String = "http://10.0.2.2:8080"
 
         private val stockState = stock.toMutableList()
         private val reminderState = reminders.toMutableList()
+        private val batchEventState = batchEvents.mapValues { it.value.toMutableList() }.toMutableMap()
 
         val acknowledgedReminderIds = mutableListOf<String>()
         val openedReminderIds = mutableListOf<String>()
         val addStockRequests = mutableListOf<CreateStockRequest>()
+        val consumeStockRequests = mutableListOf<ConsumeRequest>()
+        val discardedBatchIds = mutableListOf<String>()
+        val restoredBatchIds = mutableListOf<String>()
 
         override suspend fun me(): MeResponse = meResponse
 
@@ -579,9 +754,15 @@ class QuartermasterAppStateTest {
 
         override suspend fun units(): List<UnitDto> = units
 
-        override suspend fun listStock(): List<StockBatchDto> = stockState.toList()
+        override suspend fun listStock(includeDepleted: Boolean): List<StockBatchDto> = if (includeDepleted) {
+            stockState.toList()
+        } else {
+            stockState.filterNot { it.quantity.toBigDecimalOrNull()?.compareTo(java.math.BigDecimal.ZERO) == 0 }
+        }
 
         override suspend fun listEvents(limit: Int): List<StockEventDto> = emptyList()
+
+        override suspend fun listBatchEvents(batchId: String, limit: Int): List<StockEventDto> = batchEventState[batchId].orEmpty().take(limit)
 
         override suspend fun listReminders(limit: Int): List<ReminderDto> = reminderState.toList()
 
@@ -615,6 +796,73 @@ class QuartermasterAppStateTest {
         override suspend fun addStock(request: CreateStockRequest): StockBatchDto {
             addStockRequests += request
             return stockState.firstOrNull() ?: error("Unused in test")
+        }
+
+        override suspend fun consumeStock(request: ConsumeRequest): ConsumeResponse {
+            consumeStockRequests += request
+            val batch = stockState.firstOrNull { it.product.id == request.productId && it.locationId == request.locationId }
+                ?: error("Unused in test")
+            batchEventState[batch.id.toString()] = (
+                listOf(
+                    stockEventJson(
+                        id = "88888888-8888-8888-8888-888888888888",
+                        eventType = "consume",
+                        quantityDelta = "-${request.quantity}",
+                    ),
+                ) + batchEventState[batch.id.toString()].orEmpty()
+                ).toMutableList()
+            return ConsumeResponse(
+                consumeRequestId = UUID.fromString("99999999-9999-9999-9999-999999999999"),
+                consumed = listOf(
+                    ConsumedBatchDto(
+                        batchId = batch.id,
+                        quantity = request.quantity,
+                        unit = batch.unit,
+                        quantityInRequestedUnit = request.quantity,
+                        requestedUnit = request.unit,
+                        depleted = false,
+                    ),
+                ),
+            )
+        }
+
+        override suspend fun discardStock(batchId: String) {
+            discardFailure?.let { throw it }
+            discardedBatchIds += batchId
+            stockState.replaceAll { batch ->
+                if (batch.id.toString() == batchId) batch.copy(quantity = "0") else batch
+            }
+            batchEventState[batchId] = (
+                listOf(
+                    stockEventJson(
+                        id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                        eventType = "discard",
+                        quantityDelta = "-900",
+                    ),
+                ) + batchEventState[batchId].orEmpty()
+                ).toMutableList()
+        }
+
+        override suspend fun restoreStock(batchId: String): StockBatchDto {
+            restoredBatchIds += batchId
+            var restored: StockBatchDto? = null
+            stockState.replaceAll { batch ->
+                if (batch.id.toString() == batchId) {
+                    batch.copy(quantity = batch.initialQuantity).also { restored = it }
+                } else {
+                    batch
+                }
+            }
+            batchEventState[batchId] = (
+                listOf(
+                    stockEventJson(
+                        id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                        eventType = "restore",
+                        quantityDelta = "900",
+                    ),
+                ) + batchEventState[batchId].orEmpty()
+                ).toMutableList()
+            return restored ?: error("Unused in test")
         }
     }
 }
