@@ -226,3 +226,77 @@ async fn product_catalogue_lists_visible_products_and_deleted_when_requested() {
     assert_eq!(filtered_items.len(), 1);
     assert_eq!(filtered_items[0]["name"], "Catalogue Cola");
 }
+
+#[tokio::test]
+async fn product_patch_uses_json_patch_replace_and_remove() {
+    let app = TestApp::start(ApiConfig::default()).await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+
+    let (status, product) = app
+        .send(
+            Method::POST,
+            "/api/v1/products",
+            Some(json!({
+                "name": "Patch Flour",
+                "brand": "Mill",
+                "family": "mass",
+                "preferred_unit": "g",
+                "barcode": null,
+                "image_url": "https://example.com/flour.png",
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let product_id = product["id"].as_str().unwrap();
+
+    let (status, updated) = app
+        .send(
+            Method::PATCH,
+            &format!("/api/v1/products/{product_id}"),
+            Some(json!([
+                { "op": "replace", "path": "/name", "value": "Patch Bread Flour" },
+                { "op": "remove", "path": "/brand" },
+                { "op": "replace", "path": "/preferred_unit", "value": "kg" },
+            ])),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(updated["name"], "Patch Bread Flour");
+    assert!(updated["brand"].is_null());
+    assert_eq!(updated["preferred_unit"], "kg");
+    assert_eq!(updated["image_url"], "https://example.com/flour.png");
+
+    let (status, updated) = app
+        .send(
+            Method::PATCH,
+            &format!("/api/v1/products/{product_id}"),
+            Some(json!([
+                { "op": "replace", "path": "/brand", "value": "New Mill" },
+                { "op": "remove", "path": "/image_url" },
+            ])),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(updated["brand"], "New Mill");
+    assert!(updated["image_url"].is_null());
+
+    for body in [
+        json!([{ "op": "replace", "path": "/brand" }]),
+        json!([{ "op": "remove", "path": "/name" }]),
+        json!([{ "op": "add", "path": "/brand", "value": "x" }]),
+    ] {
+        let (status, _) = app
+            .send(
+                Method::PATCH,
+                &format!("/api/v1/products/{product_id}"),
+                Some(body),
+                Some(&alice),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+}

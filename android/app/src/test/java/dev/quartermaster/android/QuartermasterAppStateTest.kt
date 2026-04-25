@@ -23,6 +23,8 @@ import dev.quartermaster.android.generated.models.UnitDto
 import dev.quartermaster.android.generated.models.UnitFamily
 import dev.quartermaster.android.generated.models.UpdateLocationRequest
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -531,18 +533,20 @@ class QuartermasterAppStateTest {
     }
 
     @Test
-    fun `product update patch encodes omitted and cleared fields`() {
-        val patch = ProductUpdatePatch(
-            name = "Updated Flour",
-            clearBrand = true,
-            family = UnitFamily.VOLUME,
-            preferredUnit = "ml",
-            clearImageUrl = true,
+    fun `product update request encodes JSON Patch operations`() {
+        val patch = ProductUpdateRequest(
+            listOf(
+                JsonPatchOperation("replace", "/name", "Updated Flour"),
+                JsonPatchOperation("remove", "/brand"),
+                JsonPatchOperation("replace", "/family", UnitFamily.VOLUME.value),
+                JsonPatchOperation("replace", "/preferred_unit", "ml"),
+                JsonPatchOperation("remove", "/image_url"),
+            ),
         )
 
         assertEquals(
-            """{"name":"Updated Flour","brand":null,"family":"volume","preferred_unit":"ml","image_url":null}""",
-            patch.encodeToJsonString(),
+            """[{"op":"replace","path":"/name","value":"Updated Flour"},{"op":"remove","path":"/brand"},{"op":"replace","path":"/family","value":"volume"},{"op":"replace","path":"/preferred_unit","value":"ml"},{"op":"remove","path":"/image_url"}]""",
+            Json(json) { encodeDefaults = false }.encodeToString(patch.operations),
         )
     }
 
@@ -616,7 +620,12 @@ class QuartermasterAppStateTest {
         )
 
         assertEquals(updated, appState.selectedCatalogueProduct)
-        assertTrue(backend.updateProductRequests.single().clearImageUrl)
+        assertTrue(
+            backend.updateProductRequests
+                .single()
+                .operations
+                .any { it.op == "remove" && it.path == "/image_url" },
+        )
 
         appState.showProductDelete()
         appState.deleteSelectedProduct()
@@ -1071,7 +1080,7 @@ class QuartermasterAppStateTest {
         val updateLocationRequests = mutableListOf<Pair<String, UpdateLocationRequest>>()
         val deletedLocationIds = mutableListOf<String>()
         val createProductRequests = mutableListOf<CreateProductRequest>()
-        val updateProductRequests = mutableListOf<ProductUpdatePatch>()
+        val updateProductRequests = mutableListOf<ProductUpdateRequest>()
         val deletedProductIds = mutableListOf<String>()
         val restoredProductIds = mutableListOf<String>()
         val consumeStockRequests = mutableListOf<ConsumeRequest>()
@@ -1207,7 +1216,7 @@ class QuartermasterAppStateTest {
 
         override suspend fun updateProduct(
             id: String,
-            request: ProductUpdatePatch,
+            request: ProductUpdateRequest,
         ): ProductDto {
             productUpdateFailure?.let { throw it }
             updateProductRequests += request

@@ -103,16 +103,16 @@ export function buildProductUpdateRequest(
   product: Product,
   fields: ProductFormFields
 ): UpdateProductRequest {
-  const request: UpdateProductRequest = {};
+  const request: UpdateProductRequest = [];
   const name = fields.name.trim();
   if (name !== product.name) {
-    request.name = name;
+    request.push({ op: 'replace', path: '/name', value: name });
   }
   if (fields.family !== product.family) {
-    request.family = fields.family;
+    request.push({ op: 'replace', path: '/family', value: fields.family });
   }
   if (fields.preferredUnit !== productPreferredUnit(product)) {
-    request.preferred_unit = fields.preferredUnit;
+    request.push({ op: 'replace', path: '/preferred_unit', value: fields.preferredUnit });
   }
   applyClearableText(request, 'brand', productBrand(product), fields.brand);
   applyClearableText(request, 'image_url', productImageUrl(product), fields.imageUrl);
@@ -128,10 +128,10 @@ function applyClearableText(
   const trimmed = nextValue.trim();
   if (trimmed) {
     if (trimmed !== currentValue) {
-      request[key] = trimmed;
+      request.push({ op: 'replace', path: `/${key}`, value: trimmed });
     }
   } else if (currentValue) {
-    request[key] = null;
+    request.push({ op: 'remove', path: `/${key}` });
   }
 }
 

@@ -181,13 +181,13 @@ export interface CreateProductRequest {
   image_url?: string | null;
 }
 
-export interface UpdateProductRequest {
-  name?: string | null;
-  brand?: string | null;
-  family?: UnitFamily | null;
-  preferred_unit?: string | null;
-  image_url?: string | null;
+export interface JsonPatchOperation {
+  op: 'replace' | 'remove';
+  path: string;
+  value?: unknown;
 }
+
+export type UpdateProductRequest = JsonPatchOperation[];
 
 export interface CreateStockRequest {
   product_id: string;
@@ -211,13 +211,7 @@ export interface UpdateLocationRequest {
   sort_order: number;
 }
 
-export interface UpdateStockRequest {
-  quantity?: string | null;
-  location_id?: string | null;
-  expires_on?: string | null;
-  opened_on?: string | null;
-  note?: string | null;
-}
+export type UpdateStockRequest = JsonPatchOperation[];
 
 export interface ApiResult<T> {
   data?: T;

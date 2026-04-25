@@ -316,34 +316,34 @@ private struct EditBatchForm: View {
     errorMessage = nil
     var request = UpdateStockRequest()
     if quantity != batch.quantity {
-      request.quantity = quantity
+      request.append(jsonPatchReplace("/quantity", quantity))
     }
     if locationID != batch.locationID {
-      request.locationID = locationID
+      request.append(jsonPatchReplace("/location_id", locationID))
     }
     if hasExpiry {
       let s = StockBatch.yyyymmdd.string(from: expiry)
       if s != batch.expiresOn {
-        request.expiresOn = s
+        request.append(jsonPatchReplace("/expires_on", s))
       }
     } else if hadExpiryOriginally {
-      request.clearExpiresOn = true
+      request.append(jsonPatchRemove("/expires_on"))
     }
     if hasOpened {
       let s = StockBatch.yyyymmdd.string(from: opened)
       if s != batch.openedOn {
-        request.openedOn = s
+        request.append(jsonPatchReplace("/opened_on", s))
       }
     } else if hadOpenedOriginally {
-      request.clearOpenedOn = true
+      request.append(jsonPatchRemove("/opened_on"))
     }
     let trimmedNote = note.trimmingCharacters(in: .whitespaces)
     if trimmedNote.isEmpty {
       if batch.note != nil {
-        request.clearNote = true
+        request.append(jsonPatchRemove("/note"))
       }
     } else if trimmedNote != batch.note {
-      request.note = trimmedNote
+      request.append(jsonPatchReplace("/note", trimmedNote))
     }
 
     do {

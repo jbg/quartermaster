@@ -17,6 +17,9 @@ use crate::{
     error::{ApiError, ApiResult},
     openfoodfacts::{self, OffResult, OpenFoodFactsClient},
     rate_limit::RateLimitLayerState,
+    routes::patch::{
+        reject_remove, reject_value_for_remove, string_value, JsonPatchDocument, JsonPatchOperation,
+    },
     types::ProductSource,
     AppState,
 };
@@ -38,20 +41,6 @@ pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
         )
         .route("/products/{id}/refresh", post(refresh))
         .route("/products/{id}/restore", post(restore))
-}
-
-/// Deserializer helper for explicit-null semantics on optional-clearable
-/// fields, mirroring the same pattern used on `UpdateStockRequest`.
-mod double_option {
-    use serde::{Deserialize, Deserializer};
-
-    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
-    where
-        D: Deserializer<'de>,
-        T: Deserialize<'de>,
-    {
-        Ok(Some(Option::<T>::deserialize(deserializer)?))
-    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -112,15 +101,76 @@ pub struct CreateProductRequest {
     pub image_url: Option<String>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct UpdateProductRequest {
-    pub name: Option<String>,
-    #[serde(default, deserialize_with = "double_option::deserialize")]
-    pub brand: Option<Option<String>>,
-    pub family: Option<UnitFamily>,
-    pub preferred_unit: Option<String>,
-    #[serde(default, deserialize_with = "double_option::deserialize")]
-    pub image_url: Option<Option<String>>,
+pub type UpdateProductRequest = JsonPatchDocument;
+
+#[derive(Debug, Default)]
+struct ProductPatch {
+    name: Option<String>,
+    brand: Option<Option<String>>,
+    family: Option<UnitFamily>,
+    preferred_unit: Option<String>,
+    image_url: Option<Option<String>>,
+}
+
+impl ProductPatch {
+    fn parse(operations: Vec<JsonPatchOperation>) -> ApiResult<Self> {
+        let mut patch = Self::default();
+        for operation in operations {
+            match operation.op.as_str() {
+                "replace" => patch.replace(&operation.path, operation.value.as_ref())?,
+                "remove" => patch.remove(&operation.path, operation.value.as_ref())?,
+                other => {
+                    return Err(ApiError::BadRequest(format!(
+                        "unsupported JSON Patch operation: {other}"
+                    )));
+                }
+            }
+        }
+        Ok(patch)
+    }
+
+    fn replace(&mut self, path: &str, value: Option<&serde_json::Value>) -> ApiResult<()> {
+        match path {
+            "/name" => self.name = Some(string_value("name", value)?),
+            "/brand" => self.brand = Some(Some(string_value("brand", value)?)),
+            "/family" => {
+                let value = string_value("family", value)?;
+                self.family = Some(UnitFamily::from_str_ci(&value).ok_or_else(|| {
+                    ApiError::BadRequest(format!("unknown product family: {value}"))
+                })?);
+            }
+            "/preferred_unit" => self.preferred_unit = Some(string_value("preferred_unit", value)?),
+            "/image_url" => self.image_url = Some(Some(string_value("image_url", value)?)),
+            other => {
+                return Err(ApiError::BadRequest(format!(
+                    "unknown product patch path: {other}"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn remove(&mut self, path: &str, value: Option<&serde_json::Value>) -> ApiResult<()> {
+        match path {
+            "/brand" => {
+                reject_value_for_remove("brand", value)?;
+                self.brand = Some(None);
+            }
+            "/image_url" => {
+                reject_value_for_remove("image_url", value)?;
+                self.image_url = Some(None);
+            }
+            "/name" => return Err(reject_remove("name")),
+            "/family" => return Err(reject_remove("family")),
+            "/preferred_unit" => return Err(reject_remove("preferred_unit")),
+            other => {
+                return Err(ApiError::BadRequest(format!(
+                    "unknown product patch path: {other}"
+                )));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -375,7 +425,7 @@ pub async fn get_one(
     operation_id = "product_update",
     tag = "products",
     params(("id" = Uuid, Path)),
-    request_body = UpdateProductRequest,
+    request_body = Vec<JsonPatchOperation>,
     responses(
         (status = 200, body = ProductDto),
         (status = 400, body = crate::error::ApiErrorBody),
@@ -392,6 +442,7 @@ pub async fn update(
     Json(req): Json<UpdateProductRequest>,
 ) -> ApiResult<Json<ProductDto>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    let req = ProductPatch::parse(req)?;
 
     let existing = qm_db::products::find_by_id(&state.db, id)
         .await?
@@ -454,15 +505,18 @@ pub async fn update(
     }
 
     let name_trim = req.name.as_deref().map(str::trim);
-    let brand_inner: Option<Option<&str>> = req
-        .brand
-        .as_ref()
-        .map(|inner| inner.as_deref().map(str::trim).filter(|s| !s.is_empty()));
-    let image_inner: Option<Option<&str>> = req
-        .image_url
-        .as_ref()
-        .map(|inner| inner.as_deref().map(str::trim).filter(|s| !s.is_empty()));
+    let brand_inner: Option<Option<&str>> = req.brand.as_ref().map(|inner| {
+        inner
+            .as_deref()
+            .and_then(|value| Some(value.trim()).filter(|s| !s.is_empty()))
+    });
+    let image_inner: Option<Option<&str>> = req.image_url.as_ref().map(|inner| {
+        inner
+            .as_deref()
+            .and_then(|value| Some(value.trim()).filter(|s| !s.is_empty()))
+    });
     let family_str = req.family.map(UnitFamily::as_str);
+    let preferred_unit = req.preferred_unit.as_deref();
 
     let updated = qm_db::products::update(
         &state.db,
@@ -471,7 +525,7 @@ pub async fn update(
             name: name_trim,
             brand: brand_inner,
             family: family_str,
-            preferred_unit: req.preferred_unit.as_deref(),
+            preferred_unit,
             image_url: image_inner,
         },
     )

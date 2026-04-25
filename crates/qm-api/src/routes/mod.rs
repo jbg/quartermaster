@@ -5,6 +5,7 @@ pub mod households;
 pub mod join;
 pub mod locations;
 pub mod maintenance;
+pub mod patch;
 pub mod products;
 pub mod reminders;
 pub mod stock;

@@ -207,17 +207,17 @@ export function buildStockUpdateRequest(
   batch: StockBatch,
   input: StockEditFields
 ): UpdateStockRequest {
-  const request: UpdateStockRequest = {};
+  const request: UpdateStockRequest = [];
   const quantity = input.quantity.trim();
   const currentQuantity =
     batch.quantity === undefined || batch.quantity === null ? '' : String(batch.quantity);
   if (quantity !== currentQuantity) {
-    request.quantity = quantity;
+    request.push({ op: 'replace', path: '/quantity', value: quantity });
   }
 
   const currentLocationId = stockLocationId(batch) ?? '';
   if (input.locationId && input.locationId !== currentLocationId) {
-    request.location_id = input.locationId;
+    request.push({ op: 'replace', path: '/location_id', value: input.locationId });
   }
 
   applyOptionalDate(request, 'expires_on', stockExpiryValue(batch), input.expiresOn);
@@ -227,10 +227,10 @@ export function buildStockUpdateRequest(
   const nextNote = input.note.trim();
   if (nextNote) {
     if (nextNote !== currentNote) {
-      request.note = nextNote;
+      request.push({ op: 'replace', path: '/note', value: nextNote });
     }
   } else if (currentNote !== null) {
-    request.note = null;
+    request.push({ op: 'remove', path: '/note' });
   }
 
   return request;
@@ -245,9 +245,9 @@ function applyOptionalDate(
   const trimmed = nextValue.trim();
   if (trimmed) {
     if (trimmed !== currentValue) {
-      request[key] = trimmed;
+      request.push({ op: 'replace', path: `/${key}`, value: trimmed });
     }
   } else if (currentValue !== null) {
-    request[key] = null;
+    request.push({ op: 'remove', path: `/${key}` });
   }
 }

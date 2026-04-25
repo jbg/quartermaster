@@ -63,7 +63,7 @@ async fn product_stock_history_lifecycle_flows_through_api() {
         .send(
             Method::PATCH,
             &format!("/api/v1/stock/{batch_id}"),
-            Some(json!({ "quantity": "450" })),
+            Some(json!([{ "op": "replace", "path": "/quantity", "value": "450" }])),
             Some(&alice),
         )
         .await;
@@ -175,10 +175,10 @@ async fn metadata_only_stock_updates_do_not_write_quantity_events() {
         .send(
             Method::PATCH,
             &format!("/api/v1/stock/{batch_id}"),
-            Some(json!({
-                "location_id": fridge,
-                "note": "moved",
-            })),
+            Some(json!([
+                { "op": "replace", "path": "/location_id", "value": fridge.to_string() },
+                { "op": "replace", "path": "/note", "value": "moved" },
+            ])),
             Some(&alice),
         )
         .await;
@@ -195,6 +195,88 @@ async fn metadata_only_stock_updates_do_not_write_quantity_events() {
     let items = events["items"].as_array().unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["event_type"], "add");
+}
+
+#[tokio::test]
+async fn stock_patch_uses_json_patch_replace_and_remove() {
+    let app = TestApp::start(ApiConfig::default()).await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let me = app.me(&alice).await;
+    let household_id = Uuid::parse_str(me_current_household_id(&me).unwrap()).unwrap();
+    let locations = qm_db::locations::list_for_household(&app.db, household_id)
+        .await
+        .unwrap();
+    let pantry = locations.iter().find(|l| l.kind == "pantry").unwrap().id;
+    let fridge = locations.iter().find(|l| l.kind == "fridge").unwrap().id;
+
+    let (_, product) = app
+        .send(
+            Method::POST,
+            "/api/v1/products",
+            Some(json!({
+                "name": "Patch Tea",
+                "brand": null,
+                "family": "count",
+                "preferred_unit": "piece",
+                "barcode": null,
+                "image_url": null,
+            })),
+            Some(&alice),
+        )
+        .await;
+    let product_id = product["id"].as_str().unwrap();
+    let (_, batch) = app
+        .send(
+            Method::POST,
+            "/api/v1/stock",
+            Some(json!({
+                "product_id": product_id,
+                "location_id": pantry,
+                "quantity": "4",
+                "unit": "piece",
+                "expires_on": "2026-06-01",
+                "opened_on": "2026-05-01",
+                "note": "box",
+            })),
+            Some(&alice),
+        )
+        .await;
+    let batch_id = batch["id"].as_str().unwrap();
+
+    let (status, updated) = app
+        .send(
+            Method::PATCH,
+            &format!("/api/v1/stock/{batch_id}"),
+            Some(json!([
+                { "op": "replace", "path": "/location_id", "value": fridge.to_string() },
+                { "op": "remove", "path": "/expires_on" },
+                { "op": "replace", "path": "/note", "value": "top shelf" },
+            ])),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(updated["location_id"], fridge.to_string());
+    assert!(updated["expires_on"].is_null());
+    assert_eq!(updated["opened_on"], "2026-05-01");
+    assert_eq!(updated["note"], "top shelf");
+
+    for body in [
+        json!([{ "op": "replace", "path": "/note" }]),
+        json!([{ "op": "remove", "path": "/quantity" }]),
+        json!([{ "op": "add", "path": "/note", "value": "x" }]),
+    ] {
+        let (status, _) = app
+            .send(
+                Method::PATCH,
+                &format!("/api/v1/stock/{batch_id}"),
+                Some(body),
+                Some(&alice),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
 }
 
 #[tokio::test]

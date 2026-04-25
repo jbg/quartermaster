@@ -394,9 +394,15 @@ describe('QuartermasterSession', () => {
         };
       },
       async productUpdate(id, body) {
-        calls.push(`product-update:${id}:${body.name ?? ''}`);
+        const name = body.find((op) => op.path === '/name')?.value;
+        calls.push(`product-update:${id}:${name ?? ''}`);
         return {
-          data: { id, name: body.name ?? 'Rice', family: 'mass', preferred_unit: 'g' },
+          data: {
+            id,
+            name: typeof name === 'string' ? name : 'Rice',
+            family: 'mass',
+            preferred_unit: 'g'
+          },
           response: { status: 200 }
         };
       },
@@ -437,14 +443,16 @@ describe('QuartermasterSession', () => {
         throw new Error('unused');
       },
       async stockUpdate(id, body) {
-        calls.push(`update:${id}:${body.quantity}:${body.expires_on}`);
+        const quantity = body.find((op) => op.path === '/quantity')?.value;
+        const expiresOn = body.find((op) => op.path === '/expires_on')?.value;
+        calls.push(`update:${id}:${quantity}:${expiresOn}`);
         return {
           data: {
             id,
             product: { id: 'product-2', name: 'Rice', unit_family: 'mass' },
-            quantity: body.quantity ?? '2',
+            quantity: typeof quantity === 'string' ? quantity : '2',
             unit: 'kg',
-            expires_on: body.expires_on
+            expires_on: typeof expiresOn === 'string' ? expiresOn : undefined
           },
           response: { status: 200 }
         };
@@ -499,7 +507,7 @@ describe('QuartermasterSession', () => {
     ).resolves.toMatchObject({ name: 'Manual Rice' });
     await expect(session.productGet('product-1')).resolves.toMatchObject({ name: 'Rice' });
     await expect(
-      session.productUpdate('product-1', { name: 'Updated Rice' })
+      session.productUpdate('product-1', [{ op: 'replace', path: '/name', value: 'Updated Rice' }])
     ).resolves.toMatchObject({
       name: 'Updated Rice'
     });
@@ -517,7 +525,10 @@ describe('QuartermasterSession', () => {
       })
     ).resolves.toMatchObject({ id: 'batch-1' });
     await expect(
-      session.stockUpdate('batch-1', { quantity: '1.5', expires_on: '2026-05-01' })
+      session.stockUpdate('batch-1', [
+        { op: 'replace', path: '/quantity', value: '1.5' },
+        { op: 'replace', path: '/expires_on', value: '2026-05-01' }
+      ])
     ).resolves.toMatchObject({ id: 'batch-1', quantity: '1.5' });
     expect(calls).toEqual([
       'location-create:Shelf:pantry:auto',
