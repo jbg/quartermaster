@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.QrCodeScanner
@@ -51,11 +52,13 @@ import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.ReminderDto
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
+import dev.quartermaster.android.generated.models.UnitFamily
 import kotlinx.coroutines.launch
 
 private object SmokeTag {
     const val OnboardingScreen = "smoke-onboarding-screen"
     const val InventoryScreen = "smoke-inventory-screen"
+    const val ProductsScreen = "smoke-products-screen"
     const val ReminderScreen = "smoke-reminder-screen"
     const val SettingsScreen = "smoke-settings-screen"
     const val ServerUrlField = "smoke-server-url-field"
@@ -63,7 +66,26 @@ private object SmokeTag {
     const val PasswordField = "smoke-password-field"
     const val SignInButton = "smoke-sign-in-button"
     const val RemindersTab = "smoke-tab-reminders"
+    const val ProductsTab = "smoke-tab-products"
     const val SettingsTab = "smoke-tab-settings"
+    const val ProductList = "smoke-product-list"
+    const val ProductSearchField = "smoke-product-search-field"
+    const val ProductSearchButton = "smoke-product-search-button"
+    const val ProductFilterActive = "smoke-product-filter-active"
+    const val ProductFilterAll = "smoke-product-filter-all"
+    const val ProductFilterDeleted = "smoke-product-filter-deleted"
+    const val ProductBarcodeField = "smoke-product-barcode-field"
+    const val ProductBarcodeButton = "smoke-product-barcode-button"
+    const val ProductCreateButton = "smoke-product-create-button"
+    const val ProductNameField = "smoke-product-name-field"
+    const val ProductBrandField = "smoke-product-brand-field"
+    const val ProductImageUrlField = "smoke-product-image-url-field"
+    const val ProductSubmitButton = "smoke-product-submit-button"
+    const val ProductEditButton = "smoke-product-edit-button"
+    const val ProductDeleteButton = "smoke-product-delete-button"
+    const val ProductDeleteConfirmButton = "smoke-product-delete-confirm-button"
+    const val ProductRestoreButton = "smoke-product-restore-button"
+    const val ProductRefreshButton = "smoke-product-refresh-button"
     const val ReminderOpenedBanner = "smoke-reminder-opened-banner"
     const val ReminderOpenedDismissButton = "smoke-reminder-opened-dismiss"
     const val InviteHandoffCard = "smoke-invite-handoff-card"
@@ -83,6 +105,7 @@ private object SmokeTag {
     fun reminderOpenButton(id: String) = "smoke-reminder-open-$id"
     fun inviteCode(code: String) = "smoke-invite-code-$code"
     fun reminderTarget(batchId: String) = "smoke-reminder-target-$batchId"
+    fun productRow(id: String) = "smoke-product-row-$id"
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
@@ -106,6 +129,7 @@ fun QuartermasterApp(appState: QuartermasterAppState) {
                     NavigationBar {
                         listOf(
                             MainTab.Inventory to Pair("Inventory", Icons.Outlined.Inventory2),
+                            MainTab.Products to Pair("Products", Icons.Outlined.Category),
                             MainTab.Reminders to Pair("Reminders", Icons.Outlined.Notifications),
                             MainTab.Scan to Pair("Scan", Icons.Outlined.QrCodeScanner),
                             MainTab.Settings to Pair("Settings", Icons.Outlined.Settings),
@@ -113,6 +137,7 @@ fun QuartermasterApp(appState: QuartermasterAppState) {
                             NavigationBarItem(
                                 modifier = Modifier.testTag(
                                     when (tab) {
+                                        MainTab.Products -> SmokeTag.ProductsTab
                                         MainTab.Reminders -> SmokeTag.RemindersTab
                                         MainTab.Settings -> SmokeTag.SettingsTab
                                         else -> "main-tab-${tab.name.lowercase()}"
@@ -142,6 +167,7 @@ fun QuartermasterApp(appState: QuartermasterAppState) {
                     } else {
                         when (appState.selectedTab) {
                             MainTab.Inventory -> InventoryScreen(appState, Modifier.padding(padding))
+                            MainTab.Products -> ProductsScreen(appState, Modifier.padding(padding))
                             MainTab.Reminders -> ReminderScreen(appState, Modifier.padding(padding))
                             MainTab.Scan -> ScanScreen(appState, Modifier.padding(padding))
                             MainTab.Settings -> SettingsScreen(appState, Modifier.padding(padding))
@@ -1014,6 +1040,17 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
             )
         }
         item {
+            Button(
+                onClick = {
+                    appState.showProductCreate()
+                    appState.selectedTab = MainTab.Products
+                },
+                enabled = appState.scanActionInFlight == null,
+            ) {
+                Text("Create manual product")
+            }
+        }
+        item {
             Card {
                 Column(
                     modifier = Modifier
@@ -1156,6 +1193,403 @@ private fun ProductSearchResultCard(
                 Text(product.family.name)
             }
             TextButton(onClick = onUse) { Text("Use") }
+        }
+    }
+}
+
+@Composable
+private fun ProductsScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
+    LaunchedEffect(appState.currentHouseholdId) {
+        if (!appState.hasLoadedProductsOnce) {
+            appState.refreshProducts(force = true)
+        }
+    }
+
+    when (appState.productScreenMode) {
+        ProductScreenMode.List -> ProductListScreen(appState, modifier)
+        ProductScreenMode.Detail -> ProductDetailScreen(appState, modifier)
+        ProductScreenMode.Create -> ProductFormScreen(appState, null, modifier)
+        ProductScreenMode.Edit -> ProductFormScreen(appState, appState.selectedCatalogueProduct, modifier)
+        ProductScreenMode.Delete -> ProductDeleteScreen(appState, modifier)
+    }
+}
+
+@Composable
+private fun ProductListScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
+    val scope = rememberCoroutineScope()
+    var query by remember { mutableStateOf(appState.productSearchQuery) }
+    var barcode by remember { mutableStateOf("") }
+    var filter by remember { mutableStateOf(appState.productIncludeFilter) }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .testTag(SmokeTag.ProductsScreen),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Products", style = MaterialTheme.typography.headlineSmall)
+                Button(
+                    modifier = Modifier.testTag(SmokeTag.ProductCreateButton),
+                    onClick = appState::showProductCreate,
+                    enabled = appState.productActionInFlight == null,
+                ) {
+                    Text("New product")
+                }
+            }
+        }
+        if (appState.isProductsRefreshing) {
+            item { StatusCard("Refreshing products", "Quartermaster is syncing the household catalogue.") }
+        }
+        appState.productError?.let { message ->
+            item { ErrorCard("Product action failed", message) }
+        }
+        item {
+            Card {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        label = { Text("Search products") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(SmokeTag.ProductSearchField),
+                    )
+                    Text("Include", style = MaterialTheme.typography.titleMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ProductFilterButton("Active", SmokeTag.ProductFilterActive, filter == ProductIncludeFilter.Active) {
+                            filter = ProductIncludeFilter.Active
+                        }
+                        ProductFilterButton("All", SmokeTag.ProductFilterAll, filter == ProductIncludeFilter.All) {
+                            filter = ProductIncludeFilter.All
+                        }
+                        ProductFilterButton("Deleted", SmokeTag.ProductFilterDeleted, filter == ProductIncludeFilter.Deleted) {
+                            filter = ProductIncludeFilter.Deleted
+                        }
+                    }
+                    Button(
+                        modifier = Modifier.testTag(SmokeTag.ProductSearchButton),
+                        onClick = { scope.launch { appState.applyProductFilters(query.trim(), filter) } },
+                        enabled = appState.productActionInFlight == null,
+                    ) {
+                        Text(if (appState.productActionInFlight == ProductAction.LoadList) "Loading..." else "Apply")
+                    }
+                    OutlinedTextField(
+                        value = barcode,
+                        onValueChange = { barcode = it },
+                        label = { Text("Barcode lookup") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(SmokeTag.ProductBarcodeField),
+                    )
+                    Button(
+                        modifier = Modifier.testTag(SmokeTag.ProductBarcodeButton),
+                        onClick = { scope.launch { appState.lookupProductBarcode(barcode.trim()) } },
+                        enabled = barcode.isNotBlank() && appState.productActionInFlight == null,
+                    ) {
+                        Text(if (appState.productActionInFlight == ProductAction.BarcodeLookup) "Looking up..." else "Look up barcode")
+                    }
+                }
+            }
+        }
+        val products = appState.visibleProducts()
+        if (!appState.hasLoadedProductsOnce && appState.productLoadState == LoadState.Loading) {
+            item { CenteredLoading() }
+        } else if (products.isEmpty()) {
+            item { StatusCard("No products found", "Create a manual product or look up a barcode to add one to the catalogue.") }
+        } else {
+            item {
+                Text(
+                    "Catalogue",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.testTag(SmokeTag.ProductList),
+                )
+            }
+            items(products, key = { it.id }) { product ->
+                ProductCatalogueRow(appState, product) {
+                    scope.launch { appState.openProduct(product.id.toString()) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProductCatalogueRow(
+    appState: QuartermasterAppState,
+    product: ProductDto,
+    onOpen: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(SmokeTag.productRow(product.id.toString()))
+            .clickable(onClick = onOpen),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(product.name, style = MaterialTheme.typography.titleMedium)
+            Text("${product.brand ?: "No brand"} · ${product.family.value} · ${product.preferredUnit}")
+            Text("${appState.productSourceLabel(product)} · ${if (appState.isDeletedProduct(product)) "Deleted" else "Active"}")
+        }
+    }
+}
+
+@Composable
+private fun ProductFilterButton(
+    label: String,
+    tag: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    if (selected) {
+        Button(
+            modifier = Modifier.testTag(tag),
+            onClick = onClick,
+        ) {
+            Text(label)
+        }
+    } else {
+        TextButton(
+            modifier = Modifier.testTag(tag),
+            onClick = onClick,
+        ) {
+            Text(label)
+        }
+    }
+}
+
+@Composable
+private fun ProductDetailScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
+    val scope = rememberCoroutineScope()
+    val product = appState.selectedCatalogueProduct
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .testTag(SmokeTag.ProductsScreen),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            TextButton(onClick = appState::showProductList) { Text("Back to products") }
+        }
+        if (product == null) {
+            item { StatusCard("Product unavailable", "Return to the catalogue and choose another product.") }
+            return@LazyColumn
+        }
+        appState.productError?.let { message ->
+            item { ErrorCard("Product action failed", message) }
+        }
+        item {
+            Card {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(product.name, style = MaterialTheme.typography.headlineSmall)
+                    Text(product.brand ?: "No brand")
+                    Text("Source: ${appState.productSourceLabel(product)}")
+                    Text("Family: ${product.family.value}")
+                    Text("Preferred unit: ${product.preferredUnit}")
+                    Text("Barcode: ${product.barcode ?: "No barcode"}")
+                    Text("Image URL: ${product.imageUrl ?: "No image"}")
+                    Text("Status: ${if (appState.isDeletedProduct(product)) "Deleted ${product.deletedAt}" else "Active"}")
+                }
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                when {
+                    appState.isManualProduct(product) && !appState.isDeletedProduct(product) -> {
+                        Button(
+                            modifier = Modifier.testTag(SmokeTag.ProductEditButton),
+                            onClick = appState::showProductEdit,
+                            enabled = appState.productActionInFlight == null,
+                        ) { Text("Edit") }
+                        TextButton(
+                            modifier = Modifier.testTag(SmokeTag.ProductDeleteButton),
+                            onClick = appState::showProductDelete,
+                            enabled = appState.productActionInFlight == null,
+                        ) { Text("Delete") }
+                    }
+                    appState.isManualProduct(product) -> {
+                        Button(
+                            modifier = Modifier.testTag(SmokeTag.ProductRestoreButton),
+                            onClick = { scope.launch { appState.restoreSelectedProduct() } },
+                            enabled = appState.productActionInFlight == null,
+                        ) {
+                            Text(if (appState.productActionInFlight == ProductAction.Restore) "Restoring..." else "Restore product")
+                        }
+                    }
+                    else -> {
+                        Button(
+                            modifier = Modifier.testTag(SmokeTag.ProductRefreshButton),
+                            onClick = { scope.launch { appState.refreshSelectedProductFromOff() } },
+                            enabled = appState.productActionInFlight == null,
+                        ) {
+                            Text(if (appState.productActionInFlight == ProductAction.Refresh) "Refreshing..." else "Refresh from OpenFoodFacts")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProductFormScreen(
+    appState: QuartermasterAppState,
+    product: ProductDto?,
+    modifier: Modifier = Modifier,
+) {
+    val scope = rememberCoroutineScope()
+    var fields by remember(product?.id) {
+        mutableStateOf(
+            product?.let(appState::productFormFields)
+                ?: ProductFormFields(preferredUnit = appState.defaultProductUnitFor(UnitFamily.MASS)),
+        )
+    }
+    val unitChoices = appState.productUnitSymbolsFor(fields.family)
+    val title = if (product == null) "New product" else "Edit product"
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .testTag(SmokeTag.ProductsScreen),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item { Text(title, style = MaterialTheme.typography.headlineSmall) }
+        appState.productError?.let { message ->
+            item { ErrorCard("Product action failed", message) }
+        }
+        item {
+            OutlinedTextField(
+                value = fields.name,
+                onValueChange = { fields = fields.copy(name = it) },
+                label = { Text("Product name") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(SmokeTag.ProductNameField),
+            )
+        }
+        item {
+            OutlinedTextField(
+                value = fields.brand,
+                onValueChange = { fields = fields.copy(brand = it) },
+                label = { Text("Brand") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(SmokeTag.ProductBrandField),
+            )
+        }
+        item {
+            SelectionCard(
+                title = "Product family",
+                options = UnitFamily.values().map { it.name to it.value },
+                selected = fields.family.name,
+                emptyText = "",
+                onSelect = { fields = appState.productFormWithFamily(fields, UnitFamily.valueOf(it)) },
+            )
+        }
+        item {
+            SelectionCard(
+                title = "Preferred unit",
+                options = unitChoices.map { it to it },
+                selected = fields.preferredUnit,
+                emptyText = "No units are available for this product family.",
+                onSelect = { fields = fields.copy(preferredUnit = it) },
+            )
+        }
+        item {
+            OutlinedTextField(
+                value = fields.imageUrl,
+                onValueChange = { fields = fields.copy(imageUrl = it) },
+                label = { Text("Image URL") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(SmokeTag.ProductImageUrlField),
+            )
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    modifier = Modifier.testTag(SmokeTag.ProductSubmitButton),
+                    onClick = {
+                        scope.launch {
+                            if (product == null) {
+                                appState.createProduct(fields)
+                            } else {
+                                appState.updateSelectedProduct(fields)
+                            }
+                        }
+                    },
+                    enabled = appState.productActionInFlight == null,
+                ) {
+                    Text(
+                        when (appState.productActionInFlight) {
+                            ProductAction.Create -> "Creating..."
+                            ProductAction.Update -> "Saving..."
+                            else -> if (product == null) "Create product" else "Save product"
+                        },
+                    )
+                }
+                TextButton(onClick = { if (product == null) appState.showProductList() else appState.showProductDetail() }) {
+                    Text("Cancel")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProductDeleteScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
+    val scope = rememberCoroutineScope()
+    val product = appState.selectedCatalogueProduct
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .testTag(SmokeTag.ProductsScreen),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item { Text("Delete product", style = MaterialTheme.typography.headlineSmall) }
+        appState.productError?.let { message ->
+            item { ErrorCard("Product action failed", message) }
+        }
+        item {
+            StatusCard(
+                title = product?.name ?: "Product unavailable",
+                message = "Deleted manual products can be restored later from the catalogue's Deleted filter.",
+            )
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    modifier = Modifier.testTag(SmokeTag.ProductDeleteConfirmButton),
+                    onClick = { scope.launch { appState.deleteSelectedProduct() } },
+                    enabled = product != null && appState.productActionInFlight == null,
+                ) {
+                    Text(if (appState.productActionInFlight == ProductAction.Delete) "Deleting..." else "Delete product")
+                }
+                TextButton(onClick = appState::showProductDetail) {
+                    Text("Cancel")
+                }
+            }
         }
     }
 }

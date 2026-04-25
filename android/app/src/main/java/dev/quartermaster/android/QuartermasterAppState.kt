@@ -11,6 +11,7 @@ import dev.quartermaster.android.generated.models.BarcodeLookupResponse
 import dev.quartermaster.android.generated.models.ConsumeRequest
 import dev.quartermaster.android.generated.models.ConsumeResponse
 import dev.quartermaster.android.generated.models.CreateInviteRequest
+import dev.quartermaster.android.generated.models.CreateProductRequest
 import dev.quartermaster.android.generated.models.CreateStockRequest
 import dev.quartermaster.android.generated.models.HouseholdDetailDto
 import dev.quartermaster.android.generated.models.InviteDto
@@ -18,17 +19,19 @@ import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.MeResponse
 import dev.quartermaster.android.generated.models.MembershipRole
 import dev.quartermaster.android.generated.models.ProductDto
+import dev.quartermaster.android.generated.models.ProductSource
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
 import dev.quartermaster.android.generated.models.ReminderDto
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventType
 import dev.quartermaster.android.generated.models.UnitDto
+import dev.quartermaster.android.generated.models.UnitFamily
 import java.net.URI
 import java.net.URLDecoder
 import java.util.UUID
 
-enum class MainTab { Inventory, Reminders, Scan, Settings }
+enum class MainTab { Inventory, Products, Reminders, Scan, Settings }
 
 sealed interface AppPhase {
     data object Launching : AppPhase
@@ -45,6 +48,31 @@ enum class LoadState {
 enum class ReminderAction {
     Open,
     Acknowledge,
+}
+
+enum class ProductAction {
+    LoadList,
+    LoadDetail,
+    BarcodeLookup,
+    Create,
+    Update,
+    Delete,
+    Restore,
+    Refresh,
+}
+
+enum class ProductIncludeFilter {
+    Active,
+    All,
+    Deleted,
+}
+
+enum class ProductScreenMode {
+    List,
+    Detail,
+    Create,
+    Edit,
+    Delete,
 }
 
 enum class ScanAction {
@@ -69,6 +97,14 @@ data class InventoryTarget(
     val productId: String,
     val locationId: String,
     val batchId: String? = null,
+)
+
+data class ProductFormFields(
+    val name: String = "",
+    val brand: String = "",
+    val family: UnitFamily = UnitFamily.MASS,
+    val preferredUnit: String = "g",
+    val imageUrl: String = "",
 )
 
 sealed interface HouseholdScopedResolution {
@@ -115,6 +151,13 @@ interface QuartermasterBackend {
     )
 
     suspend fun searchProducts(query: String): List<ProductDto>
+    suspend fun listProducts(query: String?, limit: Int = 100, includeDeleted: Boolean = false): List<ProductDto>
+    suspend fun getProduct(id: String): ProductDto
+    suspend fun createProduct(request: CreateProductRequest): ProductDto
+    suspend fun updateProduct(id: String, request: ProductUpdatePatch): ProductDto
+    suspend fun deleteProduct(id: String)
+    suspend fun restoreProduct(id: String): ProductDto
+    suspend fun refreshProduct(id: String): ProductDto
     suspend fun lookupBarcode(barcode: String): BarcodeLookupResponse
     suspend fun addStock(request: CreateStockRequest): StockBatchDto
     suspend fun consumeStock(request: ConsumeRequest): ConsumeResponse
@@ -190,6 +233,13 @@ class QuartermasterApiBackend(
     }
 
     override suspend fun searchProducts(query: String): List<ProductDto> = api.searchProducts(query)
+    override suspend fun listProducts(query: String?, limit: Int, includeDeleted: Boolean): List<ProductDto> = api.listProducts(query = query, limit = limit, includeDeleted = includeDeleted)
+    override suspend fun getProduct(id: String): ProductDto = api.getProduct(id)
+    override suspend fun createProduct(request: CreateProductRequest): ProductDto = api.createProduct(request)
+    override suspend fun updateProduct(id: String, request: ProductUpdatePatch): ProductDto = api.updateProduct(id, request)
+    override suspend fun deleteProduct(id: String) = api.deleteProduct(id)
+    override suspend fun restoreProduct(id: String): ProductDto = api.restoreProduct(id)
+    override suspend fun refreshProduct(id: String): ProductDto = api.refreshProduct(id)
     override suspend fun lookupBarcode(barcode: String): BarcodeLookupResponse = api.lookupBarcode(barcode)
     override suspend fun addStock(request: CreateStockRequest): StockBatchDto = api.addStock(request)
     override suspend fun consumeStock(request: ConsumeRequest): ConsumeResponse = api.consumeStock(request)
@@ -220,6 +270,16 @@ class QuartermasterAppState(
         private set
     var history by mutableStateOf<List<StockEventDto>>(emptyList())
         private set
+    var products by mutableStateOf<List<ProductDto>>(emptyList())
+        private set
+    var productSearchQuery by mutableStateOf("")
+        private set
+    var productIncludeFilter by mutableStateOf(ProductIncludeFilter.Active)
+        private set
+    var productScreenMode by mutableStateOf(ProductScreenMode.List)
+        private set
+    var selectedCatalogueProduct by mutableStateOf<ProductDto?>(null)
+        private set
     var selectedBatchId by mutableStateOf<String?>(null)
         private set
     var selectedBatchEvents by mutableStateOf<List<StockEventDto>>(emptyList())
@@ -239,17 +299,23 @@ class QuartermasterAppState(
         private set
     var hasLoadedInventoryOnce by mutableStateOf(false)
         private set
+    var hasLoadedProductsOnce by mutableStateOf(false)
+        private set
     var hasLoadedRemindersOnce by mutableStateOf(false)
         private set
     var hasLoadedSettingsOnce by mutableStateOf(false)
         private set
     var inventoryLoadState by mutableStateOf(LoadState.Idle)
         private set
+    var productLoadState by mutableStateOf(LoadState.Idle)
+        private set
     var remindersLoadState by mutableStateOf(LoadState.Idle)
         private set
     var settingsLoadState by mutableStateOf(LoadState.Idle)
         private set
     var inventoryError by mutableStateOf<String?>(null)
+        private set
+    var productError by mutableStateOf<String?>(null)
         private set
     var reminderError by mutableStateOf<String?>(null)
         private set
@@ -268,6 +334,8 @@ class QuartermasterAppState(
         private set
 
     private var reminderActionInFlight by mutableStateOf<Map<String, ReminderAction>>(emptyMap())
+    var productActionInFlight by mutableStateOf<ProductAction?>(null)
+        private set
     private var stockActionInFlight by mutableStateOf<Map<String, StockAction>>(emptyMap())
     var scanActionInFlight by mutableStateOf<ScanAction?>(null)
         private set
@@ -464,6 +532,145 @@ class QuartermasterAppState(
         hasLoadedSettingsOnce = true
     }
 
+    suspend fun refreshProducts(force: Boolean = false) = guardHouseholdScope(
+        onStart = {
+            productLoadState = LoadState.Loading
+            productError = null
+            productActionInFlight = ProductAction.LoadList
+        },
+        onFailure = { productError = it },
+        onFinish = {
+            productLoadState = LoadState.Idle
+            productActionInFlight = null
+        },
+    ) {
+        refreshProductsBody(forceUnits = force)
+        hasLoadedProductsOnce = true
+    }
+
+    suspend fun applyProductFilters(
+        query: String,
+        filter: ProductIncludeFilter,
+    ) {
+        productSearchQuery = query
+        productIncludeFilter = filter
+        refreshProducts(force = false)
+    }
+
+    suspend fun openProduct(id: String) = runProductAction(ProductAction.LoadDetail) {
+        selectedCatalogueProduct = backend.getProduct(id)
+        productScreenMode = ProductScreenMode.Detail
+    }
+
+    suspend fun lookupProductBarcode(barcode: String) = runProductAction(ProductAction.BarcodeLookup) {
+        val response = backend.lookupBarcode(barcode)
+        selectedCatalogueProduct = response.product
+        products = upsertProduct(products, response.product)
+        productScreenMode = ProductScreenMode.Detail
+    }
+
+    fun showProductList() {
+        productScreenMode = ProductScreenMode.List
+        selectedCatalogueProduct = null
+        productError = null
+    }
+
+    fun showProductCreate() {
+        productScreenMode = ProductScreenMode.Create
+        selectedCatalogueProduct = null
+        productError = null
+    }
+
+    fun showProductDetail() {
+        if (selectedCatalogueProduct != null) {
+            productScreenMode = ProductScreenMode.Detail
+            productError = null
+        }
+    }
+
+    fun showProductEdit() {
+        if (selectedCatalogueProduct?.isEditableManualProduct() == true) {
+            productScreenMode = ProductScreenMode.Edit
+            productError = null
+        }
+    }
+
+    fun showProductDelete() {
+        if (selectedCatalogueProduct?.isEditableManualProduct() == true) {
+            productScreenMode = ProductScreenMode.Delete
+            productError = null
+        }
+    }
+
+    suspend fun createProduct(fields: ProductFormFields) {
+        validateProductForm(fields)?.let {
+            productError = it
+            lastError = it
+            return
+        }
+        runProductAction(ProductAction.Create) {
+            val product = backend.createProduct(fields.toCreateProductRequest())
+            selectedCatalogueProduct = product
+            products = upsertProduct(products, product)
+            productScreenMode = ProductScreenMode.Detail
+            refreshProductsBody(forceUnits = false)
+            hasLoadedProductsOnce = true
+        }
+    }
+
+    suspend fun updateSelectedProduct(fields: ProductFormFields) {
+        val product = selectedCatalogueProduct ?: return
+        validateProductForm(fields)?.let {
+            productError = it
+            lastError = it
+            return
+        }
+        val patch = fields.toUpdatePatch(product)
+        runProductAction(ProductAction.Update) {
+            val updated = backend.updateProduct(product.id.toString(), patch)
+            selectedCatalogueProduct = updated
+            products = upsertProduct(products, updated)
+            productScreenMode = ProductScreenMode.Detail
+            refreshProductsBody(forceUnits = false)
+            hasLoadedProductsOnce = true
+        }
+    }
+
+    suspend fun deleteSelectedProduct() {
+        val product = selectedCatalogueProduct ?: return
+        runProductAction(ProductAction.Delete) {
+            backend.deleteProduct(product.id.toString())
+            selectedCatalogueProduct = null
+            productScreenMode = ProductScreenMode.List
+            refreshProductsBody(forceUnits = false)
+            hasLoadedProductsOnce = true
+        }
+    }
+
+    suspend fun restoreSelectedProduct() {
+        val product = selectedCatalogueProduct ?: return
+        runProductAction(ProductAction.Restore) {
+            val restored = backend.restoreProduct(product.id.toString())
+            selectedCatalogueProduct = restored
+            products = upsertProduct(products, restored)
+            productScreenMode = ProductScreenMode.Detail
+            refreshProductsBody(forceUnits = false)
+            hasLoadedProductsOnce = true
+        }
+    }
+
+    suspend fun refreshSelectedProductFromOff() {
+        val product = selectedCatalogueProduct ?: return
+        runProductAction(ProductAction.Refresh) {
+            val refreshed = backend.refreshProduct(product.id.toString())
+            selectedCatalogueProduct = refreshed
+            products = upsertProduct(products, refreshed)
+            productScreenMode = ProductScreenMode.Detail
+            refreshProductsBody(forceUnits = false)
+            hasLoadedProductsOnce = true
+        }
+    }
+
     suspend fun searchProducts(query: String) {
         runScanAction(ScanAction.ProductSearch) {
             searchResults = if (query.isBlank()) emptyList() else backend.searchProducts(query)
@@ -630,6 +837,53 @@ class QuartermasterAppState(
         }
     }
 
+    fun productUnitSymbolsFor(family: UnitFamily): List<String> {
+        val fromServer = units.filter { it.family == family }
+            .sortedBy { it.code }
+            .map { it.code }
+        return fromServer.ifEmpty { defaultUnitSymbolsForFamily(family) }
+    }
+
+    fun defaultProductUnitFor(family: UnitFamily): String = productUnitSymbolsFor(family).first()
+
+    fun productFormFields(product: ProductDto): ProductFormFields = ProductFormFields(
+        name = product.name,
+        brand = product.brand.orEmpty(),
+        family = product.family,
+        preferredUnit = product.preferredUnit,
+        imageUrl = product.imageUrl.orEmpty(),
+    )
+
+    fun productFormWithFamily(
+        fields: ProductFormFields,
+        family: UnitFamily,
+    ): ProductFormFields = fields.copy(
+        family = family,
+        preferredUnit = defaultProductUnitFor(family),
+    )
+
+    fun visibleProducts(): List<ProductDto> = when (productIncludeFilter) {
+        ProductIncludeFilter.Active -> products.filterNot { it.isDeletedProduct() }
+        ProductIncludeFilter.All -> products
+        ProductIncludeFilter.Deleted -> products.filter { it.isDeletedProduct() }
+    }
+
+    fun isManualProduct(product: ProductDto): Boolean = product.source == ProductSource.MANUAL
+
+    fun isDeletedProduct(product: ProductDto): Boolean = product.isDeletedProduct()
+
+    fun productSourceLabel(product: ProductDto): String = if (product.source == ProductSource.OPENFOODFACTS) "OpenFoodFacts" else "Manual"
+
+    fun validateProductForm(fields: ProductFormFields): String? {
+        val name = fields.name.trim()
+        return when {
+            name.isEmpty() -> "Enter a product name."
+            name.length > 256 -> "Product name must be 256 characters or fewer."
+            fields.preferredUnit !in productUnitSymbolsFor(fields.family) -> "Choose a preferred unit that matches the product family."
+            else -> null
+        }
+    }
+
     val meOrNull: MeResponse?
         get() = (phase as? AppPhase.Authenticated)?.me
 
@@ -638,6 +892,9 @@ class QuartermasterAppState(
 
     val isInventoryRefreshing: Boolean
         get() = inventoryLoadState == LoadState.Loading && hasLoadedInventoryOnce
+
+    val isProductsRefreshing: Boolean
+        get() = productLoadState == LoadState.Loading && hasLoadedProductsOnce
 
     val isRemindersRefreshing: Boolean
         get() = remindersLoadState == LoadState.Loading && hasLoadedRemindersOnce
@@ -678,6 +935,7 @@ class QuartermasterAppState(
         if (me.currentHousehold != null) {
             registerDevice()
             refreshInventory(force = true)
+            refreshProducts(force = true)
             refreshReminders(limit = 50)
             loadSettings()
         } else {
@@ -823,6 +1081,40 @@ class QuartermasterAppState(
         }
     }
 
+    private suspend fun runProductAction(
+        action: ProductAction,
+        block: suspend () -> Unit,
+    ) {
+        if (productActionInFlight != null) return
+        productActionInFlight = action
+        productError = null
+        lastError = null
+        try {
+            block()
+        } catch (failure: Throwable) {
+            if (failure is ApiFailure && failure.status == 403) {
+                when (resolveHouseholdScopedForbidden()) {
+                    HouseholdScopedResolution.Retry -> {
+                        productActionInFlight = null
+                        runProductAction(action, block)
+                        return
+                    }
+                    HouseholdScopedResolution.FallbackToNoHousehold -> clearHouseholdScopedData()
+                    is HouseholdScopedResolution.Failed -> Unit
+                }
+            } else if (failure is ApiFailure && failure.status == 401) {
+                clearSession()
+                phase = AppPhase.Unauthenticated
+            } else {
+                val message = failure.productFacingMessage(action)
+                productError = message
+                lastError = message
+            }
+        } finally {
+            productActionInFlight = null
+        }
+    }
+
     private suspend fun runReminderAction(
         id: String,
         action: ReminderAction,
@@ -852,6 +1144,24 @@ class QuartermasterAppState(
             }
         } finally {
             reminderActionInFlight = reminderActionInFlight - id
+        }
+    }
+
+    private suspend fun refreshProductsBody(forceUnits: Boolean) {
+        if (forceUnits || units.isEmpty()) {
+            units = backend.units().sortedBy { it.code }
+        }
+        products = backend.listProducts(
+            query = productSearchQuery.trim().takeIf(String::isNotEmpty),
+            limit = 100,
+            includeDeleted = productIncludeFilter != ProductIncludeFilter.Active,
+        ).sortedWith(
+            compareBy<ProductDto> { it.isDeletedProduct() }
+                .thenBy { it.name.lowercase() }
+                .thenBy { it.brand.orEmpty().lowercase() },
+        )
+        selectedCatalogueProduct?.let { selected ->
+            selectedCatalogueProduct = products.firstOrNull { it.id == selected.id } ?: selected
         }
     }
 
@@ -904,21 +1214,30 @@ class QuartermasterAppState(
         batches = emptyList()
         reminders = emptyList()
         history = emptyList()
+        products = emptyList()
+        productSearchQuery = ""
+        productIncludeFilter = ProductIncludeFilter.Active
+        productScreenMode = ProductScreenMode.List
+        selectedCatalogueProduct = null
         clearSelectedBatch()
         householdDetail = null
         invites = emptyList()
         pendingInventoryTarget = null
         hasLoadedInventoryOnce = false
+        hasLoadedProductsOnce = false
         hasLoadedRemindersOnce = false
         hasLoadedSettingsOnce = false
         inventoryError = null
+        productError = null
         reminderError = null
         settingsError = null
         scanError = null
         inventoryLoadState = LoadState.Idle
+        productLoadState = LoadState.Idle
         remindersLoadState = LoadState.Idle
         settingsLoadState = LoadState.Idle
         reminderActionInFlight = emptyMap()
+        productActionInFlight = null
         stockActionInFlight = emptyMap()
         scanActionInFlight = null
     }
@@ -982,6 +1301,77 @@ class QuartermasterAppState(
 private fun Throwable.userFacingMessage(): String = when (this) {
     is ApiFailure -> message
     else -> message ?: "Something went wrong."
+}
+
+private fun Throwable.productFacingMessage(action: ProductAction): String {
+    if (this !is ApiFailure) return userFacingMessage()
+    if (action == ProductAction.BarcodeLookup) {
+        return when (status) {
+            400 -> "Enter an EAN-8, UPC-A, EAN-13, or EAN-14 barcode."
+            404 -> "No product was found for that barcode."
+            429 -> "Barcode lookup is rate-limited. Try again shortly."
+            502 -> "Barcode lookup is temporarily unavailable."
+            else -> message.ifBlank { "Barcode lookup failed." }
+        }
+    }
+    return when (code) {
+        "off_product_read_only" -> "OpenFoodFacts products are read-only from the Android catalogue."
+        "product_has_stock" -> "This product still has active stock. Consume or discard it first."
+        "product_has_incompatible_stock" -> "This product has active stock with units that do not fit the new family."
+        "unit_family_mismatch",
+        "unknown_unit",
+        -> "Choose a unit that matches the product family."
+        "not_found" -> "Product could not be found."
+        else -> message
+    }
+}
+
+private fun ProductDto.isDeletedProduct(): Boolean = !deletedAt.isNullOrBlank()
+
+private fun ProductDto.isEditableManualProduct(): Boolean = source == ProductSource.MANUAL && !isDeletedProduct()
+
+private fun defaultUnitSymbolsForFamily(family: UnitFamily): List<String> = when (family) {
+    UnitFamily.MASS -> listOf("g", "kg")
+    UnitFamily.VOLUME -> listOf("ml", "l")
+    UnitFamily.COUNT -> listOf("piece")
+}
+
+private fun ProductFormFields.toCreateProductRequest(): CreateProductRequest = CreateProductRequest(
+    name = name.trim(),
+    brand = brand.trim().takeIf(String::isNotEmpty),
+    family = family,
+    preferredUnit = preferredUnit,
+    barcode = null,
+    imageUrl = imageUrl.trim().takeIf(String::isNotEmpty),
+)
+
+private fun ProductFormFields.toUpdatePatch(product: ProductDto): ProductUpdatePatch {
+    val nextName = name.trim()
+    val nextBrand = brand.trim()
+    val currentBrand = product.brand.orEmpty()
+    val nextImageUrl = imageUrl.trim()
+    val currentImageUrl = product.imageUrl.orEmpty()
+    return ProductUpdatePatch(
+        name = nextName.takeIf { it != product.name },
+        brand = nextBrand.takeIf { it.isNotEmpty() && it != currentBrand },
+        clearBrand = nextBrand.isEmpty() && currentBrand.isNotEmpty(),
+        family = family.takeIf { it != product.family },
+        preferredUnit = preferredUnit.takeIf { it != product.preferredUnit },
+        imageUrl = nextImageUrl.takeIf { it.isNotEmpty() && it != currentImageUrl },
+        clearImageUrl = nextImageUrl.isEmpty() && currentImageUrl.isNotEmpty(),
+    )
+}
+
+private fun upsertProduct(
+    products: List<ProductDto>,
+    product: ProductDto,
+): List<ProductDto> {
+    val without = products.filterNot { it.id == product.id }
+    return (listOf(product) + without).sortedWith(
+        compareBy<ProductDto> { it.isDeletedProduct() }
+            .thenBy { it.name.lowercase() }
+            .thenBy { it.brand.orEmpty().lowercase() },
+    )
 }
 
 private fun String.urlDecode(): String = URLDecoder.decode(this, Charsets.UTF_8.name())

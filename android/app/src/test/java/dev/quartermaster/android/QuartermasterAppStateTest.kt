@@ -6,6 +6,7 @@ import dev.quartermaster.android.generated.models.ConsumeRequest
 import dev.quartermaster.android.generated.models.ConsumeResponse
 import dev.quartermaster.android.generated.models.ConsumedBatchDto
 import dev.quartermaster.android.generated.models.CreateInviteRequest
+import dev.quartermaster.android.generated.models.CreateProductRequest
 import dev.quartermaster.android.generated.models.CreateStockRequest
 import dev.quartermaster.android.generated.models.HouseholdDetailDto
 import dev.quartermaster.android.generated.models.InviteDto
@@ -18,6 +19,7 @@ import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventType
 import dev.quartermaster.android.generated.models.UnitDto
+import dev.quartermaster.android.generated.models.UnitFamily
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -99,20 +101,25 @@ class QuartermasterAppStateTest {
                     stock = listOf(stockBatchJson()),
                     reminders = listOf(reminderJson()),
                     locations = listOf(locationJson()),
+                    products = listOf(productDtoJson()),
                 ),
             )
 
         appState.bootstrap()
         appState.handleDeepLink("quartermaster://join?invite=DEEP1234")
         appState.openReminder(reminderJson())
+        appState.openProduct("44444444-4444-4444-4444-444444444444")
         appState.logout()
 
         assertEquals(AppPhase.Unauthenticated, appState.phase)
         assertEquals(emptyList<StockBatchDto>(), appState.batches)
         assertEquals(emptyList<ReminderDto>(), appState.reminders)
+        assertEquals(emptyList<ProductDto>(), appState.products)
+        assertNull(appState.selectedCatalogueProduct)
         assertNull(appState.pendingInventoryTarget)
         assertNull(appState.pendingInviteContext)
         assertFalse(appState.hasLoadedInventoryOnce)
+        assertFalse(appState.hasLoadedProductsOnce)
         assertFalse(appState.hasLoadedRemindersOnce)
     }
 
@@ -358,6 +365,155 @@ class QuartermasterAppStateTest {
         assertTrue(appState.searchResults.isEmpty())
         assertNull(appState.selectedProduct)
         assertEquals(1, backend.addStockRequests.size)
+    }
+
+    @Test
+    fun `product update patch encodes omitted and cleared fields`() {
+        val patch = ProductUpdatePatch(
+            name = "Updated Flour",
+            clearBrand = true,
+            family = UnitFamily.VOLUME,
+            preferredUnit = "ml",
+            clearImageUrl = true,
+        )
+
+        assertEquals(
+            """{"name":"Updated Flour","brand":null,"family":"volume","preferred_unit":"ml","image_url":null}""",
+            patch.encodeToJsonString(),
+        )
+    }
+
+    @Test
+    fun `refreshProducts loads and filters catalogue`() = runTest {
+        val active = productDtoJson(name = "Flour")
+        val deleted = productDtoJson(
+            id = "55555555-5555-5555-5555-555555555555",
+            name = "Old beans",
+            deletedAt = "2026-04-22T12:00:00Z",
+        )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    products = listOf(active, deleted),
+                    units = listOf(unitJson("g", "mass")),
+                ),
+            )
+
+        appState.bootstrap()
+
+        assertTrue(appState.hasLoadedProductsOnce)
+        assertEquals(listOf(active), appState.visibleProducts())
+
+        appState.applyProductFilters("beans", ProductIncludeFilter.Deleted)
+
+        assertEquals("beans", appState.productSearchQuery)
+        assertEquals(listOf(deleted), appState.visibleProducts())
+    }
+
+    @Test
+    fun `manual product create update delete and restore refresh catalogue state`() = runTest {
+        val product = productDtoJson(name = "Flour", imageUrl = "https://example.com/flour.png")
+        val updated = product.copy(brand = "House", imageUrl = null)
+        val deleted = updated.copy(deletedAt = "2026-04-22T12:00:00Z")
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                products = listOf(product),
+                createdProduct = product,
+                updatedProduct = updated,
+                restoredProduct = updated,
+                deletedProduct = deleted,
+                units = listOf(unitJson("g", "mass")),
+            )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend = backend,
+            )
+
+        appState.bootstrap()
+        appState.showProductCreate()
+        appState.createProduct(ProductFormFields(name = "Flour", family = UnitFamily.MASS, preferredUnit = "g"))
+
+        assertEquals(ProductScreenMode.Detail, appState.productScreenMode)
+        assertEquals(product, appState.selectedCatalogueProduct)
+        assertEquals(1, backend.createProductRequests.size)
+
+        appState.updateSelectedProduct(
+            ProductFormFields(
+                name = "Flour",
+                brand = "House",
+                family = UnitFamily.MASS,
+                preferredUnit = "g",
+                imageUrl = "",
+            ),
+        )
+
+        assertEquals(updated, appState.selectedCatalogueProduct)
+        assertTrue(backend.updateProductRequests.single().clearImageUrl)
+
+        appState.showProductDelete()
+        appState.deleteSelectedProduct()
+
+        assertEquals(ProductScreenMode.List, appState.productScreenMode)
+        assertNull(appState.selectedCatalogueProduct)
+        assertEquals(listOf(product.id.toString()), backend.deletedProductIds)
+
+        appState.applyProductFilters("", ProductIncludeFilter.Deleted)
+        appState.openProduct(product.id.toString())
+        appState.restoreSelectedProduct()
+
+        assertEquals(updated, appState.selectedCatalogueProduct)
+        assertEquals(listOf(product.id.toString()), backend.restoredProductIds)
+    }
+
+    @Test
+    fun `OpenFoodFacts product refresh updates detail`() = runTest {
+        val offProduct = productDtoJson(source = "openfoodfacts", barcode = "012345678905")
+        val refreshed = offProduct.copy(name = "Fresh OFF Product")
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    products = listOf(offProduct),
+                    refreshedProduct = refreshed,
+                    units = listOf(unitJson("g", "mass")),
+                ),
+            )
+
+        appState.bootstrap()
+        appState.openProduct(offProduct.id.toString())
+        appState.refreshSelectedProductFromOff()
+
+        assertEquals(refreshed, appState.selectedCatalogueProduct)
+    }
+
+    @Test
+    fun `product action failure clears in flight state and stores product error`() = runTest {
+        val product = productDtoJson()
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    products = listOf(product),
+                    productUpdateFailure = ApiFailure(409, "product_has_stock", "Product has stock"),
+                    units = listOf(unitJson("g", "mass")),
+                ),
+            )
+
+        appState.bootstrap()
+        appState.openProduct(product.id.toString())
+        appState.updateSelectedProduct(ProductFormFields(name = "Flour", family = UnitFamily.VOLUME, preferredUnit = "ml"))
+
+        assertNull(appState.productActionInFlight)
+        assertEquals("This product still has active stock. Consume or discard it first.", appState.productError)
     }
 
     @Test
@@ -625,17 +781,37 @@ class QuartermasterAppStateTest {
         """.trimIndent(),
     )
 
-    private fun productDtoJson(): ProductDto = json.decodeFromString(
-        """
+    private fun productDtoJson(
+        id: String = "44444444-4444-4444-4444-444444444444",
+        name: String = "Flour",
+        family: String = "mass",
+        preferredUnit: String = "g",
+        source: String = "manual",
+        brand: String? = null,
+        barcode: String? = null,
+        imageUrl: String? = null,
+        deletedAt: String? = null,
+    ): ProductDto {
+        val nullableBrand = brand?.let { "\"$it\"" } ?: "null"
+        val nullableBarcode = barcode?.let { "\"$it\"" } ?: "null"
+        val nullableImageUrl = imageUrl?.let { "\"$it\"" } ?: "null"
+        val nullableDeletedAt = deletedAt?.let { "\"$it\"" } ?: "null"
+        return json.decodeFromString(
+            """
             {
-              "id": "44444444-4444-4444-4444-444444444444",
-              "name": "Flour",
-              "family": "mass",
-              "preferred_unit": "g",
-              "source": "manual"
+              "id": "$id",
+              "name": "$name",
+              "family": "$family",
+              "preferred_unit": "$preferredUnit",
+              "source": "$source",
+              "brand": $nullableBrand,
+              "barcode": $nullableBarcode,
+              "image_url": $nullableImageUrl,
+              "deleted_at": $nullableDeletedAt
             }
-        """.trimIndent(),
-    )
+            """.trimIndent(),
+        )
+    }
 
     private fun reminderJson(
         id: String = "55555555-5555-5555-5555-555555555555",
@@ -695,9 +871,16 @@ class QuartermasterAppStateTest {
         private val locations: List<LocationDto> = emptyList(),
         private val units: List<UnitDto> = emptyList(),
         private val householdDetail: HouseholdDetailDto? = null,
+        products: List<ProductDto> = emptyList(),
+        private val createdProduct: ProductDto? = null,
+        private val updatedProduct: ProductDto? = null,
+        private val deletedProduct: ProductDto? = null,
+        private val restoredProduct: ProductDto? = null,
+        private val refreshedProduct: ProductDto? = null,
         private val searchResults: List<ProductDto> = emptyList(),
         batchEvents: Map<String, List<StockEventDto>> = emptyMap(),
         private val barcodeFailure: Throwable? = null,
+        private val productUpdateFailure: Throwable? = null,
         private val openReminderFailure: Throwable? = null,
         private val discardFailure: Throwable? = null,
         private val logoutFailure: Throwable? = null,
@@ -706,11 +889,16 @@ class QuartermasterAppStateTest {
 
         private val stockState = stock.toMutableList()
         private val reminderState = reminders.toMutableList()
+        private val productState = products.toMutableList()
         private val batchEventState = batchEvents.mapValues { it.value.toMutableList() }.toMutableMap()
 
         val acknowledgedReminderIds = mutableListOf<String>()
         val openedReminderIds = mutableListOf<String>()
         val addStockRequests = mutableListOf<CreateStockRequest>()
+        val createProductRequests = mutableListOf<CreateProductRequest>()
+        val updateProductRequests = mutableListOf<ProductUpdatePatch>()
+        val deletedProductIds = mutableListOf<String>()
+        val restoredProductIds = mutableListOf<String>()
         val consumeStockRequests = mutableListOf<ConsumeRequest>()
         val discardedBatchIds = mutableListOf<String>()
         val restoredBatchIds = mutableListOf<String>()
@@ -787,6 +975,59 @@ class QuartermasterAppStateTest {
         ) = Unit
 
         override suspend fun searchProducts(query: String): List<ProductDto> = searchResults
+
+        override suspend fun listProducts(
+            query: String?,
+            limit: Int,
+            includeDeleted: Boolean,
+        ): List<ProductDto> = productState
+            .filter { includeDeleted || it.deletedAt == null }
+            .filter { query.isNullOrBlank() || it.name.contains(query, ignoreCase = true) }
+            .take(limit)
+
+        override suspend fun getProduct(id: String): ProductDto = productState.firstOrNull { it.id.toString() == id } ?: error("Unused in test")
+
+        override suspend fun createProduct(request: CreateProductRequest): ProductDto {
+            createProductRequests += request
+            val product = createdProduct ?: productDtoJson(name = request.name, family = request.family.value, preferredUnit = request.preferredUnit ?: "g")
+            productState.removeAll { it.id == product.id }
+            productState += product
+            return product
+        }
+
+        override suspend fun updateProduct(
+            id: String,
+            request: ProductUpdatePatch,
+        ): ProductDto {
+            productUpdateFailure?.let { throw it }
+            updateProductRequests += request
+            val product = updatedProduct ?: getProduct(id)
+            productState.removeAll { it.id.toString() == id }
+            productState += product
+            return product
+        }
+
+        override suspend fun deleteProduct(id: String) {
+            deletedProductIds += id
+            val product = deletedProduct ?: productState.firstOrNull { it.id.toString() == id }?.copy(deletedAt = "2026-04-22T12:00:00Z")
+            productState.removeAll { it.id.toString() == id }
+            product?.let { productState += it }
+        }
+
+        override suspend fun restoreProduct(id: String): ProductDto {
+            restoredProductIds += id
+            val product = restoredProduct ?: productState.firstOrNull { it.id.toString() == id }?.copy(deletedAt = null) ?: error("Unused in test")
+            productState.removeAll { it.id.toString() == id }
+            productState += product
+            return product
+        }
+
+        override suspend fun refreshProduct(id: String): ProductDto {
+            val product = refreshedProduct ?: getProduct(id)
+            productState.removeAll { it.id.toString() == id }
+            productState += product
+            return product
+        }
 
         override suspend fun lookupBarcode(barcode: String): BarcodeLookupResponse {
             barcodeFailure?.let { throw it }

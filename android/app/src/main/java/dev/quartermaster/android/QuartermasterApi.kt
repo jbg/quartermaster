@@ -6,6 +6,7 @@ import dev.quartermaster.android.generated.models.ConsumeRequest
 import dev.quartermaster.android.generated.models.ConsumeResponse
 import dev.quartermaster.android.generated.models.CreateHouseholdRequest
 import dev.quartermaster.android.generated.models.CreateInviteRequest
+import dev.quartermaster.android.generated.models.CreateProductRequest
 import dev.quartermaster.android.generated.models.CreateStockRequest
 import dev.quartermaster.android.generated.models.HouseholdDetailDto
 import dev.quartermaster.android.generated.models.InviteDto
@@ -29,12 +30,16 @@ import dev.quartermaster.android.generated.models.StockListResponse
 import dev.quartermaster.android.generated.models.SwitchHouseholdRequest
 import dev.quartermaster.android.generated.models.TokenPair
 import dev.quartermaster.android.generated.models.UnitDto
+import dev.quartermaster.android.generated.models.UnitFamily
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -48,6 +53,30 @@ class ApiFailure(
     val code: String?,
     override val message: String,
 ) : IOException(message)
+
+data class ProductUpdatePatch(
+    val name: String? = null,
+    val brand: String? = null,
+    val clearBrand: Boolean = false,
+    val family: UnitFamily? = null,
+    val preferredUnit: String? = null,
+    val imageUrl: String? = null,
+    val clearImageUrl: Boolean = false,
+) {
+    fun encodeToJsonString(): String = buildJsonObject {
+        name?.let { put("name", JsonPrimitive(it)) }
+        when {
+            clearBrand -> put("brand", JsonNull)
+            brand != null -> put("brand", JsonPrimitive(brand))
+        }
+        family?.let { put("family", JsonPrimitive(it.value)) }
+        preferredUnit?.let { put("preferred_unit", JsonPrimitive(it)) }
+        when {
+            clearImageUrl -> put("image_url", JsonNull)
+            imageUrl != null -> put("image_url", JsonPrimitive(imageUrl))
+        }
+    }.toString()
+}
 
 class QuartermasterApi(
     private val authStore: AuthStore,
@@ -200,6 +229,53 @@ class QuartermasterApi(
         "GET",
         "/products/search?query=${query.urlEncode()}&limit=20",
     ).items
+
+    suspend fun listProducts(
+        query: String?,
+        limit: Int = 100,
+        includeDeleted: Boolean = false,
+    ): List<ProductDto> {
+        val params = mutableListOf("limit=$limit", "include_deleted=$includeDeleted")
+        query?.trim()?.takeIf(String::isNotEmpty)?.let { params += "q=${it.urlEncode()}" }
+        return authedJson<ProductSearchResponse>(
+            "GET",
+            "/products?${params.joinToString("&")}",
+        ).items
+    }
+
+    suspend fun getProduct(id: String): ProductDto = authedJson(
+        method = "GET",
+        path = "/products/${id.urlEncode()}",
+    )
+
+    suspend fun createProduct(request: CreateProductRequest): ProductDto = authedJson(
+        method = "POST",
+        path = "/products",
+        body = request,
+    )
+
+    suspend fun updateProduct(
+        id: String,
+        request: ProductUpdatePatch,
+    ): ProductDto = authedJson(
+        method = "PATCH",
+        path = "/products/${id.urlEncode()}",
+        body = request,
+    )
+
+    suspend fun deleteProduct(id: String) {
+        authedUnit("DELETE", "/products/${id.urlEncode()}")
+    }
+
+    suspend fun restoreProduct(id: String): ProductDto = authedJson(
+        method = "POST",
+        path = "/products/${id.urlEncode()}/restore",
+    )
+
+    suspend fun refreshProduct(id: String): ProductDto = authedJson(
+        method = "POST",
+        path = "/products/${id.urlEncode()}/refresh",
+    )
 
     suspend fun lookupBarcode(barcode: String): BarcodeLookupResponse = authedJson("GET", "/products/by-barcode/${barcode.urlEncode()}")
 
@@ -357,6 +433,7 @@ class QuartermasterApi(
     private fun encodeBody(body: Any): String = when (body) {
         is CreateHouseholdRequest -> json.encodeToString(body)
         is CreateInviteRequest -> json.encodeToString(body)
+        is CreateProductRequest -> json.encodeToString(body)
         is CreateStockRequest -> json.encodeToString(body)
         is ConsumeRequest -> json.encodeToString(body)
         is LoginRequest -> json.encodeToString(body)
@@ -365,6 +442,7 @@ class QuartermasterApi(
         is RegisterDeviceRequest -> json.encodeToString(body)
         is RegisterRequest -> json.encodeToString(body)
         is SwitchHouseholdRequest -> json.encodeToString(body)
+        is ProductUpdatePatch -> body.encodeToJsonString()
         else -> error("Unsupported request body type: ${body::class.qualifiedName}")
     }
 }
