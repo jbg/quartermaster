@@ -2,6 +2,8 @@ package dev.quartermaster.android
 
 import dev.quartermaster.android.generated.infrastructure.Serializer
 import dev.quartermaster.android.generated.models.BarcodeLookupResponse
+import dev.quartermaster.android.generated.models.ConsumeRequest
+import dev.quartermaster.android.generated.models.ConsumeResponse
 import dev.quartermaster.android.generated.models.CreateHouseholdRequest
 import dev.quartermaster.android.generated.models.CreateInviteRequest
 import dev.quartermaster.android.generated.models.CreateStockRequest
@@ -148,9 +150,17 @@ class QuartermasterApi(
 
     suspend fun units(): List<UnitDto> = authedJson("GET", "/units")
 
-    suspend fun listStock(): List<StockBatchDto> = authedJson<StockListResponse>("GET", "/stock").items
+    suspend fun listStock(includeDepleted: Boolean = false): List<StockBatchDto> {
+        val query = if (includeDepleted) "?include_depleted=true" else ""
+        return authedJson<StockListResponse>("GET", "/stock$query").items
+    }
 
     suspend fun listEvents(limit: Int = 30): List<StockEventDto> = authedJson<StockEventListResponse>("GET", "/stock/events?limit=$limit").items
+
+    suspend fun listBatchEvents(
+        batchId: String,
+        limit: Int = 30,
+    ): List<StockEventDto> = authedJson<StockEventListResponse>("GET", "/stock/${batchId.urlEncode()}/events?limit=$limit").items
 
     suspend fun listReminders(limit: Int = 50): List<ReminderDto> = authedJson<ReminderListResponse>("GET", "/reminders?limit=$limit").items
 
@@ -197,6 +207,21 @@ class QuartermasterApi(
         method = "POST",
         path = "/stock",
         body = request,
+    )
+
+    suspend fun consumeStock(request: ConsumeRequest): ConsumeResponse = authedJson(
+        method = "POST",
+        path = "/stock/consume",
+        body = request,
+    )
+
+    suspend fun discardStock(batchId: String) {
+        authedUnit("DELETE", "/stock/${batchId.urlEncode()}")
+    }
+
+    suspend fun restoreStock(batchId: String): StockBatchDto = authedJson(
+        method = "POST",
+        path = "/stock/${batchId.urlEncode()}/restore",
     )
 
     private suspend inline fun <reified T> authedJson(
@@ -333,6 +358,7 @@ class QuartermasterApi(
         is CreateHouseholdRequest -> json.encodeToString(body)
         is CreateInviteRequest -> json.encodeToString(body)
         is CreateStockRequest -> json.encodeToString(body)
+        is ConsumeRequest -> json.encodeToString(body)
         is LoginRequest -> json.encodeToString(body)
         is RefreshRequest -> json.encodeToString(body)
         is RedeemInviteRequest -> json.encodeToString(body)

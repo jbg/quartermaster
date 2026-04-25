@@ -8,6 +8,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.quartermaster.android.generated.models.BarcodeLookupResponse
+import dev.quartermaster.android.generated.models.ConsumeRequest
+import dev.quartermaster.android.generated.models.ConsumeResponse
 import dev.quartermaster.android.generated.models.CreateInviteRequest
 import dev.quartermaster.android.generated.models.CreateStockRequest
 import dev.quartermaster.android.generated.models.HouseholdDetailDto
@@ -20,6 +22,7 @@ import dev.quartermaster.android.generated.models.PushAuthorizationStatus
 import dev.quartermaster.android.generated.models.ReminderDto
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
+import dev.quartermaster.android.generated.models.StockEventType
 import dev.quartermaster.android.generated.models.UnitDto
 import java.net.URI
 import java.net.URLDecoder
@@ -48,6 +51,13 @@ enum class ScanAction {
     BarcodeLookup,
     ProductSearch,
     AddStock,
+}
+
+enum class StockAction {
+    LoadEvents,
+    Consume,
+    Discard,
+    Restore,
 }
 
 data class InviteContext(
@@ -90,8 +100,9 @@ interface QuartermasterBackend {
     suspend fun createInvite(body: CreateInviteRequest): InviteDto
     suspend fun locations(): List<LocationDto>
     suspend fun units(): List<UnitDto>
-    suspend fun listStock(): List<StockBatchDto>
+    suspend fun listStock(includeDepleted: Boolean = false): List<StockBatchDto>
     suspend fun listEvents(limit: Int = 30): List<StockEventDto>
+    suspend fun listBatchEvents(batchId: String, limit: Int = 30): List<StockEventDto>
     suspend fun listReminders(limit: Int = 50): List<ReminderDto>
     suspend fun acknowledgeReminder(id: String)
     suspend fun presentReminder(id: String)
@@ -106,6 +117,9 @@ interface QuartermasterBackend {
     suspend fun searchProducts(query: String): List<ProductDto>
     suspend fun lookupBarcode(barcode: String): BarcodeLookupResponse
     suspend fun addStock(request: CreateStockRequest): StockBatchDto
+    suspend fun consumeStock(request: ConsumeRequest): ConsumeResponse
+    suspend fun discardStock(batchId: String)
+    suspend fun restoreStock(batchId: String): StockBatchDto
 }
 
 class QuartermasterApiBackend(
@@ -153,8 +167,9 @@ class QuartermasterApiBackend(
     override suspend fun createInvite(body: CreateInviteRequest): InviteDto = api.createInvite(body)
     override suspend fun locations(): List<LocationDto> = api.locations()
     override suspend fun units(): List<UnitDto> = api.units()
-    override suspend fun listStock(): List<StockBatchDto> = api.listStock()
+    override suspend fun listStock(includeDepleted: Boolean): List<StockBatchDto> = api.listStock(includeDepleted)
     override suspend fun listEvents(limit: Int): List<StockEventDto> = api.listEvents(limit)
+    override suspend fun listBatchEvents(batchId: String, limit: Int): List<StockEventDto> = api.listBatchEvents(batchId, limit)
     override suspend fun listReminders(limit: Int): List<ReminderDto> = api.listReminders(limit)
     override suspend fun acknowledgeReminder(id: String) = api.acknowledgeReminder(id)
     override suspend fun presentReminder(id: String) = api.presentReminder(id)
@@ -177,6 +192,9 @@ class QuartermasterApiBackend(
     override suspend fun searchProducts(query: String): List<ProductDto> = api.searchProducts(query)
     override suspend fun lookupBarcode(barcode: String): BarcodeLookupResponse = api.lookupBarcode(barcode)
     override suspend fun addStock(request: CreateStockRequest): StockBatchDto = api.addStock(request)
+    override suspend fun consumeStock(request: ConsumeRequest): ConsumeResponse = api.consumeStock(request)
+    override suspend fun discardStock(batchId: String) = api.discardStock(batchId)
+    override suspend fun restoreStock(batchId: String): StockBatchDto = api.restoreStock(batchId)
 }
 
 class QuartermasterAppState(
@@ -201,6 +219,10 @@ class QuartermasterAppState(
     var reminders by mutableStateOf<List<ReminderDto>>(emptyList())
         private set
     var history by mutableStateOf<List<StockEventDto>>(emptyList())
+        private set
+    var selectedBatchId by mutableStateOf<String?>(null)
+        private set
+    var selectedBatchEvents by mutableStateOf<List<StockEventDto>>(emptyList())
         private set
     var searchResults by mutableStateOf<List<ProductDto>>(emptyList())
         private set
@@ -233,6 +255,8 @@ class QuartermasterAppState(
         private set
     var settingsError by mutableStateOf<String?>(null)
         private set
+    var selectedBatchEventError by mutableStateOf<String?>(null)
+        private set
     var scanError by mutableStateOf<String?>(null)
         private set
 
@@ -244,6 +268,7 @@ class QuartermasterAppState(
         private set
 
     private var reminderActionInFlight by mutableStateOf<Map<String, ReminderAction>>(emptyMap())
+    private var stockActionInFlight by mutableStateOf<Map<String, StockAction>>(emptyMap())
     var scanActionInFlight by mutableStateOf<ScanAction?>(null)
         private set
 
@@ -395,10 +420,18 @@ class QuartermasterAppState(
         locations = backend.locations().sortedWith(
             compareBy<LocationDto> { it.sortOrder }.thenBy { it.name.lowercase() },
         )
-        batches = backend.listStock().sortedWith(
-            compareBy<StockBatchDto> { it.locationId }.thenBy { it.product.name.lowercase() }.thenBy { it.expiresOn ?: "9999-12-31" },
+        batches = backend.listStock(includeDepleted = true).sortedWith(
+            compareBy<StockBatchDto> { isBatchDepleted(it) }
+                .thenBy { it.locationId }
+                .thenBy { it.product.name.lowercase() }
+                .thenBy { it.expiresOn ?: "9999-12-31" },
         )
         history = backend.listEvents().sortedByDescending { it.createdAt }
+        selectedBatchId?.let { id ->
+            if (batches.none { it.id.toString() == id }) {
+                clearSelectedBatch()
+            }
+        }
         hasLoadedInventoryOnce = true
     }
 
@@ -453,8 +486,27 @@ class QuartermasterAppState(
         pendingInventoryTarget = null
     }
 
+    fun clearSelectedBatch() {
+        selectedBatchId = null
+        selectedBatchEvents = emptyList()
+        selectedBatchEventError = null
+    }
+
     fun clearPendingInviteContext() {
         pendingInviteContext = null
+    }
+
+    suspend fun selectBatch(batchId: String) {
+        selectedBatchId = batchId
+        selectedBatchEventError = null
+        loadSelectedBatchEvents()
+    }
+
+    suspend fun loadSelectedBatchEvents(limit: Int = 30) {
+        val batchId = selectedBatchId ?: return
+        runStockAction(batchId, StockAction.LoadEvents) {
+            refreshSelectedBatchEvents(limit)
+        }
     }
 
     suspend fun addStock(
@@ -481,6 +533,31 @@ class QuartermasterAppState(
         refreshInventory(force = true)
         refreshReminders(limit = 50)
         selectedTab = MainTab.Inventory
+    }
+
+    suspend fun consumeSelectedBatch(quantity: String) {
+        val batch = selectedBatch ?: return
+        runStockAction(batch.id.toString(), StockAction.Consume) {
+            backend.consumeStock(
+                ConsumeRequest(
+                    productId = batch.product.id,
+                    quantity = quantity,
+                    unit = batch.unit,
+                    locationId = batch.locationId,
+                ),
+            )
+            refreshInventoryAfterStockMutation(batch.id.toString())
+        }
+    }
+
+    suspend fun discardBatch(batchId: String) = runStockAction(batchId, StockAction.Discard) {
+        backend.discardStock(batchId)
+        refreshInventoryAfterStockMutation(batchId)
+    }
+
+    suspend fun restoreBatch(batchId: String) = runStockAction(batchId, StockAction.Restore) {
+        backend.restoreStock(batchId)
+        refreshInventoryAfterStockMutation(batchId)
     }
 
     suspend fun acknowledgeReminder(id: String) = runReminderAction(id, ReminderAction.Acknowledge) {
@@ -523,6 +600,23 @@ class QuartermasterAppState(
     }
 
     fun reminderActionFor(id: String): ReminderAction? = reminderActionInFlight[id]
+
+    fun stockActionFor(id: String): StockAction? = stockActionInFlight[id]
+
+    val selectedBatch: StockBatchDto?
+        get() = selectedBatchId?.let { id -> batches.firstOrNull { it.id.toString() == id } }
+
+    val selectedBatchEventLoadState: LoadState
+        get() = if (selectedBatchId?.let { stockActionInFlight[it] } == StockAction.LoadEvents) LoadState.Loading else LoadState.Idle
+
+    fun locationNameFor(locationId: String): String = locations.firstOrNull { it.id.toString() == locationId }?.name ?: "Unknown location"
+
+    fun isBatchDepleted(batch: StockBatchDto): Boolean = batch.quantity.toBigDecimalOrNull()?.compareTo(java.math.BigDecimal.ZERO) == 0
+
+    fun canRestoreBatch(batch: StockBatchDto?): Boolean {
+        if (batch == null || !isBatchDepleted(batch) || selectedBatchId != batch.id.toString()) return false
+        return selectedBatchEvents.firstOrNull()?.eventType == StockEventType.DISCARD
+    }
 
     fun unitSymbolsFor(product: ProductDto): List<String> = units.filter { it.family == product.family }
         .sortedBy { it.code }
@@ -648,6 +742,63 @@ class QuartermasterAppState(
         }
     }
 
+    private suspend fun runStockAction(
+        batchId: String,
+        action: StockAction,
+        block: suspend () -> Unit,
+    ) {
+        if (stockActionInFlight.containsKey(batchId)) return
+        stockActionInFlight = stockActionInFlight + (batchId to action)
+        if (action == StockAction.LoadEvents) {
+            selectedBatchEventError = null
+        } else {
+            inventoryError = null
+        }
+        lastError = null
+        try {
+            block()
+        } catch (failure: Throwable) {
+            if (failure is ApiFailure && failure.status == 403) {
+                when (resolveHouseholdScopedForbidden()) {
+                    HouseholdScopedResolution.Retry -> {
+                        stockActionInFlight = stockActionInFlight - batchId
+                        runStockAction(batchId, action, block)
+                        return
+                    }
+                    HouseholdScopedResolution.FallbackToNoHousehold -> clearHouseholdScopedData()
+                    is HouseholdScopedResolution.Failed -> Unit
+                }
+            } else if (failure is ApiFailure && failure.status == 401) {
+                clearSession()
+                phase = AppPhase.Unauthenticated
+            } else {
+                val message = failure.userFacingMessage()
+                if (action == StockAction.LoadEvents) {
+                    selectedBatchEventError = message
+                } else {
+                    inventoryError = message
+                }
+                lastError = message
+            }
+        } finally {
+            stockActionInFlight = stockActionInFlight - batchId
+        }
+    }
+
+    private suspend fun refreshInventoryAfterStockMutation(batchId: String) {
+        selectedBatchId = batchId
+        refreshInventory(force = true)
+        refreshReminders(limit = 50)
+        if (selectedBatchId == batchId) {
+            refreshSelectedBatchEvents()
+        }
+    }
+
+    private suspend fun refreshSelectedBatchEvents(limit: Int = 30) {
+        val batchId = selectedBatchId ?: return
+        selectedBatchEvents = backend.listBatchEvents(batchId, limit).sortedByDescending { it.createdAt }
+    }
+
     private suspend fun runScanAction(
         action: ScanAction,
         block: suspend () -> Unit,
@@ -753,6 +904,7 @@ class QuartermasterAppState(
         batches = emptyList()
         reminders = emptyList()
         history = emptyList()
+        clearSelectedBatch()
         householdDetail = null
         invites = emptyList()
         pendingInventoryTarget = null
@@ -767,6 +919,7 @@ class QuartermasterAppState(
         remindersLoadState = LoadState.Idle
         settingsLoadState = LoadState.Idle
         reminderActionInFlight = emptyMap()
+        stockActionInFlight = emptyMap()
         scanActionInFlight = null
     }
 

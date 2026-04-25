@@ -1,5 +1,6 @@
 package dev.quartermaster.android
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -49,6 +50,7 @@ import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.ReminderDto
 import dev.quartermaster.android.generated.models.StockBatchDto
+import dev.quartermaster.android.generated.models.StockEventDto
 import kotlinx.coroutines.launch
 
 private object SmokeTag {
@@ -69,6 +71,13 @@ private object SmokeTag {
     const val SignOutButton = "smoke-sign-out-button"
     const val CreateInviteButton = "smoke-create-invite-button"
 
+    fun inventoryBatch(id: String) = "smoke-inventory-batch-$id"
+    fun selectedBatch(id: String) = "smoke-selected-batch-$id"
+    fun batchConsumeField(id: String) = "smoke-batch-consume-quantity-$id"
+    fun batchConsumeButton(id: String) = "smoke-batch-consume-$id"
+    fun batchDiscardButton(id: String) = "smoke-batch-discard-$id"
+    fun batchRestoreButton(id: String) = "smoke-batch-restore-$id"
+    fun batchHistoryRow(id: String) = "smoke-batch-history-$id"
     fun reminderCard(id: String) = "smoke-reminder-card-$id"
     fun reminderAckButton(id: String) = "smoke-reminder-ack-$id"
     fun reminderOpenButton(id: String) = "smoke-reminder-open-$id"
@@ -496,13 +505,14 @@ private fun NoHouseholdScreen(appState: QuartermasterAppState, modifier: Modifie
 
 @Composable
 private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
+    val scope = rememberCoroutineScope()
     LaunchedEffect(appState.currentHouseholdId) {
         appState.refreshInventory(force = true)
     }
 
     LazyColumn(
         modifier = modifier
-            .testTag(SmokeTag.SettingsScreen)
+            .testTag(SmokeTag.InventoryScreen)
             .fillMaxSize()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -576,6 +586,23 @@ private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier 
             }
         }
 
+        appState.inventoryError?.let { message ->
+            item { ErrorCard("Inventory action failed", message) }
+        }
+
+        appState.selectedBatch?.let { batch ->
+            item {
+                BatchDetailCard(
+                    appState = appState,
+                    batch = batch,
+                    onConsume = { quantity -> scope.launch { appState.consumeSelectedBatch(quantity) } },
+                    onDiscard = { scope.launch { appState.discardBatch(batch.id.toString()) } },
+                    onRestore = { scope.launch { appState.restoreBatch(batch.id.toString()) } },
+                    onClose = appState::clearSelectedBatch,
+                )
+            }
+        }
+
         val target = appState.pendingInventoryTarget
         val prioritizedLocations = appState.locations.sortedWith(
             compareByDescending<LocationDto> { it.id.toString() == target?.locationId }.thenBy { it.name.lowercase() },
@@ -586,6 +613,9 @@ private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier 
                 location = location,
                 batches = appState.batchesForLocation(location.id.toString(), target),
                 target = target,
+                selectedBatchId = appState.selectedBatchId,
+                isBatchDepleted = appState::isBatchDepleted,
+                onSelectBatch = { batchId -> scope.launch { appState.selectBatch(batchId) } },
             )
         }
 
@@ -615,6 +645,9 @@ private fun LocationInventoryCard(
     location: LocationDto,
     batches: List<StockBatchDto>,
     target: InventoryTarget?,
+    selectedBatchId: String?,
+    isBatchDepleted: (StockBatchDto) -> Boolean,
+    onSelectBatch: (String) -> Unit,
 ) {
     val isTargetLocation = location.id.toString() == target?.locationId
     Card {
@@ -632,35 +665,175 @@ private fun LocationInventoryCard(
                 Text("Nothing here yet.")
             } else {
                 batches.forEach { batch ->
+                    val batchId = batch.id.toString()
+                    val depleted = isBatchDepleted(batch)
                     val isTargetBatch =
-                        batch.id.toString() == target?.batchId ||
+                        batchId == target?.batchId ||
                             (batch.product.id.toString() == target?.productId && batch.locationId.toString() == target.locationId)
+                    val isSelected = batchId == selectedBatchId
                     Card(
                         colors = CardDefaults.cardColors(
-                            containerColor = if (isTargetBatch) {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant
+                            containerColor = when {
+                                isTargetBatch || isSelected -> MaterialTheme.colorScheme.secondaryContainer
+                                depleted -> MaterialTheme.colorScheme.surface
+                                else -> MaterialTheme.colorScheme.surfaceVariant
                             },
                         ),
                     ) {
                         Column(
                             modifier = Modifier
+                                .testTag(SmokeTag.inventoryBatch(batchId))
                                 .fillMaxWidth()
+                                .clickable { onSelectBatch(batchId) }
                                 .padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
                             Text("${batch.product.name} · ${batch.quantity} ${batch.unit}")
+                            if (depleted) {
+                                Text("Depleted", style = MaterialTheme.typography.labelMedium)
+                            }
                             batch.expiresOn?.let { Text("Expires $it") }
+                            batch.note?.takeIf(String::isNotBlank)?.let { Text(it) }
                             if (isTargetBatch) {
                                 Text(
                                     "Reminder target",
                                     style = MaterialTheme.typography.labelMedium,
-                                    modifier = Modifier.testTag(SmokeTag.reminderTarget(batch.id.toString())),
+                                    modifier = Modifier.testTag(SmokeTag.reminderTarget(batchId)),
                                 )
+                            }
+                            if (isSelected) {
+                                Text("Selected", style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BatchDetailCard(
+    appState: QuartermasterAppState,
+    batch: StockBatchDto,
+    onConsume: (String) -> Unit,
+    onDiscard: () -> Unit,
+    onRestore: () -> Unit,
+    onClose: () -> Unit,
+) {
+    var consumeQuantity by remember(batch.id) { mutableStateOf("") }
+    val batchId = batch.id.toString()
+    val depleted = appState.isBatchDepleted(batch)
+    val action = appState.stockActionFor(batchId)
+    val consumeQuantityNumber = consumeQuantity.trim().toDoubleOrNull()
+    val consumeDisabledReason = when {
+        depleted -> "This batch is depleted."
+        consumeQuantity.isBlank() -> "Enter an amount to consume."
+        consumeQuantityNumber == null || consumeQuantityNumber <= 0 -> "Enter a positive amount."
+        else -> null
+    }
+
+    Card {
+        Column(
+            modifier = Modifier
+                .testTag(SmokeTag.selectedBatch(batchId))
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(batch.product.name, style = MaterialTheme.typography.titleLarge)
+                    Text("${batch.quantity} ${batch.unit} in ${appState.locationNameFor(batch.locationId.toString())}")
+                }
+                TextButton(onClick = onClose) {
+                    Text("Close")
+                }
+            }
+            BatchMetadata(batch)
+            if (depleted) {
+                Text("This batch is depleted.", style = MaterialTheme.typography.bodyMedium)
+            } else {
+                OutlinedTextField(
+                    value = consumeQuantity,
+                    onValueChange = { consumeQuantity = it },
+                    label = { Text("Consume quantity (${batch.unit})") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier
+                        .testTag(SmokeTag.batchConsumeField(batchId))
+                        .fillMaxWidth(),
+                )
+                consumeDisabledReason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                Button(
+                    onClick = { onConsume(consumeQuantity.trim()) },
+                    enabled = consumeDisabledReason == null && action == null,
+                    modifier = Modifier.testTag(SmokeTag.batchConsumeButton(batchId)),
+                ) {
+                    Text(if (action == StockAction.Consume) "Consuming..." else "Consume")
+                }
+                TextButton(
+                    onClick = onDiscard,
+                    enabled = action == null,
+                    modifier = Modifier.testTag(SmokeTag.batchDiscardButton(batchId)),
+                ) {
+                    Text(if (action == StockAction.Discard) "Discarding..." else "Discard batch")
+                }
+            }
+            if (appState.canRestoreBatch(batch)) {
+                Button(
+                    onClick = onRestore,
+                    enabled = action == null,
+                    modifier = Modifier.testTag(SmokeTag.batchRestoreButton(batchId)),
+                ) {
+                    Text(if (action == StockAction.Restore) "Restoring..." else "Restore batch")
+                }
+            }
+            BatchHistory(appState.selectedBatchEvents, appState.selectedBatchEventLoadState, appState.selectedBatchEventError)
+        }
+    }
+}
+
+@Composable
+private fun BatchMetadata(batch: StockBatchDto) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text("Created ${batch.createdAt}", style = MaterialTheme.typography.bodySmall)
+        Text("Initial quantity ${batch.initialQuantity} ${batch.unit}", style = MaterialTheme.typography.bodySmall)
+        Text("Expires ${batch.expiresOn ?: "No expiry date"}", style = MaterialTheme.typography.bodySmall)
+        Text("Opened ${batch.openedOn ?: "Not marked opened"}", style = MaterialTheme.typography.bodySmall)
+        batch.note?.takeIf(String::isNotBlank)?.let {
+            Text("Note: $it", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun BatchHistory(
+    events: List<StockEventDto>,
+    loadState: LoadState,
+    error: String?,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Batch history", style = MaterialTheme.typography.titleMedium)
+        when {
+            loadState == LoadState.Loading && events.isEmpty() -> Text("Loading history...")
+            error != null -> Text(error, style = MaterialTheme.typography.bodyMedium)
+            events.isEmpty() -> Text("No history yet.")
+            else -> events.take(8).forEach { event ->
+                Column(
+                    modifier = Modifier
+                        .testTag(SmokeTag.batchHistoryRow(event.id.toString()))
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text("${event.eventType.name.lowercase()} · ${event.quantityDelta} ${event.unit}")
+                    Text(
+                        listOfNotNull(event.createdAt, event.createdByUsername).joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    event.note?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 }
             }
         }
@@ -1236,6 +1409,7 @@ private fun QuartermasterAppState.batchesForLocation(
 ): List<StockBatchDto> = batches.filter { it.locationId.toString() == locationId }
     .sortedWith(
         compareByDescending<StockBatchDto> { it.product.id.toString() == target?.productId }
+            .thenBy { isBatchDepleted(it) }
             .thenBy { it.product.name.lowercase() }
             .thenBy { it.expiresOn ?: "9999-12-31" },
     )
