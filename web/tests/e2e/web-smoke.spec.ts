@@ -18,6 +18,7 @@ interface SmokeFixture {
   username: string;
   password: string;
   invite_code: string;
+  barcode: string;
   reminders: Array<{
     reminder_id: string;
     batch_id: string;
@@ -107,6 +108,13 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible();
 
+  await page.getByTestId('products-barcode-lookup-input').fill(fixture.barcode);
+  await page.getByTestId('products-barcode-lookup-submit').click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Retry Beans' })).toBeVisible();
+  await expect(page.locator('.product-detail-heading').getByText('OpenFoodFacts')).toBeVisible();
+  await expect(page.getByText(fixture.barcode)).toBeVisible();
+  await page.getByRole('link', { name: 'Products' }).click();
+
   await page.getByRole('link', { name: 'New product' }).click();
   await expect(page.getByRole('heading', { name: 'New Product' })).toBeVisible();
   await page.getByTestId('product-name-input').fill('Smoke Oats');
@@ -151,6 +159,29 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
     .click();
   await expect(page.getByTestId('detail-quantity')).toHaveText('2 kg');
   await expect(page.locator('.detail-region').getByText('Smoke Shelf Renamed')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Add stock' }).click();
+  await page.getByTestId('inventory-barcode-lookup-input').fill(fixture.barcode);
+  await page.getByTestId('inventory-barcode-lookup-submit').click();
+  await expect(page.getByTestId('selected-product')).toContainText('Retry Beans');
+  await page.getByLabel('Stock quantity').fill('3');
+  await page.locator('.stock-create-form').getByLabel('Unit').selectOption('g');
+  await page
+    .locator('.stock-create-form')
+    .getByLabel('Location')
+    .selectOption({ label: 'Smoke Shelf Renamed' });
+  await page.locator('.stock-create-form').getByRole('button', { name: 'Add stock' }).click();
+  await page
+    .locator('.inventory-list')
+    .getByRole('button', { name: /Retry Beans/ })
+    .click();
+  await expect(page.getByTestId('detail-quantity')).toHaveText('3 g');
+
+  await page
+    .locator('.inventory-list')
+    .getByRole('button', { name: /Smoke Oats Edited/ })
+    .click();
+  await expect(page.getByTestId('detail-quantity')).toHaveText('2 kg');
 
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await expect(page.locator('.stock-edit-form').getByLabel('Location')).toContainText(

@@ -188,3 +188,21 @@ export function productMutationErrorMessage(err: unknown, fallback: string): str
       return err.message || fallback;
   }
 }
+
+export function barcodeLookupErrorMessage(err: unknown): string {
+  if (!(err instanceof ApiFailure)) {
+    return 'Barcode lookup failed.';
+  }
+  switch (err.status) {
+    case 400:
+      return 'Enter an EAN-8, UPC-A, EAN-13, or EAN-14 barcode.';
+    case 404:
+      return 'No product was found for that barcode.';
+    case 429:
+      return 'Barcode lookup is rate-limited. Try again shortly.';
+    case 502:
+      return 'Barcode lookup is temporarily unavailable.';
+    default:
+      return err.message || 'Barcode lookup failed.';
+  }
+}

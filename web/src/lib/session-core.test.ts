@@ -123,6 +123,9 @@ describe('QuartermasterSession', () => {
       async productList() {
         throw new Error('unused');
       },
+      async productByBarcode() {
+        throw new Error('unused');
+      },
       async productCreate() {
         throw new Error('unused');
       },
@@ -229,6 +232,9 @@ describe('QuartermasterSession', () => {
         throw new Error('unused');
       },
       async productList() {
+        throw new Error('unused');
+      },
+      async productByBarcode() {
         throw new Error('unused');
       },
       async productCreate() {
@@ -356,6 +362,23 @@ describe('QuartermasterSession', () => {
           response: { status: 200 }
         };
       },
+      async productByBarcode(barcode) {
+        calls.push(`barcode:${barcode}`);
+        return {
+          data: {
+            product: {
+              id: 'product-barcode',
+              name: 'Retry Beans',
+              family: 'mass',
+              preferred_unit: 'g',
+              barcode,
+              source: 'openfoodfacts'
+            },
+            source: 'cache'
+          },
+          response: { status: 200 }
+        };
+      },
       async productCreate(body) {
         calls.push(`product:${body.name}:${body.family}`);
         return {
@@ -467,6 +490,10 @@ describe('QuartermasterSession', () => {
     await expect(session.productList({ q: 'rice', include_deleted: true })).resolves.toMatchObject({
       items: [{ name: 'Rice' }]
     });
+    await expect(session.productByBarcode('1111111111111')).resolves.toMatchObject({
+      product: { name: 'Retry Beans', source: 'openfoodfacts' },
+      source: 'cache'
+    });
     await expect(
       session.productCreate({ name: 'Manual Rice', family: 'mass', preferred_unit: 'kg' })
     ).resolves.toMatchObject({ name: 'Manual Rice' });
@@ -498,6 +525,7 @@ describe('QuartermasterSession', () => {
       'location-delete:location-1',
       'search:rice:12',
       'list:rice:true',
+      'barcode:1111111111111',
       'product:Manual Rice:mass',
       'product-get:product-1',
       'product-update:product-1:Updated Rice',

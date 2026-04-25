@@ -9,6 +9,7 @@ import {
   locationsDelete,
   locationsList,
   locationsUpdate,
+  productByBarcode,
   productCreate,
   productSearch,
   productDelete,
@@ -87,6 +88,9 @@ export function generatedTransport(): SessionTransport {
     },
     productList(query) {
       return productList(query ? { query } : undefined);
+    },
+    productByBarcode(barcode) {
+      return productByBarcode({ path: { barcode } });
     },
     productCreate(body) {
       return productCreate({ body });
