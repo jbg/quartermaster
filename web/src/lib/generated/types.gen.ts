@@ -764,6 +764,33 @@ export type LocationsUpdateResponses = {
 
 export type LocationsUpdateResponse = LocationsUpdateResponses[keyof LocationsUpdateResponses];
 
+export type ProductListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        q?: string | null;
+        limit?: number | null;
+        /**
+         * When true, include soft-deleted manual products. Soft-deleted rows
+         * have `deleted_at` populated; clients can render them muted.
+         */
+        include_deleted?: boolean | null;
+    };
+    url: '/api/v1/products';
+};
+
+export type ProductListErrors = {
+    401: ApiErrorBody;
+};
+
+export type ProductListError = ProductListErrors[keyof ProductListErrors];
+
+export type ProductListResponses = {
+    200: ProductSearchResponse;
+};
+
+export type ProductListResponse = ProductListResponses[keyof ProductListResponses];
+
 export type ProductCreateData = {
     body: CreateProductRequest;
     path?: never;

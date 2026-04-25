@@ -115,3 +115,114 @@ async fn deleted_manual_products_stay_visible_in_history_but_reject_new_stock() 
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(batch_detail["code"], "not_found");
 }
+
+#[tokio::test]
+async fn product_catalogue_lists_visible_products_and_deleted_when_requested() {
+    let app = TestApp::start(ApiConfig::default()).await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let alice_household_id =
+        Uuid::parse_str(me_current_household_id(&app.me(&alice).await).unwrap()).unwrap();
+    let bob_household_id = qm_db::households::create(&app.db, "Bob home", "UTC")
+        .await
+        .unwrap()
+        .id;
+
+    let active = qm_db::products::create_manual(
+        &app.db,
+        alice_household_id,
+        "Catalogue Rice",
+        Some("House"),
+        "mass",
+        Some("kg"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let deleted = qm_db::products::create_manual(
+        &app.db,
+        alice_household_id,
+        "Catalogue Retired",
+        None,
+        "count",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    qm_db::products::soft_delete(&app.db, deleted.id)
+        .await
+        .unwrap();
+    qm_db::products::create_manual(
+        &app.db,
+        bob_household_id,
+        "Catalogue Bob Private",
+        None,
+        "count",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    qm_db::products::upsert_from_off(
+        &app.db,
+        "5449000000996",
+        "Catalogue Cola",
+        Some("Open"),
+        "volume",
+        Some("ml"),
+        None,
+    )
+    .await
+    .unwrap();
+
+    let (status, catalogue) = app
+        .send(Method::GET, "/api/v1/products", None, Some(&alice))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let names: Vec<_> = catalogue["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, vec!["Catalogue Cola", "Catalogue Rice"]);
+
+    let (status, catalogue) = app
+        .send(
+            Method::GET,
+            "/api/v1/products?include_deleted=true",
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = catalogue["items"].as_array().unwrap();
+    assert!(items
+        .iter()
+        .any(|item| item["id"].as_str() == Some(&active.id.to_string())));
+    let deleted_item = items
+        .iter()
+        .find(|item| item["id"].as_str() == Some(&deleted.id.to_string()))
+        .unwrap();
+    assert!(deleted_item["deleted_at"].as_str().is_some());
+    assert!(!items
+        .iter()
+        .any(|item| item["name"].as_str() == Some("Catalogue Bob Private")));
+
+    let (status, filtered) = app
+        .send(
+            Method::GET,
+            "/api/v1/products?q=cola&include_deleted=true",
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let filtered_items = filtered["items"].as_array().unwrap();
+    assert_eq!(filtered_items.len(), 1);
+    assert_eq!(filtered_items[0]["name"], "Catalogue Cola");
+}

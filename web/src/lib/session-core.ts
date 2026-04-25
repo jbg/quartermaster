@@ -36,7 +36,12 @@ export interface Product {
   family: UnitFamily;
   preferred_unit?: string;
   preferredUnit?: string;
+  image_url?: string | null;
+  imageUrl?: string | null;
+  barcode?: string | null;
   source?: 'openfoodfacts' | 'manual';
+  deleted_at?: string | null;
+  deletedAt?: string | null;
 }
 
 export interface ProductSearchResponse {
@@ -171,6 +176,14 @@ export interface CreateProductRequest {
   image_url?: string | null;
 }
 
+export interface UpdateProductRequest {
+  name?: string | null;
+  brand?: string | null;
+  family?: UnitFamily | null;
+  preferred_unit?: string | null;
+  image_url?: string | null;
+}
+
 export interface CreateStockRequest {
   product_id: string;
   location_id: string;
@@ -241,8 +254,19 @@ export interface SessionTransport {
   productSearch(query: {
     q: string;
     limit?: number | null;
+    include_deleted?: boolean | null;
+  }): Promise<ApiResult<ProductSearchResponse>>;
+  productList(query?: {
+    q?: string | null;
+    limit?: number | null;
+    include_deleted?: boolean | null;
   }): Promise<ApiResult<ProductSearchResponse>>;
   productCreate(body: CreateProductRequest): Promise<ApiResult<Product>>;
+  productGet(id: string): Promise<ApiResult<Product>>;
+  productUpdate(id: string, body: UpdateProductRequest): Promise<ApiResult<Product>>;
+  productDelete(id: string): Promise<ApiResult<void>>;
+  productRestore(id: string): Promise<ApiResult<Product>>;
+  productRefresh(id: string): Promise<ApiResult<Product>>;
   stockList(query?: { include_depleted?: boolean | null }): Promise<ApiResult<StockListResponse>>;
   stockCreate(body: CreateStockRequest): Promise<ApiResult<StockBatch>>;
   stockGet(id: string): Promise<ApiResult<StockBatch>>;
@@ -279,8 +303,7 @@ export interface BrowserLocationLike {
   pathname?: string;
 }
 
-const WEB_ROUTE_SEGMENTS = new Set(['join']);
-const WEB_ROUTE_PATHS = new Set(['settings']);
+const WEB_ROUTE_ROOTS = new Set(['join', 'products', 'settings']);
 
 function trimTrailingSlashes(value: string): string {
   return value.replace(/\/+$/, '');
@@ -289,9 +312,9 @@ function trimTrailingSlashes(value: string): string {
 function ingressBasePath(pathname = ''): string {
   const normalized = `/${pathname}`.replace(/\/+/g, '/');
   const segments = normalized.split('/').filter(Boolean);
-  const last = segments.at(-1);
-  if (last && (WEB_ROUTE_SEGMENTS.has(last) || WEB_ROUTE_PATHS.has(last))) {
-    segments.pop();
+  const routeIndex = segments.findIndex((segment) => WEB_ROUTE_ROOTS.has(segment));
+  if (routeIndex >= 0) {
+    segments.splice(routeIndex);
   }
   return segments.length > 0 ? `/${segments.join('/')}` : '';
 }
@@ -426,12 +449,44 @@ export class QuartermasterSession {
     return this.authed(() => this.transport.locationsDelete(id));
   }
 
-  productSearch(query: { q: string; limit?: number | null }): Promise<ProductSearchResponse> {
+  productSearch(query: {
+    q: string;
+    limit?: number | null;
+    include_deleted?: boolean | null;
+  }): Promise<ProductSearchResponse> {
     return this.authed(() => this.transport.productSearch(query));
+  }
+
+  productList(query?: {
+    q?: string | null;
+    limit?: number | null;
+    include_deleted?: boolean | null;
+  }): Promise<ProductSearchResponse> {
+    return this.authed(() => this.transport.productList(query));
   }
 
   productCreate(body: CreateProductRequest): Promise<Product> {
     return this.authed(() => this.transport.productCreate(body));
+  }
+
+  productGet(id: string): Promise<Product> {
+    return this.authed(() => this.transport.productGet(id));
+  }
+
+  productUpdate(id: string, body: UpdateProductRequest): Promise<Product> {
+    return this.authed(() => this.transport.productUpdate(id, body));
+  }
+
+  productDelete(id: string): Promise<void> {
+    return this.authed(() => this.transport.productDelete(id));
+  }
+
+  productRestore(id: string): Promise<Product> {
+    return this.authed(() => this.transport.productRestore(id));
+  }
+
+  productRefresh(id: string): Promise<Product> {
+    return this.authed(() => this.transport.productRefresh(id));
   }
 
   stockList(query?: { include_depleted?: boolean | null }): Promise<StockListResponse> {

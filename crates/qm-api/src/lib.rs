@@ -250,6 +250,7 @@ impl Modify for SecurityAddon {
         routes::households::list_invites,
         routes::households::revoke_invite,
         routes::households::redeem_invite,
+        routes::products::list,
         routes::products::search,
         routes::products::by_barcode,
         routes::products::create,
