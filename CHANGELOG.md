@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0](https://github.com/jbg/quartermaster/compare/0.5.0...1.0.0) (2026-04-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* product and stock PATCH endpoints now accept JSON Patch operation arrays.
+
+### Features
+
+* add Android inventory lifecycle actions ([7346cde](https://github.com/jbg/quartermaster/commit/7346cde14ca592029572468872602a713a049a14))
+* add web product management ([068540c](https://github.com/jbg/quartermaster/commit/068540cc136f6c0125307133e9580d62521f4d08))
+* **android:** add location management settings ([cd03518](https://github.com/jbg/quartermaster/commit/cd035188b18f00b4371aa9b72b71fd7c3891b164))
+* **android:** add product management parity ([fad37e5](https://github.com/jbg/quartermaster/commit/fad37e5dcedb96fb7896e623a93eb78b78483a32))
+* use JSON Patch for update requests ([2c4eaf4](https://github.com/jbg/quartermaster/commit/2c4eaf440caf4ac50d2a1629325fe553492b4295))
+* **web:** add barcode product entry ([19584fa](https://github.com/jbg/quartermaster/commit/19584fa6e1e8dec8d05e314882ad76f4e8dcf619))
+
 ## [0.5.0](https://github.com/jbg/quartermaster/compare/0.4.0...0.5.0) (2026-04-25)
 
 
