@@ -48,6 +48,11 @@ export interface ProductSearchResponse {
   items?: Product[];
 }
 
+export interface BarcodeLookupResponse {
+  product: Product;
+  source?: string;
+}
+
 export interface StockBatch {
   id: string;
   product?: {
@@ -261,6 +266,7 @@ export interface SessionTransport {
     limit?: number | null;
     include_deleted?: boolean | null;
   }): Promise<ApiResult<ProductSearchResponse>>;
+  productByBarcode(barcode: string): Promise<ApiResult<BarcodeLookupResponse>>;
   productCreate(body: CreateProductRequest): Promise<ApiResult<Product>>;
   productGet(id: string): Promise<ApiResult<Product>>;
   productUpdate(id: string, body: UpdateProductRequest): Promise<ApiResult<Product>>;
@@ -463,6 +469,10 @@ export class QuartermasterSession {
     include_deleted?: boolean | null;
   }): Promise<ProductSearchResponse> {
     return this.authed(() => this.transport.productList(query));
+  }
+
+  productByBarcode(barcode: string): Promise<BarcodeLookupResponse> {
+    return this.authed(() => this.transport.productByBarcode(barcode));
   }
 
   productCreate(body: CreateProductRequest): Promise<Product> {

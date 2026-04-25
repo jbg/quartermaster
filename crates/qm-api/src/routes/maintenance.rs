@@ -20,6 +20,7 @@ const ANDROID_SMOKE_TIMEZONE: &str = "UTC";
 const ANDROID_SMOKE_INVITE_EXPIRES_AT: &str = "2999-01-01T00:00:00Z";
 const ANDROID_SMOKE_REMINDER_FIRE_AT: &str = "2000-01-01T00:00:00.000Z";
 const ANDROID_SMOKE_SERVER_URL: &str = "http://127.0.0.1:8080";
+const WEB_SMOKE_BARCODE: &str = "1111111111111";
 const ANDROID_SMOKE_PRODUCTS: [(&str, &str); 2] = [
     ("Smoke Rice", "Android smoke seed 1"),
     ("Smoke Beans", "Android smoke seed 2"),
@@ -55,6 +56,7 @@ pub struct SeedAndroidSmokeResponse {
     pub server_url: String,
     pub household_id: Uuid,
     pub location_id: Uuid,
+    pub barcode: String,
     pub reminders: Vec<AndroidSmokeReminderSeed>,
 }
 
@@ -197,6 +199,7 @@ async fn build_android_smoke_fixture(
     let user = find_or_create_smoke_user(&state.db).await?;
     let household_id = find_or_create_smoke_household(&state.db, user.id).await?;
     let pantry = ensure_pantry_location(&state.db, household_id).await?;
+    ensure_smoke_barcode_product(&state.db).await?;
     let product_ids = existing_smoke_product_ids(&state.db, household_id).await?;
     if !product_ids.is_empty() {
         let _ = qm_db::reminders::ack_pending_for_products(
@@ -259,6 +262,7 @@ async fn build_android_smoke_fixture(
             .unwrap_or_else(|| ANDROID_SMOKE_SERVER_URL.into()),
         household_id,
         location_id: pantry.id,
+        barcode: WEB_SMOKE_BARCODE.into(),
         reminders,
     })
 }
@@ -371,6 +375,23 @@ async fn find_or_create_smoke_product(
     )
     .await
     .map_err(Into::into)
+}
+
+async fn ensure_smoke_barcode_product(
+    db: &qm_db::Database,
+) -> Result<qm_db::products::ProductRow, ApiError> {
+    let product = qm_db::products::upsert_from_off(
+        db,
+        WEB_SMOKE_BARCODE,
+        "Retry Beans",
+        Some("Acme"),
+        "mass",
+        Some("g"),
+        None,
+    )
+    .await?;
+    qm_db::barcode_cache::put_hit(db, WEB_SMOKE_BARCODE, product.id).await?;
+    Ok(product)
 }
 
 async fn find_or_create_smoke_invite(

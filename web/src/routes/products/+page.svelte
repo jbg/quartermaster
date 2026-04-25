@@ -11,6 +11,7 @@
     type Product
   } from '$lib/session-core';
   import {
+    barcodeLookupErrorMessage,
     filterDeletedProducts,
     includeDeletedForFilter,
     isDeletedProduct,
@@ -32,6 +33,9 @@
   let error = $state<string | null>(null);
   let searchQuery = $state('');
   let includeFilter = $state<ProductIncludeFilter>('active');
+  let barcodeLookupValue = $state('');
+  let barcodeLookupBusy = $state(false);
+  let barcodeLookupError = $state<string | null>(null);
 
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
   const visibleProducts = $derived(filterDeletedProducts(products, includeFilter));
@@ -88,6 +92,26 @@
     const href = productListHref(searchQuery, includeFilter);
     await goto(href);
     await loadProducts();
+  }
+
+  async function lookupBarcodeProduct() {
+    if (!session) {
+      return;
+    }
+    const barcode = barcodeLookupValue.trim();
+    if (!barcode) {
+      return;
+    }
+    barcodeLookupBusy = true;
+    barcodeLookupError = null;
+    try {
+      const response = await session.productByBarcode(barcode);
+      await goto(`/products/${response.product.id}`);
+    } catch (err) {
+      barcodeLookupError = barcodeLookupErrorMessage(err);
+    } finally {
+      barcodeLookupBusy = false;
+    }
   }
 
   async function logout() {
@@ -174,6 +198,37 @@
             Apply
           </button>
         </form>
+
+        <form
+          class="barcode-catalogue-lookup"
+          data-testid="products-barcode-lookup"
+          onsubmit={(event) => {
+            event.preventDefault();
+            void lookupBarcodeProduct();
+          }}
+        >
+          <label>
+            Barcode lookup
+            <input
+              bind:value={barcodeLookupValue}
+              data-testid="products-barcode-lookup-input"
+              inputmode="numeric"
+              placeholder="EAN or UPC"
+            />
+          </label>
+          <button
+            class="secondary-action"
+            type="submit"
+            data-testid="products-barcode-lookup-submit"
+            disabled={!barcodeLookupValue.trim() || barcodeLookupBusy}
+          >
+            {barcodeLookupBusy ? 'Looking up...' : 'Look up'}
+          </button>
+        </form>
+
+        {#if barcodeLookupError}
+          <p class="error-text">{barcodeLookupError}</p>
+        {/if}
 
         {#if error}
           <p class="error-text">{error}</p>

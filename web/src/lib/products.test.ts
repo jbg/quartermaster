@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ApiFailure, type Product } from './session-core';
 import {
+  barcodeLookupErrorMessage,
   buildProductCreateRequest,
   buildProductUpdateRequest,
   filterDeletedProducts,
@@ -122,5 +123,24 @@ describe('product helpers', () => {
       )
     ).toBe('OpenFoodFacts products are read-only from the web catalogue.');
     expect(productMutationErrorMessage(new Error('nope'), 'Fallback')).toBe('Fallback');
+  });
+
+  it('maps barcode lookup API failures to user-facing messages', () => {
+    expect(barcodeLookupErrorMessage(new ApiFailure(400))).toBe(
+      'Enter an EAN-8, UPC-A, EAN-13, or EAN-14 barcode.'
+    );
+    expect(barcodeLookupErrorMessage(new ApiFailure(404))).toBe(
+      'No product was found for that barcode.'
+    );
+    expect(barcodeLookupErrorMessage(new ApiFailure(429))).toBe(
+      'Barcode lookup is rate-limited. Try again shortly.'
+    );
+    expect(barcodeLookupErrorMessage(new ApiFailure(502))).toBe(
+      'Barcode lookup is temporarily unavailable.'
+    );
+    expect(barcodeLookupErrorMessage(new Error('nope'))).toBe('Barcode lookup failed.');
+    expect(barcodeLookupErrorMessage(new ApiFailure(500, 'Unexpected barcode failure'))).toBe(
+      'Unexpected barcode failure'
+    );
   });
 });

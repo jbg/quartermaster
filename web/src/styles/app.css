@@ -323,7 +323,8 @@ select {
   font-size: 13px;
 }
 
-.manual-product {
+.manual-product,
+.barcode-product {
   display: grid;
   gap: 12px;
   margin-top: 8px;
@@ -354,6 +355,14 @@ select {
   align-items: end;
   gap: 12px;
   margin: 18px 0;
+}
+
+.barcode-catalogue-lookup {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 18px;
 }
 
 .product-catalogue-list,
@@ -630,6 +639,7 @@ select {
 
   .add-stock-grid,
   .inline-form,
+  .barcode-catalogue-lookup,
   .catalogue-filters,
   .settings-layout {
     grid-template-columns: 1fr;

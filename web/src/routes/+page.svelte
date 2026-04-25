@@ -42,6 +42,7 @@
     reminderFireAt,
     type ReminderState
   } from '$lib/reminders';
+  import { barcodeLookupErrorMessage } from '$lib/products';
   import {
     currentHousehold,
     createBrowserSessionStorage,
@@ -105,6 +106,9 @@
   let productSearchQuery = $state('');
   let productSearchStatus = $state<'idle' | 'loading' | 'loaded' | 'error'>('idle');
   let productSearchResults = $state<Product[]>([]);
+  let barcodeLookupValue = $state('');
+  let barcodeLookupBusy = $state(false);
+  let barcodeLookupError = $state<string | null>(null);
   let selectedProduct = $state<Product | null>(null);
   let manualProductName = $state('');
   let manualProductBrand = $state('');
@@ -500,6 +504,9 @@
     productSearchQuery = '';
     productSearchStatus = 'idle';
     productSearchResults = [];
+    barcodeLookupValue = '';
+    barcodeLookupBusy = false;
+    barcodeLookupError = null;
     selectedProduct = null;
     manualProductName = '';
     manualProductBrand = '';
@@ -544,6 +551,35 @@
     selectedProduct = product;
     addStockUnit = productPreferredUnit(product);
     addStockError = null;
+    barcodeLookupError = null;
+  }
+
+  async function lookupBarcodeProduct() {
+    if (!session) {
+      return;
+    }
+    const barcode = barcodeLookupValue.trim();
+    if (!barcode) {
+      return;
+    }
+    barcodeLookupBusy = true;
+    barcodeLookupError = null;
+    addStockError = null;
+    try {
+      const response = await session.productByBarcode(barcode);
+      const product = response.product;
+      chooseProduct(product);
+      productSearchResults = [
+        product,
+        ...productSearchResults.filter((item) => item.id !== product.id)
+      ];
+      productSearchStatus = 'loaded';
+      productSearchQuery = product.name;
+    } catch (err) {
+      barcodeLookupError = barcodeLookupErrorMessage(err);
+    } finally {
+      barcodeLookupBusy = false;
+    }
   }
 
   function setManualProductFamily(family: string) {
@@ -823,6 +859,43 @@
               </div>
             {/if}
 
+            <div class="barcode-product" data-testid="inventory-barcode-lookup">
+              <div class="section-heading compact">
+                <div>
+                  <p class="eyebrow">Barcode</p>
+                  <h3>Look up product</h3>
+                </div>
+              </div>
+              <form
+                class="inline-form"
+                onsubmit={(event) => {
+                  event.preventDefault();
+                  void lookupBarcodeProduct();
+                }}
+              >
+                <label>
+                  Barcode
+                  <input
+                    bind:value={barcodeLookupValue}
+                    data-testid="inventory-barcode-lookup-input"
+                    inputmode="numeric"
+                    placeholder="EAN or UPC"
+                  />
+                </label>
+                <button
+                  class="secondary-action"
+                  type="submit"
+                  data-testid="inventory-barcode-lookup-submit"
+                  disabled={!barcodeLookupValue.trim() || barcodeLookupBusy}
+                >
+                  {barcodeLookupBusy ? 'Looking up...' : 'Look up'}
+                </button>
+              </form>
+              {#if barcodeLookupError}
+                <p class="error-text">{barcodeLookupError}</p>
+              {/if}
+            </div>
+
             <div class="manual-product">
               <div class="section-heading compact">
                 <div>
@@ -892,7 +965,7 @@
               </div>
             </div>
 
-            <div class="selected-product">
+            <div class="selected-product" data-testid="selected-product">
               <span>Selected product</span>
               <strong>{selectedProduct ? selectedProduct.name : 'None selected'}</strong>
             </div>
