@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/jbg/quartermaster/compare/0.4.0...0.5.0) (2026-04-25)
+
+
+### Features
+
+* move API under versioned prefix ([ccbab99](https://github.com/jbg/quartermaster/commit/ccbab9964f66afe412dd7f2038d2eacfde3df136))
+
 ## [0.4.0](https://github.com/jbg/quartermaster/compare/0.3.0...0.4.0) (2026-04-24)
 
 
