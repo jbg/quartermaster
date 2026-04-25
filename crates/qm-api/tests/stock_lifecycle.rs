@@ -25,7 +25,7 @@ async fn product_stock_history_lifecycle_flows_through_api() {
     let (status, product) = app
         .send(
             Method::POST,
-            "/products",
+            "/api/v1/products",
             Some(json!({
                 "name": "Rice",
                 "brand": "Acme",
@@ -43,7 +43,7 @@ async fn product_stock_history_lifecycle_flows_through_api() {
     let (status, batch) = app
         .send(
             Method::POST,
-            "/stock",
+            "/api/v1/stock",
             Some(json!({
                 "product_id": product_id,
                 "location_id": pantry_id,
@@ -62,7 +62,7 @@ async fn product_stock_history_lifecycle_flows_through_api() {
     let (status, updated) = app
         .send(
             Method::PATCH,
-            &format!("/stock/{batch_id}"),
+            &format!("/api/v1/stock/{batch_id}"),
             Some(json!({ "quantity": "450" })),
             Some(&alice),
         )
@@ -73,7 +73,7 @@ async fn product_stock_history_lifecycle_flows_through_api() {
     let (status, consumed) = app
         .send(
             Method::POST,
-            "/stock/consume",
+            "/api/v1/stock/consume",
             Some(json!({
                 "product_id": product_id,
                 "location_id": pantry_id,
@@ -89,7 +89,7 @@ async fn product_stock_history_lifecycle_flows_through_api() {
     assert_eq!(
         app.send(
             Method::DELETE,
-            &format!("/stock/{batch_id}"),
+            &format!("/api/v1/stock/{batch_id}"),
             None,
             Some(&alice)
         )
@@ -101,7 +101,7 @@ async fn product_stock_history_lifecycle_flows_through_api() {
     let (status, restored) = app
         .send(
             Method::POST,
-            &format!("/stock/{batch_id}/restore"),
+            &format!("/api/v1/stock/{batch_id}/restore"),
             None,
             Some(&alice),
         )
@@ -110,7 +110,12 @@ async fn product_stock_history_lifecycle_flows_through_api() {
     assert_eq!(restored["quantity"], "250");
 
     let (status, history) = app
-        .send(Method::GET, "/stock/events?limit=20", None, Some(&alice))
+        .send(
+            Method::GET,
+            "/api/v1/stock/events?limit=20",
+            None,
+            Some(&alice),
+        )
         .await;
     assert_eq!(status, StatusCode::OK);
     let items = history["items"].as_array().unwrap();
@@ -137,7 +142,7 @@ async fn metadata_only_stock_updates_do_not_write_quantity_events() {
     let (_, product) = app
         .send(
             Method::POST,
-            "/products",
+            "/api/v1/products",
             Some(json!({
                 "name": "Yogurt",
                 "brand": null,
@@ -153,7 +158,7 @@ async fn metadata_only_stock_updates_do_not_write_quantity_events() {
     let (_, batch) = app
         .send(
             Method::POST,
-            "/stock",
+            "/api/v1/stock",
             Some(json!({
                 "product_id": product_id,
                 "location_id": pantry,
@@ -169,7 +174,7 @@ async fn metadata_only_stock_updates_do_not_write_quantity_events() {
     let (status, _) = app
         .send(
             Method::PATCH,
-            &format!("/stock/{batch_id}"),
+            &format!("/api/v1/stock/{batch_id}"),
             Some(json!({
                 "location_id": fridge,
                 "note": "moved",
@@ -182,7 +187,7 @@ async fn metadata_only_stock_updates_do_not_write_quantity_events() {
     let (_, events) = app
         .send(
             Method::GET,
-            &format!("/stock/{batch_id}/events"),
+            &format!("/api/v1/stock/{batch_id}/events"),
             None,
             Some(&alice),
         )
@@ -210,7 +215,7 @@ async fn restore_many_failure_reports_every_unrestorable_id_and_rolls_back() {
     let (_, product) = app
         .send(
             Method::POST,
-            "/products",
+            "/api/v1/products",
             Some(json!({
                 "name": "Beans",
                 "brand": null,
@@ -227,7 +232,7 @@ async fn restore_many_failure_reports_every_unrestorable_id_and_rolls_back() {
     let (_, a) = app
         .send(
             Method::POST,
-            "/stock",
+            "/api/v1/stock",
             Some(json!({
                 "product_id": product_id,
                 "location_id": pantry,
@@ -240,7 +245,7 @@ async fn restore_many_failure_reports_every_unrestorable_id_and_rolls_back() {
     let (_, b) = app
         .send(
             Method::POST,
-            "/stock",
+            "/api/v1/stock",
             Some(json!({
                 "product_id": product_id,
                 "location_id": pantry,
@@ -256,7 +261,7 @@ async fn restore_many_failure_reports_every_unrestorable_id_and_rolls_back() {
     let (status, body) = app
         .send(
             Method::POST,
-            "/stock/restore-many",
+            "/api/v1/stock/restore-many",
             Some(json!({ "ids": [a_id, b_id] })),
             Some(&alice),
         )
@@ -266,10 +271,20 @@ async fn restore_many_failure_reports_every_unrestorable_id_and_rolls_back() {
     assert_eq!(unrestorable.len(), 2);
 
     let (_, after_a) = app
-        .send(Method::GET, &format!("/stock/{a_id}"), None, Some(&alice))
+        .send(
+            Method::GET,
+            &format!("/api/v1/stock/{a_id}"),
+            None,
+            Some(&alice),
+        )
         .await;
     let (_, after_b) = app
-        .send(Method::GET, &format!("/stock/{b_id}"), None, Some(&alice))
+        .send(
+            Method::GET,
+            &format!("/api/v1/stock/{b_id}"),
+            None,
+            Some(&alice),
+        )
         .await;
     assert_eq!(after_a["quantity"], "100");
     assert_eq!(after_b["quantity"], "200");

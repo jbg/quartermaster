@@ -3,7 +3,6 @@ use std::{env, path::PathBuf, process::ExitCode, str::FromStr};
 use anyhow::{bail, Context};
 use rust_decimal::Decimal;
 use sqlx::Row;
-use utoipa::OpenApi;
 
 fn main() -> ExitCode {
     let cmd = env::args().nth(1).unwrap_or_default();
@@ -39,7 +38,7 @@ fn main() -> ExitCode {
 }
 
 fn export_openapi() -> anyhow::Result<()> {
-    let spec = qm_api::ApiDoc::openapi();
+    let spec = qm_api::openapi_spec();
     let json = serde_json::to_string_pretty(&spec).context("serialising openapi spec")?;
 
     // Write to two places: the canonical copy at the repo root (external

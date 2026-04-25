@@ -544,7 +544,7 @@ pub struct StockEventDto {
     pub created_by_username: Option<String>,
     pub batch_id: Uuid,
     pub product: ProductDto,
-    /// Shared by all rows written by a single `POST /stock/consume` call.
+    /// Shared by all rows written by a single `POST /api/v1/stock/consume` call.
     pub consume_request_id: Option<Uuid>,
 }
 

@@ -81,7 +81,7 @@ Quartermaster/
 
 - DTOs and the generated `Client` come from the checked-in `openapi.json` via the `swift-openapi-generator` build-tool plugin. Keep hand-written extensions in `Core/Networking/APIAliases.swift`, and keep the two tri-state PATCH request overrides in `APIOverrides.swift`.
 - `APIClient` is an actor façade over the generated client. A 401 on an authenticated request triggers one serialized refresh attempt, then retries.
-- `GET /auth/me` now exposes `current_household` as a nullable object; use that shared shape instead of flattening active-household fields in client code.
+- `GET /api/v1/auth/me` exposes `current_household` as a nullable object; use that shared shape instead of flattening active-household fields in client code.
 - The default base URL is `http://localhost:8080` in the simulator; override it on the Onboarding screen when connecting to a self-hosted instance.
 
 ## Verification

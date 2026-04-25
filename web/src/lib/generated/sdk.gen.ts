@@ -19,7 +19,7 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 };
 
 export const authLogin = <ThrowOnError extends boolean = false>(options: Options<AuthLoginData, ThrowOnError>) => (options.client ?? client).post<AuthLoginResponses, AuthLoginErrors, ThrowOnError>({
-    url: '/auth/login',
+    url: '/api/v1/auth/login',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -29,18 +29,18 @@ export const authLogin = <ThrowOnError extends boolean = false>(options: Options
 
 export const authLogout = <ThrowOnError extends boolean = false>(options?: Options<AuthLogoutData, ThrowOnError>) => (options?.client ?? client).post<AuthLogoutResponses, AuthLogoutErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/auth/logout',
+    url: '/api/v1/auth/logout',
     ...options
 });
 
 export const authMe = <ThrowOnError extends boolean = false>(options?: Options<AuthMeData, ThrowOnError>) => (options?.client ?? client).get<AuthMeResponses, AuthMeErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/auth/me',
+    url: '/api/v1/auth/me',
     ...options
 });
 
 export const authRefresh = <ThrowOnError extends boolean = false>(options: Options<AuthRefreshData, ThrowOnError>) => (options.client ?? client).post<AuthRefreshResponses, AuthRefreshErrors, ThrowOnError>({
-    url: '/auth/refresh',
+    url: '/api/v1/auth/refresh',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -49,7 +49,7 @@ export const authRefresh = <ThrowOnError extends boolean = false>(options: Optio
 });
 
 export const authRegister = <ThrowOnError extends boolean = false>(options: Options<AuthRegisterData, ThrowOnError>) => (options.client ?? client).post<AuthRegisterResponses, AuthRegisterErrors, ThrowOnError>({
-    url: '/auth/register',
+    url: '/api/v1/auth/register',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -59,7 +59,7 @@ export const authRegister = <ThrowOnError extends boolean = false>(options: Opti
 
 export const authSwitchHousehold = <ThrowOnError extends boolean = false>(options: Options<AuthSwitchHouseholdData, ThrowOnError>) => (options.client ?? client).post<AuthSwitchHouseholdResponses, AuthSwitchHouseholdErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/auth/switch-household',
+    url: '/api/v1/auth/switch-household',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -69,7 +69,7 @@ export const authSwitchHousehold = <ThrowOnError extends boolean = false>(option
 
 export const deviceRegister = <ThrowOnError extends boolean = false>(options: Options<DeviceRegisterData, ThrowOnError>) => (options.client ?? client).post<DeviceRegisterResponses, DeviceRegisterErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/devices/register',
+    url: '/api/v1/devices/register',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -77,11 +77,11 @@ export const deviceRegister = <ThrowOnError extends boolean = false>(options: Op
     }
 });
 
-export const healthz = <ThrowOnError extends boolean = false>(options?: Options<HealthzData, ThrowOnError>) => (options?.client ?? client).get<HealthzResponses, unknown, ThrowOnError>({ url: '/healthz', ...options });
+export const healthz = <ThrowOnError extends boolean = false>(options?: Options<HealthzData, ThrowOnError>) => (options?.client ?? client).get<HealthzResponses, unknown, ThrowOnError>({ url: '/api/v1/healthz', ...options });
 
 export const householdCreate = <ThrowOnError extends boolean = false>(options: Options<HouseholdCreateData, ThrowOnError>) => (options.client ?? client).post<HouseholdCreateResponses, HouseholdCreateErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/households',
+    url: '/api/v1/households',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -91,13 +91,13 @@ export const householdCreate = <ThrowOnError extends boolean = false>(options: O
 
 export const householdCurrentGet = <ThrowOnError extends boolean = false>(options?: Options<HouseholdCurrentGetData, ThrowOnError>) => (options?.client ?? client).get<HouseholdCurrentGetResponses, HouseholdCurrentGetErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/households/current',
+    url: '/api/v1/households/current',
     ...options
 });
 
 export const householdCurrentUpdate = <ThrowOnError extends boolean = false>(options: Options<HouseholdCurrentUpdateData, ThrowOnError>) => (options.client ?? client).patch<HouseholdCurrentUpdateResponses, HouseholdCurrentUpdateErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/households/current',
+    url: '/api/v1/households/current',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -107,13 +107,13 @@ export const householdCurrentUpdate = <ThrowOnError extends boolean = false>(opt
 
 export const householdInvitesList = <ThrowOnError extends boolean = false>(options?: Options<HouseholdInvitesListData, ThrowOnError>) => (options?.client ?? client).get<HouseholdInvitesListResponses, unknown, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/households/current/invites',
+    url: '/api/v1/households/current/invites',
     ...options
 });
 
 export const householdInviteCreate = <ThrowOnError extends boolean = false>(options: Options<HouseholdInviteCreateData, ThrowOnError>) => (options.client ?? client).post<HouseholdInviteCreateResponses, HouseholdInviteCreateErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/households/current/invites',
+    url: '/api/v1/households/current/invites',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -123,19 +123,19 @@ export const householdInviteCreate = <ThrowOnError extends boolean = false>(opti
 
 export const householdMembersList = <ThrowOnError extends boolean = false>(options?: Options<HouseholdMembersListData, ThrowOnError>) => (options?.client ?? client).get<HouseholdMembersListResponses, unknown, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/households/current/members',
+    url: '/api/v1/households/current/members',
     ...options
 });
 
 export const householdMemberRemove = <ThrowOnError extends boolean = false>(options: Options<HouseholdMemberRemoveData, ThrowOnError>) => (options.client ?? client).delete<HouseholdMemberRemoveResponses, HouseholdMemberRemoveErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/households/current/members/{user_id}',
+    url: '/api/v1/households/current/members/{user_id}',
     ...options
 });
 
 export const inviteRedeem = <ThrowOnError extends boolean = false>(options: Options<InviteRedeemData, ThrowOnError>) => (options.client ?? client).post<InviteRedeemResponses, InviteRedeemErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/invites/redeem',
+    url: '/api/v1/invites/redeem',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -145,19 +145,19 @@ export const inviteRedeem = <ThrowOnError extends boolean = false>(options: Opti
 
 export const inviteRevoke = <ThrowOnError extends boolean = false>(options: Options<InviteRevokeData, ThrowOnError>) => (options.client ?? client).delete<InviteRevokeResponses, InviteRevokeErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/invites/{id}',
+    url: '/api/v1/invites/{id}',
     ...options
 });
 
 export const locationsList = <ThrowOnError extends boolean = false>(options?: Options<LocationsListData, ThrowOnError>) => (options?.client ?? client).get<LocationsListResponses, LocationsListErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/locations',
+    url: '/api/v1/locations',
     ...options
 });
 
 export const locationsCreate = <ThrowOnError extends boolean = false>(options: Options<LocationsCreateData, ThrowOnError>) => (options.client ?? client).post<LocationsCreateResponses, unknown, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/locations',
+    url: '/api/v1/locations',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -167,13 +167,13 @@ export const locationsCreate = <ThrowOnError extends boolean = false>(options: O
 
 export const locationsDelete = <ThrowOnError extends boolean = false>(options: Options<LocationsDeleteData, ThrowOnError>) => (options.client ?? client).delete<LocationsDeleteResponses, LocationsDeleteErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/locations/{id}',
+    url: '/api/v1/locations/{id}',
     ...options
 });
 
 export const locationsUpdate = <ThrowOnError extends boolean = false>(options: Options<LocationsUpdateData, ThrowOnError>) => (options.client ?? client).patch<LocationsUpdateResponses, unknown, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/locations/{id}',
+    url: '/api/v1/locations/{id}',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -183,7 +183,7 @@ export const locationsUpdate = <ThrowOnError extends boolean = false>(options: O
 
 export const productCreate = <ThrowOnError extends boolean = false>(options: Options<ProductCreateData, ThrowOnError>) => (options.client ?? client).post<ProductCreateResponses, ProductCreateErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/products',
+    url: '/api/v1/products',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -193,31 +193,31 @@ export const productCreate = <ThrowOnError extends boolean = false>(options: Opt
 
 export const productByBarcode = <ThrowOnError extends boolean = false>(options: Options<ProductByBarcodeData, ThrowOnError>) => (options.client ?? client).get<ProductByBarcodeResponses, ProductByBarcodeErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/products/by-barcode/{barcode}',
+    url: '/api/v1/products/by-barcode/{barcode}',
     ...options
 });
 
 export const productSearch = <ThrowOnError extends boolean = false>(options: Options<ProductSearchData, ThrowOnError>) => (options.client ?? client).get<ProductSearchResponses, ProductSearchErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/products/search',
+    url: '/api/v1/products/search',
     ...options
 });
 
 export const productDelete = <ThrowOnError extends boolean = false>(options: Options<ProductDeleteData, ThrowOnError>) => (options.client ?? client).delete<ProductDeleteResponses, ProductDeleteErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/products/{id}',
+    url: '/api/v1/products/{id}',
     ...options
 });
 
 export const productGet = <ThrowOnError extends boolean = false>(options: Options<ProductGetData, ThrowOnError>) => (options.client ?? client).get<ProductGetResponses, ProductGetErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/products/{id}',
+    url: '/api/v1/products/{id}',
     ...options
 });
 
 export const productUpdate = <ThrowOnError extends boolean = false>(options: Options<ProductUpdateData, ThrowOnError>) => (options.client ?? client).patch<ProductUpdateResponses, ProductUpdateErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/products/{id}',
+    url: '/api/v1/products/{id}',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -227,49 +227,49 @@ export const productUpdate = <ThrowOnError extends boolean = false>(options: Opt
 
 export const productRefresh = <ThrowOnError extends boolean = false>(options: Options<ProductRefreshData, ThrowOnError>) => (options.client ?? client).post<ProductRefreshResponses, ProductRefreshErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/products/{id}/refresh',
+    url: '/api/v1/products/{id}/refresh',
     ...options
 });
 
 export const productRestore = <ThrowOnError extends boolean = false>(options: Options<ProductRestoreData, ThrowOnError>) => (options.client ?? client).post<ProductRestoreResponses, ProductRestoreErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/products/{id}/restore',
+    url: '/api/v1/products/{id}/restore',
     ...options
 });
 
 export const remindersList = <ThrowOnError extends boolean = false>(options?: Options<RemindersListData, ThrowOnError>) => (options?.client ?? client).get<RemindersListResponses, RemindersListErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/reminders',
+    url: '/api/v1/reminders',
     ...options
 });
 
 export const remindersAck = <ThrowOnError extends boolean = false>(options: Options<RemindersAckData, ThrowOnError>) => (options.client ?? client).post<RemindersAckResponses, RemindersAckErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/reminders/{id}/ack',
+    url: '/api/v1/reminders/{id}/ack',
     ...options
 });
 
 export const remindersOpen = <ThrowOnError extends boolean = false>(options: Options<RemindersOpenData, ThrowOnError>) => (options.client ?? client).post<RemindersOpenResponses, RemindersOpenErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/reminders/{id}/open',
+    url: '/api/v1/reminders/{id}/open',
     ...options
 });
 
 export const remindersPresent = <ThrowOnError extends boolean = false>(options: Options<RemindersPresentData, ThrowOnError>) => (options.client ?? client).post<RemindersPresentResponses, RemindersPresentErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/reminders/{id}/present',
+    url: '/api/v1/reminders/{id}/present',
     ...options
 });
 
 export const stockList = <ThrowOnError extends boolean = false>(options?: Options<StockListData, ThrowOnError>) => (options?.client ?? client).get<StockListResponses, StockListErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/stock',
+    url: '/api/v1/stock',
     ...options
 });
 
 export const stockCreate = <ThrowOnError extends boolean = false>(options: Options<StockCreateData, ThrowOnError>) => (options.client ?? client).post<StockCreateResponses, StockCreateErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/stock',
+    url: '/api/v1/stock',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -279,7 +279,7 @@ export const stockCreate = <ThrowOnError extends boolean = false>(options: Optio
 
 export const stockConsume = <ThrowOnError extends boolean = false>(options: Options<StockConsumeData, ThrowOnError>) => (options.client ?? client).post<StockConsumeResponses, StockConsumeErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/stock/consume',
+    url: '/api/v1/stock/consume',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -289,13 +289,13 @@ export const stockConsume = <ThrowOnError extends boolean = false>(options: Opti
 
 export const stockListEvents = <ThrowOnError extends boolean = false>(options?: Options<StockListEventsData, ThrowOnError>) => (options?.client ?? client).get<StockListEventsResponses, StockListEventsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/stock/events',
+    url: '/api/v1/stock/events',
     ...options
 });
 
 export const stockRestoreMany = <ThrowOnError extends boolean = false>(options: Options<StockRestoreManyData, ThrowOnError>) => (options.client ?? client).post<StockRestoreManyResponses, StockRestoreManyErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/stock/restore-many',
+    url: '/api/v1/stock/restore-many',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -305,19 +305,19 @@ export const stockRestoreMany = <ThrowOnError extends boolean = false>(options: 
 
 export const stockDelete = <ThrowOnError extends boolean = false>(options: Options<StockDeleteData, ThrowOnError>) => (options.client ?? client).delete<StockDeleteResponses, StockDeleteErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/stock/{id}',
+    url: '/api/v1/stock/{id}',
     ...options
 });
 
 export const stockGet = <ThrowOnError extends boolean = false>(options: Options<StockGetData, ThrowOnError>) => (options.client ?? client).get<StockGetResponses, StockGetErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/stock/{id}',
+    url: '/api/v1/stock/{id}',
     ...options
 });
 
 export const stockUpdate = <ThrowOnError extends boolean = false>(options: Options<StockUpdateData, ThrowOnError>) => (options.client ?? client).patch<StockUpdateResponses, StockUpdateErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/stock/{id}',
+    url: '/api/v1/stock/{id}',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -327,14 +327,14 @@ export const stockUpdate = <ThrowOnError extends boolean = false>(options: Optio
 
 export const stockListBatchEvents = <ThrowOnError extends boolean = false>(options: Options<StockListBatchEventsData, ThrowOnError>) => (options.client ?? client).get<StockListBatchEventsResponses, StockListBatchEventsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/stock/{id}/events',
+    url: '/api/v1/stock/{id}/events',
     ...options
 });
 
 export const stockRestore = <ThrowOnError extends boolean = false>(options: Options<StockRestoreData, ThrowOnError>) => (options.client ?? client).post<StockRestoreResponses, StockRestoreErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/stock/{id}/restore',
+    url: '/api/v1/stock/{id}/restore',
     ...options
 });
 
-export const unitsList = <ThrowOnError extends boolean = false>(options?: Options<UnitsListData, ThrowOnError>) => (options?.client ?? client).get<UnitsListResponses, unknown, ThrowOnError>({ url: '/units', ...options });
+export const unitsList = <ThrowOnError extends boolean = false>(options?: Options<UnitsListData, ThrowOnError>) => (options?.client ?? client).get<UnitsListResponses, unknown, ThrowOnError>({ url: '/api/v1/units', ...options });

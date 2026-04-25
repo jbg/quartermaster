@@ -42,10 +42,31 @@ async fn api_routes_win_over_web_fallback() {
     })
     .await;
 
-    let (status, body) = app.send(Method::GET, "/auth/me", None, None).await;
+    let (status, body) = app.send(Method::GET, "/api/v1/auth/me", None, None).await;
 
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["code"], "unauthorized");
+
+    let _ = std::fs::remove_dir_all(web_dist);
+}
+
+#[tokio::test]
+async fn root_api_like_paths_belong_to_the_web_app() {
+    let web_dist = test_web_dist();
+    let app = TestApp::start(ApiConfig {
+        web_dist_dir: Some(web_dist.clone()),
+        ..ApiConfig::default()
+    })
+    .await;
+
+    let (status, headers, raw) = app.raw(Method::GET, "/auth/me").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        headers.get("content-type").unwrap(),
+        "text/html; charset=utf-8"
+    );
+    assert!(raw.contains("quartermaster-web-shell"));
 
     let _ = std::fs::remove_dir_all(web_dist);
 }

@@ -50,6 +50,7 @@ class ApiFailure(
 class QuartermasterApi(
     private val authStore: AuthStore,
 ) {
+    private val apiPrefix = "/api/v1"
     private val json = Serializer.kotlinxSerializationJson
     private val refreshMutex = Mutex()
     private val client =
@@ -277,7 +278,7 @@ class QuartermasterApi(
         val requestBuilder =
             Request
                 .Builder()
-                .url(snapshot.serverUrl.removeSuffix("/") + path)
+                .url(snapshot.serverUrl.removeSuffix("/") + apiPrefix + path)
                 .header("Accept", "application/json")
 
         if (requiresAuth) {

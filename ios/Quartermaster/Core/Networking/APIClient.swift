@@ -683,7 +683,13 @@ private actor AuthMiddleware: ClientMiddleware {
       guard let refreshToken = await tokenStore.refreshToken else {
         throw APIError.unauthorized
       }
-      var req = URLRequest(url: baseURL.appendingPathComponent("/auth/refresh"))
+      let refreshURL =
+        baseURL
+        .appendingPathComponent("api")
+        .appendingPathComponent("v1")
+        .appendingPathComponent("auth")
+        .appendingPathComponent("refresh")
+      var req = URLRequest(url: refreshURL)
       req.httpMethod = "POST"
       req.setValue("application/json", forHTTPHeaderField: "Content-Type")
       req.httpBody = try JSONEncoder().encode(RefreshBody(refreshToken: refreshToken))

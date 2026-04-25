@@ -24,7 +24,7 @@ async fn barcode_lookup_retries_transient_off_failures_then_succeeds() {
     let (status, body) = app
         .send(
             axum::http::Method::GET,
-            "/products/by-barcode/1111111111111",
+            "/api/v1/products/by-barcode/1111111111111",
             None,
             Some(&alice),
         )
@@ -49,7 +49,7 @@ async fn barcode_lookup_404_writes_negative_cache_entry() {
     let (status, _) = app
         .send(
             axum::http::Method::GET,
-            "/products/by-barcode/2222222222222",
+            "/api/v1/products/by-barcode/2222222222222",
             None,
             Some(&alice),
         )
@@ -82,7 +82,7 @@ async fn breaker_open_failures_do_not_write_cache_misses_and_fail_fast() {
     let first = app
         .send(
             axum::http::Method::GET,
-            "/products/by-barcode/3333333333333",
+            "/api/v1/products/by-barcode/3333333333333",
             None,
             Some(&alice),
         )
@@ -90,7 +90,7 @@ async fn breaker_open_failures_do_not_write_cache_misses_and_fail_fast() {
     let second = app
         .send(
             axum::http::Method::GET,
-            "/products/by-barcode/3333333333333",
+            "/api/v1/products/by-barcode/3333333333333",
             None,
             Some(&alice),
         )

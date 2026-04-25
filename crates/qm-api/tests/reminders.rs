@@ -122,7 +122,7 @@ async fn list_returns_due_reminders_for_active_household_only() {
     let switched = app
         .send(
             Method::POST,
-            "/auth/switch-household",
+            "/api/v1/auth/switch-household",
             Some(json!({ "household_id": household_a })),
             Some(&alice),
         )
@@ -130,7 +130,7 @@ async fn list_returns_due_reminders_for_active_household_only() {
     assert_eq!(switched.0, StatusCode::OK);
 
     let (status, body) = app
-        .send(Method::GET, "/reminders", None, Some(&alice))
+        .send(Method::GET, "/api/v1/reminders", None, Some(&alice))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 1);
@@ -142,7 +142,7 @@ async fn list_returns_due_reminders_for_active_household_only() {
     let switched = app
         .send(
             Method::POST,
-            "/auth/switch-household",
+            "/api/v1/auth/switch-household",
             Some(json!({ "household_id": household_b.id })),
             Some(&alice),
         )
@@ -150,7 +150,7 @@ async fn list_returns_due_reminders_for_active_household_only() {
     assert_eq!(switched.0, StatusCode::OK);
 
     let (status, body) = app
-        .send(Method::GET, "/reminders", None, Some(&alice))
+        .send(Method::GET, "/api/v1/reminders", None, Some(&alice))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 1);
@@ -214,7 +214,7 @@ async fn present_open_and_ack_are_device_aware() {
     let (status, _) = app
         .send(
             Method::POST,
-            "/devices/register",
+            "/api/v1/devices/register",
             Some(json!({
                 "device_id": "ios-main",
                 "platform": "ios",
@@ -228,7 +228,7 @@ async fn present_open_and_ack_are_device_aware() {
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     let (status, body) = app
-        .send(Method::GET, "/reminders", None, Some(&alice))
+        .send(Method::GET, "/api/v1/reminders", None, Some(&alice))
         .await;
     assert_eq!(status, StatusCode::OK);
     let reminder_id = body["items"][0]["id"].as_str().unwrap().to_owned();
@@ -239,7 +239,7 @@ async fn present_open_and_ack_are_device_aware() {
     let (status, body) = app
         .send(
             Method::POST,
-            &format!("/reminders/{reminder_id}/present"),
+            &format!("/api/v1/reminders/{reminder_id}/present"),
             None,
             Some(&alice),
         )
@@ -248,7 +248,7 @@ async fn present_open_and_ack_are_device_aware() {
     assert!(body.is_null());
 
     let (status, body) = app
-        .send(Method::GET, "/reminders", None, Some(&alice))
+        .send(Method::GET, "/api/v1/reminders", None, Some(&alice))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert!(body["items"][0]["presented_on_device_at"].is_string());
@@ -257,7 +257,7 @@ async fn present_open_and_ack_are_device_aware() {
     let (status, body) = app
         .send(
             Method::POST,
-            &format!("/reminders/{reminder_id}/open"),
+            &format!("/api/v1/reminders/{reminder_id}/open"),
             None,
             Some(&alice),
         )
@@ -266,7 +266,7 @@ async fn present_open_and_ack_are_device_aware() {
     assert!(body.is_null());
 
     let (status, body) = app
-        .send(Method::GET, "/reminders", None, Some(&alice))
+        .send(Method::GET, "/api/v1/reminders", None, Some(&alice))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert!(body["items"][0]["opened_on_device_at"].is_string());
@@ -274,7 +274,7 @@ async fn present_open_and_ack_are_device_aware() {
     let (status, body) = app
         .send(
             Method::POST,
-            &format!("/reminders/{reminder_id}/ack"),
+            &format!("/api/v1/reminders/{reminder_id}/ack"),
             None,
             Some(&alice),
         )
@@ -285,7 +285,7 @@ async fn present_open_and_ack_are_device_aware() {
     let (status, _) = app
         .send(
             Method::POST,
-            &format!("/reminders/{reminder_id}/ack"),
+            &format!("/api/v1/reminders/{reminder_id}/ack"),
             None,
             Some(&alice),
         )
@@ -293,7 +293,7 @@ async fn present_open_and_ack_are_device_aware() {
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     let (status, body) = app
-        .send(Method::GET, "/reminders", None, Some(&alice))
+        .send(Method::GET, "/api/v1/reminders", None, Some(&alice))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert!(body["items"].as_array().unwrap().is_empty());
@@ -355,7 +355,7 @@ async fn reminder_device_state_is_per_device_but_ack_is_household_global() {
     let (status, _) = app
         .send(
             Method::POST,
-            "/devices/register",
+            "/api/v1/devices/register",
             Some(json!({
                 "device_id": "ios-phone",
                 "platform": "ios",
@@ -371,7 +371,7 @@ async fn reminder_device_state_is_per_device_but_ack_is_household_global() {
     let (status, _) = app
         .send(
             Method::POST,
-            "/devices/register",
+            "/api/v1/devices/register",
             Some(json!({
                 "device_id": "ios-tablet",
                 "platform": "ios",
@@ -385,7 +385,7 @@ async fn reminder_device_state_is_per_device_but_ack_is_household_global() {
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     let (status, body) = app
-        .send(Method::GET, "/reminders", None, Some(&alice_phone))
+        .send(Method::GET, "/api/v1/reminders", None, Some(&alice_phone))
         .await;
     assert_eq!(status, StatusCode::OK);
     let reminder_id = body["items"][0]["id"].as_str().unwrap().to_owned();
@@ -394,7 +394,7 @@ async fn reminder_device_state_is_per_device_but_ack_is_household_global() {
     let (status, _) = app
         .send(
             Method::POST,
-            &format!("/reminders/{reminder_id}/present"),
+            &format!("/api/v1/reminders/{reminder_id}/present"),
             None,
             Some(&alice_phone),
         )
@@ -402,13 +402,13 @@ async fn reminder_device_state_is_per_device_but_ack_is_household_global() {
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     let (status, phone_body) = app
-        .send(Method::GET, "/reminders", None, Some(&alice_phone))
+        .send(Method::GET, "/api/v1/reminders", None, Some(&alice_phone))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert!(phone_body["items"][0]["presented_on_device_at"].is_string());
 
     let (status, tablet_body) = app
-        .send(Method::GET, "/reminders", None, Some(&alice_tablet))
+        .send(Method::GET, "/api/v1/reminders", None, Some(&alice_tablet))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert!(tablet_body["items"][0]["presented_on_device_at"].is_null());
@@ -416,7 +416,7 @@ async fn reminder_device_state_is_per_device_but_ack_is_household_global() {
     let (status, _) = app
         .send(
             Method::POST,
-            &format!("/reminders/{reminder_id}/ack"),
+            &format!("/api/v1/reminders/{reminder_id}/ack"),
             None,
             Some(&alice_tablet),
         )
@@ -424,13 +424,13 @@ async fn reminder_device_state_is_per_device_but_ack_is_household_global() {
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     let (status, phone_after_ack) = app
-        .send(Method::GET, "/reminders", None, Some(&alice_phone))
+        .send(Method::GET, "/api/v1/reminders", None, Some(&alice_phone))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert!(phone_after_ack["items"].as_array().unwrap().is_empty());
 
     let (status, tablet_after_ack) = app
-        .send(Method::GET, "/reminders", None, Some(&alice_tablet))
+        .send(Method::GET, "/api/v1/reminders", None, Some(&alice_tablet))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert!(tablet_after_ack["items"].as_array().unwrap().is_empty());
