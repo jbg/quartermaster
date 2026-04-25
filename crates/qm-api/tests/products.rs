@@ -24,7 +24,7 @@ async fn deleted_manual_products_stay_visible_in_history_but_reject_new_stock() 
     let (_, product) = app
         .send(
             Method::POST,
-            "/products",
+            "/api/v1/products",
             Some(json!({
                 "name": "Spice Mix",
                 "brand": null,
@@ -40,7 +40,7 @@ async fn deleted_manual_products_stay_visible_in_history_but_reject_new_stock() 
     let (_, batch) = app
         .send(
             Method::POST,
-            "/stock",
+            "/api/v1/stock",
             Some(json!({
                 "product_id": product_id,
                 "location_id": pantry,
@@ -54,7 +54,7 @@ async fn deleted_manual_products_stay_visible_in_history_but_reject_new_stock() 
     assert_eq!(
         app.send(
             Method::DELETE,
-            &format!("/stock/{batch_id}"),
+            &format!("/api/v1/stock/{batch_id}"),
             None,
             Some(&alice)
         )
@@ -65,7 +65,7 @@ async fn deleted_manual_products_stay_visible_in_history_but_reject_new_stock() 
     assert_eq!(
         app.send(
             Method::DELETE,
-            &format!("/products/{product_id}"),
+            &format!("/api/v1/products/{product_id}"),
             None,
             Some(&alice)
         )
@@ -75,7 +75,12 @@ async fn deleted_manual_products_stay_visible_in_history_but_reject_new_stock() 
     );
 
     let (status, history) = app
-        .send(Method::GET, "/stock/events?limit=20", None, Some(&alice))
+        .send(
+            Method::GET,
+            "/api/v1/stock/events?limit=20",
+            None,
+            Some(&alice),
+        )
         .await;
     assert_eq!(status, StatusCode::OK);
     assert!(history["items"]
@@ -87,7 +92,7 @@ async fn deleted_manual_products_stay_visible_in_history_but_reject_new_stock() 
     let (status, _) = app
         .send(
             Method::POST,
-            "/stock",
+            "/api/v1/stock",
             Some(json!({
                 "product_id": product_id,
                 "location_id": pantry,
@@ -102,7 +107,7 @@ async fn deleted_manual_products_stay_visible_in_history_but_reject_new_stock() 
     let (status, batch_detail) = app
         .send(
             Method::GET,
-            &format!("/stock/{batch_id}"),
+            &format!("/api/v1/stock/{batch_id}"),
             None,
             Some(&alice),
         )

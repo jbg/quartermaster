@@ -71,7 +71,7 @@ async fn login_initializes_active_household_from_latest_joined_and_me_lists_memb
     assert_eq!(
         app.send(
             Method::POST,
-            "/invites/redeem",
+            "/api/v1/invites/redeem",
             Some(json!({ "invite_code": invite.code })),
             Some(&alice),
         )
@@ -165,7 +165,7 @@ async fn switch_household_is_session_scoped_and_rejects_non_members() {
     assert_eq!(
         app.send(
             Method::POST,
-            "/invites/redeem",
+            "/api/v1/invites/redeem",
             Some(json!({ "invite_code": invite.code })),
             Some(&alice_session_a),
         )
@@ -188,7 +188,7 @@ async fn switch_household_is_session_scoped_and_rejects_non_members() {
     let switch_status = app
         .send(
             Method::POST,
-            "/auth/switch-household",
+            "/api/v1/auth/switch-household",
             Some(json!({ "household_id": home_household })),
             Some(&alice_session_a),
         )
@@ -236,7 +236,7 @@ async fn switch_household_is_session_scoped_and_rejects_non_members() {
     assert_eq!(
         app.send(
             Method::GET,
-            &format!("/stock/{}", home_batch.id),
+            &format!("/api/v1/stock/{}", home_batch.id),
             None,
             Some(&alice_session_a),
         )
@@ -254,7 +254,7 @@ async fn switch_household_is_session_scoped_and_rejects_non_members() {
     assert_eq!(
         app.send(
             Method::POST,
-            "/auth/switch-household",
+            "/api/v1/auth/switch-household",
             Some(json!({ "household_id": outsider_household.id })),
             Some(&alice_session_a),
         )
@@ -301,7 +301,7 @@ async fn removing_active_membership_falls_back_and_last_membership_clears_active
     assert_eq!(
         app.send(
             Method::POST,
-            "/invites/redeem",
+            "/api/v1/invites/redeem",
             Some(json!({ "invite_code": invite.code })),
             Some(&alice),
         )
@@ -352,7 +352,7 @@ async fn authenticated_user_without_memberships_can_create_household_and_become_
     let (status, created) = app
         .send(
             Method::POST,
-            "/households",
+            "/api/v1/households",
             Some(json!({ "name": "Fresh Start", "timezone": "UTC" })),
             Some(&session_a),
         )
@@ -433,7 +433,7 @@ async fn create_household_restores_active_context_after_last_membership_is_remov
     let (status, created) = app
         .send(
             Method::POST,
-            "/households",
+            "/api/v1/households",
             Some(json!({ "name": "Replacement Home", "timezone": "UTC" })),
             Some(&alice),
         )
@@ -453,7 +453,7 @@ async fn logout_revokes_tokens_and_deletes_auth_session_row() {
     let (status, body) = app
         .send(
             Method::POST,
-            "/auth/login",
+            "/api/v1/auth/login",
             Some(json!({
                 "username": "alice",
                 "password": "password123",
@@ -475,7 +475,7 @@ async fn logout_revokes_tokens_and_deletes_auth_session_row() {
         .is_some());
 
     assert_eq!(
-        app.send(Method::POST, "/auth/logout", None, Some(access))
+        app.send(Method::POST, "/api/v1/auth/logout", None, Some(access))
             .await
             .0,
         StatusCode::NO_CONTENT
@@ -511,7 +511,7 @@ async fn expired_only_session_is_cleaned_up_when_access_token_is_used() {
     .unwrap();
 
     assert_eq!(
-        app.send(Method::GET, "/auth/me", None, Some(expired_access))
+        app.send(Method::GET, "/api/v1/auth/me", None, Some(expired_access))
             .await
             .0,
         StatusCode::UNAUTHORIZED
@@ -561,7 +561,7 @@ async fn expired_access_keeps_session_when_refresh_token_is_still_live() {
     .unwrap();
 
     assert_eq!(
-        app.send(Method::GET, "/auth/me", None, Some(expired_access))
+        app.send(Method::GET, "/api/v1/auth/me", None, Some(expired_access))
             .await
             .0,
         StatusCode::UNAUTHORIZED
@@ -579,7 +579,7 @@ async fn refresh_rotation_keeps_auth_session_row_alive() {
     let (status, login) = app
         .send(
             Method::POST,
-            "/auth/login",
+            "/api/v1/auth/login",
             Some(json!({
                 "username": "alice",
                 "password": "password123",
@@ -598,7 +598,7 @@ async fn refresh_rotation_keeps_auth_session_row_alive() {
     let (refresh_status, rotated) = app
         .send(
             Method::POST,
-            "/auth/refresh",
+            "/api/v1/auth/refresh",
             Some(json!({ "refresh_token": refresh })),
             None,
         )
@@ -624,7 +624,7 @@ async fn member_removal_and_location_deletion_guards_work() {
     let (_, invite) = app
         .send(
             Method::POST,
-            "/households/current/invites",
+            "/api/v1/households/current/invites",
             Some(json!({
                 "expires_at": "2999-01-01T00:00:00.000Z",
                 "max_uses": 1,
@@ -642,7 +642,7 @@ async fn member_removal_and_location_deletion_guards_work() {
     let members = app
         .send(
             Method::GET,
-            "/households/current/members",
+            "/api/v1/households/current/members",
             None,
             Some(&alice),
         )
@@ -660,7 +660,7 @@ async fn member_removal_and_location_deletion_guards_work() {
     assert_eq!(
         app.send(
             Method::DELETE,
-            &format!("/households/current/members/{bob_id}"),
+            &format!("/api/v1/households/current/members/{bob_id}"),
             None,
             Some(&alice),
         )
@@ -671,7 +671,7 @@ async fn member_removal_and_location_deletion_guards_work() {
     assert_eq!(
         app.send(
             Method::DELETE,
-            &format!("/households/current/members/{alice_id}"),
+            &format!("/api/v1/households/current/members/{alice_id}"),
             None,
             Some(&alice),
         )
@@ -714,7 +714,7 @@ async fn member_removal_and_location_deletion_guards_work() {
     assert_eq!(
         app.send(
             Method::DELETE,
-            &format!("/locations/{pantry_id}"),
+            &format!("/api/v1/locations/{pantry_id}"),
             None,
             Some(&alice),
         )
@@ -726,7 +726,7 @@ async fn member_removal_and_location_deletion_guards_work() {
     let (status, new_loc) = app
         .send(
             Method::POST,
-            "/locations",
+            "/api/v1/locations",
             Some(json!({ "name": "Overflow", "kind": "pantry" })),
             Some(&alice),
         )
@@ -735,7 +735,7 @@ async fn member_removal_and_location_deletion_guards_work() {
     assert_eq!(
         app.send(
             Method::DELETE,
-            &format!("/locations/{}", new_loc["id"].as_str().unwrap()),
+            &format!("/api/v1/locations/{}", new_loc["id"].as_str().unwrap()),
             None,
             Some(&alice),
         )
@@ -828,7 +828,7 @@ async fn stale_tokens_follow_current_household_and_cannot_access_prior_household
     assert_eq!(
         app.send(
             Method::POST,
-            "/invites/redeem",
+            "/api/v1/invites/redeem",
             Some(json!({ "invite_code": b_invite.code })),
             Some(&alice),
         )
@@ -846,7 +846,7 @@ async fn stale_tokens_follow_current_household_and_cannot_access_prior_household
     assert_eq!(
         app.send(
             Method::DELETE,
-            &format!("/invites/{}", a_invite.id),
+            &format!("/api/v1/invites/{}", a_invite.id),
             None,
             Some(&alice),
         )
@@ -857,7 +857,7 @@ async fn stale_tokens_follow_current_household_and_cannot_access_prior_household
     assert_eq!(
         app.send(
             Method::GET,
-            &format!("/stock/{}", batch_a.id),
+            &format!("/api/v1/stock/{}", batch_a.id),
             None,
             Some(&alice),
         )

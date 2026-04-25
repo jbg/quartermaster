@@ -29,7 +29,7 @@ async fn login_is_rate_limited_per_client_ip() {
     let first = app
         .send_with_headers(
             Method::POST,
-            "/auth/login",
+            "/api/v1/auth/login",
             Some(json!({"username": "alice", "password": "password123"})),
             None,
             headers.clone(),
@@ -38,7 +38,7 @@ async fn login_is_rate_limited_per_client_ip() {
     let second = app
         .send_with_headers(
             Method::POST,
-            "/auth/login",
+            "/api/v1/auth/login",
             Some(json!({"username": "alice", "password": "password123"})),
             None,
             headers,
@@ -74,14 +74,20 @@ async fn stock_history_is_rate_limited_per_client_ip() {
     let first = app
         .send_with_headers(
             Method::GET,
-            "/stock/events",
+            "/api/v1/stock/events",
             None,
             Some(&alice),
             headers.clone(),
         )
         .await;
     let second = app
-        .send_with_headers(Method::GET, "/stock/events", None, Some(&alice), headers)
+        .send_with_headers(
+            Method::GET,
+            "/api/v1/stock/events",
+            None,
+            Some(&alice),
+            headers,
+        )
         .await;
 
     assert_eq!(first.0, StatusCode::OK);
@@ -107,7 +113,7 @@ async fn socket_mode_ignores_forwarded_headers() {
     let first = app
         .send_with_headers(
             Method::POST,
-            "/auth/login",
+            "/api/v1/auth/login",
             Some(json!({"username": "alice", "password": "password123"})),
             None,
             headers.clone(),
@@ -116,7 +122,7 @@ async fn socket_mode_ignores_forwarded_headers() {
     let second = app
         .send_with_headers(
             Method::POST,
-            "/auth/login",
+            "/api/v1/auth/login",
             Some(json!({"username": "alice", "password": "password123"})),
             None,
             headers,
@@ -150,7 +156,7 @@ async fn forwarded_mode_falls_back_when_header_is_blank() {
     let first = app
         .send_with_headers(
             Method::POST,
-            "/auth/login",
+            "/api/v1/auth/login",
             Some(json!({"username": "alice", "password": "password123"})),
             None,
             headers.clone(),
@@ -159,7 +165,7 @@ async fn forwarded_mode_falls_back_when_header_is_blank() {
     let second = app
         .send_with_headers(
             Method::POST,
-            "/auth/login",
+            "/api/v1/auth/login",
             Some(json!({"username": "alice", "password": "password123"})),
             None,
             headers,
@@ -194,7 +200,7 @@ async fn forwarded_mode_ignores_header_from_untrusted_peer() {
     let first = app
         .send_with_peer_and_request_id_and_headers(
             Method::POST,
-            "/auth/login",
+            "/api/v1/auth/login",
             Some(json!({"username": "alice", "password": "password123"})),
             None,
             None,
@@ -205,7 +211,7 @@ async fn forwarded_mode_ignores_header_from_untrusted_peer() {
     let second = app
         .send_with_peer_and_request_id_and_headers(
             Method::POST,
-            "/auth/login",
+            "/api/v1/auth/login",
             Some(json!({"username": "alice", "password": "password123"})),
             None,
             None,

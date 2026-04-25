@@ -1535,7 +1535,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/auth/login")
+                    .uri("/api/v1/auth/login")
                     .header("content-type", "application/json")
                     .body(Body::from(
                         json!({
@@ -1560,7 +1560,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/devices/register")
+                    .uri("/api/v1/devices/register")
                     .header("authorization", format!("Bearer {access_token}"))
                     .header("content-type", "application/json")
                     .body(Body::from(

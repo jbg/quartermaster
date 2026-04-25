@@ -66,7 +66,7 @@ pub struct ProductDto {
     pub source: ProductSource,
     /// RFC-3339 timestamp when the product was soft-deleted. Present only
     /// when the caller explicitly asked for deleted rows (e.g. via
-    /// `/products/search?include_deleted=true` or the history timeline).
+    /// `/api/v1/products/search?include_deleted=true` or the history timeline).
     pub deleted_at: Option<String>,
 }
 

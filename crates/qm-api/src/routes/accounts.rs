@@ -63,7 +63,7 @@ pub struct RegisterRequest {
     /// Required unless the server is in `first_run_only` mode and no users
     /// exist yet, or in `open` mode.
     pub invite_code: Option<String>,
-    /// Optional label applied to the refresh token (shown on `/auth/me`).
+    /// Optional label applied to the refresh token (shown on `/api/v1/auth/me`).
     pub device_label: Option<String>,
 }
 

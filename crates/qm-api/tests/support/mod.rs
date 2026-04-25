@@ -177,7 +177,7 @@ impl TestApp {
     pub async fn register(&self, username: &str, invite_code: Option<&str>) -> (StatusCode, Value) {
         self.send(
             Method::POST,
-            "/auth/register",
+            "/api/v1/auth/register",
             Some(json!({
                 "username": username,
                 "password": "password123",
@@ -194,7 +194,7 @@ impl TestApp {
         let (status, body) = self
             .send(
                 Method::POST,
-                "/auth/login",
+                "/api/v1/auth/login",
                 Some(json!({
                     "username": username,
                     "password": "password123",
@@ -208,7 +208,7 @@ impl TestApp {
 
     #[allow(dead_code)]
     pub async fn me(&self, bearer: &str) -> Value {
-        self.send(Method::GET, "/auth/me", None, Some(bearer))
+        self.send(Method::GET, "/api/v1/auth/me", None, Some(bearer))
             .await
             .1
     }

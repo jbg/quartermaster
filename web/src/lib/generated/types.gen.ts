@@ -169,7 +169,7 @@ export type ProductDto = {
     /**
      * RFC-3339 timestamp when the product was soft-deleted. Present only
      * when the caller explicitly asked for deleted rows (e.g. via
-     * `/products/search?include_deleted=true` or the history timeline).
+     * `/api/v1/products/search?include_deleted=true` or the history timeline).
      */
     deleted_at?: string | null;
     family: UnitFamily;
@@ -206,7 +206,7 @@ export type RegisterDeviceRequest = {
 
 export type RegisterRequest = {
     /**
-     * Optional label applied to the refresh token (shown on `/auth/me`).
+     * Optional label applied to the refresh token (shown on `/api/v1/auth/me`).
      */
     device_label?: string | null;
     email?: string | null;
@@ -277,7 +277,7 @@ export type StockEventDto = {
     batch_expires_on?: string | null;
     batch_id: string;
     /**
-     * Shared by all rows written by a single `POST /stock/consume` call.
+     * Shared by all rows written by a single `POST /api/v1/stock/consume` call.
      */
     consume_request_id?: string | null;
     created_at: string;
@@ -384,7 +384,7 @@ export type AuthLoginData = {
     body: LoginRequest;
     path?: never;
     query?: never;
-    url: '/auth/login';
+    url: '/api/v1/auth/login';
 };
 
 export type AuthLoginErrors = {
@@ -404,7 +404,7 @@ export type AuthLogoutData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/auth/logout';
+    url: '/api/v1/auth/logout';
 };
 
 export type AuthLogoutErrors = {
@@ -423,7 +423,7 @@ export type AuthMeData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/auth/me';
+    url: '/api/v1/auth/me';
 };
 
 export type AuthMeErrors = {
@@ -442,7 +442,7 @@ export type AuthRefreshData = {
     body: RefreshRequest;
     path?: never;
     query?: never;
-    url: '/auth/refresh';
+    url: '/api/v1/auth/refresh';
 };
 
 export type AuthRefreshErrors = {
@@ -462,7 +462,7 @@ export type AuthRegisterData = {
     body: RegisterRequest;
     path?: never;
     query?: never;
-    url: '/auth/register';
+    url: '/api/v1/auth/register';
 };
 
 export type AuthRegisterErrors = {
@@ -484,7 +484,7 @@ export type AuthSwitchHouseholdData = {
     body: SwitchHouseholdRequest;
     path?: never;
     query?: never;
-    url: '/auth/switch-household';
+    url: '/api/v1/auth/switch-household';
 };
 
 export type AuthSwitchHouseholdErrors = {
@@ -504,7 +504,7 @@ export type DeviceRegisterData = {
     body: RegisterDeviceRequest;
     path?: never;
     query?: never;
-    url: '/devices/register';
+    url: '/api/v1/devices/register';
 };
 
 export type DeviceRegisterErrors = {
@@ -523,7 +523,7 @@ export type HealthzData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/healthz';
+    url: '/api/v1/healthz';
 };
 
 export type HealthzResponses = {
@@ -536,7 +536,7 @@ export type HouseholdCreateData = {
     body: CreateHouseholdRequest;
     path?: never;
     query?: never;
-    url: '/households';
+    url: '/api/v1/households';
 };
 
 export type HouseholdCreateErrors = {
@@ -555,7 +555,7 @@ export type HouseholdCurrentGetData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/households/current';
+    url: '/api/v1/households/current';
 };
 
 export type HouseholdCurrentGetErrors = {
@@ -574,7 +574,7 @@ export type HouseholdCurrentUpdateData = {
     body: UpdateHouseholdRequest;
     path?: never;
     query?: never;
-    url: '/households/current';
+    url: '/api/v1/households/current';
 };
 
 export type HouseholdCurrentUpdateErrors = {
@@ -593,7 +593,7 @@ export type HouseholdInvitesListData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/households/current/invites';
+    url: '/api/v1/households/current/invites';
 };
 
 export type HouseholdInvitesListResponses = {
@@ -606,7 +606,7 @@ export type HouseholdInviteCreateData = {
     body: CreateInviteRequest;
     path?: never;
     query?: never;
-    url: '/households/current/invites';
+    url: '/api/v1/households/current/invites';
 };
 
 export type HouseholdInviteCreateErrors = {
@@ -625,7 +625,7 @@ export type HouseholdMembersListData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/households/current/members';
+    url: '/api/v1/households/current/members';
 };
 
 export type HouseholdMembersListResponses = {
@@ -640,7 +640,7 @@ export type HouseholdMemberRemoveData = {
         user_id: string;
     };
     query?: never;
-    url: '/households/current/members/{user_id}';
+    url: '/api/v1/households/current/members/{user_id}';
 };
 
 export type HouseholdMemberRemoveErrors = {
@@ -660,7 +660,7 @@ export type InviteRedeemData = {
     body: RedeemInviteRequest;
     path?: never;
     query?: never;
-    url: '/invites/redeem';
+    url: '/api/v1/invites/redeem';
 };
 
 export type InviteRedeemErrors = {
@@ -681,7 +681,7 @@ export type InviteRevokeData = {
         id: string;
     };
     query?: never;
-    url: '/invites/{id}';
+    url: '/api/v1/invites/{id}';
 };
 
 export type InviteRevokeErrors = {
@@ -700,7 +700,7 @@ export type LocationsListData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/locations';
+    url: '/api/v1/locations';
 };
 
 export type LocationsListErrors = {
@@ -719,7 +719,7 @@ export type LocationsCreateData = {
     body: CreateLocationRequest;
     path?: never;
     query?: never;
-    url: '/locations';
+    url: '/api/v1/locations';
 };
 
 export type LocationsCreateResponses = {
@@ -734,7 +734,7 @@ export type LocationsDeleteData = {
         id: string;
     };
     query?: never;
-    url: '/locations/{id}';
+    url: '/api/v1/locations/{id}';
 };
 
 export type LocationsDeleteErrors = {
@@ -755,7 +755,7 @@ export type LocationsUpdateData = {
         id: string;
     };
     query?: never;
-    url: '/locations/{id}';
+    url: '/api/v1/locations/{id}';
 };
 
 export type LocationsUpdateResponses = {
@@ -768,7 +768,7 @@ export type ProductCreateData = {
     body: CreateProductRequest;
     path?: never;
     query?: never;
-    url: '/products';
+    url: '/api/v1/products';
 };
 
 export type ProductCreateErrors = {
@@ -792,7 +792,7 @@ export type ProductByBarcodeData = {
         barcode: string;
     };
     query?: never;
-    url: '/products/by-barcode/{barcode}';
+    url: '/api/v1/products/by-barcode/{barcode}';
 };
 
 export type ProductByBarcodeErrors = {
@@ -822,7 +822,7 @@ export type ProductSearchData = {
          */
         include_deleted?: boolean | null;
     };
-    url: '/products/search';
+    url: '/api/v1/products/search';
 };
 
 export type ProductSearchErrors = {
@@ -843,7 +843,7 @@ export type ProductDeleteData = {
         id: string;
     };
     query?: never;
-    url: '/products/{id}';
+    url: '/api/v1/products/{id}';
 };
 
 export type ProductDeleteErrors = {
@@ -869,7 +869,7 @@ export type ProductGetData = {
         id: string;
     };
     query?: never;
-    url: '/products/{id}';
+    url: '/api/v1/products/{id}';
 };
 
 export type ProductGetErrors = {
@@ -890,7 +890,7 @@ export type ProductUpdateData = {
         id: string;
     };
     query?: never;
-    url: '/products/{id}';
+    url: '/api/v1/products/{id}';
 };
 
 export type ProductUpdateErrors = {
@@ -914,7 +914,7 @@ export type ProductRefreshData = {
         id: string;
     };
     query?: never;
-    url: '/products/{id}/refresh';
+    url: '/api/v1/products/{id}/refresh';
 };
 
 export type ProductRefreshErrors = {
@@ -937,7 +937,7 @@ export type ProductRestoreData = {
         id: string;
     };
     query?: never;
-    url: '/products/{id}/restore';
+    url: '/api/v1/products/{id}/restore';
 };
 
 export type ProductRestoreErrors = {
@@ -961,7 +961,7 @@ export type RemindersListData = {
         after_id?: string | null;
         limit?: number | null;
     };
-    url: '/reminders';
+    url: '/api/v1/reminders';
 };
 
 export type RemindersListErrors = {
@@ -983,7 +983,7 @@ export type RemindersAckData = {
         id: string;
     };
     query?: never;
-    url: '/reminders/{id}/ack';
+    url: '/api/v1/reminders/{id}/ack';
 };
 
 export type RemindersAckErrors = {
@@ -1005,7 +1005,7 @@ export type RemindersOpenData = {
         id: string;
     };
     query?: never;
-    url: '/reminders/{id}/open';
+    url: '/api/v1/reminders/{id}/open';
 };
 
 export type RemindersOpenErrors = {
@@ -1027,7 +1027,7 @@ export type RemindersPresentData = {
         id: string;
     };
     query?: never;
-    url: '/reminders/{id}/present';
+    url: '/api/v1/reminders/{id}/present';
 };
 
 export type RemindersPresentErrors = {
@@ -1060,7 +1060,7 @@ export type StockListData = {
          */
         include_depleted?: boolean | null;
     };
-    url: '/stock';
+    url: '/api/v1/stock';
 };
 
 export type StockListErrors = {
@@ -1079,7 +1079,7 @@ export type StockCreateData = {
     body: CreateStockRequest;
     path?: never;
     query?: never;
-    url: '/stock';
+    url: '/api/v1/stock';
 };
 
 export type StockCreateErrors = {
@@ -1099,7 +1099,7 @@ export type StockConsumeData = {
     body: ConsumeRequest;
     path?: never;
     query?: never;
-    url: '/stock/consume';
+    url: '/api/v1/stock/consume';
 };
 
 export type StockConsumeErrors = {
@@ -1123,7 +1123,7 @@ export type StockListEventsData = {
         before_id?: string | null;
         limit?: number | null;
     };
-    url: '/stock/events';
+    url: '/api/v1/stock/events';
 };
 
 export type StockListEventsErrors = {
@@ -1143,7 +1143,7 @@ export type StockRestoreManyData = {
     body: RestoreManyRequest;
     path?: never;
     query?: never;
-    url: '/stock/restore-many';
+    url: '/api/v1/stock/restore-many';
 };
 
 export type StockRestoreManyErrors = {
@@ -1165,7 +1165,7 @@ export type StockDeleteData = {
         id: string;
     };
     query?: never;
-    url: '/stock/{id}';
+    url: '/api/v1/stock/{id}';
 };
 
 export type StockDeleteErrors = {
@@ -1186,7 +1186,7 @@ export type StockGetData = {
         id: string;
     };
     query?: never;
-    url: '/stock/{id}';
+    url: '/api/v1/stock/{id}';
 };
 
 export type StockGetErrors = {
@@ -1207,7 +1207,7 @@ export type StockUpdateData = {
         id: string;
     };
     query?: never;
-    url: '/stock/{id}';
+    url: '/api/v1/stock/{id}';
 };
 
 export type StockUpdateErrors = {
@@ -1233,7 +1233,7 @@ export type StockListBatchEventsData = {
         before_id?: string | null;
         limit?: number | null;
     };
-    url: '/stock/{id}/events';
+    url: '/api/v1/stock/{id}/events';
 };
 
 export type StockListBatchEventsErrors = {
@@ -1255,7 +1255,7 @@ export type StockRestoreData = {
         id: string;
     };
     query?: never;
-    url: '/stock/{id}/restore';
+    url: '/api/v1/stock/{id}/restore';
 };
 
 export type StockRestoreErrors = {
@@ -1275,7 +1275,7 @@ export type UnitsListData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/units';
+    url: '/api/v1/units';
 };
 
 export type UnitsListResponses = {

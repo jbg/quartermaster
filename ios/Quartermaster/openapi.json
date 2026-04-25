@@ -10,7 +10,7 @@
     "version": "0.1.0"
   },
   "paths": {
-    "/auth/login": {
+    "/api/v1/auth/login": {
       "post": {
         "tags": [
           "accounts"
@@ -60,7 +60,7 @@
         }
       }
     },
-    "/auth/logout": {
+    "/api/v1/auth/logout": {
       "post": {
         "tags": [
           "accounts"
@@ -88,7 +88,7 @@
         ]
       }
     },
-    "/auth/me": {
+    "/api/v1/auth/me": {
       "get": {
         "tags": [
           "accounts"
@@ -123,7 +123,7 @@
         ]
       }
     },
-    "/auth/refresh": {
+    "/api/v1/auth/refresh": {
       "post": {
         "tags": [
           "accounts"
@@ -173,7 +173,7 @@
         }
       }
     },
-    "/auth/register": {
+    "/api/v1/auth/register": {
       "post": {
         "tags": [
           "accounts"
@@ -243,7 +243,7 @@
         }
       }
     },
-    "/auth/switch-household": {
+    "/api/v1/auth/switch-household": {
       "post": {
         "tags": [
           "accounts"
@@ -298,7 +298,7 @@
         ]
       }
     },
-    "/devices/register": {
+    "/api/v1/devices/register": {
       "post": {
         "tags": [
           "devices"
@@ -336,7 +336,7 @@
         ]
       }
     },
-    "/healthz": {
+    "/api/v1/healthz": {
       "get": {
         "tags": [
           "health"
@@ -356,7 +356,7 @@
         }
       }
     },
-    "/households": {
+    "/api/v1/households": {
       "post": {
         "tags": [
           "households"
@@ -401,7 +401,7 @@
         ]
       }
     },
-    "/households/current": {
+    "/api/v1/households/current": {
       "get": {
         "tags": [
           "households"
@@ -479,7 +479,7 @@
         ]
       }
     },
-    "/households/current/invites": {
+    "/api/v1/households/current/invites": {
       "get": {
         "tags": [
           "households"
@@ -550,7 +550,7 @@
         ]
       }
     },
-    "/households/current/members": {
+    "/api/v1/households/current/members": {
       "get": {
         "tags": [
           "households"
@@ -578,7 +578,7 @@
         ]
       }
     },
-    "/households/current/members/{user_id}": {
+    "/api/v1/households/current/members/{user_id}": {
       "delete": {
         "tags": [
           "households"
@@ -627,7 +627,7 @@
         ]
       }
     },
-    "/invites/redeem": {
+    "/api/v1/invites/redeem": {
       "post": {
         "tags": [
           "households"
@@ -665,7 +665,7 @@
         ]
       }
     },
-    "/invites/{id}": {
+    "/api/v1/invites/{id}": {
       "delete": {
         "tags": [
           "households"
@@ -704,7 +704,7 @@
         ]
       }
     },
-    "/locations": {
+    "/api/v1/locations": {
       "get": {
         "tags": [
           "locations"
@@ -775,7 +775,7 @@
         ]
       }
     },
-    "/locations/{id}": {
+    "/api/v1/locations/{id}": {
       "delete": {
         "tags": [
           "locations"
@@ -858,7 +858,7 @@
         ]
       }
     },
-    "/products": {
+    "/api/v1/products": {
       "post": {
         "tags": [
           "products"
@@ -903,7 +903,7 @@
         ]
       }
     },
-    "/products/by-barcode/{barcode}": {
+    "/api/v1/products/by-barcode/{barcode}": {
       "get": {
         "tags": [
           "products"
@@ -979,7 +979,7 @@
         ]
       }
     },
-    "/products/search": {
+    "/api/v1/products/search": {
       "get": {
         "tags": [
           "products"
@@ -1048,7 +1048,7 @@
         ]
       }
     },
-    "/products/{id}": {
+    "/api/v1/products/{id}": {
       "get": {
         "tags": [
           "products"
@@ -1236,7 +1236,7 @@
         ]
       }
     },
-    "/products/{id}/refresh": {
+    "/api/v1/products/{id}/refresh": {
       "post": {
         "tags": [
           "products"
@@ -1302,7 +1302,7 @@
         ]
       }
     },
-    "/products/{id}/restore": {
+    "/api/v1/products/{id}/restore": {
       "post": {
         "tags": [
           "products"
@@ -1358,7 +1358,7 @@
         ]
       }
     },
-    "/reminders": {
+    "/api/v1/reminders": {
       "get": {
         "tags": [
           "reminders"
@@ -1440,7 +1440,7 @@
         ]
       }
     },
-    "/reminders/{id}/ack": {
+    "/api/v1/reminders/{id}/ack": {
       "post": {
         "tags": [
           "reminders"
@@ -1489,7 +1489,7 @@
         ]
       }
     },
-    "/reminders/{id}/open": {
+    "/api/v1/reminders/{id}/open": {
       "post": {
         "tags": [
           "reminders"
@@ -1538,7 +1538,7 @@
         ]
       }
     },
-    "/reminders/{id}/present": {
+    "/api/v1/reminders/{id}/present": {
       "post": {
         "tags": [
           "reminders"
@@ -1587,7 +1587,7 @@
         ]
       }
     },
-    "/stock": {
+    "/api/v1/stock": {
       "get": {
         "tags": [
           "stock"
@@ -1725,7 +1725,7 @@
         ]
       }
     },
-    "/stock/consume": {
+    "/api/v1/stock/consume": {
       "post": {
         "tags": [
           "stock"
@@ -1780,7 +1780,7 @@
         ]
       }
     },
-    "/stock/events": {
+    "/api/v1/stock/events": {
       "get": {
         "tags": [
           "stock"
@@ -1862,7 +1862,7 @@
         ]
       }
     },
-    "/stock/restore-many": {
+    "/api/v1/stock/restore-many": {
       "post": {
         "tags": [
           "stock"
@@ -1917,7 +1917,7 @@
         ]
       }
     },
-    "/stock/{id}": {
+    "/api/v1/stock/{id}": {
       "get": {
         "tags": [
           "stock"
@@ -2064,7 +2064,7 @@
         ]
       }
     },
-    "/stock/{id}/events": {
+    "/api/v1/stock/{id}/events": {
       "get": {
         "tags": [
           "stock"
@@ -2155,7 +2155,7 @@
         ]
       }
     },
-    "/stock/{id}/restore": {
+    "/api/v1/stock/{id}/restore": {
       "post": {
         "tags": [
           "stock"
@@ -2211,7 +2211,7 @@
         ]
       }
     },
-    "/units": {
+    "/api/v1/units": {
       "get": {
         "tags": [
           "units"
@@ -2750,7 +2750,7 @@
               "string",
               "null"
             ],
-            "description": "RFC-3339 timestamp when the product was soft-deleted. Present only\nwhen the caller explicitly asked for deleted rows (e.g. via\n`/products/search?include_deleted=true` or the history timeline)."
+            "description": "RFC-3339 timestamp when the product was soft-deleted. Present only\nwhen the caller explicitly asked for deleted rows (e.g. via\n`/api/v1/products/search?include_deleted=true` or the history timeline)."
           },
           "family": {
             "$ref": "#/components/schemas/UnitFamily"
@@ -2871,7 +2871,7 @@
               "string",
               "null"
             ],
-            "description": "Optional label applied to the refresh token (shown on `/auth/me`)."
+            "description": "Optional label applied to the refresh token (shown on `/api/v1/auth/me`)."
           },
           "email": {
             "type": [
@@ -3110,7 +3110,7 @@
               "null"
             ],
             "format": "uuid",
-            "description": "Shared by all rows written by a single `POST /stock/consume` call."
+            "description": "Shared by all rows written by a single `POST /api/v1/stock/consume` call."
           },
           "created_at": {
             "type": "string"

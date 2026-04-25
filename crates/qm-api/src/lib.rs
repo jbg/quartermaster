@@ -19,6 +19,7 @@ use tower_http::{
 use tracing::{field::Empty, Level};
 use utoipa::{
     openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
+    openapi::{OpenApi as UtoipaOpenApi, Paths},
     Modify, OpenApi,
 };
 
@@ -33,6 +34,8 @@ pub mod types;
 pub use error::{ApiError, ApiResult};
 use openfoodfacts::OffCircuitBreaker;
 use rate_limit::{ClientIpMode, RateLimitLayerState, RateLimitTarget, TrustedProxyNet};
+
+pub const API_PREFIX: &str = "/api/v1";
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -333,12 +336,16 @@ impl Modify for SecurityAddon {
 )]
 pub struct ApiDoc;
 
+pub fn openapi_spec() -> UtoipaOpenApi {
+    let spec = ApiDoc::openapi();
+    UtoipaOpenApi::new(spec.info.clone(), Paths::new()).nest(API_PREFIX, spec)
+}
+
 pub fn router(state: AppState) -> Router {
-    let openapi_spec = ApiDoc::openapi();
+    let openapi_spec = openapi_spec();
     let web_dist_dir = state.config.web_dist_dir.clone();
-    let app = Router::new()
+    let api_routes = Router::new()
         .merge(routes::health::router())
-        .merge(routes::join::router())
         .merge(routes::accounts::router(RateLimitLayerState::new(
             state.clone(),
             RateLimitTarget::Auth,
@@ -356,22 +363,30 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             RateLimitTarget::History,
         )))
-        .merge(
-            if state.config.auth_session_sweep_trigger_secret.is_some()
-                || state.config.expiry_reminder_trigger_secret.is_some()
-                || state.config.android_smoke_seed_trigger_secret.is_some()
-            {
-                routes::maintenance::router()
-            } else {
-                Router::new()
-            },
-        )
         .route(
             "/openapi.json",
             get(move || {
                 let spec = openapi_spec.clone();
                 async move { Json(spec) }
             }),
+        );
+    let maintenance_routes = if state.config.auth_session_sweep_trigger_secret.is_some()
+        || state.config.expiry_reminder_trigger_secret.is_some()
+        || state.config.android_smoke_seed_trigger_secret.is_some()
+    {
+        routes::maintenance::router()
+    } else {
+        Router::new()
+    };
+
+    let app = Router::new()
+        .merge(routes::health::router())
+        .merge(routes::join::router())
+        .nest(API_PREFIX, api_routes)
+        .merge(
+            // Operator hooks stay out of the public API contract and keep
+            // their stable deployment paths.
+            maintenance_routes,
         )
         .layer(
             ServiceBuilder::new()
@@ -479,22 +494,12 @@ async fn serve_web_file(fallback_file: PathBuf) -> axum::response::Response {
 
 fn is_api_path(path: &str) -> bool {
     path == "/healthz"
-        || path == "/openapi.json"
+        || path
+            .strip_prefix(API_PREFIX)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
         || path == "/docs"
         || path.starts_with("/docs/")
         || path == "/.well-known/apple-app-site-association"
-        || path.starts_with("/auth/")
-        || path.starts_with("/devices/")
-        || path.starts_with("/households/")
-        || path == "/locations"
-        || path.starts_with("/locations/")
-        || path == "/units"
-        || path.starts_with("/units/")
-        || path.starts_with("/products/")
-        || path == "/stock"
-        || path.starts_with("/stock/")
-        || path == "/reminders"
-        || path.starts_with("/reminders/")
         || path.starts_with("/internal/")
 }
 

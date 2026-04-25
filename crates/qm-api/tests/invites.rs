@@ -30,7 +30,7 @@ async fn invite_admin_flow_and_registration_work() {
     let (status, invite) = app
         .send(
             Method::POST,
-            "/households/current/invites",
+            "/api/v1/households/current/invites",
             Some(invite_body(1)),
             Some(&alice),
         )
@@ -41,7 +41,7 @@ async fn invite_admin_flow_and_registration_work() {
     let (status, list) = app
         .send(
             Method::GET,
-            "/households/current/invites",
+            "/api/v1/households/current/invites",
             None,
             Some(&alice),
         )
@@ -78,7 +78,7 @@ async fn revoke_invite_and_existing_user_redeem_flow() {
     let (_, invite) = app
         .send(
             Method::POST,
-            "/households/current/invites",
+            "/api/v1/households/current/invites",
             Some(invite_body(2)),
             Some(&alice),
         )
@@ -90,7 +90,7 @@ async fn revoke_invite_and_existing_user_redeem_flow() {
     let (status, _) = app
         .send(
             Method::POST,
-            "/invites/redeem",
+            "/api/v1/invites/redeem",
             Some(json!({ "invite_code": code })),
             Some(&bob),
         )
@@ -105,7 +105,7 @@ async fn revoke_invite_and_existing_user_redeem_flow() {
     let (_, invite2) = app
         .send(
             Method::POST,
-            "/households/current/invites",
+            "/api/v1/households/current/invites",
             Some(invite_body(1)),
             Some(&alice),
         )
@@ -115,7 +115,7 @@ async fn revoke_invite_and_existing_user_redeem_flow() {
     assert_eq!(
         app.send(
             Method::DELETE,
-            &format!("/invites/{invite_id}"),
+            &format!("/api/v1/invites/{invite_id}"),
             None,
             Some(&alice),
         )
@@ -142,7 +142,7 @@ async fn redeeming_same_household_invite_is_idempotent() {
     let (_, invite) = app
         .send(
             Method::POST,
-            "/households/current/invites",
+            "/api/v1/households/current/invites",
             Some(invite_body(2)),
             Some(&alice),
         )
@@ -155,7 +155,7 @@ async fn redeeming_same_household_invite_is_idempotent() {
     assert_eq!(
         app.send(
             Method::POST,
-            "/invites/redeem",
+            "/api/v1/invites/redeem",
             Some(json!({ "invite_code": code })),
             Some(&bob),
         )
@@ -166,7 +166,7 @@ async fn redeeming_same_household_invite_is_idempotent() {
     assert_eq!(
         app.send(
             Method::POST,
-            "/invites/redeem",
+            "/api/v1/invites/redeem",
             Some(json!({ "invite_code": invite["code"].as_str().unwrap() })),
             Some(&bob),
         )
@@ -200,7 +200,7 @@ async fn invalid_invite_registration_does_not_create_orphaned_user() {
     let (_, invite) = app
         .send(
             Method::POST,
-            "/households/current/invites",
+            "/api/v1/households/current/invites",
             Some(invite_body(1)),
             Some(&alice),
         )
@@ -235,7 +235,7 @@ async fn concurrent_redeem_for_same_user_consumes_invite_once() {
     let (_, invite) = app
         .send(
             Method::POST,
-            "/households/current/invites",
+            "/api/v1/households/current/invites",
             Some(invite_body(2)),
             Some(&alice),
         )
@@ -261,7 +261,7 @@ async fn concurrent_redeem_for_same_user_consumes_invite_once() {
         app_first
             .send(
                 Method::POST,
-                "/invites/redeem",
+                "/api/v1/invites/redeem",
                 Some(json!({ "invite_code": code_first })),
                 Some(&bob_first),
             )
@@ -275,7 +275,7 @@ async fn concurrent_redeem_for_same_user_consumes_invite_once() {
             app_second
                 .send(
                     Method::POST,
-                    "/invites/redeem",
+                    "/api/v1/invites/redeem",
                     Some(json!({ "invite_code": code })),
                     Some(&bob_second),
                 )
@@ -290,7 +290,7 @@ async fn concurrent_redeem_for_same_user_consumes_invite_once() {
             app_second
                 .send(
                     Method::POST,
-                    "/invites/redeem",
+                    "/api/v1/invites/redeem",
                     Some(json!({ "invite_code": code })),
                     Some(&bob_second),
                 )
@@ -345,7 +345,7 @@ async fn concurrent_single_use_registration_creates_no_orphaned_user() {
     let (_, invite) = app
         .send(
             Method::POST,
-            "/households/current/invites",
+            "/api/v1/households/current/invites",
             Some(invite_body(1)),
             Some(&alice),
         )
@@ -431,7 +431,7 @@ async fn concurrent_multi_use_redeems_do_not_exceed_max_uses() {
     let (_, invite) = app
         .send(
             Method::POST,
-            "/households/current/invites",
+            "/api/v1/households/current/invites",
             Some(invite_body(2)),
             Some(&alice),
         )
@@ -462,7 +462,7 @@ async fn concurrent_multi_use_redeems_do_not_exceed_max_uses() {
         app_r1
             .send(
                 Method::POST,
-                "/invites/redeem",
+                "/api/v1/invites/redeem",
                 Some(json!({ "invite_code": code_r1 })),
                 Some(&bob_r1),
             )
@@ -477,7 +477,7 @@ async fn concurrent_multi_use_redeems_do_not_exceed_max_uses() {
             app_r2
                 .send(
                     Method::POST,
-                    "/invites/redeem",
+                    "/api/v1/invites/redeem",
                     Some(json!({ "invite_code": code_r2 })),
                     Some(&carol_r2),
                 )
@@ -493,7 +493,7 @@ async fn concurrent_multi_use_redeems_do_not_exceed_max_uses() {
             app_r2
                 .send(
                     Method::POST,
-                    "/invites/redeem",
+                    "/api/v1/invites/redeem",
                     Some(json!({ "invite_code": code_r2 })),
                     Some(&carol_r2),
                 )
@@ -508,7 +508,7 @@ async fn concurrent_multi_use_redeems_do_not_exceed_max_uses() {
             app_r3
                 .send(
                     Method::POST,
-                    "/invites/redeem",
+                    "/api/v1/invites/redeem",
                     Some(json!({ "invite_code": code })),
                     Some(&dave_r3),
                 )
@@ -521,7 +521,7 @@ async fn concurrent_multi_use_redeems_do_not_exceed_max_uses() {
             app_r3
                 .send(
                     Method::POST,
-                    "/invites/redeem",
+                    "/api/v1/invites/redeem",
                     Some(json!({ "invite_code": code })),
                     Some(&dave_r3),
                 )
