@@ -6,6 +6,7 @@ import dev.quartermaster.android.generated.models.ConsumeRequest
 import dev.quartermaster.android.generated.models.ConsumeResponse
 import dev.quartermaster.android.generated.models.ConsumedBatchDto
 import dev.quartermaster.android.generated.models.CreateInviteRequest
+import dev.quartermaster.android.generated.models.CreateLocationRequest
 import dev.quartermaster.android.generated.models.CreateProductRequest
 import dev.quartermaster.android.generated.models.CreateStockRequest
 import dev.quartermaster.android.generated.models.HouseholdDetailDto
@@ -20,6 +21,7 @@ import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventType
 import dev.quartermaster.android.generated.models.UnitDto
 import dev.quartermaster.android.generated.models.UnitFamily
+import dev.quartermaster.android.generated.models.UpdateLocationRequest
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -368,6 +370,167 @@ class QuartermasterAppStateTest {
     }
 
     @Test
+    fun `createLocation validates trims and refreshes location state`() = runTest {
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                stock = listOf(stockBatchJson()),
+                locations = listOf(locationJson()),
+                createdLocation = locationJson(
+                    id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                    name = "Shelf",
+                    kind = "fridge",
+                    sortOrder = 1,
+                ),
+            )
+        val appState = QuartermasterAppState(FakeSessionStore(), backend)
+
+        appState.bootstrap()
+        appState.createLocation(LocationFormFields(name = "  Shelf  ", kind = "fridge", sortOrder = 1))
+
+        assertNull(appState.locationActionInFlight)
+        assertEquals("Shelf", backend.createLocationRequests.single().name)
+        assertEquals("fridge", backend.createLocationRequests.single().kind)
+        assertEquals(listOf("Pantry", "Shelf"), appState.sortedLocations().map { it.name })
+        assertTrue(appState.hasLoadedInventoryOnce)
+    }
+
+    @Test
+    fun `createLocation stores validation errors without calling backend`() = runTest {
+        val backend = FakeBackend(meResponse = meResponseJson(), locations = listOf(locationJson()))
+        val appState = QuartermasterAppState(FakeSessionStore(), backend)
+
+        appState.bootstrap()
+        appState.createLocation(LocationFormFields(name = "", kind = "pantry"))
+
+        assertEquals("Enter a location name.", appState.settingsError)
+        assertTrue(backend.createLocationRequests.isEmpty())
+    }
+
+    @Test
+    fun `updateLocation sends full request and refreshes locations`() = runTest {
+        val updated =
+            locationJson(
+                id = "22222222-2222-2222-2222-222222222222",
+                name = "Cold Shelf",
+                kind = "freezer",
+                sortOrder = 7,
+            )
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                locations = listOf(locationJson()),
+                updatedLocation = updated,
+            )
+        val appState = QuartermasterAppState(FakeSessionStore(), backend)
+
+        appState.bootstrap()
+        appState.updateLocation(
+            "22222222-2222-2222-2222-222222222222",
+            LocationFormFields(name = "Cold Shelf", kind = "freezer", sortOrder = 7),
+        )
+
+        val request = backend.updateLocationRequests.single().second
+        assertEquals("Cold Shelf", request.name)
+        assertEquals("freezer", request.kind)
+        assertEquals(7L, request.sortOrder)
+        assertEquals(listOf(updated), appState.locations)
+    }
+
+    @Test
+    fun `deleteLocation removes location after refresh and handles conflict failure`() = runTest {
+        val emptyShelf =
+            locationJson(
+                id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                name = "Empty Shelf",
+                sortOrder = 1,
+            )
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                locations = listOf(locationJson(), emptyShelf),
+                deleteLocationFailure = ApiFailure(409, "location_has_stock", "Location has active stock"),
+            )
+        val appState = QuartermasterAppState(FakeSessionStore(), backend)
+
+        appState.bootstrap()
+        appState.deleteLocation(emptyShelf.id.toString())
+
+        assertEquals("Location has active stock", appState.settingsError)
+        assertNull(appState.locationActionInFlight)
+
+        backend.deleteLocationFailure = null
+        appState.deleteLocation(emptyShelf.id.toString())
+
+        assertEquals(listOf("Pantry"), appState.locations.map { it.name })
+        assertEquals(listOf(emptyShelf.id.toString()), backend.deletedLocationIds)
+    }
+
+    @Test
+    fun `moveLocation swaps target and neighbor sort orders`() = runTest {
+        val pantry = locationJson(name = "Pantry", sortOrder = 0)
+        val fridge =
+            locationJson(
+                id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                name = "Fridge",
+                kind = "fridge",
+                sortOrder = 1,
+            )
+        val backend = FakeBackend(meResponse = meResponseJson(), locations = listOf(pantry, fridge))
+        val appState = QuartermasterAppState(FakeSessionStore(), backend)
+
+        appState.bootstrap()
+        appState.moveLocation(fridge.id.toString(), -1)
+
+        val updates = backend.updateLocationRequests
+        assertEquals(fridge.id.toString(), updates[0].first)
+        assertEquals(0L, updates[0].second.sortOrder)
+        assertEquals(pantry.id.toString(), updates[1].first)
+        assertEquals(1L, updates[1].second.sortOrder)
+        assertEquals(listOf("Fridge", "Pantry"), appState.sortedLocations().map { it.name })
+    }
+
+    @Test
+    fun `scan product creation handoff returns new product to scan`() = runTest {
+        val created = productDtoJson(name = "Semolina")
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                locations = listOf(locationJson()),
+                units = listOf(unitJson("g", "mass")),
+                createdProduct = created,
+            )
+        val appState = QuartermasterAppState(FakeSessionStore(), backend)
+
+        appState.bootstrap()
+        appState.showProductCreateForScan()
+        appState.createProduct(ProductFormFields(name = "Semolina", preferredUnit = "g"))
+
+        assertEquals(MainTab.Scan, appState.selectedTab)
+        assertEquals(created, appState.selectedProduct)
+        assertFalse(appState.returnToScanAfterProductCreate)
+        assertEquals(ProductScreenMode.List, appState.productScreenMode)
+    }
+
+    @Test
+    fun `scan product creation cancel returns to scan without selection`() = runTest {
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend = FakeBackend(meResponse = meResponseJson(), locations = listOf(locationJson())),
+            )
+
+        appState.bootstrap()
+        appState.showProductCreateForScan()
+        appState.cancelProductForm()
+
+        assertEquals(MainTab.Scan, appState.selectedTab)
+        assertNull(appState.selectedProduct)
+        assertFalse(appState.returnToScanAfterProductCreate)
+        assertEquals(ProductScreenMode.List, appState.productScreenMode)
+    }
+
+    @Test
     fun `product update patch encodes omitted and cleared fields`() {
         val patch = ProductUpdatePatch(
             name = "Updated Flour",
@@ -712,13 +875,18 @@ class QuartermasterAppStateTest {
         """.trimIndent(),
     )
 
-    private fun locationJson(): LocationDto = json.decodeFromString(
+    private fun locationJson(
+        id: String = "22222222-2222-2222-2222-222222222222",
+        name: String = "Pantry",
+        kind: String = "pantry",
+        sortOrder: Long = 0,
+    ): LocationDto = json.decodeFromString(
         """
             {
-              "id": "22222222-2222-2222-2222-222222222222",
-              "name": "Pantry",
-              "kind": "pantry",
-              "sort_order": 0
+              "id": "$id",
+              "name": "$name",
+              "kind": "$kind",
+              "sort_order": $sortOrder
             }
         """.trimIndent(),
     )
@@ -868,10 +1036,12 @@ class QuartermasterAppStateTest {
         private val meResponse: MeResponse,
         stock: List<StockBatchDto> = emptyList(),
         reminders: List<ReminderDto> = emptyList(),
-        private val locations: List<LocationDto> = emptyList(),
+        locations: List<LocationDto> = emptyList(),
         private val units: List<UnitDto> = emptyList(),
         private val householdDetail: HouseholdDetailDto? = null,
         products: List<ProductDto> = emptyList(),
+        private val createdLocation: LocationDto? = null,
+        private val updatedLocation: LocationDto? = null,
         private val createdProduct: ProductDto? = null,
         private val updatedProduct: ProductDto? = null,
         private val deletedProduct: ProductDto? = null,
@@ -881,6 +1051,7 @@ class QuartermasterAppStateTest {
         batchEvents: Map<String, List<StockEventDto>> = emptyMap(),
         private val barcodeFailure: Throwable? = null,
         private val productUpdateFailure: Throwable? = null,
+        var deleteLocationFailure: Throwable? = null,
         private val openReminderFailure: Throwable? = null,
         private val discardFailure: Throwable? = null,
         private val logoutFailure: Throwable? = null,
@@ -889,12 +1060,16 @@ class QuartermasterAppStateTest {
 
         private val stockState = stock.toMutableList()
         private val reminderState = reminders.toMutableList()
+        private val locationState = locations.toMutableList()
         private val productState = products.toMutableList()
         private val batchEventState = batchEvents.mapValues { it.value.toMutableList() }.toMutableMap()
 
         val acknowledgedReminderIds = mutableListOf<String>()
         val openedReminderIds = mutableListOf<String>()
         val addStockRequests = mutableListOf<CreateStockRequest>()
+        val createLocationRequests = mutableListOf<CreateLocationRequest>()
+        val updateLocationRequests = mutableListOf<Pair<String, UpdateLocationRequest>>()
+        val deletedLocationIds = mutableListOf<String>()
         val createProductRequests = mutableListOf<CreateProductRequest>()
         val updateProductRequests = mutableListOf<ProductUpdatePatch>()
         val deletedProductIds = mutableListOf<String>()
@@ -938,7 +1113,42 @@ class QuartermasterAppStateTest {
             error("Unused in test")
         }
 
-        override suspend fun locations(): List<LocationDto> = locations
+        override suspend fun locations(): List<LocationDto> = locationState.toList()
+
+        override suspend fun createLocation(request: CreateLocationRequest): LocationDto {
+            createLocationRequests += request
+            val location = createdLocation ?: locationJson(
+                id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                name = request.name,
+                kind = request.kind,
+                sortOrder = request.sortOrder ?: ((locationState.maxOfOrNull { it.sortOrder } ?: -1L) + 1L),
+            )
+            locationState.removeAll { it.id == location.id }
+            locationState += location
+            return location
+        }
+
+        override suspend fun updateLocation(
+            id: String,
+            request: UpdateLocationRequest,
+        ): LocationDto {
+            updateLocationRequests += id to request
+            val location = updatedLocation?.takeIf { it.id.toString() == id } ?: locationJson(
+                id = id,
+                name = request.name,
+                kind = request.kind,
+                sortOrder = request.sortOrder,
+            )
+            locationState.removeAll { it.id.toString() == id }
+            locationState += location
+            return location
+        }
+
+        override suspend fun deleteLocation(id: String) {
+            deleteLocationFailure?.let { throw it }
+            deletedLocationIds += id
+            locationState.removeAll { it.id.toString() == id }
+        }
 
         override suspend fun units(): List<UnitDto> = units
 

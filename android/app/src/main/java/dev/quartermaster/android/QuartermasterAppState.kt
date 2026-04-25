@@ -11,6 +11,7 @@ import dev.quartermaster.android.generated.models.BarcodeLookupResponse
 import dev.quartermaster.android.generated.models.ConsumeRequest
 import dev.quartermaster.android.generated.models.ConsumeResponse
 import dev.quartermaster.android.generated.models.CreateInviteRequest
+import dev.quartermaster.android.generated.models.CreateLocationRequest
 import dev.quartermaster.android.generated.models.CreateProductRequest
 import dev.quartermaster.android.generated.models.CreateStockRequest
 import dev.quartermaster.android.generated.models.HouseholdDetailDto
@@ -27,6 +28,7 @@ import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventType
 import dev.quartermaster.android.generated.models.UnitDto
 import dev.quartermaster.android.generated.models.UnitFamily
+import dev.quartermaster.android.generated.models.UpdateLocationRequest
 import java.net.URI
 import java.net.URLDecoder
 import java.util.UUID
@@ -59,6 +61,13 @@ enum class ProductAction {
     Delete,
     Restore,
     Refresh,
+}
+
+enum class LocationAction {
+    Create,
+    Update,
+    Delete,
+    Reorder,
 }
 
 enum class ProductIncludeFilter {
@@ -107,6 +116,12 @@ data class ProductFormFields(
     val imageUrl: String = "",
 )
 
+data class LocationFormFields(
+    val name: String = "",
+    val kind: String = "pantry",
+    val sortOrder: Long? = null,
+)
+
 sealed interface HouseholdScopedResolution {
     data object Retry : HouseholdScopedResolution
     data object FallbackToNoHousehold : HouseholdScopedResolution
@@ -135,6 +150,9 @@ interface QuartermasterBackend {
     suspend fun householdInvites(): List<InviteDto>
     suspend fun createInvite(body: CreateInviteRequest): InviteDto
     suspend fun locations(): List<LocationDto>
+    suspend fun createLocation(request: CreateLocationRequest): LocationDto
+    suspend fun updateLocation(id: String, request: UpdateLocationRequest): LocationDto
+    suspend fun deleteLocation(id: String)
     suspend fun units(): List<UnitDto>
     suspend fun listStock(includeDepleted: Boolean = false): List<StockBatchDto>
     suspend fun listEvents(limit: Int = 30): List<StockEventDto>
@@ -209,6 +227,9 @@ class QuartermasterApiBackend(
     override suspend fun householdInvites(): List<InviteDto> = api.householdInvites()
     override suspend fun createInvite(body: CreateInviteRequest): InviteDto = api.createInvite(body)
     override suspend fun locations(): List<LocationDto> = api.locations()
+    override suspend fun createLocation(request: CreateLocationRequest): LocationDto = api.createLocation(request)
+    override suspend fun updateLocation(id: String, request: UpdateLocationRequest): LocationDto = api.updateLocation(id, request)
+    override suspend fun deleteLocation(id: String) = api.deleteLocation(id)
     override suspend fun units(): List<UnitDto> = api.units()
     override suspend fun listStock(includeDepleted: Boolean): List<StockBatchDto> = api.listStock(includeDepleted)
     override suspend fun listEvents(limit: Int): List<StockEventDto> = api.listEvents(limit)
@@ -336,8 +357,12 @@ class QuartermasterAppState(
     private var reminderActionInFlight by mutableStateOf<Map<String, ReminderAction>>(emptyMap())
     var productActionInFlight by mutableStateOf<ProductAction?>(null)
         private set
+    var locationActionInFlight by mutableStateOf<LocationAction?>(null)
+        private set
     private var stockActionInFlight by mutableStateOf<Map<String, StockAction>>(emptyMap())
     var scanActionInFlight by mutableStateOf<ScanAction?>(null)
+        private set
+    var returnToScanAfterProductCreate by mutableStateOf(false)
         private set
 
     init {
@@ -474,6 +499,83 @@ class QuartermasterAppState(
         invites = listOf(invite) + invites
     }
 
+    suspend fun createLocation(fields: LocationFormFields) {
+        validateLocationForm(fields)?.let {
+            settingsError = it
+            lastError = it
+            return
+        }
+        runLocationAction(LocationAction.Create) {
+            backend.createLocation(
+                CreateLocationRequest(
+                    name = fields.name.trim(),
+                    kind = fields.kind,
+                    sortOrder = fields.sortOrder,
+                ),
+            )
+            refreshLocationsAndInventory()
+        }
+    }
+
+    suspend fun updateLocation(
+        id: String,
+        fields: LocationFormFields,
+    ) {
+        validateLocationForm(fields)?.let {
+            settingsError = it
+            lastError = it
+            return
+        }
+        val sortOrder = fields.sortOrder ?: locations.firstOrNull { it.id.toString() == id }?.sortOrder ?: return
+        runLocationAction(LocationAction.Update) {
+            backend.updateLocation(
+                id,
+                UpdateLocationRequest(
+                    name = fields.name.trim(),
+                    kind = fields.kind,
+                    sortOrder = sortOrder,
+                ),
+            )
+            refreshLocationsAndInventory()
+        }
+    }
+
+    suspend fun deleteLocation(id: String) = runLocationAction(LocationAction.Delete) {
+        backend.deleteLocation(id)
+        refreshLocationsAndInventory()
+    }
+
+    suspend fun moveLocation(
+        id: String,
+        delta: Int,
+    ) {
+        val sorted = sortedLocations()
+        val index = sorted.indexOfFirst { it.id.toString() == id }
+        val targetIndex = index + delta
+        if (index !in sorted.indices || targetIndex !in sorted.indices) return
+        val current = sorted[index]
+        val neighbor = sorted[targetIndex]
+        runLocationAction(LocationAction.Reorder) {
+            backend.updateLocation(
+                current.id.toString(),
+                UpdateLocationRequest(
+                    name = current.name,
+                    kind = current.kind,
+                    sortOrder = neighbor.sortOrder,
+                ),
+            )
+            backend.updateLocation(
+                neighbor.id.toString(),
+                UpdateLocationRequest(
+                    name = neighbor.name,
+                    kind = neighbor.kind,
+                    sortOrder = current.sortOrder,
+                ),
+            )
+            refreshLocationsAndInventory()
+        }
+    }
+
     suspend fun refreshInventory(force: Boolean = false) = guardHouseholdScope(
         onStart = {
             inventoryLoadState = LoadState.Loading
@@ -485,9 +587,7 @@ class QuartermasterAppState(
         if (force || units.isEmpty()) {
             units = backend.units().sortedBy { it.code }
         }
-        locations = backend.locations().sortedWith(
-            compareBy<LocationDto> { it.sortOrder }.thenBy { it.name.lowercase() },
-        )
+        locations = sortLocations(backend.locations())
         batches = backend.listStock(includeDepleted = true).sortedWith(
             compareBy<StockBatchDto> { isBatchDepleted(it) }
                 .thenBy { it.locationId }
@@ -576,9 +676,32 @@ class QuartermasterAppState(
     }
 
     fun showProductCreate() {
+        returnToScanAfterProductCreate = false
         productScreenMode = ProductScreenMode.Create
         selectedCatalogueProduct = null
         productError = null
+    }
+
+    fun showProductCreateForScan() {
+        returnToScanAfterProductCreate = true
+        productScreenMode = ProductScreenMode.Create
+        selectedCatalogueProduct = null
+        productError = null
+        selectedTab = MainTab.Products
+    }
+
+    fun cancelProductForm() {
+        if (returnToScanAfterProductCreate) {
+            returnToScanAfterProductCreate = false
+            productScreenMode = ProductScreenMode.List
+            selectedCatalogueProduct = null
+            productError = null
+            selectedTab = MainTab.Scan
+        } else if (selectedCatalogueProduct == null) {
+            showProductList()
+        } else {
+            showProductDetail()
+        }
     }
 
     fun showProductDetail() {
@@ -612,7 +735,16 @@ class QuartermasterAppState(
             val product = backend.createProduct(fields.toCreateProductRequest())
             selectedCatalogueProduct = product
             products = upsertProduct(products, product)
-            productScreenMode = ProductScreenMode.Detail
+            if (returnToScanAfterProductCreate) {
+                selectedProduct = product
+                searchResults = emptyList()
+                selectedCatalogueProduct = null
+                productScreenMode = ProductScreenMode.List
+                selectedTab = MainTab.Scan
+                returnToScanAfterProductCreate = false
+            } else {
+                productScreenMode = ProductScreenMode.Detail
+            }
             refreshProductsBody(forceUnits = false)
             hasLoadedProductsOnce = true
         }
@@ -818,6 +950,14 @@ class QuartermasterAppState(
 
     fun locationNameFor(locationId: String): String = locations.firstOrNull { it.id.toString() == locationId }?.name ?: "Unknown location"
 
+    fun sortedLocations(): List<LocationDto> = sortLocations(locations)
+
+    fun locationFormFields(location: LocationDto): LocationFormFields = LocationFormFields(
+        name = location.name,
+        kind = location.kind,
+        sortOrder = location.sortOrder,
+    )
+
     fun isBatchDepleted(batch: StockBatchDto): Boolean = batch.quantity.toBigDecimalOrNull()?.compareTo(java.math.BigDecimal.ZERO) == 0
 
     fun canRestoreBatch(batch: StockBatchDto?): Boolean {
@@ -880,6 +1020,16 @@ class QuartermasterAppState(
             name.isEmpty() -> "Enter a product name."
             name.length > 256 -> "Product name must be 256 characters or fewer."
             fields.preferredUnit !in productUnitSymbolsFor(fields.family) -> "Choose a preferred unit that matches the product family."
+            else -> null
+        }
+    }
+
+    fun validateLocationForm(fields: LocationFormFields): String? {
+        val name = fields.name.trim()
+        return when {
+            name.isEmpty() -> "Enter a location name."
+            name.length > 64 -> "Location name must be 64 characters or fewer."
+            fields.kind !in LOCATION_KINDS -> "Choose pantry, fridge, or freezer."
             else -> null
         }
     }
@@ -1055,6 +1205,45 @@ class QuartermasterAppState(
     private suspend fun refreshSelectedBatchEvents(limit: Int = 30) {
         val batchId = selectedBatchId ?: return
         selectedBatchEvents = backend.listBatchEvents(batchId, limit).sortedByDescending { it.createdAt }
+    }
+
+    private suspend fun refreshLocationsAndInventory() {
+        locations = sortLocations(backend.locations())
+        refreshInventory(force = true)
+    }
+
+    private suspend fun runLocationAction(
+        action: LocationAction,
+        block: suspend () -> Unit,
+    ) {
+        if (locationActionInFlight != null) return
+        locationActionInFlight = action
+        settingsError = null
+        lastError = null
+        try {
+            block()
+        } catch (failure: Throwable) {
+            if (failure is ApiFailure && failure.status == 403) {
+                when (resolveHouseholdScopedForbidden()) {
+                    HouseholdScopedResolution.Retry -> {
+                        locationActionInFlight = null
+                        runLocationAction(action, block)
+                        return
+                    }
+                    HouseholdScopedResolution.FallbackToNoHousehold -> clearHouseholdScopedData()
+                    is HouseholdScopedResolution.Failed -> Unit
+                }
+            } else if (failure is ApiFailure && failure.status == 401) {
+                clearSession()
+                phase = AppPhase.Unauthenticated
+            } else {
+                val message = failure.userFacingMessage()
+                settingsError = message
+                lastError = message
+            }
+        } finally {
+            locationActionInFlight = null
+        }
     }
 
     private suspend fun runScanAction(
@@ -1240,6 +1429,8 @@ class QuartermasterAppState(
         productActionInFlight = null
         stockActionInFlight = emptyMap()
         scanActionInFlight = null
+        locationActionInFlight = null
+        returnToScanAfterProductCreate = false
     }
 
     private suspend fun refreshPushRegistration() {
@@ -1260,6 +1451,12 @@ class QuartermasterAppState(
     }
 
     companion object {
+        private val LOCATION_KINDS = setOf("pantry", "fridge", "freezer")
+
+        private fun sortLocations(locations: List<LocationDto>): List<LocationDto> = locations.sortedWith(
+            compareBy<LocationDto> { it.sortOrder }.thenBy { it.name.lowercase() },
+        )
+
         fun fromContext(context: Context): QuartermasterAppState {
             val store = AuthStore(context)
             return QuartermasterAppState(

@@ -92,6 +92,13 @@ private object SmokeTag {
     const val SwitchHouseholdHeader = "smoke-switch-household-header"
     const val SignOutButton = "smoke-sign-out-button"
     const val CreateInviteButton = "smoke-create-invite-button"
+    const val LocationList = "smoke-location-list"
+    const val LocationCreateButton = "smoke-location-create-button"
+    const val LocationNameField = "smoke-location-name-field"
+    const val LocationKindPantry = "smoke-location-kind-pantry"
+    const val LocationKindFridge = "smoke-location-kind-fridge"
+    const val LocationKindFreezer = "smoke-location-kind-freezer"
+    const val LocationSubmitButton = "smoke-location-submit-button"
 
     fun inventoryBatch(id: String) = "smoke-inventory-batch-$id"
     fun selectedBatch(id: String) = "smoke-selected-batch-$id"
@@ -106,6 +113,11 @@ private object SmokeTag {
     fun inviteCode(code: String) = "smoke-invite-code-$code"
     fun reminderTarget(batchId: String) = "smoke-reminder-target-$batchId"
     fun productRow(id: String) = "smoke-product-row-$id"
+    fun locationEdit(id: String) = "smoke-location-edit-$id"
+    fun locationDelete(id: String) = "smoke-location-delete-$id"
+    fun locationDeleteConfirm(id: String) = "smoke-location-delete-confirm-$id"
+    fun locationMoveUp(id: String) = "smoke-location-move-up-$id"
+    fun locationMoveDown(id: String) = "smoke-location-move-down-$id"
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
@@ -1041,10 +1053,7 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
         }
         item {
             Button(
-                onClick = {
-                    appState.showProductCreate()
-                    appState.selectedTab = MainTab.Products
-                },
+                onClick = appState::showProductCreateForScan,
                 enabled = appState.scanActionInFlight == null,
             ) {
                 Text("Create manual product")
@@ -1548,7 +1557,7 @@ private fun ProductFormScreen(
                         },
                     )
                 }
-                TextButton(onClick = { if (product == null) appState.showProductList() else appState.showProductDetail() }) {
+                TextButton(onClick = appState::cancelProductForm) {
                     Text("Cancel")
                 }
             }
@@ -1600,6 +1609,9 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
     var inviteExpiry by remember { mutableStateOf("2999-01-01T00:00:00.000Z") }
     var inviteMaxUses by remember { mutableStateOf("1") }
     var redeemInviteCode by remember { mutableStateOf(appState.pendingInviteContext?.inviteCode.orEmpty()) }
+    var locationForm by remember { mutableStateOf<LocationFormFields?>(null) }
+    var editingLocationId by remember { mutableStateOf<String?>(null) }
+    var deletingLocation by remember { mutableStateOf<LocationDto?>(null) }
 
     LaunchedEffect(appState.currentHouseholdId) { appState.loadSettings() }
     LaunchedEffect(appState.pendingInviteContext) {
@@ -1711,6 +1723,111 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
         }
         item {
             SectionHeader(
+                title = "Locations",
+                body = "Manage the pantry, fridge, and freezer places available to Inventory and Scan.",
+            )
+        }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Household locations", style = MaterialTheme.typography.titleMedium)
+                Button(
+                    modifier = Modifier.testTag(SmokeTag.LocationCreateButton),
+                    onClick = {
+                        editingLocationId = null
+                        deletingLocation = null
+                        locationForm = LocationFormFields(
+                            sortOrder = (appState.sortedLocations().maxOfOrNull { it.sortOrder } ?: -1L) + 1L,
+                        )
+                    },
+                    enabled = appState.locationActionInFlight == null,
+                ) {
+                    Text("New location")
+                }
+            }
+        }
+        locationForm?.let { fields ->
+            item {
+                LocationFormCard(
+                    fields = fields,
+                    isEditing = editingLocationId != null,
+                    actionInFlight = appState.locationActionInFlight,
+                    onFieldsChange = { locationForm = it },
+                    onSubmit = {
+                        locationForm?.let { currentFields ->
+                            scope.launch {
+                                val id = editingLocationId
+                                if (id == null) {
+                                    appState.createLocation(currentFields)
+                                } else {
+                                    appState.updateLocation(id, currentFields)
+                                }
+                                if (appState.settingsError == null) {
+                                    locationForm = null
+                                    editingLocationId = null
+                                }
+                            }
+                        }
+                    },
+                    onCancel = {
+                        locationForm = null
+                        editingLocationId = null
+                    },
+                )
+            }
+        }
+        deletingLocation?.let { location ->
+            item {
+                LocationDeleteCard(
+                    location = location,
+                    actionInFlight = appState.locationActionInFlight,
+                    onConfirm = {
+                        scope.launch {
+                            appState.deleteLocation(location.id.toString())
+                            if (appState.settingsError == null) {
+                                deletingLocation = null
+                            }
+                        }
+                    },
+                    onCancel = { deletingLocation = null },
+                )
+            }
+        }
+        item {
+            Text(
+                "Location list",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.testTag(SmokeTag.LocationList),
+            )
+        }
+        val settingsLocations = appState.sortedLocations()
+        if (settingsLocations.isEmpty()) {
+            item { StatusCard("No locations yet", "Create a location before adding stock to this household.") }
+        } else {
+            items(settingsLocations, key = { it.id }) { location ->
+                LocationRow(
+                    appState = appState,
+                    location = location,
+                    isFirst = location == settingsLocations.first(),
+                    isLast = location == settingsLocations.last(),
+                    onEdit = {
+                        deletingLocation = null
+                        editingLocationId = location.id.toString()
+                        locationForm = appState.locationFormFields(location)
+                    },
+                    onDelete = {
+                        locationForm = null
+                        editingLocationId = null
+                        deletingLocation = location
+                    },
+                    onMove = { delta -> scope.launch { appState.moveLocation(location.id.toString(), delta) } },
+                )
+            }
+        }
+        item {
+            SectionHeader(
                 title = "Invites",
                 body = "Create a join code for another person, then verify it from the list below.",
             )
@@ -1777,6 +1894,163 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
                 enabled = !appState.authActionInFlight,
             ) {
                 Text("Sign out")
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocationFormCard(
+    fields: LocationFormFields,
+    isEditing: Boolean,
+    actionInFlight: LocationAction?,
+    onFieldsChange: (LocationFormFields) -> Unit,
+    onSubmit: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(if (isEditing) "Edit location" else "New location", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(
+                value = fields.name,
+                onValueChange = { onFieldsChange(fields.copy(name = it)) },
+                label = { Text("Location name") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(SmokeTag.LocationNameField),
+            )
+            Text("Kind", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LocationKindButton("Pantry", "pantry", SmokeTag.LocationKindPantry, fields.kind, onFieldsChange, fields)
+                LocationKindButton("Fridge", "fridge", SmokeTag.LocationKindFridge, fields.kind, onFieldsChange, fields)
+                LocationKindButton("Freezer", "freezer", SmokeTag.LocationKindFreezer, fields.kind, onFieldsChange, fields)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    modifier = Modifier.testTag(SmokeTag.LocationSubmitButton),
+                    onClick = onSubmit,
+                    enabled = actionInFlight == null,
+                ) {
+                    Text(
+                        when (actionInFlight) {
+                            LocationAction.Create -> "Creating..."
+                            LocationAction.Update -> "Saving..."
+                            else -> if (isEditing) "Save location" else "Create location"
+                        },
+                    )
+                }
+                TextButton(onClick = onCancel, enabled = actionInFlight == null) {
+                    Text("Cancel")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocationKindButton(
+    label: String,
+    kind: String,
+    tag: String,
+    selectedKind: String,
+    onFieldsChange: (LocationFormFields) -> Unit,
+    fields: LocationFormFields,
+) {
+    if (selectedKind == kind) {
+        Button(
+            modifier = Modifier.testTag(tag),
+            onClick = { onFieldsChange(fields.copy(kind = kind)) },
+        ) {
+            Text(label)
+        }
+    } else {
+        TextButton(
+            modifier = Modifier.testTag(tag),
+            onClick = { onFieldsChange(fields.copy(kind = kind)) },
+        ) {
+            Text(label)
+        }
+    }
+}
+
+@Composable
+private fun LocationDeleteCard(
+    location: LocationDto,
+    actionInFlight: LocationAction?,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    StatusCard(
+        title = "Delete ${location.name}?",
+        message = "Locations with active stock cannot be deleted. Move or consume stock before deleting a location.",
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(
+            modifier = Modifier.testTag(SmokeTag.locationDeleteConfirm(location.id.toString())),
+            onClick = onConfirm,
+            enabled = actionInFlight == null,
+        ) {
+            Text(if (actionInFlight == LocationAction.Delete) "Deleting..." else "Delete location")
+        }
+        TextButton(onClick = onCancel, enabled = actionInFlight == null) {
+            Text("Cancel")
+        }
+    }
+}
+
+@Composable
+private fun LocationRow(
+    appState: QuartermasterAppState,
+    location: LocationDto,
+    isFirst: Boolean,
+    isLast: Boolean,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onMove: (Int) -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(location.name, style = MaterialTheme.typography.titleMedium)
+            Text("${location.kind} · position ${location.sortOrder}")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    modifier = Modifier.testTag(SmokeTag.locationMoveUp(location.id.toString())),
+                    onClick = { onMove(-1) },
+                    enabled = !isFirst && appState.locationActionInFlight == null,
+                ) {
+                    Text("Up")
+                }
+                TextButton(
+                    modifier = Modifier.testTag(SmokeTag.locationMoveDown(location.id.toString())),
+                    onClick = { onMove(1) },
+                    enabled = !isLast && appState.locationActionInFlight == null,
+                ) {
+                    Text("Down")
+                }
+                TextButton(
+                    modifier = Modifier.testTag(SmokeTag.locationEdit(location.id.toString())),
+                    onClick = onEdit,
+                    enabled = appState.locationActionInFlight == null,
+                ) {
+                    Text("Edit")
+                }
+                TextButton(
+                    modifier = Modifier.testTag(SmokeTag.locationDelete(location.id.toString())),
+                    onClick = onDelete,
+                    enabled = appState.locationActionInFlight == null,
+                ) {
+                    Text("Delete")
+                }
             }
         }
     }

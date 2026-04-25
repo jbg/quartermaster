@@ -233,6 +233,13 @@ def find_clickable_with_tag_prefix(prefix: str) -> UiNode:
     return matches[0]
 
 
+def find_lowest_clickable_with_tag_prefix(prefix: str) -> UiNode:
+    matches = sorted(find_clickables_with_tag_prefix(prefix), key=lambda node: node.bounds[1])
+    if not matches:
+        raise RuntimeError(f"no clickable node found for tag prefix {prefix!r}")
+    return matches[-1]
+
+
 def find_nth_clickable_with_text(text: str, index: int) -> UiNode:
     matches = sorted(find_clickables_with_text(text), key=lambda node: node.bounds[1])
     if index >= len(matches):
@@ -477,6 +484,40 @@ def exercise_products(fixture: dict | None) -> None:
         wait_for_tag("smoke-product-refresh-button")
 
 
+def exercise_locations() -> None:
+    location_name = f"Android Smoke Shelf {int(time.time())}"
+    renamed_location = f"{location_name} Updated"
+
+    tap_tag("smoke-tab-settings")
+    wait_for_tag("smoke-location-list")
+    tap_tag("smoke-location-create-button")
+    wait_for_tag("smoke-location-name-field")
+    replace_text_field_by_tag("smoke-location-name-field", location_name)
+    tap_tag("smoke-location-kind-fridge")
+    tap_tag("smoke-location-submit-button")
+    wait_for_text(location_name, timeout=15.0)
+
+    edit_node = find_lowest_clickable_with_tag_prefix("smoke-location-edit-")
+    edit_tag = edit_node.resource_id.split("/")[-1]
+    location_id = edit_tag.removeprefix("smoke-location-edit-")
+    tap(edit_node)
+    wait_for_tag("smoke-location-name-field")
+    replace_text_field_by_tag("smoke-location-name-field", renamed_location)
+    tap_tag("smoke-location-kind-freezer")
+    tap_tag("smoke-location-submit-button")
+    wait_for_text(renamed_location, timeout=15.0)
+
+    up_tag = f"smoke-location-move-up-{location_id}"
+    if find_clickables_with_tag(up_tag):
+        tap_tag(up_tag)
+        wait_for_tag(f"smoke-location-move-down-{location_id}", timeout=15.0)
+
+    tap_tag(f"smoke-location-delete-{location_id}")
+    wait_for_tag(f"smoke-location-delete-confirm-{location_id}")
+    tap_tag(f"smoke-location-delete-confirm-{location_id}")
+    assert_text_missing(renamed_location, timeout=15.0)
+
+
 def check_backend_health(server_url: str) -> None:
     health_url = server_url.rstrip("/") + "/healthz"
     try:
@@ -569,6 +610,8 @@ def main() -> int:
         assert_tag_missing(f"smoke-batch-restore-{lifecycle_batch_id}", timeout=15.0)
         wait_for_tag(f"smoke-batch-consume-{lifecycle_batch_id}", timeout=15.0)
     exercise_products(fixture)
+    if fixture is not None:
+        exercise_locations()
     tap_tag("smoke-tab-settings")
     invite_code = None
     if fixture is None:
