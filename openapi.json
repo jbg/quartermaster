@@ -1241,7 +1241,10 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateProductRequest"
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/JsonPatchOperation"
+                }
               }
             }
           },
@@ -2089,7 +2092,10 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateStockRequest"
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/JsonPatchOperation"
+                }
               }
             }
           },
@@ -2688,6 +2694,27 @@
             "format": "int64"
           }
         }
+      },
+      "JsonPatchOperation": {
+        "type": "object",
+        "required": [
+          "op",
+          "path"
+        ],
+        "properties": {
+          "op": {
+            "type": "string",
+            "description": "JSON Patch operation. Quartermaster supports `replace` and `remove`\nfor product/stock update endpoints."
+          },
+          "path": {
+            "type": "string",
+            "description": "JSON Pointer path to the top-level resource field, e.g. `/brand`."
+          },
+          "value": {
+            "description": "Required for `replace`; omitted for `remove`."
+          }
+        },
+        "additionalProperties": false
       },
       "LocationDto": {
         "type": "object",
@@ -3366,83 +3393,6 @@
           "sort_order": {
             "type": "integer",
             "format": "int64"
-          }
-        }
-      },
-      "UpdateProductRequest": {
-        "type": "object",
-        "properties": {
-          "brand": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "family": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/UnitFamily"
-              }
-            ]
-          },
-          "image_url": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "name": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "preferred_unit": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
-      },
-      "UpdateStockRequest": {
-        "type": "object",
-        "properties": {
-          "expires_on": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "`null` inside JSON clears the expiry; omitting the field leaves it\nuntouched."
-          },
-          "location_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "uuid"
-          },
-          "note": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "opened_on": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "quantity": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Changing `quantity` writes an `adjust` event. `unit` is immutable once\nthe batch has been created — delete and re-add if it was wrong."
           }
         }
       },

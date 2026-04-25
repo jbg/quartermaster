@@ -1,4 +1,5 @@
 import Foundation
+import OpenAPIRuntime
 
 /// Typealiases from generated `Components.Schemas.*` to the flat names
 /// feature views use, plus the `Identifiable` conformances and computed
@@ -120,9 +121,18 @@ enum UnitConversion {
 typealias Product = Components.Schemas.ProductDto
 typealias ProductSource = Components.Schemas.ProductSource
 typealias CreateProductRequest = Components.Schemas.CreateProductRequest
-typealias UpdateProductRequest = APIOverrides.UpdateProductRequest
+typealias JsonPatchOperation = Components.Schemas.JsonPatchOperation
+typealias UpdateProductRequest = [JsonPatchOperation]
 typealias ProductSearchResponse = Components.Schemas.ProductSearchResponse
 typealias BarcodeLookupResponse = Components.Schemas.BarcodeLookupResponse
+
+func jsonPatchReplace(_ path: String, _ value: String) -> JsonPatchOperation {
+  .init(op: "replace", path: path, value: OpenAPIValueContainer(stringLiteral: value))
+}
+
+func jsonPatchRemove(_ path: String) -> JsonPatchOperation {
+  .init(op: "remove", path: path, value: nil)
+}
 
 extension Product: Identifiable {
   /// Parsed URL; `imageUrl` on the DTO is a raw String.
@@ -143,7 +153,7 @@ extension Product: Identifiable {
 typealias StockBatch = Components.Schemas.StockBatchDto
 typealias StockListResponse = Components.Schemas.StockListResponse
 typealias CreateStockRequest = Components.Schemas.CreateStockRequest
-typealias UpdateStockRequest = APIOverrides.UpdateStockRequest
+typealias UpdateStockRequest = [JsonPatchOperation]
 typealias ConsumeRequest = Components.Schemas.ConsumeRequest
 typealias ConsumedBatch = Components.Schemas.ConsumedBatchDto
 typealias ConsumeResponse = Components.Schemas.ConsumeResponse

@@ -23,6 +23,9 @@ use crate::{
     auth::CurrentUser,
     error::{ApiError, ApiResult},
     rate_limit::RateLimitLayerState,
+    routes::patch::{
+        reject_remove, reject_value_for_remove, string_value, JsonPatchDocument, JsonPatchOperation,
+    },
     routes::products::ProductDto,
     types::StockEventType,
     AppState,
@@ -63,21 +66,6 @@ impl From<RestoreError> for ApiError {
             },
             RestoreError::Database(err) => ApiError::Database(err),
         }
-    }
-}
-
-/// Deserializer helper: treats a missing field as `None` and a present-null
-/// field as `Some(None)`. Used on `UpdateStockRequest` optional-clearable
-/// fields so clients can distinguish "don't touch" from "clear".
-mod double_option {
-    use serde::{Deserialize, Deserializer};
-
-    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
-    where
-        D: Deserializer<'de>,
-        T: Deserialize<'de>,
-    {
-        Ok(Some(Option::<T>::deserialize(deserializer)?))
     }
 }
 
@@ -142,20 +130,80 @@ pub struct CreateStockRequest {
     pub note: Option<String>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct UpdateStockRequest {
-    /// Changing `quantity` writes an `adjust` event. `unit` is immutable once
-    /// the batch has been created — delete and re-add if it was wrong.
-    pub quantity: Option<String>,
-    pub location_id: Option<Uuid>,
-    /// `null` inside JSON clears the expiry; omitting the field leaves it
-    /// untouched.
-    #[serde(default, deserialize_with = "double_option::deserialize")]
-    pub expires_on: Option<Option<String>>,
-    #[serde(default, deserialize_with = "double_option::deserialize")]
-    pub opened_on: Option<Option<String>>,
-    #[serde(default, deserialize_with = "double_option::deserialize")]
-    pub note: Option<Option<String>>,
+pub type UpdateStockRequest = JsonPatchDocument;
+
+#[derive(Debug, Default)]
+struct StockPatch {
+    quantity: Option<String>,
+    location_id: Option<Uuid>,
+    expires_on: Option<Option<String>>,
+    opened_on: Option<Option<String>>,
+    note: Option<Option<String>>,
+}
+
+impl StockPatch {
+    fn parse(operations: Vec<JsonPatchOperation>) -> ApiResult<Self> {
+        let mut patch = Self::default();
+        for operation in operations {
+            match operation.op.as_str() {
+                "replace" => patch.replace(&operation.path, operation.value.as_ref())?,
+                "remove" => patch.remove(&operation.path, operation.value.as_ref())?,
+                other => {
+                    return Err(ApiError::BadRequest(format!(
+                        "unsupported JSON Patch operation: {other}"
+                    )));
+                }
+            }
+        }
+        Ok(patch)
+    }
+
+    fn replace(&mut self, path: &str, value: Option<&serde_json::Value>) -> ApiResult<()> {
+        match path {
+            "/quantity" => self.quantity = Some(string_value("quantity", value)?),
+            "/location_id" => {
+                let value = string_value("location_id", value)?;
+                self.location_id = Some(
+                    Uuid::parse_str(&value)
+                        .map_err(|_| ApiError::BadRequest("location_id must be a UUID".into()))?,
+                );
+            }
+            "/expires_on" => self.expires_on = Some(Some(string_value("expires_on", value)?)),
+            "/opened_on" => self.opened_on = Some(Some(string_value("opened_on", value)?)),
+            "/note" => self.note = Some(Some(string_value("note", value)?)),
+            other => {
+                return Err(ApiError::BadRequest(format!(
+                    "unknown stock patch path: {other}"
+                )))
+            }
+        }
+        Ok(())
+    }
+
+    fn remove(&mut self, path: &str, value: Option<&serde_json::Value>) -> ApiResult<()> {
+        match path {
+            "/expires_on" => {
+                reject_value_for_remove("expires_on", value)?;
+                self.expires_on = Some(None);
+            }
+            "/opened_on" => {
+                reject_value_for_remove("opened_on", value)?;
+                self.opened_on = Some(None);
+            }
+            "/note" => {
+                reject_value_for_remove("note", value)?;
+                self.note = Some(None);
+            }
+            "/quantity" => return Err(reject_remove("quantity")),
+            "/location_id" => return Err(reject_remove("location_id")),
+            other => {
+                return Err(ApiError::BadRequest(format!(
+                    "unknown stock patch path: {other}"
+                )))
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -327,7 +375,7 @@ pub async fn create(
     operation_id = "stock_update",
     tag = "stock",
     params(("id" = Uuid, Path)),
-    request_body = UpdateStockRequest,
+    request_body = Vec<JsonPatchOperation>,
     responses(
         (status = 200, body = StockBatchDto),
         (status = 400, body = crate::error::ApiErrorBody),
@@ -342,11 +390,16 @@ pub async fn update(
     Json(req): Json<UpdateStockRequest>,
 ) -> ApiResult<Json<StockBatchDto>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    let req = StockPatch::parse(req)?;
 
     let existing = qm_db::stock::get(&state.db, household_id, id)
         .await?
         .ok_or(ApiError::NotFound)?;
     let product = load_product_for_write(&state, household_id, existing.product_id).await?;
+
+    let expires_on = req.expires_on.as_ref().map(|o| o.as_deref());
+    let opened_on = req.opened_on.as_ref().map(|o| o.as_deref());
+    let note = req.note.as_ref().map(|o| o.as_deref());
 
     if let Some(q) = req.quantity.as_deref() {
         // Allow quantity=0 via adjust (same as discard semantically). The
@@ -357,10 +410,10 @@ pub async fn update(
     if let Some(loc) = req.location_id {
         validate_location(&state, household_id, loc).await?;
     }
-    if let Some(Some(d)) = req.expires_on.as_ref() {
+    if let Some(d) = expires_on.flatten() {
         validate_iso_date(d)?;
     }
-    if let Some(Some(d)) = req.opened_on.as_ref() {
+    if let Some(d) = opened_on.flatten() {
         validate_iso_date(d)?;
     }
 
@@ -382,9 +435,9 @@ pub async fn update(
 
     let metadata = StockMetadataUpdate {
         location_id: req.location_id,
-        expires_on: req.expires_on.as_ref().map(|o| o.as_deref()),
-        opened_on: req.opened_on.as_ref().map(|o| o.as_deref()),
-        note: req.note.as_ref().map(|o| o.as_deref()),
+        expires_on,
+        opened_on,
+        note,
     };
     let has_metadata = req.location_id.is_some()
         || req.expires_on.is_some()

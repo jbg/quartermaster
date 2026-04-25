@@ -80,12 +80,12 @@ describe('product helpers', () => {
         preferredUnit: 'g',
         imageUrl: ''
       })
-    ).toEqual({
-      name: 'Rice Long Grain',
-      brand: null,
-      preferred_unit: 'g',
-      image_url: null
-    });
+    ).toEqual([
+      { op: 'replace', path: '/name', value: 'Rice Long Grain' },
+      { op: 'replace', path: '/preferred_unit', value: 'g' },
+      { op: 'remove', path: '/brand' },
+      { op: 'remove', path: '/image_url' }
+    ]);
   });
 
   it('parses and serializes list filters', () => {

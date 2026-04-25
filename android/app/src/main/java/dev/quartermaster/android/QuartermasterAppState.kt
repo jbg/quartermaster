@@ -172,7 +172,7 @@ interface QuartermasterBackend {
     suspend fun listProducts(query: String?, limit: Int = 100, includeDeleted: Boolean = false): List<ProductDto>
     suspend fun getProduct(id: String): ProductDto
     suspend fun createProduct(request: CreateProductRequest): ProductDto
-    suspend fun updateProduct(id: String, request: ProductUpdatePatch): ProductDto
+    suspend fun updateProduct(id: String, request: ProductUpdateRequest): ProductDto
     suspend fun deleteProduct(id: String)
     suspend fun restoreProduct(id: String): ProductDto
     suspend fun refreshProduct(id: String): ProductDto
@@ -257,7 +257,7 @@ class QuartermasterApiBackend(
     override suspend fun listProducts(query: String?, limit: Int, includeDeleted: Boolean): List<ProductDto> = api.listProducts(query = query, limit = limit, includeDeleted = includeDeleted)
     override suspend fun getProduct(id: String): ProductDto = api.getProduct(id)
     override suspend fun createProduct(request: CreateProductRequest): ProductDto = api.createProduct(request)
-    override suspend fun updateProduct(id: String, request: ProductUpdatePatch): ProductDto = api.updateProduct(id, request)
+    override suspend fun updateProduct(id: String, request: ProductUpdateRequest): ProductDto = api.updateProduct(id, request)
     override suspend fun deleteProduct(id: String) = api.deleteProduct(id)
     override suspend fun restoreProduct(id: String): ProductDto = api.restoreProduct(id)
     override suspend fun refreshProduct(id: String): ProductDto = api.refreshProduct(id)
@@ -1542,21 +1542,29 @@ private fun ProductFormFields.toCreateProductRequest(): CreateProductRequest = C
     imageUrl = imageUrl.trim().takeIf(String::isNotEmpty),
 )
 
-private fun ProductFormFields.toUpdatePatch(product: ProductDto): ProductUpdatePatch {
+private fun ProductFormFields.toUpdatePatch(product: ProductDto): ProductUpdateRequest {
     val nextName = name.trim()
     val nextBrand = brand.trim()
     val currentBrand = product.brand.orEmpty()
     val nextImageUrl = imageUrl.trim()
     val currentImageUrl = product.imageUrl.orEmpty()
-    return ProductUpdatePatch(
-        name = nextName.takeIf { it != product.name },
-        brand = nextBrand.takeIf { it.isNotEmpty() && it != currentBrand },
-        clearBrand = nextBrand.isEmpty() && currentBrand.isNotEmpty(),
-        family = family.takeIf { it != product.family },
-        preferredUnit = preferredUnit.takeIf { it != product.preferredUnit },
-        imageUrl = nextImageUrl.takeIf { it.isNotEmpty() && it != currentImageUrl },
-        clearImageUrl = nextImageUrl.isEmpty() && currentImageUrl.isNotEmpty(),
-    )
+    val operations = buildList {
+        if (nextName != product.name) add(JsonPatchOperation("replace", "/name", nextName))
+        when {
+            nextBrand.isNotEmpty() && nextBrand != currentBrand -> add(JsonPatchOperation("replace", "/brand", nextBrand))
+            nextBrand.isEmpty() && currentBrand.isNotEmpty() -> add(JsonPatchOperation("remove", "/brand"))
+        }
+        if (family != product.family) add(JsonPatchOperation("replace", "/family", family.value))
+        if (preferredUnit != product.preferredUnit) {
+            add(JsonPatchOperation("replace", "/preferred_unit", preferredUnit))
+        }
+        when {
+            nextImageUrl.isNotEmpty() && nextImageUrl != currentImageUrl ->
+                add(JsonPatchOperation("replace", "/image_url", nextImageUrl))
+            nextImageUrl.isEmpty() && currentImageUrl.isNotEmpty() -> add(JsonPatchOperation("remove", "/image_url"))
+        }
+    }
+    return ProductUpdateRequest(operations)
 }
 
 private fun upsertProduct(

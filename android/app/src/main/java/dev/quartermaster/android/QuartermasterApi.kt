@@ -31,7 +31,6 @@ import dev.quartermaster.android.generated.models.StockListResponse
 import dev.quartermaster.android.generated.models.SwitchHouseholdRequest
 import dev.quartermaster.android.generated.models.TokenPair
 import dev.quartermaster.android.generated.models.UnitDto
-import dev.quartermaster.android.generated.models.UnitFamily
 import dev.quartermaster.android.generated.models.UpdateLocationRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -39,9 +38,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -56,35 +53,24 @@ class ApiFailure(
     override val message: String,
 ) : IOException(message)
 
-data class ProductUpdatePatch(
-    val name: String? = null,
-    val brand: String? = null,
-    val clearBrand: Boolean = false,
-    val family: UnitFamily? = null,
-    val preferredUnit: String? = null,
-    val imageUrl: String? = null,
-    val clearImageUrl: Boolean = false,
-) {
-    fun encodeToJsonString(): String = buildJsonObject {
-        name?.let { put("name", JsonPrimitive(it)) }
-        when {
-            clearBrand -> put("brand", JsonNull)
-            brand != null -> put("brand", JsonPrimitive(brand))
-        }
-        family?.let { put("family", JsonPrimitive(it.value)) }
-        preferredUnit?.let { put("preferred_unit", JsonPrimitive(it)) }
-        when {
-            clearImageUrl -> put("image_url", JsonNull)
-            imageUrl != null -> put("image_url", JsonPrimitive(imageUrl))
-        }
-    }.toString()
-}
+@Serializable
+data class ProductUpdateRequest(
+    val operations: List<JsonPatchOperation>,
+)
+
+@Serializable
+data class JsonPatchOperation(
+    val op: String,
+    val path: String,
+    val value: String? = null,
+)
 
 class QuartermasterApi(
     private val authStore: AuthStore,
 ) {
     private val apiPrefix = "/api/v1"
     private val json = Serializer.kotlinxSerializationJson
+    private val patchJson = Json(json) { encodeDefaults = false }
     private val refreshMutex = Mutex()
     private val client =
         OkHttpClient
@@ -277,7 +263,7 @@ class QuartermasterApi(
 
     suspend fun updateProduct(
         id: String,
-        request: ProductUpdatePatch,
+        request: ProductUpdateRequest,
     ): ProductDto = authedJson(
         method = "PATCH",
         path = "/products/${id.urlEncode()}",
@@ -465,7 +451,7 @@ class QuartermasterApi(
         is RegisterRequest -> json.encodeToString(body)
         is SwitchHouseholdRequest -> json.encodeToString(body)
         is UpdateLocationRequest -> json.encodeToString(body)
-        is ProductUpdatePatch -> body.encodeToJsonString()
+        is ProductUpdateRequest -> patchJson.encodeToString(body.operations)
         else -> error("Unsupported request body type: ${body::class.qualifiedName}")
     }
 }

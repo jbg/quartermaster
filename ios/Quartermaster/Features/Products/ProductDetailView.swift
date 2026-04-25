@@ -211,30 +211,30 @@ struct ProductDetailView: View {
     var request = UpdateProductRequest()
     let trimmedName = name.trimmingCharacters(in: .whitespaces)
     if trimmedName != product.name {
-      request.name = trimmedName
+      request.append(jsonPatchReplace("/name", trimmedName))
     }
     let trimmedBrand = brand.trimmingCharacters(in: .whitespaces)
     switch (product.brand, trimmedBrand) {
     case (_, "") where product.brand != nil:
-      request.clearBrand = true
+      request.append(jsonPatchRemove("/brand"))
     case (let existing, let new) where existing != new && !new.isEmpty:
-      request.brand = new
+      request.append(jsonPatchReplace("/brand", new))
     default:
       break
     }
     if family != product.family {
-      request.family = family
+      request.append(jsonPatchReplace("/family", family.rawValue))
     }
     if preferredUnit != product.preferredUnit {
-      request.preferredUnit = preferredUnit
+      request.append(jsonPatchReplace("/preferred_unit", preferredUnit))
     }
     let trimmedImage = imageURLText.trimmingCharacters(in: .whitespaces)
     let existingImage = product.imageURL?.absoluteString
     switch (existingImage, trimmedImage) {
     case (_, "") where existingImage != nil:
-      request.clearImageURL = true
+      request.append(jsonPatchRemove("/image_url"))
     case (let existing, let new) where existing != new && !new.isEmpty:
-      request.imageURL = new
+      request.append(jsonPatchReplace("/image_url", new))
     default:
       break
     }

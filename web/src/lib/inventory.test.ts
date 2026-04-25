@@ -187,15 +187,15 @@ describe('inventory helpers', () => {
         openedOn: '',
         note: ''
       })
-    ).toEqual({
-      quantity: '1.5',
-      location_id: 'freezer',
-      expires_on: '2026-06-01',
-      opened_on: null,
-      note: null
-    });
+    ).toEqual([
+      { op: 'replace', path: '/quantity', value: '1.5' },
+      { op: 'replace', path: '/location_id', value: 'freezer' },
+      { op: 'replace', path: '/expires_on', value: '2026-06-01' },
+      { op: 'remove', path: '/opened_on' },
+      { op: 'remove', path: '/note' }
+    ]);
 
-    expect(buildStockUpdateRequest(batch, stockEditFields(batch))).toEqual({});
+    expect(buildStockUpdateRequest(batch, stockEditFields(batch))).toEqual([]);
     expect(
       buildStockUpdateRequest(
         { id: 'batch-2', product: { name: 'Beans' }, quantity: '3', location_id: 'pantry' },
@@ -207,6 +207,6 @@ describe('inventory helpers', () => {
           note: ''
         }
       )
-    ).toEqual({});
+    ).toEqual([]);
   });
 });

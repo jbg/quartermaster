@@ -135,6 +135,22 @@ export type InviteDto = {
     use_count: number;
 };
 
+export type JsonPatchOperation = {
+    /**
+     * JSON Patch operation. Quartermaster supports `replace` and `remove`
+     * for product/stock update endpoints.
+     */
+    op: string;
+    /**
+     * JSON Pointer path to the top-level resource field, e.g. `/brand`.
+     */
+    path: string;
+    /**
+     * Required for `replace`; omitted for `remove`.
+     */
+    value?: unknown;
+};
+
 export type LocationDto = {
     id: string;
     kind: string;
@@ -348,30 +364,6 @@ export type UpdateLocationRequest = {
     kind: string;
     name: string;
     sort_order: number;
-};
-
-export type UpdateProductRequest = {
-    brand?: string | null;
-    family?: null | UnitFamily;
-    image_url?: string | null;
-    name?: string | null;
-    preferred_unit?: string | null;
-};
-
-export type UpdateStockRequest = {
-    /**
-     * `null` inside JSON clears the expiry; omitting the field leaves it
-     * untouched.
-     */
-    expires_on?: string | null;
-    location_id?: string | null;
-    note?: string | null;
-    opened_on?: string | null;
-    /**
-     * Changing `quantity` writes an `adjust` event. `unit` is immutable once
-     * the batch has been created — delete and re-add if it was wrong.
-     */
-    quantity?: string | null;
 };
 
 export type UserDto = {
@@ -912,7 +904,7 @@ export type ProductGetResponses = {
 export type ProductGetResponse = ProductGetResponses[keyof ProductGetResponses];
 
 export type ProductUpdateData = {
-    body: UpdateProductRequest;
+    body: Array<JsonPatchOperation>;
     path: {
         id: string;
     };
@@ -1229,7 +1221,7 @@ export type StockGetResponses = {
 export type StockGetResponse = StockGetResponses[keyof StockGetResponses];
 
 export type StockUpdateData = {
-    body: UpdateStockRequest;
+    body: Array<JsonPatchOperation>;
     path: {
         id: string;
     };
