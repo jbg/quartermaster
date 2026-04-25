@@ -6,6 +6,7 @@ import dev.quartermaster.android.generated.models.ConsumeRequest
 import dev.quartermaster.android.generated.models.ConsumeResponse
 import dev.quartermaster.android.generated.models.CreateHouseholdRequest
 import dev.quartermaster.android.generated.models.CreateInviteRequest
+import dev.quartermaster.android.generated.models.CreateLocationRequest
 import dev.quartermaster.android.generated.models.CreateProductRequest
 import dev.quartermaster.android.generated.models.CreateStockRequest
 import dev.quartermaster.android.generated.models.HouseholdDetailDto
@@ -31,6 +32,7 @@ import dev.quartermaster.android.generated.models.SwitchHouseholdRequest
 import dev.quartermaster.android.generated.models.TokenPair
 import dev.quartermaster.android.generated.models.UnitDto
 import dev.quartermaster.android.generated.models.UnitFamily
+import dev.quartermaster.android.generated.models.UpdateLocationRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -176,6 +178,25 @@ class QuartermasterApi(
     )
 
     suspend fun locations(): List<LocationDto> = authedJson("GET", "/locations")
+
+    suspend fun createLocation(request: CreateLocationRequest): LocationDto = authedJson(
+        method = "POST",
+        path = "/locations",
+        body = request,
+    )
+
+    suspend fun updateLocation(
+        id: String,
+        request: UpdateLocationRequest,
+    ): LocationDto = authedJson(
+        method = "PATCH",
+        path = "/locations/${id.urlEncode()}",
+        body = request,
+    )
+
+    suspend fun deleteLocation(id: String) {
+        authedUnit("DELETE", "/locations/${id.urlEncode()}")
+    }
 
     suspend fun units(): List<UnitDto> = authedJson("GET", "/units")
 
@@ -433,6 +454,7 @@ class QuartermasterApi(
     private fun encodeBody(body: Any): String = when (body) {
         is CreateHouseholdRequest -> json.encodeToString(body)
         is CreateInviteRequest -> json.encodeToString(body)
+        is CreateLocationRequest -> json.encodeToString(body)
         is CreateProductRequest -> json.encodeToString(body)
         is CreateStockRequest -> json.encodeToString(body)
         is ConsumeRequest -> json.encodeToString(body)
@@ -442,6 +464,7 @@ class QuartermasterApi(
         is RegisterDeviceRequest -> json.encodeToString(body)
         is RegisterRequest -> json.encodeToString(body)
         is SwitchHouseholdRequest -> json.encodeToString(body)
+        is UpdateLocationRequest -> json.encodeToString(body)
         is ProductUpdatePatch -> body.encodeToJsonString()
         else -> error("Unsupported request body type: ${body::class.qualifiedName}")
     }
