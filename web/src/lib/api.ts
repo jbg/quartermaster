@@ -11,6 +11,12 @@ import {
   locationsUpdate,
   productCreate,
   productSearch,
+  productDelete,
+  productGet,
+  productList,
+  productRefresh,
+  productRestore,
+  productUpdate,
   remindersAck,
   remindersList,
   remindersOpen,
@@ -79,8 +85,26 @@ export function generatedTransport(): SessionTransport {
     productSearch(query) {
       return productSearch({ query });
     },
+    productList(query) {
+      return productList(query ? { query } : undefined);
+    },
     productCreate(body) {
       return productCreate({ body });
+    },
+    productGet(id) {
+      return productGet({ path: { id } });
+    },
+    productUpdate(id, body) {
+      return productUpdate({ path: { id }, body });
+    },
+    productDelete(id) {
+      return productDelete({ path: { id } });
+    },
+    productRestore(id) {
+      return productRestore({ path: { id } });
+    },
+    productRefresh(id) {
+      return productRefresh({ path: { id } });
     },
     stockList(query) {
       return stockList({ query });

@@ -56,6 +56,15 @@ describe('QuartermasterSession', () => {
     ).toBe('http://homeassistant.local:8123/api/hassio_ingress/quartermaster-token');
   });
 
+  it('drops nested product routes from the ingress default server URL', () => {
+    expect(
+      defaultServerUrl({
+        origin: 'http://homeassistant.local:8123',
+        pathname: '/api/hassio_ingress/quartermaster-token/products/product-1/edit'
+      })
+    ).toBe('http://homeassistant.local:8123/api/hassio_ingress/quartermaster-token');
+  });
+
   it('refreshes once and retries an authenticated request after a 401', async () => {
     const storage = memoryStorage({
       serverUrl: 'http://localhost:8080',
@@ -111,7 +120,25 @@ describe('QuartermasterSession', () => {
       async productSearch() {
         throw new Error('unused');
       },
+      async productList() {
+        throw new Error('unused');
+      },
       async productCreate() {
+        throw new Error('unused');
+      },
+      async productGet() {
+        throw new Error('unused');
+      },
+      async productUpdate() {
+        throw new Error('unused');
+      },
+      async productDelete() {
+        throw new Error('unused');
+      },
+      async productRestore() {
+        throw new Error('unused');
+      },
+      async productRefresh() {
         throw new Error('unused');
       },
       async stockList() {
@@ -201,7 +228,25 @@ describe('QuartermasterSession', () => {
       async productSearch() {
         throw new Error('unused');
       },
+      async productList() {
+        throw new Error('unused');
+      },
       async productCreate() {
+        throw new Error('unused');
+      },
+      async productGet() {
+        throw new Error('unused');
+      },
+      async productUpdate() {
+        throw new Error('unused');
+      },
+      async productDelete() {
+        throw new Error('unused');
+      },
+      async productRestore() {
+        throw new Error('unused');
+      },
+      async productRefresh() {
         throw new Error('unused');
       },
       async stockList() {
@@ -304,11 +349,50 @@ describe('QuartermasterSession', () => {
           response: { status: 200 }
         };
       },
+      async productList(query) {
+        calls.push(`list:${query?.q ?? ''}:${query?.include_deleted ?? false}`);
+        return {
+          data: { items: [{ id: 'product-1', name: 'Rice', family: 'mass', preferred_unit: 'g' }] },
+          response: { status: 200 }
+        };
+      },
       async productCreate(body) {
         calls.push(`product:${body.name}:${body.family}`);
         return {
           data: { id: 'product-2', name: body.name, family: body.family, preferred_unit: 'kg' },
           response: { status: 201 }
+        };
+      },
+      async productGet(id) {
+        calls.push(`product-get:${id}`);
+        return {
+          data: { id, name: 'Rice', family: 'mass', preferred_unit: 'g' },
+          response: { status: 200 }
+        };
+      },
+      async productUpdate(id, body) {
+        calls.push(`product-update:${id}:${body.name ?? ''}`);
+        return {
+          data: { id, name: body.name ?? 'Rice', family: 'mass', preferred_unit: 'g' },
+          response: { status: 200 }
+        };
+      },
+      async productDelete(id) {
+        calls.push(`product-delete:${id}`);
+        return { response: { status: 204 } };
+      },
+      async productRestore(id) {
+        calls.push(`product-restore:${id}`);
+        return {
+          data: { id, name: 'Rice', family: 'mass', preferred_unit: 'g' },
+          response: { status: 200 }
+        };
+      },
+      async productRefresh(id) {
+        calls.push(`product-refresh:${id}`);
+        return {
+          data: { id, name: 'Rice', family: 'mass', preferred_unit: 'g', source: 'openfoodfacts' },
+          response: { status: 200 }
         };
       },
       async stockList() {
@@ -380,9 +464,23 @@ describe('QuartermasterSession', () => {
     await expect(session.productSearch({ q: 'rice', limit: 12 })).resolves.toMatchObject({
       items: [{ name: 'Rice' }]
     });
+    await expect(session.productList({ q: 'rice', include_deleted: true })).resolves.toMatchObject({
+      items: [{ name: 'Rice' }]
+    });
     await expect(
       session.productCreate({ name: 'Manual Rice', family: 'mass', preferred_unit: 'kg' })
     ).resolves.toMatchObject({ name: 'Manual Rice' });
+    await expect(session.productGet('product-1')).resolves.toMatchObject({ name: 'Rice' });
+    await expect(
+      session.productUpdate('product-1', { name: 'Updated Rice' })
+    ).resolves.toMatchObject({
+      name: 'Updated Rice'
+    });
+    await expect(session.productDelete('product-1')).resolves.toBeUndefined();
+    await expect(session.productRestore('product-1')).resolves.toMatchObject({ name: 'Rice' });
+    await expect(session.productRefresh('product-1')).resolves.toMatchObject({
+      source: 'openfoodfacts'
+    });
     await expect(
       session.stockCreate({
         product_id: 'product-2',
@@ -399,7 +497,13 @@ describe('QuartermasterSession', () => {
       'location-update:location-1:Cold Shelf:fridge:2',
       'location-delete:location-1',
       'search:rice:12',
+      'list:rice:true',
       'product:Manual Rice:mass',
+      'product-get:product-1',
+      'product-update:product-1:Updated Rice',
+      'product-delete:product-1',
+      'product-restore:product-1',
+      'product-refresh:product-1',
       'stock:product-2:2:kg',
       'update:batch-1:1.5:2026-05-01'
     ]);

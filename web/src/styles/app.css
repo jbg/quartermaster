@@ -208,8 +208,21 @@ select {
   margin-top: 22px;
 }
 
+.catalogue-layout,
+.product-detail-layout {
+  display: grid;
+  gap: 18px;
+  margin-top: 22px;
+}
+
 .settings-panel {
   align-self: start;
+  padding: 20px;
+}
+
+.catalogue-panel,
+.product-detail-panel,
+.product-form-panel {
   padding: 20px;
 }
 
@@ -333,6 +346,96 @@ select {
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.catalogue-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(160px, 220px) auto;
+  align-items: end;
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.product-catalogue-list,
+.product-management-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.product-catalogue-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 82px;
+  padding: 14px 16px;
+  border: 1px solid #e0e5df;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.product-catalogue-row.deleted {
+  background: #f5f1ec;
+  color: #706153;
+}
+
+.product-catalogue-row h3,
+.product-catalogue-row p,
+.product-detail-heading h2,
+.product-detail-heading p {
+  margin: 0;
+}
+
+.product-catalogue-row h3 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.product-catalogue-row p {
+  margin-top: 4px;
+  color: #66716b;
+}
+
+.product-catalogue-row img,
+.product-detail-heading img,
+.product-image-placeholder {
+  width: 54px;
+  height: 54px;
+  border-radius: 8px;
+}
+
+.product-catalogue-row img,
+.product-detail-heading img {
+  object-fit: cover;
+  border: 1px solid #dbe2d9;
+  background: #f5f7f3;
+}
+
+.product-image-placeholder {
+  display: grid;
+  place-items: center;
+  background: #edf2ea;
+  color: #456151;
+  font-size: 24px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.product-image-placeholder.large {
+  width: 72px;
+  height: 72px;
+  font-size: 30px;
+}
+
+.product-detail-heading {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.product-management-form {
+  max-width: 560px;
 }
 
 .heading-actions {
@@ -527,6 +630,7 @@ select {
 
   .add-stock-grid,
   .inline-form,
+  .catalogue-filters,
   .settings-layout {
     grid-template-columns: 1fr;
   }
@@ -545,10 +649,15 @@ select {
   .topbar,
   .section-heading,
   .stock-row,
+  .product-catalogue-row,
   .location-row,
   .history-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .product-catalogue-row {
+    display: flex;
   }
 
   .detail-grid {

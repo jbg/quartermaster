@@ -10,7 +10,8 @@
     "format:check": "prettier --check .",
     "generate:api": "openapi-ts",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "build": "vite build",
+    "clean:build": "rm -rf build .svelte-kit/output",
+    "build": "pnpm clean:build && vite build",
     "test": "vitest run",
     "test:e2e": "playwright test"
   },

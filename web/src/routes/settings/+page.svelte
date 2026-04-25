@@ -226,7 +226,8 @@
       <h1>Settings</h1>
     </div>
     <div class="heading-actions">
-      <a class="secondary-action" href="./">Inventory</a>
+      <a class="secondary-action" href="/">Inventory</a>
+      <a class="secondary-action" href="/products">Products</a>
       {#if authenticated}
         <button class="ghost-button" type="button" onclick={logout}>Log out</button>
       {/if}

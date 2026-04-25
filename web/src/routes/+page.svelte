@@ -669,7 +669,8 @@
     </div>
     {#if authenticated}
       <div class="heading-actions">
-        <a class="secondary-action" href="settings">Settings</a>
+        <a class="secondary-action" href="/products">Products</a>
+        <a class="secondary-action" href="/settings">Settings</a>
         <button class="ghost-button" type="button" onclick={logout}>Log out</button>
       </div>
     {/if}

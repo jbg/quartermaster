@@ -31,7 +31,7 @@ pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
                 crate::rate_limit::enforce,
             )),
         )
-        .route("/products", post(create))
+        .route("/products", get(list).post(create))
         .route(
             "/products/{id}",
             get(get_one).patch(update).delete(delete_one),
@@ -132,6 +132,15 @@ pub struct SearchQuery {
     pub include_deleted: Option<bool>,
 }
 
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct ListQuery {
+    pub q: Option<String>,
+    pub limit: Option<i64>,
+    /// When true, include soft-deleted manual products. Soft-deleted rows
+    /// have `deleted_at` populated; clients can render them muted.
+    pub include_deleted: Option<bool>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ProductSearchResponse {
     pub items: Vec<ProductDto>,
@@ -145,6 +154,39 @@ pub struct BarcodeLookupResponse {
 }
 
 // ----- handlers -----
+
+#[utoipa::path(
+    get,
+    path = "/products",
+    operation_id = "product_list",
+    tag = "products",
+    params(ListQuery),
+    responses(
+        (status = 200, body = ProductSearchResponse),
+        (status = 401, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Query(q): Query<ListQuery>,
+) -> ApiResult<Json<ProductSearchResponse>> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    let limit = q.limit.unwrap_or(50).clamp(1, 100);
+    let include_deleted = q.include_deleted.unwrap_or(false);
+    let rows = qm_db::products::list_visible(
+        &state.db,
+        household_id,
+        q.q.as_deref(),
+        limit,
+        include_deleted,
+    )
+    .await?;
+    Ok(Json(ProductSearchResponse {
+        items: products_into_dtos(rows)?,
+    }))
+}
 
 #[utoipa::path(
     get,
@@ -316,7 +358,7 @@ pub async fn get_one(
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<ProductDto>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    let row = qm_db::products::find_by_id(&state.db, id)
+    let row = qm_db::products::find_including_deleted(&state.db, id)
         .await?
         .ok_or(ApiError::NotFound)?;
     if row.source == qm_db::products::SOURCE_MANUAL

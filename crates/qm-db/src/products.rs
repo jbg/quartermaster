@@ -213,6 +213,46 @@ pub async fn search_with_deleted(
     rows.into_iter().map(row_to_product).collect()
 }
 
+/// List products visible to `household_id`. When `query` is non-empty it
+/// filters by product name or brand; otherwise it returns the catalogue.
+pub async fn list_visible(
+    db: &Database,
+    household_id: Uuid,
+    query: Option<&str>,
+    limit: i64,
+    include_deleted: bool,
+) -> Result<Vec<ProductRow>, sqlx::Error> {
+    let deleted_clause = if include_deleted {
+        ""
+    } else {
+        "AND deleted_at IS NULL"
+    };
+    let trimmed = query.map(str::trim).filter(|q| !q.is_empty());
+    let search_clause = if trimmed.is_some() {
+        "AND (LOWER(name) LIKE LOWER(?) OR LOWER(COALESCE(brand, '')) LIKE LOWER(?))"
+    } else {
+        ""
+    };
+    let sql = format!(
+        "SELECT {COLS} \
+         FROM product \
+         WHERE (source = ? OR created_by_household_id = ?) \
+           {deleted_clause} \
+           {search_clause} \
+         ORDER BY name ASC \
+         LIMIT ?"
+    );
+    let mut query_builder = sqlx::query(&sql)
+        .bind(SOURCE_OFF)
+        .bind(household_id.to_string());
+    let pattern = trimmed.map(|q| format!("%{}%", q.replace('%', r"\%")));
+    if let Some(pattern) = pattern.as_deref() {
+        query_builder = query_builder.bind(pattern).bind(pattern);
+    }
+    let rows = query_builder.bind(limit).fetch_all(&db.pool).await?;
+    rows.into_iter().map(row_to_product).collect()
+}
+
 /// Convenience wrapper: searches visible non-deleted products only.
 pub async fn search(
     db: &Database,
@@ -481,6 +521,70 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[tokio::test]
+    async fn list_visible_returns_catalogue_and_filters_deleted() {
+        let db = crate::test_db().await;
+        let a = households::create(&db, "A", "UTC").await.unwrap();
+        let b = households::create(&db, "B", "UTC").await.unwrap();
+        let deleted = create_manual(
+            &db,
+            a.id,
+            "Archived Lentils",
+            Some("House"),
+            "mass",
+            Some("g"),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        create_manual(
+            &db,
+            a.id,
+            "Basmati Rice",
+            None,
+            "mass",
+            Some("kg"),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        create_manual(&db, b.id, "Bob Beans", None, "count", None, None, None)
+            .await
+            .unwrap();
+        upsert_from_off(
+            &db,
+            "5449000000996",
+            "Coca-Cola",
+            Some("Coca-Cola"),
+            "volume",
+            Some("ml"),
+            None,
+        )
+        .await
+        .unwrap();
+
+        soft_delete(&db, deleted.id).await.unwrap();
+
+        let active = list_visible(&db, a.id, None, 20, false).await.unwrap();
+        let active_names: Vec<_> = active.iter().map(|product| product.name.as_str()).collect();
+        assert_eq!(active_names, vec!["Basmati Rice", "Coca-Cola"]);
+
+        let all = list_visible(&db, a.id, None, 20, true).await.unwrap();
+        let all_names: Vec<_> = all.iter().map(|product| product.name.as_str()).collect();
+        assert_eq!(
+            all_names,
+            vec!["Archived Lentils", "Basmati Rice", "Coca-Cola"]
+        );
+
+        let filtered = list_visible(&db, a.id, Some("coca"), 20, false)
+            .await
+            .unwrap();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "Coca-Cola");
     }
 
     #[tokio::test]

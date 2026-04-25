@@ -102,16 +102,42 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
   await expect(page.getByTestId('location-row-Smoke Shelf Renamed')).toBeVisible();
 
+  await page.getByRole('link', { name: 'Products' }).click();
+  await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'New product' }).click();
+  await expect(page.getByRole('heading', { name: 'New Product' })).toBeVisible();
+  await page.getByTestId('product-name-input').fill('Smoke Oats');
+  await page.getByTestId('product-brand-input').fill('Web');
+  await page.getByTestId('product-family-select').selectOption('mass');
+  await page.getByTestId('product-unit-select').selectOption('kg');
+  await page.getByTestId('product-create').click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Smoke Oats' })).toBeVisible();
+  const productUrl = page.url();
+  const productId = productUrl.split('/products/')[1].split(/[/?#]/)[0];
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1, name: 'Smoke Oats' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'Edit product' }).click();
+  await page.getByTestId('product-name-input').fill('Smoke Oats Edited');
+  await page.getByTestId('product-brand-input').fill('Web Updated');
+  await page.getByTestId('product-save').click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Smoke Oats Edited' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'Products' }).click();
+  await page.getByTestId('product-search-input').fill('Smoke Oats Edited');
+  await page.getByTestId('product-filter-apply').click();
+  await expect(page.getByTestId('product-row-Smoke Oats Edited')).toBeVisible();
+
   await page.getByRole('link', { name: 'Inventory' }).click();
   await expect(page.getByRole('heading', { name: 'Batches' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Add stock' }).click();
-  await page.getByLabel('Product name').fill('Smoke Oats');
-  await page.getByLabel('Brand').fill('Web');
-  await page.getByLabel('Product family').selectOption('mass');
-  await page.getByLabel('Preferred unit').selectOption('kg');
-  await page.getByRole('button', { name: 'Create product' }).click();
-  await expect(page.getByRole('button', { name: /Smoke Oats Web/ })).toBeVisible();
+  await page.getByLabel('Product search').fill('Smoke Oats Edited');
+  await page.locator('.add-stock-column').getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('button', { name: /Smoke Oats Edited/ }).click();
   await page.getByLabel('Stock quantity').fill('2');
   await page.locator('.stock-create-form').getByLabel('Unit').selectOption('kg');
   await page
@@ -126,7 +152,7 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
   await expect(page.getByTestId('detail-quantity')).toHaveText('2 kg');
   await expect(page.locator('.detail-region').getByText('Smoke Shelf Renamed')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Edit' }).click();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await expect(page.locator('.stock-edit-form').getByLabel('Location')).toContainText(
     'Smoke Shelf Renamed'
   );
@@ -151,7 +177,11 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
   await expect(
     page.getByText('This location still has active stock. Move, consume, or discard it first.')
   ).toBeVisible();
-  await page.getByRole('link', { name: 'Inventory' }).click();
+
+  await page.goto(`/products/${productId}/delete`);
+  await page.getByTestId('product-delete-confirm').click();
+  await expect(page.getByText('This product still has active stock.')).toBeVisible();
+  await page.goto('/');
 
   const firstReminder = fixture.reminders[0];
   await page.getByRole('button', { name: 'Open' }).first().click();
@@ -171,6 +201,27 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
 
   await page.getByRole('button', { name: 'Restore' }).click();
   await expect(page.getByText('In stock')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Discard' }).click();
+  await expect(page.getByText('Depleted')).toBeVisible();
+
+  await page
+    .locator('.inventory-list')
+    .getByRole('button', { name: /Smoke Oats Edited/ })
+    .click();
+  await page.getByRole('button', { name: 'Discard' }).click();
+  await expect(page.getByText('Depleted')).toBeVisible();
+
+  await page.goto(`/products/${productId}/delete`);
+  await page.getByTestId('product-delete-confirm').click();
+  await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible();
+  await page.getByTestId('product-include-filter').selectOption('deleted');
+  await page.getByTestId('product-filter-apply').click();
+  await expect(page.getByTestId('product-row-Smoke Oats Edited')).toBeVisible();
+  await page.goto(`/products/${productId}`);
+  await expect(page.getByTestId('product-restore')).toBeVisible();
+  await page.getByTestId('product-restore').click();
+  await expect(page.getByText('Active')).toBeVisible();
 });
 
 test('renders the join browser fallback from the served app', async ({ page }) => {

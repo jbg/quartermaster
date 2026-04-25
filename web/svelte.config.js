@@ -6,6 +6,9 @@ const config = {
     paths: {
       relative: true
     },
+    prerender: {
+      handleUnseenRoutes: 'ignore'
+    },
     adapter: adapter({
       pages: 'build',
       assets: 'build',
