@@ -435,6 +435,48 @@ def sign_in(username: str, password: str, server_url: str | None = None) -> None
     wait_for_tag("smoke-inventory-screen")
 
 
+def exercise_products(fixture: dict | None) -> None:
+    product_name = f"Android Smoke Product {int(time.time())}"
+    updated_brand = "Smoke Brand Updated"
+
+    tap_tag("smoke-tab-products")
+    wait_for_tag("smoke-products-screen")
+    tap_tag("smoke-product-create-button")
+    wait_for_text("New product")
+    replace_text_field_by_tag("smoke-product-name-field", product_name)
+    replace_text_field_by_tag("smoke-product-brand-field", "Smoke Brand")
+    tap_tag("smoke-product-submit-button")
+    wait_for_text(product_name, timeout=15.0)
+
+    tap_tag("smoke-product-edit-button")
+    wait_for_text("Edit product")
+    replace_text_field_by_tag("smoke-product-brand-field", updated_brand)
+    tap_tag("smoke-product-submit-button")
+    wait_for_text(updated_brand, timeout=15.0)
+
+    tap_tag("smoke-product-delete-button")
+    wait_for_text("Delete product")
+    tap_tag("smoke-product-delete-confirm-button")
+    wait_for_tag("smoke-product-list", timeout=15.0)
+    assert_text_missing(product_name, timeout=5.0)
+
+    tap_tag("smoke-product-filter-deleted")
+    tap_tag("smoke-product-search-button")
+    wait_for_text(product_name, timeout=15.0)
+    tap_text(product_name)
+    wait_for_tag("smoke-product-restore-button")
+    tap_tag("smoke-product-restore-button")
+    wait_for_tag("smoke-product-edit-button", timeout=15.0)
+
+    if fixture is not None:
+        tap_text("Back to products")
+        wait_for_tag("smoke-product-list")
+        replace_text_field_by_tag("smoke-product-barcode-field", fixture["barcode"])
+        tap_tag("smoke-product-barcode-button")
+        wait_for_text("Retry Beans", timeout=15.0)
+        wait_for_tag("smoke-product-refresh-button")
+
+
 def check_backend_health(server_url: str) -> None:
     health_url = server_url.rstrip("/") + "/healthz"
     try:
@@ -526,6 +568,7 @@ def main() -> int:
         tap_tag(f"smoke-batch-restore-{lifecycle_batch_id}")
         assert_tag_missing(f"smoke-batch-restore-{lifecycle_batch_id}", timeout=15.0)
         wait_for_tag(f"smoke-batch-consume-{lifecycle_batch_id}", timeout=15.0)
+    exercise_products(fixture)
     tap_tag("smoke-tab-settings")
     invite_code = None
     if fixture is None:
