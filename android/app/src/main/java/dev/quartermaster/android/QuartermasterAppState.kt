@@ -76,14 +76,6 @@ enum class ProductIncludeFilter {
     Deleted,
 }
 
-enum class ProductScreenMode {
-    List,
-    Detail,
-    Create,
-    Edit,
-    Delete,
-}
-
 enum class ScanAction {
     BarcodeLookup,
     ProductSearch,
@@ -308,8 +300,6 @@ class QuartermasterAppState(
         private set
     var productIncludeFilter by mutableStateOf(ProductIncludeFilter.Active)
         private set
-    var productScreenMode by mutableStateOf(ProductScreenMode.List)
-        private set
     var selectedCatalogueProduct by mutableStateOf<ProductDto?>(null)
         private set
     var selectedBatchId by mutableStateOf<String?>(null)
@@ -510,12 +500,13 @@ class QuartermasterAppState(
         invites = listOf(invite) + invites
     }
 
-    suspend fun createLocation(fields: LocationFormFields) {
+    suspend fun createLocation(fields: LocationFormFields): Boolean {
         validateLocationForm(fields)?.let {
             settingsError = it
             lastError = it
-            return
+            return false
         }
+        var saved = false
         runLocationAction(LocationAction.Create) {
             backend.createLocation(
                 CreateLocationRequest(
@@ -525,19 +516,22 @@ class QuartermasterAppState(
                 ),
             )
             refreshLocationsAndInventory()
+            saved = true
         }
+        return saved
     }
 
     suspend fun updateLocation(
         id: String,
         fields: LocationFormFields,
-    ) {
+    ): Boolean {
         validateLocationForm(fields)?.let {
             settingsError = it
             lastError = it
-            return
+            return false
         }
-        val sortOrder = fields.sortOrder ?: locations.firstOrNull { it.id.toString() == id }?.sortOrder ?: return
+        val sortOrder = fields.sortOrder ?: locations.firstOrNull { it.id.toString() == id }?.sortOrder ?: return false
+        var saved = false
         runLocationAction(LocationAction.Update) {
             backend.updateLocation(
                 id,
@@ -548,12 +542,19 @@ class QuartermasterAppState(
                 ),
             )
             refreshLocationsAndInventory()
+            saved = true
         }
+        return saved
     }
 
-    suspend fun deleteLocation(id: String) = runLocationAction(LocationAction.Delete) {
-        backend.deleteLocation(id)
-        refreshLocationsAndInventory()
+    suspend fun deleteLocation(id: String): Boolean {
+        var deleted = false
+        runLocationAction(LocationAction.Delete) {
+            backend.deleteLocation(id)
+            refreshLocationsAndInventory()
+            deleted = true
+        }
+        return deleted
     }
 
     suspend fun moveLocation(
@@ -668,150 +669,143 @@ class QuartermasterAppState(
         refreshProducts(force = false)
     }
 
-    suspend fun openProduct(id: String) = runProductAction(ProductAction.LoadDetail) {
-        selectedCatalogueProduct = backend.getProduct(id)
-        productScreenMode = ProductScreenMode.Detail
+    suspend fun openProduct(id: String): ProductDto? {
+        var product: ProductDto? = null
+        runProductAction(ProductAction.LoadDetail) {
+            product = backend.getProduct(id)
+            selectedCatalogueProduct = product
+        }
+        return product
     }
 
-    suspend fun lookupProductBarcode(barcode: String) = runProductAction(ProductAction.BarcodeLookup) {
-        val response = backend.lookupBarcode(barcode)
-        selectedCatalogueProduct = response.product
-        products = upsertProduct(products, response.product)
-        productScreenMode = ProductScreenMode.Detail
+    suspend fun lookupProductBarcode(barcode: String): ProductDto? {
+        var product: ProductDto? = null
+        runProductAction(ProductAction.BarcodeLookup) {
+            val response = backend.lookupBarcode(barcode)
+            product = response.product
+            selectedCatalogueProduct = response.product
+            products = upsertProduct(products, response.product)
+        }
+        return product
     }
 
-    fun showProductList() {
-        productScreenMode = ProductScreenMode.List
+    fun prepareProductList() {
         selectedCatalogueProduct = null
         productError = null
     }
 
-    fun showProductCreate() {
+    fun prepareProductCreate() {
         returnToScanAfterProductCreate = false
-        productScreenMode = ProductScreenMode.Create
         selectedCatalogueProduct = null
         productError = null
     }
 
-    fun showProductCreateForScan() {
+    fun prepareProductCreateForScan() {
         returnToScanAfterProductCreate = true
-        productScreenMode = ProductScreenMode.Create
         selectedCatalogueProduct = null
         productError = null
         selectedTab = MainTab.Products
     }
 
-    fun cancelProductForm() {
+    fun cancelProductFormForScan(): Boolean {
         if (returnToScanAfterProductCreate) {
             returnToScanAfterProductCreate = false
-            productScreenMode = ProductScreenMode.List
             selectedCatalogueProduct = null
             productError = null
             selectedTab = MainTab.Scan
-        } else if (selectedCatalogueProduct == null) {
-            showProductList()
-        } else {
-            showProductDetail()
+            return true
         }
+        return false
     }
 
-    fun showProductDetail() {
-        if (selectedCatalogueProduct != null) {
-            productScreenMode = ProductScreenMode.Detail
-            productError = null
-        }
+    fun prepareProductDetail() {
+        productError = null
     }
 
-    fun showProductEdit() {
-        if (selectedCatalogueProduct?.isEditableManualProduct() == true) {
-            productScreenMode = ProductScreenMode.Edit
-            productError = null
-        }
-    }
-
-    fun showProductDelete() {
-        if (selectedCatalogueProduct?.isEditableManualProduct() == true) {
-            productScreenMode = ProductScreenMode.Delete
-            productError = null
-        }
-    }
-
-    suspend fun createProduct(fields: ProductFormFields) {
+    suspend fun createProduct(fields: ProductFormFields): ProductDto? {
         validateProductForm(fields)?.let {
             productError = it
             lastError = it
-            return
+            return null
         }
+        var created: ProductDto? = null
         runProductAction(ProductAction.Create) {
             val product = backend.createProduct(fields.toCreateProductRequest())
+            created = product
             selectedCatalogueProduct = product
             products = upsertProduct(products, product)
             if (returnToScanAfterProductCreate) {
                 selectedProduct = product
                 searchResults = emptyList()
                 selectedCatalogueProduct = null
-                productScreenMode = ProductScreenMode.List
                 selectedTab = MainTab.Scan
                 returnToScanAfterProductCreate = false
-            } else {
-                productScreenMode = ProductScreenMode.Detail
             }
             refreshProductsBody(forceUnits = false)
             hasLoadedProductsOnce = true
         }
+        return created
     }
 
-    suspend fun updateSelectedProduct(fields: ProductFormFields) {
-        val product = selectedCatalogueProduct ?: return
+    suspend fun updateSelectedProduct(fields: ProductFormFields): ProductDto? {
+        val product = selectedCatalogueProduct ?: return null
         validateProductForm(fields)?.let {
             productError = it
             lastError = it
-            return
+            return null
         }
         val patch = fields.toUpdatePatch(product)
+        var updatedProduct: ProductDto? = null
         runProductAction(ProductAction.Update) {
             val updated = backend.updateProduct(product.id.toString(), patch)
+            updatedProduct = updated
             selectedCatalogueProduct = updated
             products = upsertProduct(products, updated)
-            productScreenMode = ProductScreenMode.Detail
             refreshProductsBody(forceUnits = false)
             hasLoadedProductsOnce = true
         }
+        return updatedProduct
     }
 
-    suspend fun deleteSelectedProduct() {
-        val product = selectedCatalogueProduct ?: return
+    suspend fun deleteSelectedProduct(): Boolean {
+        val product = selectedCatalogueProduct ?: return false
+        var deleted = false
         runProductAction(ProductAction.Delete) {
             backend.deleteProduct(product.id.toString())
             selectedCatalogueProduct = null
-            productScreenMode = ProductScreenMode.List
             refreshProductsBody(forceUnits = false)
             hasLoadedProductsOnce = true
+            deleted = true
         }
+        return deleted
     }
 
-    suspend fun restoreSelectedProduct() {
-        val product = selectedCatalogueProduct ?: return
+    suspend fun restoreSelectedProduct(): ProductDto? {
+        val product = selectedCatalogueProduct ?: return null
+        var restoredProduct: ProductDto? = null
         runProductAction(ProductAction.Restore) {
             val restored = backend.restoreProduct(product.id.toString())
+            restoredProduct = restored
             selectedCatalogueProduct = restored
             products = upsertProduct(products, restored)
-            productScreenMode = ProductScreenMode.Detail
             refreshProductsBody(forceUnits = false)
             hasLoadedProductsOnce = true
         }
+        return restoredProduct
     }
 
-    suspend fun refreshSelectedProductFromOff() {
-        val product = selectedCatalogueProduct ?: return
+    suspend fun refreshSelectedProductFromOff(): ProductDto? {
+        val product = selectedCatalogueProduct ?: return null
+        var refreshedProduct: ProductDto? = null
         runProductAction(ProductAction.Refresh) {
             val refreshed = backend.refreshProduct(product.id.toString())
+            refreshedProduct = refreshed
             selectedCatalogueProduct = refreshed
             products = upsertProduct(products, refreshed)
-            productScreenMode = ProductScreenMode.Detail
             refreshProductsBody(forceUnits = false)
             hasLoadedProductsOnce = true
         }
+        return refreshedProduct
     }
 
     suspend fun searchProducts(query: String) {
@@ -1466,7 +1460,6 @@ class QuartermasterAppState(
         products = emptyList()
         productSearchQuery = ""
         productIncludeFilter = ProductIncludeFilter.Active
-        productScreenMode = ProductScreenMode.List
         selectedCatalogueProduct = null
         clearSelectedBatch()
         householdDetail = null
