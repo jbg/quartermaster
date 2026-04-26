@@ -1,22 +1,28 @@
 import type { QuartermasterSession, Reminder } from './session-core';
 
+export type ReminderActionKind = 'open' | 'ack';
+
 export interface ReminderState {
   status: 'idle' | 'loading' | 'loaded' | 'error';
   items: Reminder[];
   error: string | null;
   actionIds: Set<string>;
+  actionKinds: Record<string, ReminderActionKind>;
 }
 
 export const emptyReminderState: ReminderState = {
   status: 'idle',
   items: [],
   error: null,
-  actionIds: new Set()
+  actionIds: new Set(),
+  actionKinds: {}
 };
 
 export async function loadReminders(
   session: Pick<QuartermasterSession, 'remindersList' | 'remindersPresent'>,
-  existingActionIds = new Set<string>()
+  existingActionIds = new Set<string>(),
+  existingActionKinds: Record<string, ReminderActionKind> = {},
+  fallbackItems: Reminder[] = []
 ): Promise<ReminderState> {
   try {
     const response = await session.remindersList({ limit: 50 });
@@ -30,14 +36,16 @@ export async function loadReminders(
       status: 'loaded',
       items,
       error: null,
-      actionIds: new Set(existingActionIds)
+      actionIds: new Set(existingActionIds),
+      actionKinds: { ...existingActionKinds }
     };
   } catch {
     return {
       status: 'error',
-      items: [],
+      items: fallbackItems,
       error: 'Reminders could not be loaded.',
-      actionIds: new Set(existingActionIds)
+      actionIds: new Set(existingActionIds),
+      actionKinds: { ...existingActionKinds }
     };
   }
 }
@@ -68,14 +76,50 @@ export function reminderExpiresOn(reminder: Reminder): string {
   return reminder.expires_on ?? reminder.expiresOn ?? '';
 }
 
-export function optimisticAckStart(state: ReminderState, id: string): ReminderState {
+export function formatReminderDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return value;
+  }
+  const [, year, month, day] = match;
+  const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(parsed);
+}
+
+export function formatReminderDateTime(value: string): string {
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) {
+    return value;
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(new Date(parsed));
+}
+
+export function startReminderAction(
+  state: ReminderState,
+  id: string,
+  action: ReminderActionKind
+): ReminderState {
   const actionIds = new Set(state.actionIds);
   actionIds.add(id);
   return {
     ...state,
-    items: state.items.filter((reminder) => reminder.id !== id),
     error: null,
-    actionIds
+    actionIds,
+    actionKinds: { ...state.actionKinds, [id]: action }
+  };
+}
+
+export function optimisticAckStart(state: ReminderState, id: string): ReminderState {
+  const started = startReminderAction(state, id, 'ack');
+  return {
+    ...started,
+    items: started.items.filter((reminder) => reminder.id !== id)
   };
 }
 
@@ -86,6 +130,7 @@ export function optimisticAckRollback(
 ): ReminderState {
   const actionIds = new Set(state.actionIds);
   actionIds.delete(reminder.id);
+  const { [reminder.id]: _removed, ...actionKinds } = state.actionKinds;
   const items = state.items.some((item) => item.id === reminder.id)
     ? state.items
     : [reminder, ...state.items];
@@ -93,15 +138,18 @@ export function optimisticAckRollback(
     ...state,
     items,
     error: message,
-    actionIds
+    actionIds,
+    actionKinds
   };
 }
 
 export function actionDone(state: ReminderState, id: string): ReminderState {
   const actionIds = new Set(state.actionIds);
   actionIds.delete(id);
+  const { [id]: _removed, ...actionKinds } = state.actionKinds;
   return {
     ...state,
-    actionIds
+    actionIds,
+    actionKinds
   };
 }

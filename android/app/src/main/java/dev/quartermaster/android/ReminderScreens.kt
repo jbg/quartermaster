@@ -23,6 +23,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import dev.quartermaster.android.generated.models.ReminderDto
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @Composable
 internal fun ReminderScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
@@ -123,12 +127,12 @@ private fun ReminderCard(
             Text(reminder.body)
             reminder.expiresOn?.let { expiresOn ->
                 Text(
-                    "Expires $expiresOn",
+                    "Expires ${formatReminderDate(expiresOn)}",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
             Text(
-                "Household time ${reminder.householdFireLocalAt} (${reminder.householdTimezone})",
+                "Household time ${formatReminderDateTime(reminder.householdFireLocalAt)} (${reminder.householdTimezone})",
                 style = MaterialTheme.typography.bodySmall,
             )
             if (action != null) {
@@ -161,3 +165,17 @@ private fun ReminderCard(
         }
     }
 }
+
+internal fun formatReminderDate(value: String): String = runCatching {
+    LocalDate.parse(value).format(reminderDateFormatter)
+}.getOrDefault(value)
+
+internal fun formatReminderDateTime(value: String): String = runCatching {
+    OffsetDateTime.parse(value).format(reminderDateTimeFormatter)
+}.getOrDefault(value)
+
+private val reminderDateFormatter =
+    DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault())
+
+private val reminderDateTimeFormatter =
+    DateTimeFormatter.ofPattern("MMM d, yyyy, h:mm a", Locale.getDefault())

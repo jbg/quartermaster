@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   actionDone,
+  formatReminderDate,
+  formatReminderDateTime,
   loadReminders,
   optimisticAckRollback,
   optimisticAckStart,
   reminderBatchId,
   reminderExpiresOn,
-  reminderFireAt
+  reminderFireAt,
+  startReminderAction
 } from './reminders';
 
 describe('reminder helpers', () => {
@@ -40,22 +43,30 @@ describe('reminder helpers', () => {
   it('removes optimistically and restores a reminder on ack rollback', () => {
     const reminder = { id: 'reminder-1', title: 'Rice', body: 'Due', batchId: 'batch-1' };
     const started = optimisticAckStart(
-      { status: 'loaded', items: [reminder], error: null, actionIds: new Set() },
+      { status: 'loaded', items: [reminder], error: null, actionIds: new Set(), actionKinds: {} },
       reminder.id
     );
 
     expect(started.items).toEqual([]);
     expect(started.actionIds.has(reminder.id)).toBe(true);
+    expect(started.actionKinds[reminder.id]).toBe('ack');
 
     const rolledBack = optimisticAckRollback(started, reminder, 'Nope');
     expect(rolledBack.items).toEqual([reminder]);
     expect(rolledBack.error).toBe('Nope');
     expect(rolledBack.actionIds.has(reminder.id)).toBe(false);
+    expect(rolledBack.actionKinds[reminder.id]).toBeUndefined();
   });
 
   it('normalizes generated reminder batch field names and clears action state', () => {
     const done = actionDone(
-      { status: 'loaded', items: [], error: null, actionIds: new Set(['reminder-1']) },
+      {
+        status: 'loaded',
+        items: [],
+        error: null,
+        actionIds: new Set(['reminder-1']),
+        actionKinds: { 'reminder-1': 'open' }
+      },
       'reminder-1'
     );
 
@@ -79,5 +90,40 @@ describe('reminder helpers', () => {
       })
     ).toBe('2026-04-23T09:00:00+02:00');
     expect(done.actionIds.has('reminder-1')).toBe(false);
+    expect(done.actionKinds['reminder-1']).toBeUndefined();
+  });
+
+  it('preserves fallback items on load failure and tracks action kind', async () => {
+    const fallback = [{ id: 'reminder-1', title: 'Rice', body: 'Due', batch_id: 'batch-1' }];
+    const state = await loadReminders(
+      {
+        async remindersList() {
+          throw new Error('offline');
+        },
+        async remindersPresent() {
+          throw new Error('unused');
+        }
+      },
+      new Set(['reminder-1']),
+      { 'reminder-1': 'open' },
+      fallback
+    );
+
+    expect(state.status).toBe('error');
+    expect(state.items).toEqual(fallback);
+    expect(state.actionIds.has('reminder-1')).toBe(true);
+    expect(state.actionKinds['reminder-1']).toBe('open');
+
+    const started = startReminderAction(state, 'reminder-2', 'ack');
+    expect(started.actionKinds['reminder-2']).toBe('ack');
+  });
+
+  it('formats reminder dates with raw fallback', () => {
+    expect(formatReminderDate('not-a-date')).toBe('not-a-date');
+    expect(formatReminderDateTime('not-a-date')).toBe('not-a-date');
+    expect(formatReminderDate('2026-04-24')).not.toBe('2026-04-24');
+    expect(formatReminderDateTime('2026-04-23T09:00:00+02:00')).not.toBe(
+      '2026-04-23T09:00:00+02:00'
+    );
   });
 });

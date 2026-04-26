@@ -35,12 +35,15 @@
   import {
     actionDone,
     emptyReminderState,
+    formatReminderDate,
+    formatReminderDateTime,
     loadReminders,
     optimisticAckRollback,
     optimisticAckStart,
     reminderBatchId,
     reminderExpiresOn,
     reminderFireAt,
+    startReminderAction,
     type ReminderState
   } from '$lib/reminders';
   import { barcodeLookupErrorMessage } from '$lib/products';
@@ -273,12 +276,23 @@
     }
   }
 
-  async function refreshReminders() {
+  async function refreshReminders({ preserveItems = false } = {}) {
     if (!session) {
       return;
     }
-    reminders = { ...reminders, status: 'loading', error: null };
-    reminders = await loadReminders(session, reminders.actionIds);
+    const previousItems = reminders.items;
+    reminders = {
+      ...reminders,
+      status: 'loading',
+      error: null,
+      items: preserveItems ? reminders.items : []
+    };
+    reminders = await loadReminders(
+      session,
+      reminders.actionIds,
+      reminders.actionKinds,
+      preserveItems ? previousItems : []
+    );
   }
 
   async function submitAuth() {
@@ -339,17 +353,13 @@
       return;
     }
     const id = reminder.id;
-    reminders = {
-      ...reminders,
-      actionIds: new Set([...reminders.actionIds, id]),
-      error: null
-    };
+    reminders = startReminderAction(reminders, id, 'open');
     try {
       await session.remindersOpen(id);
       const batchId = reminderBatchId(reminder);
       highlightBatchId = batchId;
       await refreshInventory(batchId);
-      await refreshReminders();
+      await refreshReminders({ preserveItems: true });
     } catch {
       reminders = { ...reminders, error: 'Reminder could not be opened.' };
     } finally {
@@ -365,6 +375,7 @@
     try {
       await session.remindersAck(reminder.id);
       reminders = actionDone(reminders, reminder.id);
+      await refreshReminders({ preserveItems: true });
     } catch {
       reminders = optimisticAckRollback(reminders, reminder, 'Reminder could not be acknowledged.');
     }
@@ -1055,36 +1066,56 @@
             <span>{reminders.items.length}</span>
           </div>
 
-          {#if reminders.status === 'loading'}
+          {#if reminders.status === 'loading' && reminders.items.length === 0}
             <p class="muted">Loading reminders...</p>
-          {:else if reminders.status === 'error'}
+          {:else if reminders.status === 'error' && reminders.items.length === 0}
             <p class="error-text">{reminders.error}</p>
           {:else if reminders.items.length === 0}
             <p class="muted">No due reminders.</p>
           {:else}
+            {#if reminders.status === 'loading'}
+              <p class="muted">Refreshing reminders...</p>
+            {:else if reminders.status === 'error'}
+              <p class="error-text">{reminders.error}</p>
+            {/if}
             <div class="reminder-list">
               {#each reminders.items as reminder}
-                <article class="reminder-row">
+                <article class="reminder-row" data-testid={`reminder-row-${reminder.id}`}>
                   <div>
                     <h3>{reminder.title}</h3>
                     <p>{reminder.body}</p>
                     {#if reminderExpiresOn(reminder)}
-                      <span>Expires {reminderExpiresOn(reminder)}</span>
+                      <span>Expires {formatReminderDate(reminderExpiresOn(reminder))}</span>
                     {/if}
-                    <span>Household time {reminderFireAt(reminder)}</span>
+                    <span>Household time {formatReminderDateTime(reminderFireAt(reminder))}</span>
+                    {#if reminders.actionKinds[reminder.id]}
+                      <span class="inline-status">
+                        {reminders.actionKinds[reminder.id] === 'open'
+                          ? 'Opening reminder...'
+                          : 'Acknowledging reminder...'}
+                      </span>
+                    {/if}
                   </div>
                   <div class="row-actions">
                     <button
                       class="secondary-action small"
                       type="button"
+                      data-testid={`reminder-open-${reminder.id}`}
                       disabled={reminders.actionIds.has(reminder.id)}
-                      onclick={() => openReminder(reminder)}>Open</button
+                      onclick={() => openReminder(reminder)}
+                      >{reminders.actionKinds[reminder.id] === 'open'
+                        ? 'Opening...'
+                        : 'Open'}</button
                     >
                     <button
                       class="ghost-button small"
                       type="button"
+                      data-testid={`reminder-ack-${reminder.id}`}
                       disabled={reminders.actionIds.has(reminder.id)}
-                      onclick={() => ackReminder(reminder)}>Ack</button
+                      onclick={() => ackReminder(reminder)}
+                      >{reminders.actionKinds[reminder.id] === 'ack'
+                        ? 'Acknowledging...'
+                        : 'Ack'}</button
                     >
                   </div>
                 </article>
