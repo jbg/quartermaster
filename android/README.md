@@ -93,6 +93,8 @@ The Android app uses the repo-root `openapi.json` as its single API source of tr
 
    The script preflights the host backend at `http://127.0.0.1:8080`, runs `adb reverse tcp:8080 tcp:8080`, and rewrites the app's server field to `http://127.0.0.1:8080` inside the emulator. Override the host or device URLs with `QM_ANDROID_SMOKE_HOST_SERVER_URL` and `QM_ANDROID_SMOKE_DEVICE_SERVER_URL` when needed. When `QM_ANDROID_SMOKE_MAINTENANCE_TOKEN` is set, the script first calls the backend-owned `POST /internal/maintenance/seed-android-smoke` fixture route to create or refresh the smoke user, due reminders, and invite code before it verifies reminder acknowledge + notification-open → inventory highlight. It clears app data by default; pass `--preserve-app-data` to keep the current emulator session. You can still supply `QM_ANDROID_SMOKE_USERNAME` / `QM_ANDROID_SMOKE_PASSWORD` manually if you want to skip the fixture route.
 
+   The default run is the full end-to-end path. For faster local retries, pass `--flow` with one of `reminders`, `inventory`, `products`, `locations`, or `invite-session`. The selected flow still performs the same backend preflight, fixture seeding when a maintenance token is present, `adb reverse`, app launch, and sign-in. The `inventory` flow requires fixture data from `QM_ANDROID_SMOKE_MAINTENANCE_TOKEN`.
+
    To seed or refresh the local smoke account, due reminders, and invite code without launching the UI driver:
 
    ```sh
