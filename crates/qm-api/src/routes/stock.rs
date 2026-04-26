@@ -395,6 +395,11 @@ pub async fn update(
     let existing = qm_db::stock::get(&state.db, household_id, id)
         .await?
         .ok_or(ApiError::NotFound)?;
+    if existing.depleted_at.is_some() {
+        return Err(ApiError::BadRequest(
+            "depleted stock cannot be edited; restore it before editing".into(),
+        ));
+    }
     let product = load_product_for_write(&state, household_id, existing.product_id).await?;
 
     let expires_on = req.expires_on.as_ref().map(|o| o.as_deref());

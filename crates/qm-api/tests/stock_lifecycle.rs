@@ -277,6 +277,52 @@ async fn stock_patch_uses_json_patch_replace_and_remove() {
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
+
+    let (status, _) = app
+        .send(
+            Method::DELETE,
+            &format!("/api/v1/stock/{batch_id}"),
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, body) = app
+        .send(
+            Method::PATCH,
+            &format!("/api/v1/stock/{batch_id}"),
+            Some(json!([{ "op": "replace", "path": "/note", "value": "should fail" }])),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        body["message"],
+        "bad request: depleted stock cannot be edited; restore it before editing"
+    );
+
+    let (status, restored) = app
+        .send(
+            Method::POST,
+            &format!("/api/v1/stock/{batch_id}/restore"),
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(restored["quantity"], "4");
+
+    let (status, updated) = app
+        .send(
+            Method::PATCH,
+            &format!("/api/v1/stock/{batch_id}"),
+            Some(json!([{ "op": "replace", "path": "/note", "value": "after restore" }])),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(updated["note"], "after restore");
 }
 
 #[tokio::test]
