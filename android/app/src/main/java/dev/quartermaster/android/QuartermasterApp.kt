@@ -47,6 +47,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavHostController
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.ReminderDto
@@ -99,9 +106,17 @@ private object SmokeTag {
     const val LocationKindFridge = "smoke-location-kind-fridge"
     const val LocationKindFreezer = "smoke-location-kind-freezer"
     const val LocationSubmitButton = "smoke-location-submit-button"
+    const val StockEditScreen = "smoke-stock-edit-screen"
+    const val StockEditQuantity = "smoke-stock-edit-quantity"
+    const val StockEditExpires = "smoke-stock-edit-expires"
+    const val StockEditOpened = "smoke-stock-edit-opened"
+    const val StockEditNote = "smoke-stock-edit-note"
+    const val StockEditSave = "smoke-stock-edit-save"
+    const val StockEditCancel = "smoke-stock-edit-cancel"
 
     fun inventoryBatch(id: String) = "smoke-inventory-batch-$id"
     fun selectedBatch(id: String) = "smoke-selected-batch-$id"
+    fun batchEditButton(id: String) = "smoke-batch-edit-$id"
     fun batchConsumeField(id: String) = "smoke-batch-consume-quantity-$id"
     fun batchConsumeButton(id: String) = "smoke-batch-consume-$id"
     fun batchDiscardButton(id: String) = "smoke-batch-discard-$id"
@@ -118,15 +133,60 @@ private object SmokeTag {
     fun locationDeleteConfirm(id: String) = "smoke-location-delete-confirm-$id"
     fun locationMoveUp(id: String) = "smoke-location-move-up-$id"
     fun locationMoveDown(id: String) = "smoke-location-move-down-$id"
+    fun stockEditLocation(id: String) = "smoke-stock-edit-location-$id"
+}
+
+private object AppRoute {
+    const val Inventory = "inventory"
+    const val Products = "products"
+    const val Reminders = "reminders"
+    const val Scan = "scan"
+    const val Settings = "settings"
+    const val StockEdit = "inventory/batch/{batchId}/edit"
+
+    fun stockEdit(batchId: String) = "inventory/batch/$batchId/edit"
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 fun QuartermasterApp(appState: QuartermasterAppState) {
     val snackbarHostState = remember { SnackbarHostState() }
+    val navController = rememberNavController()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
 
     LaunchedEffect(appState.lastError) {
         appState.lastError?.let { snackbarHostState.showSnackbar(it) }
+    }
+    LaunchedEffect(currentRoute) {
+        appState.selectedTab = when (currentRoute) {
+            AppRoute.Products -> MainTab.Products
+            AppRoute.Reminders -> MainTab.Reminders
+            AppRoute.Scan -> MainTab.Scan
+            AppRoute.Settings -> MainTab.Settings
+            AppRoute.StockEdit,
+            AppRoute.Inventory,
+            null,
+            -> MainTab.Inventory
+            else -> appState.selectedTab
+        }
+    }
+    LaunchedEffect(appState.selectedTab, currentRoute, appState.currentHouseholdId) {
+        val route = appState.selectedTab.route()
+        if (
+            appState.currentHouseholdId != null &&
+            currentRoute != null &&
+            currentRoute != AppRoute.StockEdit &&
+            currentRoute != route
+        ) {
+            navController.navigate(route) {
+                popUpTo(navController.graph.startDestinationId) {
+                    saveState = true
+                }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
     }
 
     MaterialTheme {
@@ -156,7 +216,16 @@ fun QuartermasterApp(appState: QuartermasterAppState) {
                                     },
                                 ),
                                 selected = appState.selectedTab == tab,
-                                onClick = { appState.selectedTab = tab },
+                                onClick = {
+                                    appState.selectedTab = tab
+                                    navController.navigate(tab.route()) {
+                                        popUpTo(navController.graph.startDestinationId) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                },
                                 icon = { androidx.compose.material3.Icon(labelIcon.second, contentDescription = labelIcon.first) },
                                 label = { Text(labelIcon.first) },
                             )
@@ -177,17 +246,59 @@ fun QuartermasterApp(appState: QuartermasterAppState) {
                     if (phase.me.currentHousehold == null) {
                         NoHouseholdScreen(appState, Modifier.padding(padding))
                     } else {
-                        when (appState.selectedTab) {
-                            MainTab.Inventory -> InventoryScreen(appState, Modifier.padding(padding))
-                            MainTab.Products -> ProductsScreen(appState, Modifier.padding(padding))
-                            MainTab.Reminders -> ReminderScreen(appState, Modifier.padding(padding))
-                            MainTab.Scan -> ScanScreen(appState, Modifier.padding(padding))
-                            MainTab.Settings -> SettingsScreen(appState, Modifier.padding(padding))
-                        }
+                        AuthenticatedNavHost(
+                            appState = appState,
+                            navController = navController,
+                            modifier = Modifier.padding(padding),
+                        )
                     }
             }
         }
     }
+}
+
+@Composable
+private fun AuthenticatedNavHost(
+    appState: QuartermasterAppState,
+    navController: NavHostController,
+    modifier: Modifier = Modifier,
+) {
+    NavHost(
+        navController = navController,
+        startDestination = AppRoute.Inventory,
+        modifier = modifier,
+    ) {
+        composable(AppRoute.Inventory) {
+            InventoryScreen(
+                appState = appState,
+                onEditBatch = { batchId -> navController.navigate(AppRoute.stockEdit(batchId)) },
+            )
+        }
+        composable(AppRoute.Products) { ProductsScreen(appState) }
+        composable(AppRoute.Reminders) { ReminderScreen(appState) }
+        composable(AppRoute.Scan) { ScanScreen(appState) }
+        composable(AppRoute.Settings) { SettingsScreen(appState) }
+        composable(
+            route = AppRoute.StockEdit,
+            arguments = listOf(navArgument("batchId") { type = NavType.StringType }),
+        ) { entry ->
+            val batchId = entry.arguments?.getString("batchId").orEmpty()
+            StockEditScreen(
+                appState = appState,
+                batchId = batchId,
+                onDone = { navController.popBackStack(AppRoute.Inventory, inclusive = false) },
+                onCancel = { navController.popBackStack(AppRoute.Inventory, inclusive = false) },
+            )
+        }
+    }
+}
+
+private fun MainTab.route(): String = when (this) {
+    MainTab.Inventory -> AppRoute.Inventory
+    MainTab.Products -> AppRoute.Products
+    MainTab.Reminders -> AppRoute.Reminders
+    MainTab.Scan -> AppRoute.Scan
+    MainTab.Settings -> AppRoute.Settings
 }
 
 @Composable
@@ -542,7 +653,11 @@ private fun NoHouseholdScreen(appState: QuartermasterAppState, modifier: Modifie
 }
 
 @Composable
-private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
+private fun InventoryScreen(
+    appState: QuartermasterAppState,
+    modifier: Modifier = Modifier,
+    onEditBatch: (String) -> Unit = {},
+) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(appState.currentHouseholdId) {
         appState.refreshInventory(force = true)
@@ -633,6 +748,7 @@ private fun InventoryScreen(appState: QuartermasterAppState, modifier: Modifier 
                 BatchDetailCard(
                     appState = appState,
                     batch = batch,
+                    onEdit = { onEditBatch(batch.id.toString()) },
                     onConsume = { quantity -> scope.launch { appState.consumeSelectedBatch(quantity) } },
                     onDiscard = { scope.launch { appState.discardBatch(batch.id.toString()) } },
                     onRestore = { scope.launch { appState.restoreBatch(batch.id.toString()) } },
@@ -754,6 +870,7 @@ private fun LocationInventoryCard(
 private fun BatchDetailCard(
     appState: QuartermasterAppState,
     batch: StockBatchDto,
+    onEdit: () -> Unit,
     onConsume: (String) -> Unit,
     onDiscard: () -> Unit,
     onRestore: () -> Unit,
@@ -795,6 +912,13 @@ private fun BatchDetailCard(
             if (depleted) {
                 Text("This batch is depleted.", style = MaterialTheme.typography.bodyMedium)
             } else {
+                Button(
+                    onClick = onEdit,
+                    enabled = action == null,
+                    modifier = Modifier.testTag(SmokeTag.batchEditButton(batchId)),
+                ) {
+                    Text(if (action == StockAction.Update) "Saving..." else "Edit")
+                }
                 OutlinedTextField(
                     value = consumeQuantity,
                     onValueChange = { consumeQuantity = it },
@@ -873,6 +997,148 @@ private fun BatchHistory(
                     )
                     event.note?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StockEditScreen(
+    appState: QuartermasterAppState,
+    batchId: String,
+    onDone: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val batch = appState.batches.firstOrNull { it.id.toString() == batchId }
+    var fields by remember(batch?.id) {
+        mutableStateOf(batch?.let(appState::stockEditFields) ?: StockEditFields())
+    }
+    val action = appState.stockActionFor(batchId)
+    val validation = batch?.let { appState.validateStockEditFields(fields) }
+    val canSave = batch != null && appState.canEditBatch(batch) && validation == null && action == null
+
+    LaunchedEffect(batchId) {
+        if (appState.selectedBatchId != batchId) {
+            appState.selectBatch(batchId)
+        }
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .testTag(SmokeTag.StockEditScreen)
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            TextButton(
+                modifier = Modifier.testTag(SmokeTag.StockEditCancel),
+                onClick = onCancel,
+            ) {
+                Text("Cancel")
+            }
+        }
+        if (batch == null) {
+            item { StatusCard("Batch unavailable", "Return to Inventory and choose another batch.") }
+            return@LazyColumn
+        }
+        if (!appState.canEditBatch(batch)) {
+            item { StatusCard("Batch is depleted", "Depleted batches cannot be corrected from Android yet.") }
+            return@LazyColumn
+        }
+        item {
+            Text("Edit ${batch.product.name}", style = MaterialTheme.typography.headlineSmall)
+        }
+        appState.inventoryError?.let { message ->
+            item { ErrorCard("Stock correction failed", message) }
+        }
+        item {
+            OutlinedTextField(
+                value = fields.quantity,
+                onValueChange = { fields = fields.copy(quantity = it) },
+                label = { Text("Quantity (${batch.unit})") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(SmokeTag.StockEditQuantity),
+            )
+        }
+        item {
+            Card {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Location", style = MaterialTheme.typography.titleMedium)
+                    appState.sortedLocations().forEach { location ->
+                        val locationId = location.id.toString()
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(location.name)
+                            if (fields.locationId == locationId) {
+                                Text("Selected", style = MaterialTheme.typography.labelMedium)
+                            } else {
+                                TextButton(
+                                    modifier = Modifier.testTag(SmokeTag.stockEditLocation(locationId)),
+                                    onClick = { fields = fields.copy(locationId = locationId) },
+                                ) {
+                                    Text("Select")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            OutlinedTextField(
+                value = fields.expiresOn,
+                onValueChange = { fields = fields.copy(expiresOn = it) },
+                label = { Text("Expires on (YYYY-MM-DD)") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(SmokeTag.StockEditExpires),
+            )
+        }
+        item {
+            OutlinedTextField(
+                value = fields.openedOn,
+                onValueChange = { fields = fields.copy(openedOn = it) },
+                label = { Text("Opened on (YYYY-MM-DD)") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(SmokeTag.StockEditOpened),
+            )
+        }
+        item {
+            OutlinedTextField(
+                value = fields.note,
+                onValueChange = { fields = fields.copy(note = it) },
+                label = { Text("Note") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(SmokeTag.StockEditNote),
+            )
+        }
+        validation?.let { item { Text(it, style = MaterialTheme.typography.bodySmall) } }
+        item {
+            Button(
+                modifier = Modifier.testTag(SmokeTag.StockEditSave),
+                onClick = {
+                    scope.launch {
+                        if (appState.updateSelectedBatch(fields)) {
+                            onDone()
+                        }
+                    }
+                },
+                enabled = canSave,
+            ) {
+                Text(if (action == StockAction.Update) "Saving..." else "Save")
             }
         }
     }

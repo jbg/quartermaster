@@ -149,6 +149,16 @@ def wait_for_text_with_scroll(text: str, attempts: int = 6) -> UiNode:
     raise RuntimeError(f"timed out waiting for text {text!r} after scrolling")
 
 
+def wait_for_tag_with_scroll(tag: str, attempts: int = 6) -> UiNode:
+    for _ in range(attempts):
+        for node in dump_nodes():
+            if node_has_tag(node, tag):
+                return node
+        adb("shell", "input", "swipe", "540", "1900", "540", "900", "250")
+        time.sleep(0.5)
+    raise RuntimeError(f"timed out waiting for tag {tag!r} after scrolling")
+
+
 def find_clickables_with_text(text: str) -> list[UiNode]:
     matches: list[UiNode] = []
     for node in dump_nodes():
@@ -608,6 +618,17 @@ def main() -> int:
         wait_for_tag(f"smoke-batch-restore-{lifecycle_batch_id}", timeout=15.0)
         tap_tag(f"smoke-batch-restore-{lifecycle_batch_id}")
         assert_tag_missing(f"smoke-batch-restore-{lifecycle_batch_id}", timeout=15.0)
+        wait_for_tag(f"smoke-batch-consume-{lifecycle_batch_id}", timeout=15.0)
+        tap_tag(f"smoke-batch-edit-{lifecycle_batch_id}")
+        wait_for_tag("smoke-stock-edit-screen")
+        replace_text_field_by_tag("smoke-stock-edit-quantity", "750")
+        wait_for_tag_with_scroll("smoke-stock-edit-note")
+        replace_text_field_by_tag("smoke-stock-edit-note", "Android fixture correction")
+        adb("shell", "input", "keyevent", "BACK")
+        wait_for_tag_with_scroll("smoke-stock-edit-save")
+        tap_tag("smoke-stock-edit-save")
+        wait_for_tag("smoke-inventory-screen", timeout=15.0)
+        wait_for_tag(f"smoke-selected-batch-{lifecycle_batch_id}", timeout=15.0)
         wait_for_tag(f"smoke-batch-consume-{lifecycle_batch_id}", timeout=15.0)
     exercise_products(fixture)
     if fixture is not None:

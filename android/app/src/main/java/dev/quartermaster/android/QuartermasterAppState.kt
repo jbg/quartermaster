@@ -92,6 +92,7 @@ enum class ScanAction {
 
 enum class StockAction {
     LoadEvents,
+    Update,
     Consume,
     Discard,
     Restore,
@@ -120,6 +121,14 @@ data class LocationFormFields(
     val name: String = "",
     val kind: String = "pantry",
     val sortOrder: Long? = null,
+)
+
+data class StockEditFields(
+    val quantity: String = "",
+    val locationId: String = "",
+    val expiresOn: String = "",
+    val openedOn: String = "",
+    val note: String = "",
 )
 
 sealed interface HouseholdScopedResolution {
@@ -178,6 +187,7 @@ interface QuartermasterBackend {
     suspend fun refreshProduct(id: String): ProductDto
     suspend fun lookupBarcode(barcode: String): BarcodeLookupResponse
     suspend fun addStock(request: CreateStockRequest): StockBatchDto
+    suspend fun updateStock(id: String, request: StockUpdateRequest): StockBatchDto
     suspend fun consumeStock(request: ConsumeRequest): ConsumeResponse
     suspend fun discardStock(batchId: String)
     suspend fun restoreStock(batchId: String): StockBatchDto
@@ -263,6 +273,7 @@ class QuartermasterApiBackend(
     override suspend fun refreshProduct(id: String): ProductDto = api.refreshProduct(id)
     override suspend fun lookupBarcode(barcode: String): BarcodeLookupResponse = api.lookupBarcode(barcode)
     override suspend fun addStock(request: CreateStockRequest): StockBatchDto = api.addStock(request)
+    override suspend fun updateStock(id: String, request: StockUpdateRequest): StockBatchDto = api.updateStock(id, request)
     override suspend fun consumeStock(request: ConsumeRequest): ConsumeResponse = api.consumeStock(request)
     override suspend fun discardStock(batchId: String) = api.discardStock(batchId)
     override suspend fun restoreStock(batchId: String): StockBatchDto = api.restoreStock(batchId)
@@ -889,6 +900,25 @@ class QuartermasterAppState(
         }
     }
 
+    suspend fun updateSelectedBatch(fields: StockEditFields): Boolean {
+        val batch = selectedBatch ?: return false
+        if (!canEditBatch(batch)) return false
+        validateStockEditFields(fields)?.let {
+            inventoryError = it
+            lastError = it
+            return false
+        }
+        val patch = stockUpdateRequest(batch, fields)
+        if (patch.operations.isEmpty()) return true
+        var saved = false
+        runStockAction(batch.id.toString(), StockAction.Update) {
+            backend.updateStock(batch.id.toString(), patch)
+            refreshInventoryAfterStockMutation(batch.id.toString())
+            saved = true
+        }
+        return saved
+    }
+
     suspend fun discardBatch(batchId: String) = runStockAction(batchId, StockAction.Discard) {
         backend.discardStock(batchId)
         refreshInventoryAfterStockMutation(batchId)
@@ -958,7 +988,17 @@ class QuartermasterAppState(
         sortOrder = location.sortOrder,
     )
 
+    fun stockEditFields(batch: StockBatchDto): StockEditFields = StockEditFields(
+        quantity = batch.quantity,
+        locationId = batch.locationId.toString(),
+        expiresOn = batch.expiresOn.orEmpty(),
+        openedOn = batch.openedOn.orEmpty(),
+        note = batch.note.orEmpty(),
+    )
+
     fun isBatchDepleted(batch: StockBatchDto): Boolean = batch.quantity.toBigDecimalOrNull()?.compareTo(java.math.BigDecimal.ZERO) == 0
+
+    fun canEditBatch(batch: StockBatchDto?): Boolean = batch != null && !isBatchDepleted(batch)
 
     fun canRestoreBatch(batch: StockBatchDto?): Boolean {
         if (batch == null || !isBatchDepleted(batch) || selectedBatchId != batch.id.toString()) return false
@@ -1033,6 +1073,26 @@ class QuartermasterAppState(
             else -> null
         }
     }
+
+    fun validateStockEditFields(fields: StockEditFields): String? {
+        val quantity = fields.quantity.trim()
+        val expiresOn = fields.expiresOn.trim()
+        val openedOn = fields.openedOn.trim()
+        return when {
+            quantity.isEmpty() -> "Enter a quantity."
+            quantity.toBigDecimalOrNull()?.let { it > java.math.BigDecimal.ZERO } != true -> "Enter a positive quantity."
+            fields.locationId.isBlank() -> "Choose a location."
+            locations.none { it.id.toString() == fields.locationId } -> "Choose an existing location."
+            expiresOn.isNotEmpty() && !LOCAL_DATE.matches(expiresOn) -> "Enter expiry as YYYY-MM-DD."
+            openedOn.isNotEmpty() && !LOCAL_DATE.matches(openedOn) -> "Enter opened date as YYYY-MM-DD."
+            else -> null
+        }
+    }
+
+    fun stockUpdateRequest(
+        batch: StockBatchDto,
+        fields: StockEditFields,
+    ): StockUpdateRequest = fields.toUpdatePatch(batch)
 
     val meOrNull: MeResponse?
         get() = (phase as? AppPhase.Authenticated)?.me
@@ -1452,6 +1512,7 @@ class QuartermasterAppState(
 
     companion object {
         private val LOCATION_KINDS = setOf("pantry", "fridge", "freezer")
+        private val LOCAL_DATE = Regex("""\d{4}-\d{2}-\d{2}""")
 
         private fun sortLocations(locations: List<LocationDto>): List<LocationDto> = locations.sortedWith(
             compareBy<LocationDto> { it.sortOrder }.thenBy { it.name.lowercase() },
@@ -1565,6 +1626,34 @@ private fun ProductFormFields.toUpdatePatch(product: ProductDto): ProductUpdateR
         }
     }
     return ProductUpdateRequest(operations)
+}
+
+private fun StockEditFields.toUpdatePatch(batch: StockBatchDto): StockUpdateRequest {
+    val nextQuantity = quantity.trim()
+    val nextLocationId = locationId.trim()
+    val nextExpiresOn = expiresOn.trim()
+    val nextOpenedOn = openedOn.trim()
+    val nextNote = note.trim()
+    val currentExpiresOn = batch.expiresOn.orEmpty()
+    val currentOpenedOn = batch.openedOn.orEmpty()
+    val currentNote = batch.note.orEmpty()
+    val operations = buildList {
+        if (nextQuantity != batch.quantity) add(JsonPatchOperation("replace", "/quantity", nextQuantity))
+        if (nextLocationId != batch.locationId.toString()) add(JsonPatchOperation("replace", "/location_id", nextLocationId))
+        when {
+            nextExpiresOn.isNotEmpty() && nextExpiresOn != currentExpiresOn -> add(JsonPatchOperation("replace", "/expires_on", nextExpiresOn))
+            nextExpiresOn.isEmpty() && currentExpiresOn.isNotEmpty() -> add(JsonPatchOperation("remove", "/expires_on"))
+        }
+        when {
+            nextOpenedOn.isNotEmpty() && nextOpenedOn != currentOpenedOn -> add(JsonPatchOperation("replace", "/opened_on", nextOpenedOn))
+            nextOpenedOn.isEmpty() && currentOpenedOn.isNotEmpty() -> add(JsonPatchOperation("remove", "/opened_on"))
+        }
+        when {
+            nextNote.isNotEmpty() && nextNote != currentNote -> add(JsonPatchOperation("replace", "/note", nextNote))
+            nextNote.isEmpty() && currentNote.isNotEmpty() -> add(JsonPatchOperation("remove", "/note"))
+        }
+    }
+    return StockUpdateRequest(operations)
 }
 
 private fun upsertProduct(
