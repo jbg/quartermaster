@@ -9,6 +9,7 @@
     createBrowserSessionStorage,
     QuartermasterSession,
     type MeResponse,
+    type Unit,
     type UnitFamily
   } from '$lib/session-core';
   import {
@@ -26,9 +27,10 @@
   let busy = $state(false);
   let error = $state<string | null>(null);
   let form = $state(emptyProductForm());
+  let units = $state<Unit[]>([]);
 
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
-  const unitChoices = $derived(unitChoicesForFamily(form.family));
+  const unitChoices = $derived(unitChoicesForFamily(form.family, units));
 
   onMount(() => {
     if (!browser) {
@@ -55,6 +57,10 @@
     error = null;
     try {
       me = await session.me();
+      if (currentHousehold(me)) {
+        units = await session.unitsList().catch(() => []);
+        form = { ...form, preferredUnit: unitChoicesForFamily(form.family, units)[0] };
+      }
     } catch {
       authenticated = false;
       me = null;
@@ -65,14 +71,14 @@
   }
 
   function updateFamily(family: string) {
-    form = setProductFormFamily(form, family as UnitFamily);
+    form = setProductFormFamily(form, family as UnitFamily, units);
   }
 
   async function createProduct() {
     if (!session) {
       return;
     }
-    const validation = validateProductForm(form);
+    const validation = validateProductForm(form, units);
     if (validation) {
       error = validation;
       return;

@@ -29,6 +29,13 @@ export interface Location {
 
 export type UnitFamily = 'mass' | 'volume' | 'count';
 
+export interface Unit {
+  code: string;
+  family: UnitFamily;
+  to_base_milli?: number;
+  toBaseMilli?: number;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -278,6 +285,7 @@ export interface SessionTransport {
   stockConsume(body: ConsumeRequest): Promise<ApiResult<ConsumeResponse>>;
   stockDelete(id: string): Promise<ApiResult<void>>;
   stockRestore(id: string): Promise<ApiResult<StockBatch>>;
+  unitsList(): Promise<ApiResult<Unit[]>>;
   remindersList(query?: {
     after_fire_at?: string | null;
     after_id?: string | null;
@@ -526,6 +534,10 @@ export class QuartermasterSession {
 
   stockRestore(id: string): Promise<StockBatch> {
     return this.authed(() => this.transport.stockRestore(id));
+  }
+
+  unitsList(): Promise<Unit[]> {
+    return this.authed(() => this.transport.unitsList());
   }
 
   remindersList(query?: {

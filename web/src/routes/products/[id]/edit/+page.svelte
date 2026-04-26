@@ -11,6 +11,7 @@
     QuartermasterSession,
     type MeResponse,
     type Product,
+    type Unit,
     type UnitFamily
   } from '$lib/session-core';
   import {
@@ -32,10 +33,11 @@
   let product = $state<Product | null>(null);
   let form = $state<ProductFormFields | null>(null);
   let error = $state<string | null>(null);
+  let units = $state<Unit[]>([]);
 
   const productId = $derived(page.params.id ?? '');
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
-  const unitChoices = $derived(form ? unitChoicesForFamily(form.family) : []);
+  const unitChoices = $derived(form ? unitChoicesForFamily(form.family, units) : []);
 
   onMount(() => {
     if (!browser) {
@@ -63,8 +65,9 @@
     try {
       me = await session.me();
       if (currentHousehold(me) && productId) {
+        units = await session.unitsList().catch(() => []);
         product = await session.productGet(productId);
-        form = productFormFields(product);
+        form = productFormFields(product, units);
       }
     } catch {
       product = null;
@@ -79,14 +82,14 @@
     if (!form) {
       return;
     }
-    form = setProductFormFamily(form, family as UnitFamily);
+    form = setProductFormFamily(form, family as UnitFamily, units);
   }
 
   async function saveProduct() {
     if (!session || !product || !form) {
       return;
     }
-    const validation = validateProductForm(form);
+    const validation = validateProductForm(form, units);
     if (validation) {
       error = validation;
       return;

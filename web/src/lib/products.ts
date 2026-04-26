@@ -1,6 +1,7 @@
 import {
   ApiFailure,
   type Product,
+  type Unit,
   type UnitFamily,
   type UpdateProductRequest
 } from './session-core';
@@ -44,34 +45,34 @@ export function productSourceLabel(product: Product): string {
   return product.source === 'openfoodfacts' ? 'OpenFoodFacts' : 'Manual';
 }
 
-export function emptyProductForm(): ProductFormFields {
+export function emptyProductForm(units: Unit[] = []): ProductFormFields {
   return {
     name: '',
     brand: '',
     family: 'mass',
-    preferredUnit: 'g',
+    preferredUnit: unitChoicesForFamily('mass', units)[0],
     imageUrl: ''
   };
 }
 
-export function productFormFields(product: Product): ProductFormFields {
+export function productFormFields(product: Product, units: Unit[] = []): ProductFormFields {
   return {
     name: product.name,
     brand: productBrand(product),
     family: product.family,
-    preferredUnit: productPreferredUnit(product),
+    preferredUnit: productPreferredUnit(product, units),
     imageUrl: productImageUrl(product)
   };
 }
 
-export function validateProductForm(fields: ProductFormFields): string | null {
+export function validateProductForm(fields: ProductFormFields, units: Unit[] = []): string | null {
   if (!fields.name.trim()) {
     return 'Enter a product name.';
   }
   if (fields.name.trim().length > 256) {
     return 'Product name must be 256 characters or fewer.';
   }
-  if (!unitChoicesForFamily(fields.family).includes(fields.preferredUnit)) {
+  if (!unitChoicesForFamily(fields.family, units).includes(fields.preferredUnit)) {
     return 'Choose a preferred unit that matches the product family.';
   }
   return null;
@@ -79,12 +80,13 @@ export function validateProductForm(fields: ProductFormFields): string | null {
 
 export function setProductFormFamily(
   fields: ProductFormFields,
-  family: UnitFamily
+  family: UnitFamily,
+  units: Unit[] = []
 ): ProductFormFields {
   return {
     ...fields,
     family,
-    preferredUnit: unitChoicesForFamily(family)[0]
+    preferredUnit: unitChoicesForFamily(family, units)[0]
   };
 }
 
