@@ -59,6 +59,11 @@ data class ProductUpdateRequest(
 )
 
 @Serializable
+data class StockUpdateRequest(
+    val operations: List<JsonPatchOperation>,
+)
+
+@Serializable
 data class JsonPatchOperation(
     val op: String,
     val path: String,
@@ -292,6 +297,15 @@ class QuartermasterApi(
         body = request,
     )
 
+    suspend fun updateStock(
+        id: String,
+        request: StockUpdateRequest,
+    ): StockBatchDto = authedJson(
+        method = "PATCH",
+        path = "/stock/${id.urlEncode()}",
+        body = request,
+    )
+
     suspend fun consumeStock(request: ConsumeRequest): ConsumeResponse = authedJson(
         method = "POST",
         path = "/stock/consume",
@@ -452,6 +466,7 @@ class QuartermasterApi(
         is SwitchHouseholdRequest -> json.encodeToString(body)
         is UpdateLocationRequest -> json.encodeToString(body)
         is ProductUpdateRequest -> patchJson.encodeToString(body.operations)
+        is StockUpdateRequest -> patchJson.encodeToString(body.operations)
         else -> error("Unsupported request body type: ${body::class.qualifiedName}")
     }
 }

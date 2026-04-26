@@ -551,6 +551,24 @@ class QuartermasterAppStateTest {
     }
 
     @Test
+    fun `stock update request encodes JSON Patch operations`() {
+        val patch = StockUpdateRequest(
+            listOf(
+                JsonPatchOperation("replace", "/quantity", "750"),
+                JsonPatchOperation("replace", "/location_id", "55555555-5555-5555-5555-555555555555"),
+                JsonPatchOperation("remove", "/expires_on"),
+                JsonPatchOperation("replace", "/opened_on", "2026-04-20"),
+                JsonPatchOperation("replace", "/note", "Moved shelf"),
+            ),
+        )
+
+        assertEquals(
+            """[{"op":"replace","path":"/quantity","value":"750"},{"op":"replace","path":"/location_id","value":"55555555-5555-5555-5555-555555555555"},{"op":"remove","path":"/expires_on"},{"op":"replace","path":"/opened_on","value":"2026-04-20"},{"op":"replace","path":"/note","value":"Moved shelf"}]""",
+            Json(json) { encodeDefaults = false }.encodeToString(patch.operations),
+        )
+    }
+
+    @Test
     fun `refreshProducts loads and filters catalogue`() = runTest {
         val active = productDtoJson(name = "Flour")
         val deleted = productDtoJson(
@@ -747,6 +765,158 @@ class QuartermasterAppStateTest {
     }
 
     @Test
+    fun `stock edit fields validate and build JSON Patch operations`() = runTest {
+        val pantry = locationJson()
+        val fridge = locationJson(id = "55555555-5555-5555-5555-555555555555", name = "Fridge", kind = "fridge", sortOrder = 1)
+        val batch = stockBatchJson(expiresOn = "2026-04-30", openedOn = "2026-04-21", note = "Top shelf")
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    stock = listOf(batch),
+                    locations = listOf(pantry, fridge),
+                ),
+            )
+
+        appState.bootstrap()
+
+        assertEquals(
+            StockEditFields(
+                quantity = "900",
+                locationId = pantry.id.toString(),
+                expiresOn = "2026-04-30",
+                openedOn = "2026-04-21",
+                note = "Top shelf",
+            ),
+            appState.stockEditFields(batch),
+        )
+        assertEquals("Enter a quantity.", appState.validateStockEditFields(appState.stockEditFields(batch).copy(quantity = "")))
+        assertEquals("Enter a positive quantity.", appState.validateStockEditFields(appState.stockEditFields(batch).copy(quantity = "0")))
+        assertEquals("Choose a location.", appState.validateStockEditFields(appState.stockEditFields(batch).copy(locationId = "")))
+        assertEquals("Enter expiry as YYYY-MM-DD.", appState.validateStockEditFields(appState.stockEditFields(batch).copy(expiresOn = "tomorrow")))
+        assertEquals("Enter opened date as YYYY-MM-DD.", appState.validateStockEditFields(appState.stockEditFields(batch).copy(openedOn = "today")))
+
+        val request = appState.stockUpdateRequest(
+            batch,
+            StockEditFields(
+                quantity = "750",
+                locationId = fridge.id.toString(),
+                expiresOn = "",
+                openedOn = "2026-04-22",
+                note = "",
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                JsonPatchOperation("replace", "/quantity", "750"),
+                JsonPatchOperation("replace", "/location_id", fridge.id.toString()),
+                JsonPatchOperation("remove", "/expires_on"),
+                JsonPatchOperation("replace", "/opened_on", "2026-04-22"),
+                JsonPatchOperation("remove", "/note"),
+            ),
+            request.operations,
+        )
+    }
+
+    @Test
+    fun `updateSelectedBatch patches stock and refreshes inventory reminders and events`() = runTest {
+        val batch = stockBatchJson(expiresOn = "2026-04-30", note = "Top shelf")
+        val updated = stockBatchJson(quantity = "750", expiresOn = "2026-05-01", note = "Moved shelf")
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                stock = listOf(batch),
+                reminders = listOf(reminderJson()),
+                locations = listOf(locationJson()),
+                updatedStock = updated,
+                batchEvents = mapOf(batch.id.toString() to listOf(stockEventJson(eventType = "adjust", quantityDelta = "-150"))),
+            )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend = backend,
+            )
+
+        appState.bootstrap()
+        appState.selectBatch(batch.id.toString())
+        val saved = appState.updateSelectedBatch(
+            StockEditFields(
+                quantity = "750",
+                locationId = batch.locationId.toString(),
+                expiresOn = "2026-05-01",
+                openedOn = "",
+                note = "Moved shelf",
+            ),
+        )
+
+        assertTrue(saved)
+        assertEquals(1, backend.updateStockRequests.size)
+        assertEquals(updated, appState.selectedBatch)
+        assertEquals(batch.id.toString(), appState.selectedBatchId)
+        assertTrue(appState.hasLoadedInventoryOnce)
+        assertTrue(appState.hasLoadedRemindersOnce)
+        assertEquals(StockEventType.ADJUST, appState.selectedBatchEvents.first().eventType)
+        assertNull(appState.stockActionFor(batch.id.toString()))
+    }
+
+    @Test
+    fun `updateSelectedBatch skips unchanged fields and rejects depleted batches`() = runTest {
+        val batch = stockBatchJson()
+        val depleted = stockBatchJson(id = "55555555-5555-5555-5555-555555555555", quantity = "0")
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                stock = listOf(batch, depleted),
+                locations = listOf(locationJson()),
+            )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend = backend,
+            )
+
+        appState.bootstrap()
+        appState.selectBatch(batch.id.toString())
+
+        assertTrue(appState.updateSelectedBatch(appState.stockEditFields(batch)))
+        assertEquals(emptyList<StockUpdateRequest>(), backend.updateStockRequests)
+
+        appState.selectBatch(depleted.id.toString())
+
+        assertFalse(appState.canEditBatch(appState.selectedBatch))
+        assertFalse(appState.updateSelectedBatch(appState.stockEditFields(depleted)))
+        assertEquals(emptyList<StockUpdateRequest>(), backend.updateStockRequests)
+    }
+
+    @Test
+    fun `stock update failure clears in flight state and stores inventory error`() = runTest {
+        val batch = stockBatchJson()
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    stock = listOf(batch),
+                    locations = listOf(locationJson()),
+                    stockUpdateFailure = ApiFailure(400, "invalid_patch", "Could not update stock"),
+                ),
+            )
+
+        appState.bootstrap()
+        appState.selectBatch(batch.id.toString())
+        val saved = appState.updateSelectedBatch(appState.stockEditFields(batch).copy(quantity = "800"))
+
+        assertFalse(saved)
+        assertNull(appState.stockActionFor(batch.id.toString()))
+        assertEquals("Could not update stock", appState.inventoryError)
+        assertEquals("Could not update stock", appState.lastError)
+    }
+
+    @Test
     fun `discard and restore update stock action state and restore gating`() = runTest {
         val batch = stockBatchJson()
         val backend =
@@ -913,10 +1083,16 @@ class QuartermasterAppStateTest {
         """.trimIndent(),
     )
 
-    private fun stockBatchJson(): StockBatchDto = json.decodeFromString(
+    private fun stockBatchJson(
+        id: String = "33333333-3333-3333-3333-333333333333",
+        quantity: String = "900",
+        expiresOn: String? = null,
+        openedOn: String? = null,
+        note: String? = null,
+    ): StockBatchDto = json.decodeFromString(
         """
             {
-              "id": "33333333-3333-3333-3333-333333333333",
+              "id": "$id",
               "product": {
                 "id": "44444444-4444-4444-4444-444444444444",
                 "name": "Flour",
@@ -926,9 +1102,12 @@ class QuartermasterAppStateTest {
               },
               "location_id": "22222222-2222-2222-2222-222222222222",
               "initial_quantity": "1000",
-              "quantity": "900",
+              "quantity": "$quantity",
               "unit": "g",
               "created_at": "2026-04-22T12:00:00Z"
+              ${expiresOn?.let { ""","expires_on": "$it"""" } ?: ""}
+              ${openedOn?.let { ""","opened_on": "$it"""" } ?: ""}
+              ${note?.let { ""","note": "$it"""" } ?: ""}
             }
         """.trimIndent(),
     )
@@ -1056,10 +1235,12 @@ class QuartermasterAppStateTest {
         private val deletedProduct: ProductDto? = null,
         private val restoredProduct: ProductDto? = null,
         private val refreshedProduct: ProductDto? = null,
+        private val updatedStock: StockBatchDto? = null,
         private val searchResults: List<ProductDto> = emptyList(),
         batchEvents: Map<String, List<StockEventDto>> = emptyMap(),
         private val barcodeFailure: Throwable? = null,
         private val productUpdateFailure: Throwable? = null,
+        private val stockUpdateFailure: Throwable? = null,
         var deleteLocationFailure: Throwable? = null,
         private val openReminderFailure: Throwable? = null,
         private val discardFailure: Throwable? = null,
@@ -1083,6 +1264,7 @@ class QuartermasterAppStateTest {
         val updateProductRequests = mutableListOf<ProductUpdateRequest>()
         val deletedProductIds = mutableListOf<String>()
         val restoredProductIds = mutableListOf<String>()
+        val updateStockRequests = mutableListOf<StockUpdateRequest>()
         val consumeStockRequests = mutableListOf<ConsumeRequest>()
         val discardedBatchIds = mutableListOf<String>()
         val restoredBatchIds = mutableListOf<String>()
@@ -1256,6 +1438,28 @@ class QuartermasterAppStateTest {
         override suspend fun addStock(request: CreateStockRequest): StockBatchDto {
             addStockRequests += request
             return stockState.firstOrNull() ?: error("Unused in test")
+        }
+
+        override suspend fun updateStock(
+            id: String,
+            request: StockUpdateRequest,
+        ): StockBatchDto {
+            stockUpdateFailure?.let { throw it }
+            updateStockRequests += request
+            val current = stockState.firstOrNull { it.id.toString() == id } ?: error("Unused in test")
+            val updated = updatedStock?.takeIf { it.id.toString() == id } ?: current
+            stockState.removeAll { it.id.toString() == id }
+            stockState += updated
+            batchEventState[id] = (
+                listOf(
+                    stockEventJson(
+                        id = "cccccccc-cccc-cccc-cccc-cccccccccccc",
+                        eventType = "adjust",
+                        quantityDelta = "0",
+                    ),
+                ) + batchEventState[id].orEmpty()
+                ).toMutableList()
+            return updated
         }
 
         override suspend fun consumeStock(request: ConsumeRequest): ConsumeResponse {
