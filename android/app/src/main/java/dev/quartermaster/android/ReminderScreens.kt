@@ -39,19 +39,31 @@ internal fun ReminderScreen(appState: QuartermasterAppState, modifier: Modifier 
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { Text("Reminders", style = MaterialTheme.typography.headlineSmall) }
+        item {
+            RouteHeader(
+                title = "Reminders",
+                subtitle = "Due expiry reminders stay here until someone opens or acknowledges them.",
+            )
+        }
 
         when {
             appState.remindersLoadState == LoadState.Loading && appState.reminders.isEmpty() -> {
                 item {
-                    StatusCard(
+                    InlineStatusCard(
                         title = "Loading reminders",
-                        message = "Fetching the household reminder inbox and marking unseen items as presented on this device.",
+                        message = "Fetching the household inbox and marking unseen items as presented.",
                     )
                 }
             }
             appState.reminderError != null && appState.reminders.isEmpty() -> {
-                item { ErrorCard("Couldn't load reminders", appState.reminderError!!) }
+                item {
+                    ErrorCard(
+                        title = "Couldn't load reminders",
+                        message = appState.reminderError!!,
+                        actionLabel = "Retry",
+                        onAction = { scope.launch { appState.refreshReminders(limit = 50) } },
+                    )
+                }
             }
             appState.reminders.isEmpty() -> {
                 item {
@@ -64,9 +76,19 @@ internal fun ReminderScreen(appState: QuartermasterAppState, modifier: Modifier 
         }
         if (appState.isRemindersRefreshing && appState.reminders.isNotEmpty()) {
             item {
-                StatusCard(
+                InlineStatusCard(
                     title = "Refreshing reminders",
-                    message = "Quartermaster is syncing the latest due reminders for this household.",
+                    message = "Syncing the latest due reminders for this household.",
+                )
+            }
+        }
+        appState.reminderError?.takeIf { appState.reminders.isNotEmpty() }?.let { message ->
+            item {
+                ErrorCard(
+                    title = "Reminder action failed",
+                    message = message,
+                    actionLabel = "Refresh reminders",
+                    onAction = { scope.launch { appState.refreshReminders(limit = 50) } },
                 )
             }
         }
@@ -99,14 +121,19 @@ private fun ReminderCard(
         ) {
             Text(reminder.title, style = MaterialTheme.typography.titleMedium)
             Text(reminder.body)
+            Text(
+                "Fires ${reminder.householdFireLocalAt} ${reminder.householdTimezone}",
+                style = MaterialTheme.typography.bodySmall,
+            )
             if (action != null) {
-                Text(
+                InlineStatusCard(
+                    title = "Updating reminder",
+                    message =
                     if (action == ReminderAction.Open) {
                         "Opening reminder and refreshing inventory…"
                     } else {
                         "Acknowledging reminder and removing it from the inbox…"
                     },
-                    style = MaterialTheme.typography.bodySmall,
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

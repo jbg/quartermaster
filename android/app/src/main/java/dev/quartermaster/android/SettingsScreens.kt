@@ -51,21 +51,34 @@ internal fun SettingsScreen(
 
     LazyColumn(
         modifier = modifier
+            .testTag(SmokeTag.SettingsScreen)
             .fillMaxSize()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { Text("Settings", style = MaterialTheme.typography.headlineSmall) }
+        item {
+            RouteHeader(
+                title = "Settings",
+                subtitle = "Household, invite, location, and session controls for this device.",
+            )
+        }
         if (appState.isSettingsRefreshing) {
             item {
-                StatusCard(
+                InlineStatusCard(
                     title = "Refreshing settings",
-                    message = "Quartermaster is syncing household details and invite state for this session.",
+                    message = "Syncing household details and invite state.",
                 )
             }
         }
         appState.settingsError?.let { message ->
-            item { ErrorCard("Settings couldn't refresh", message) }
+            item {
+                ErrorCard(
+                    title = "Settings couldn't refresh",
+                    message = message,
+                    actionLabel = "Retry",
+                    onAction = { scope.launch { appState.loadSettings() } },
+                )
+            }
         }
         item {
             SectionHeader(
@@ -81,11 +94,11 @@ internal fun SettingsScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text(appState.meOrNull?.user?.username ?: "")
-                    appState.meOrNull?.user?.email?.let { Text(it) }
-                    Text("Household: ${appState.meOrNull?.currentHousehold?.name ?: "None"}")
-                    Text("Timezone: ${appState.meOrNull?.currentHousehold?.timezone ?: "UTC"}")
-                    Text("Server: ${appState.serverUrl}")
+                    MetadataRow("Username", appState.meOrNull?.user?.username ?: "Unknown")
+                    appState.meOrNull?.user?.email?.let { MetadataRow("Email", it) }
+                    MetadataRow("Household", appState.meOrNull?.currentHousehold?.name ?: "None")
+                    MetadataRow("Timezone", appState.meOrNull?.currentHousehold?.timezone ?: "UTC")
+                    MetadataRow("Server", appState.serverUrl)
                 }
             }
         }
@@ -104,9 +117,9 @@ internal fun SettingsScreen(
             }
         }
         item {
-            Text(
-                "Switch household",
-                style = MaterialTheme.typography.titleMedium,
+            SectionHeader(
+                title = "Switch household",
+                body = "Changing household only affects this signed-in session.",
                 modifier = Modifier.testTag(SmokeTag.SwitchHouseholdHeader),
             )
         }
@@ -119,8 +132,8 @@ internal fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Column {
-                        Text(household.name)
-                        Text(household.role.name)
+                        Text(household.name, style = MaterialTheme.typography.titleSmall)
+                        Text(household.role.name, style = MaterialTheme.typography.bodySmall)
                     }
                     TextButton(
                         onClick = { scope.launch { appState.switchHousehold(household.id.toString()) } },
@@ -132,7 +145,10 @@ internal fun SettingsScreen(
             }
         }
         item {
-            Text("Redeem invite", style = MaterialTheme.typography.titleMedium)
+            SectionHeader(
+                title = "Redeem invite",
+                body = "Join another household with an invite code without losing this session.",
+            )
         }
         item {
             OutlinedTextField(
@@ -161,7 +177,11 @@ internal fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text("Household locations", style = MaterialTheme.typography.titleMedium)
+                SectionHeader(
+                    title = "Household locations",
+                    body = "Order controls how locations appear in Inventory and Scan.",
+                    modifier = Modifier.weight(1f),
+                )
                 Button(
                     modifier = Modifier.testTag(SmokeTag.LocationCreateButton),
                     onClick = onCreateLocation,
@@ -171,14 +191,14 @@ internal fun SettingsScreen(
                 }
             }
         }
+        val settingsLocations = appState.sortedLocations()
         item {
-            Text(
-                "Location list",
-                style = MaterialTheme.typography.titleMedium,
+            SectionHeader(
+                title = "Location list",
+                body = "${settingsLocations.size} ${if (settingsLocations.size == 1) "location" else "locations"} configured.",
                 modifier = Modifier.testTag(SmokeTag.LocationList),
             )
         }
-        val settingsLocations = appState.sortedLocations()
         if (settingsLocations.isEmpty()) {
             item { StatusCard("No locations yet", "Create a location before adding stock to this household.") }
         } else {
@@ -201,7 +221,10 @@ internal fun SettingsScreen(
             )
         }
         item {
-            Text("Create invite", style = MaterialTheme.typography.titleMedium)
+            SectionHeader(
+                title = "Create invite",
+                body = "Generate a join code for another household member.",
+            )
         }
         item {
             OutlinedTextField(
@@ -244,8 +267,9 @@ internal fun SettingsScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(invite.code)
+                    Text(invite.code, style = MaterialTheme.typography.titleMedium)
                     Text("Uses ${invite.useCount}/${invite.maxUses}")
+                    Text("Expires ${invite.expiresAt}", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -293,9 +317,12 @@ internal fun LocationFormScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            TextButton(onClick = onCancel) {
-                Text("Back to settings")
-            }
+            RouteHeader(
+                title = if (locationId == null) "New location" else "Edit location",
+                subtitle = "Locations are shared by Inventory and Scan.",
+                backLabel = "Back to settings",
+                onBack = onCancel,
+            )
         }
         appState.settingsError?.let { message ->
             item { ErrorCard("Location action failed", message) }
@@ -346,9 +373,12 @@ internal fun LocationDeleteScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            TextButton(onClick = onCancel) {
-                Text("Back to settings")
-            }
+            RouteHeader(
+                title = "Delete location",
+                subtitle = location?.name ?: "Choose another location from Settings if this one is unavailable.",
+                backLabel = "Back to settings",
+                onBack = onCancel,
+            )
         }
         appState.settingsError?.let { message ->
             item { ErrorCard("Location action failed", message) }
@@ -390,7 +420,10 @@ private fun LocationFormCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(if (isEditing) "Edit location" else "New location", style = MaterialTheme.typography.titleMedium)
+            SectionHeader(
+                title = if (isEditing) "Location details" else "Location details",
+                body = "Use a short name and a kind that matches where stock is stored.",
+            )
             OutlinedTextField(
                 value = fields.name,
                 onValueChange = { onFieldsChange(fields.copy(name = it)) },
@@ -460,20 +493,29 @@ private fun LocationDeleteCard(
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    StatusCard(
-        title = "Delete ${location.name}?",
-        message = "Locations with active stock cannot be deleted. Move or consume stock before deleting a location.",
-    )
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(
-            modifier = Modifier.testTag(SmokeTag.locationDeleteConfirm(location.id.toString())),
-            onClick = onConfirm,
-            enabled = actionInFlight == null,
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(if (actionInFlight == LocationAction.Delete) "Deleting..." else "Delete location")
-        }
-        TextButton(onClick = onCancel, enabled = actionInFlight == null) {
-            Text("Cancel")
+            SectionHeader(
+                title = "Delete ${location.name}?",
+                body = "Locations with active stock cannot be deleted. Move or consume stock before deleting a location.",
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    modifier = Modifier.testTag(SmokeTag.locationDeleteConfirm(location.id.toString())),
+                    onClick = onConfirm,
+                    enabled = actionInFlight == null,
+                ) {
+                    Text(if (actionInFlight == LocationAction.Delete) "Deleting..." else "Delete location")
+                }
+                TextButton(onClick = onCancel, enabled = actionInFlight == null) {
+                    Text("Cancel")
+                }
+            }
         }
     }
 }
@@ -496,7 +538,7 @@ private fun LocationRow(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(location.name, style = MaterialTheme.typography.titleMedium)
-            Text("${location.kind} · position ${location.sortOrder}")
+            Text("${location.kind} · position ${location.sortOrder}", style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(
                     modifier = Modifier.testTag(SmokeTag.locationMoveUp(location.id.toString())),

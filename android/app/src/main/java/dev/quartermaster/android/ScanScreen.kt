@@ -82,11 +82,10 @@ internal fun ScanScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { Text("Scan & add stock", style = MaterialTheme.typography.headlineSmall) }
         item {
-            Text(
-                "The emulator default server uses 10.0.2.2 to reach Quartermaster on this machine. Override the server URL in onboarding for a phone or remote server.",
-                style = MaterialTheme.typography.bodySmall,
+            RouteHeader(
+                title = "Scan & add stock",
+                subtitle = "Find a product, choose a location and unit, then save a new batch.",
             )
         }
         appState.inventoryError?.let { message ->
