@@ -91,9 +91,7 @@ struct BatchDetailView: View {
           }
         }
         LabeledContent("Initial", value: "\(batch.initialQuantity) \(batch.unit)")
-        if let location {
-          LabeledContent("Location", value: location.name)
-        }
+        LabeledContent("Location", value: batch.locationName)
         LabeledContent("Expires") {
           ExpiryBadge(expiresOn: batch.expiresOn)
         }
@@ -184,10 +182,7 @@ struct BatchDetailView: View {
   }
 
   private func isDepleted(_ batch: StockBatch) -> Bool {
-    // A batch is "depleted" in the UI sense when its quantity is zero.
-    // The server exposes `depleted_at` only on the DB row, so infer from
-    // the cached quantity here.
-    Decimal(string: batch.quantity).map { $0 <= .zero } ?? false
+    batch.depletedAt != nil
   }
 
   private func load() async {

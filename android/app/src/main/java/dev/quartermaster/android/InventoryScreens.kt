@@ -301,7 +301,7 @@ internal fun BatchDetailScreen(
         item {
             RouteHeader(
                 title = batch?.product?.name ?: "Batch detail",
-                subtitle = batch?.let { "${it.quantity} ${it.unit} in ${appState.locationNameFor(it.locationId.toString())}" },
+                subtitle = batch?.let { "${it.quantity} ${it.unit} in ${appState.locationNameFor(it)}" },
                 backLabel = "Back to inventory",
                 onBack = onBack,
             )
@@ -375,7 +375,7 @@ private fun BatchDetailCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(batch.product.name, style = MaterialTheme.typography.titleLarge)
-                    Text("${batch.quantity} ${batch.unit} in ${appState.locationNameFor(batch.locationId.toString())}")
+                    Text("${batch.quantity} ${batch.unit} in ${appState.locationNameFor(batch)}")
                 }
                 TextButton(onClick = onClose) {
                     Text("Close")

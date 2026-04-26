@@ -74,6 +74,7 @@ pub struct StockBatchDto {
     pub id: Uuid,
     pub product: ProductDto,
     pub location_id: Uuid,
+    pub location_name: String,
     pub initial_quantity: String,
     pub quantity: String,
     pub unit: String,
@@ -81,6 +82,7 @@ pub struct StockBatchDto {
     pub opened_on: Option<String>,
     pub note: Option<String>,
     pub created_at: String,
+    pub depleted_at: Option<String>,
 }
 
 impl TryFrom<StockBatchWithProduct> for StockBatchDto {
@@ -91,6 +93,7 @@ impl TryFrom<StockBatchWithProduct> for StockBatchDto {
             id: j.batch.id,
             product: j.product.try_into()?,
             location_id: j.batch.location_id,
+            location_name: j.location_name,
             initial_quantity: j.batch.initial_quantity,
             quantity: j.batch.quantity,
             unit: j.batch.unit,
@@ -98,6 +101,7 @@ impl TryFrom<StockBatchWithProduct> for StockBatchDto {
             opened_on: j.batch.opened_on,
             note: j.batch.note,
             created_at: j.batch.created_at,
+            depleted_at: j.batch.depleted_at,
         })
     }
 }
@@ -296,19 +300,10 @@ pub async fn get_one(
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<StockBatchDto>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    let row = qm_db::stock::get(&state.db, household_id, id)
+    let row = qm_db::stock::get_with_product(&state.db, household_id, id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    let product = qm_db::products::find_by_id(&state.db, row.product_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    Ok(Json(
-        StockBatchWithProduct {
-            batch: row,
-            product,
-        }
-        .try_into()?,
-    ))
+    Ok(Json(row.try_into()?))
 }
 
 #[utoipa::path(
@@ -359,13 +354,7 @@ pub async fn create(
 
     Ok((
         StatusCode::CREATED,
-        Json(
-            StockBatchWithProduct {
-                batch: row,
-                product,
-            }
-            .try_into()?,
-        ),
+        Json(stock_dto(&state, household_id, row.id, false).await?),
     ))
 }
 
@@ -400,7 +389,7 @@ pub async fn update(
             "depleted stock cannot be edited; restore it before editing".into(),
         ));
     }
-    let product = load_product_for_write(&state, household_id, existing.product_id).await?;
+    let _product = load_product_for_write(&state, household_id, existing.product_id).await?;
 
     let expires_on = req.expires_on.as_ref().map(|o| o.as_deref());
     let opened_on = req.opened_on.as_ref().map(|o| o.as_deref());
@@ -459,16 +448,7 @@ pub async fn update(
         .await?;
     }
 
-    let refreshed = qm_db::stock::get(&state.db, household_id, id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    Ok(Json(
-        StockBatchWithProduct {
-            batch: refreshed,
-            product,
-        }
-        .try_into()?,
-    ))
+    Ok(Json(stock_dto(&state, household_id, id, false).await?))
 }
 
 #[utoipa::path(
@@ -806,16 +786,7 @@ pub async fn restore_many(
     // Join each batch with its product for the response DTO.
     let mut restored = Vec::with_capacity(rows.len());
     for row in rows {
-        let product = qm_db::products::find_including_deleted(&state.db, row.product_id)
-            .await?
-            .ok_or(ApiError::NotFound)?;
-        restored.push(
-            StockBatchWithProduct {
-                batch: row,
-                product,
-            }
-            .try_into()?,
-        );
+        restored.push(stock_dto(&state, household_id, row.id, true).await?);
     }
     Ok(Json(RestoreManyResponse { restored }))
 }
@@ -847,19 +818,24 @@ pub async fn restore_one(
         Some(&state.config.expiry_reminder_policy),
     )
     .await?;
-    let product = qm_db::products::find_including_deleted(&state.db, row.product_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    Ok(Json(
-        StockBatchWithProduct {
-            batch: row,
-            product,
-        }
-        .try_into()?,
-    ))
+    Ok(Json(stock_dto(&state, household_id, row.id, true).await?))
 }
 
 // ----- helpers -----
+
+async fn stock_dto(
+    state: &AppState,
+    household_id: Uuid,
+    id: Uuid,
+    include_deleted_product: bool,
+) -> ApiResult<StockBatchDto> {
+    let row = if include_deleted_product {
+        qm_db::stock::get_with_product_including_deleted(&state.db, household_id, id).await?
+    } else {
+        qm_db::stock::get_with_product(&state.db, household_id, id).await?
+    };
+    row.ok_or(ApiError::NotFound)?.try_into()
+}
 
 fn validate_positive_decimal(s: &str) -> ApiResult<()> {
     let q = Decimal::from_str(s)

@@ -737,6 +737,7 @@ class QuartermasterAppStateTest {
         assertEquals(batch.id.toString(), appState.selectedBatchId)
         assertEquals(batch, appState.selectedBatch)
         assertEquals("Pantry", appState.locationNameFor(batch.locationId.toString()))
+        assertEquals("Pantry", appState.locationNameFor(batch))
         assertEquals(listOf(event), appState.selectedBatchEvents)
     }
 
@@ -874,7 +875,11 @@ class QuartermasterAppStateTest {
     @Test
     fun `updateSelectedBatch skips unchanged fields and rejects depleted batches`() = runTest {
         val batch = stockBatchJson()
-        val depleted = stockBatchJson(id = "55555555-5555-5555-5555-555555555555", quantity = "0")
+        val depleted = stockBatchJson(
+            id = "55555555-5555-5555-5555-555555555555",
+            quantity = "900",
+            depletedAt = "2026-04-22T12:30:00Z",
+        )
         val backend =
             FakeBackend(
                 meResponse = meResponseJson(),
@@ -1095,6 +1100,8 @@ class QuartermasterAppStateTest {
     private fun stockBatchJson(
         id: String = "33333333-3333-3333-3333-333333333333",
         quantity: String = "900",
+        locationName: String = "Pantry",
+        depletedAt: String? = null,
         expiresOn: String? = null,
         openedOn: String? = null,
         note: String? = null,
@@ -1110,10 +1117,12 @@ class QuartermasterAppStateTest {
                 "source": "manual"
               },
               "location_id": "22222222-2222-2222-2222-222222222222",
+              "location_name": "$locationName",
               "initial_quantity": "1000",
               "quantity": "$quantity",
               "unit": "g",
               "created_at": "2026-04-22T12:00:00Z"
+              ${depletedAt?.let { ""","depleted_at": "$it"""" } ?: ""}
               ${expiresOn?.let { ""","expires_on": "$it"""" } ?: ""}
               ${openedOn?.let { ""","opened_on": "$it"""" } ?: ""}
               ${note?.let { ""","note": "$it"""" } ?: ""}
@@ -1503,7 +1512,11 @@ class QuartermasterAppStateTest {
             discardFailure?.let { throw it }
             discardedBatchIds += batchId
             stockState.replaceAll { batch ->
-                if (batch.id.toString() == batchId) batch.copy(quantity = "0") else batch
+                if (batch.id.toString() == batchId) {
+                    batch.copy(quantity = "0", depletedAt = "2026-04-22T12:30:00Z")
+                } else {
+                    batch
+                }
             }
             batchEventState[batchId] = (
                 listOf(
@@ -1521,7 +1534,7 @@ class QuartermasterAppStateTest {
             var restored: StockBatchDto? = null
             stockState.replaceAll { batch ->
                 if (batch.id.toString() == batchId) {
-                    batch.copy(quantity = batch.initialQuantity).also { restored = it }
+                    batch.copy(quantity = batch.initialQuantity, depletedAt = null).also { restored = it }
                 } else {
                     batch
                 }
