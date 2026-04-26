@@ -142,9 +142,23 @@ private object AppRoute {
     const val Reminders = "reminders"
     const val Scan = "scan"
     const val Settings = "settings"
+    const val BatchDetail = "inventory/batch/{batchId}"
     const val StockEdit = "inventory/batch/{batchId}/edit"
+    const val ProductNew = "products/new"
+    const val ProductDetail = "products/{productId}"
+    const val ProductEdit = "products/{productId}/edit"
+    const val ProductDelete = "products/{productId}/delete"
+    const val LocationNew = "settings/locations/new"
+    const val LocationEdit = "settings/locations/{locationId}/edit"
+    const val LocationDelete = "settings/locations/{locationId}/delete"
 
+    fun batchDetail(batchId: String) = "inventory/batch/$batchId"
     fun stockEdit(batchId: String) = "inventory/batch/$batchId/edit"
+    fun productDetail(productId: String) = "products/$productId"
+    fun productEdit(productId: String) = "products/$productId/edit"
+    fun productDelete(productId: String) = "products/$productId/delete"
+    fun locationEdit(locationId: String) = "settings/locations/$locationId/edit"
+    fun locationDelete(locationId: String) = "settings/locations/$locationId/delete"
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
@@ -159,25 +173,14 @@ fun QuartermasterApp(appState: QuartermasterAppState) {
         appState.lastError?.let { snackbarHostState.showSnackbar(it) }
     }
     LaunchedEffect(currentRoute) {
-        appState.selectedTab = when (currentRoute) {
-            AppRoute.Products -> MainTab.Products
-            AppRoute.Reminders -> MainTab.Reminders
-            AppRoute.Scan -> MainTab.Scan
-            AppRoute.Settings -> MainTab.Settings
-            AppRoute.StockEdit,
-            AppRoute.Inventory,
-            null,
-            -> MainTab.Inventory
-            else -> appState.selectedTab
-        }
+        routeTab(currentRoute)?.let { appState.selectedTab = it }
     }
     LaunchedEffect(appState.selectedTab, currentRoute, appState.currentHouseholdId) {
         val route = appState.selectedTab.route()
         if (
             appState.currentHouseholdId != null &&
             currentRoute != null &&
-            currentRoute != AppRoute.StockEdit &&
-            currentRoute != route
+            routeTab(currentRoute) != appState.selectedTab
         ) {
             navController.navigate(route) {
                 popUpTo(navController.graph.startDestinationId) {
@@ -257,6 +260,28 @@ fun QuartermasterApp(appState: QuartermasterAppState) {
     }
 }
 
+private fun routeTab(route: String?): MainTab? = when (route) {
+    AppRoute.Products,
+    AppRoute.ProductNew,
+    AppRoute.ProductDetail,
+    AppRoute.ProductEdit,
+    AppRoute.ProductDelete,
+    -> MainTab.Products
+    AppRoute.Reminders -> MainTab.Reminders
+    AppRoute.Scan -> MainTab.Scan
+    AppRoute.Settings,
+    AppRoute.LocationNew,
+    AppRoute.LocationEdit,
+    AppRoute.LocationDelete,
+    -> MainTab.Settings
+    AppRoute.Inventory,
+    AppRoute.BatchDetail,
+    AppRoute.StockEdit,
+    -> MainTab.Inventory
+    null -> MainTab.Inventory
+    else -> null
+}
+
 @Composable
 private fun AuthenticatedNavHost(
     appState: QuartermasterAppState,
@@ -271,13 +296,154 @@ private fun AuthenticatedNavHost(
         composable(AppRoute.Inventory) {
             InventoryScreen(
                 appState = appState,
-                onEditBatch = { batchId -> navController.navigate(AppRoute.stockEdit(batchId)) },
+                onOpenBatch = { batchId -> navController.navigate(AppRoute.batchDetail(batchId)) },
             )
         }
-        composable(AppRoute.Products) { ProductsScreen(appState) }
+        composable(
+            route = AppRoute.BatchDetail,
+            arguments = listOf(navArgument("batchId") { type = NavType.StringType }),
+        ) { entry ->
+            val batchId = entry.arguments?.getString("batchId").orEmpty()
+            BatchDetailScreen(
+                appState = appState,
+                batchId = batchId,
+                onBack = {
+                    appState.clearSelectedBatch()
+                    navController.popBackStack(AppRoute.Inventory, inclusive = false)
+                },
+                onEditBatch = { navController.navigate(AppRoute.stockEdit(batchId)) },
+            )
+        }
+        composable(AppRoute.Products) {
+            ProductListScreen(
+                appState = appState,
+                onCreateProduct = {
+                    appState.prepareProductCreate()
+                    navController.navigate(AppRoute.ProductNew)
+                },
+                onOpenProduct = { productId -> navController.navigate(AppRoute.productDetail(productId)) },
+            )
+        }
+        composable(AppRoute.ProductNew) {
+            ProductFormScreen(
+                appState = appState,
+                product = null,
+                onDone = { product ->
+                    if (appState.selectedTab == MainTab.Scan) {
+                        navController.navigate(AppRoute.Scan) {
+                            popUpTo(AppRoute.Products) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    } else {
+                        navController.navigate(AppRoute.productDetail(product.id.toString())) {
+                            popUpTo(AppRoute.Products)
+                        }
+                    }
+                },
+                onCancel = {
+                    if (appState.cancelProductFormForScan()) {
+                        navController.navigate(AppRoute.Scan) {
+                            popUpTo(AppRoute.Products) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    } else {
+                        navController.popBackStack(AppRoute.Products, inclusive = false)
+                    }
+                },
+            )
+        }
+        composable(
+            route = AppRoute.ProductDetail,
+            arguments = listOf(navArgument("productId") { type = NavType.StringType }),
+        ) { entry ->
+            val productId = entry.arguments?.getString("productId").orEmpty()
+            ProductDetailScreen(
+                appState = appState,
+                productId = productId,
+                onBack = {
+                    appState.prepareProductList()
+                    navController.popBackStack(AppRoute.Products, inclusive = false)
+                },
+                onEdit = { navController.navigate(AppRoute.productEdit(productId)) },
+                onDelete = { navController.navigate(AppRoute.productDelete(productId)) },
+            )
+        }
+        composable(
+            route = AppRoute.ProductEdit,
+            arguments = listOf(navArgument("productId") { type = NavType.StringType }),
+        ) { entry ->
+            val productId = entry.arguments?.getString("productId").orEmpty()
+            ProductEditScreen(
+                appState = appState,
+                productId = productId,
+                onDone = { product ->
+                    navController.navigate(AppRoute.productDetail(product.id.toString())) {
+                        popUpTo(AppRoute.Products)
+                    }
+                },
+                onCancel = { navController.popBackStack() },
+            )
+        }
+        composable(
+            route = AppRoute.ProductDelete,
+            arguments = listOf(navArgument("productId") { type = NavType.StringType }),
+        ) { entry ->
+            val productId = entry.arguments?.getString("productId").orEmpty()
+            ProductDeleteScreen(
+                appState = appState,
+                productId = productId,
+                onDone = { navController.popBackStack(AppRoute.Products, inclusive = false) },
+                onCancel = { navController.popBackStack() },
+            )
+        }
         composable(AppRoute.Reminders) { ReminderScreen(appState) }
-        composable(AppRoute.Scan) { ScanScreen(appState) }
-        composable(AppRoute.Settings) { SettingsScreen(appState) }
+        composable(AppRoute.Scan) {
+            ScanScreen(
+                appState = appState,
+                onCreateProduct = {
+                    appState.prepareProductCreateForScan()
+                    navController.navigate(AppRoute.ProductNew)
+                },
+            )
+        }
+        composable(AppRoute.Settings) {
+            SettingsScreen(
+                appState = appState,
+                onCreateLocation = { navController.navigate(AppRoute.LocationNew) },
+                onEditLocation = { locationId -> navController.navigate(AppRoute.locationEdit(locationId)) },
+                onDeleteLocation = { locationId -> navController.navigate(AppRoute.locationDelete(locationId)) },
+            )
+        }
+        composable(AppRoute.LocationNew) {
+            LocationFormScreen(
+                appState = appState,
+                locationId = null,
+                onDone = { navController.popBackStack(AppRoute.Settings, inclusive = false) },
+                onCancel = { navController.popBackStack(AppRoute.Settings, inclusive = false) },
+            )
+        }
+        composable(
+            route = AppRoute.LocationEdit,
+            arguments = listOf(navArgument("locationId") { type = NavType.StringType }),
+        ) { entry ->
+            LocationFormScreen(
+                appState = appState,
+                locationId = entry.arguments?.getString("locationId").orEmpty(),
+                onDone = { navController.popBackStack(AppRoute.Settings, inclusive = false) },
+                onCancel = { navController.popBackStack(AppRoute.Settings, inclusive = false) },
+            )
+        }
+        composable(
+            route = AppRoute.LocationDelete,
+            arguments = listOf(navArgument("locationId") { type = NavType.StringType }),
+        ) { entry ->
+            LocationDeleteScreen(
+                appState = appState,
+                locationId = entry.arguments?.getString("locationId").orEmpty(),
+                onDone = { navController.popBackStack(AppRoute.Settings, inclusive = false) },
+                onCancel = { navController.popBackStack(AppRoute.Settings, inclusive = false) },
+            )
+        }
         composable(
             route = AppRoute.StockEdit,
             arguments = listOf(navArgument("batchId") { type = NavType.StringType }),
@@ -286,8 +452,8 @@ private fun AuthenticatedNavHost(
             StockEditScreen(
                 appState = appState,
                 batchId = batchId,
-                onDone = { navController.popBackStack(AppRoute.Inventory, inclusive = false) },
-                onCancel = { navController.popBackStack(AppRoute.Inventory, inclusive = false) },
+                onDone = { navController.popBackStack() },
+                onCancel = { navController.popBackStack() },
             )
         }
     }
@@ -656,7 +822,7 @@ private fun NoHouseholdScreen(appState: QuartermasterAppState, modifier: Modifie
 private fun InventoryScreen(
     appState: QuartermasterAppState,
     modifier: Modifier = Modifier,
-    onEditBatch: (String) -> Unit = {},
+    onOpenBatch: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(appState.currentHouseholdId) {
@@ -743,20 +909,6 @@ private fun InventoryScreen(
             item { ErrorCard("Inventory action failed", message) }
         }
 
-        appState.selectedBatch?.let { batch ->
-            item {
-                BatchDetailCard(
-                    appState = appState,
-                    batch = batch,
-                    onEdit = { onEditBatch(batch.id.toString()) },
-                    onConsume = { quantity -> scope.launch { appState.consumeSelectedBatch(quantity) } },
-                    onDiscard = { scope.launch { appState.discardBatch(batch.id.toString()) } },
-                    onRestore = { scope.launch { appState.restoreBatch(batch.id.toString()) } },
-                    onClose = appState::clearSelectedBatch,
-                )
-            }
-        }
-
         val target = appState.pendingInventoryTarget
         val prioritizedLocations = appState.locations.sortedWith(
             compareByDescending<LocationDto> { it.id.toString() == target?.locationId }.thenBy { it.name.lowercase() },
@@ -769,7 +921,10 @@ private fun InventoryScreen(
                 target = target,
                 selectedBatchId = appState.selectedBatchId,
                 isBatchDepleted = appState::isBatchDepleted,
-                onSelectBatch = { batchId -> scope.launch { appState.selectBatch(batchId) } },
+                onSelectBatch = { batchId ->
+                    scope.launch { appState.selectBatch(batchId) }
+                    onOpenBatch(batchId)
+                },
             )
         }
 
@@ -861,6 +1016,56 @@ private fun LocationInventoryCard(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BatchDetailScreen(
+    appState: QuartermasterAppState,
+    batchId: String,
+    onBack: () -> Unit,
+    onEditBatch: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scope = rememberCoroutineScope()
+    val batch = appState.batches.firstOrNull { it.id.toString() == batchId }
+
+    LaunchedEffect(batchId) {
+        if (appState.selectedBatchId != batchId) {
+            appState.selectBatch(batchId)
+        }
+    }
+
+    LazyColumn(
+        modifier = modifier
+            .testTag(SmokeTag.InventoryScreen)
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            TextButton(onClick = onBack) {
+                Text("Back to inventory")
+            }
+        }
+        appState.inventoryError?.let { message ->
+            item { ErrorCard("Inventory action failed", message) }
+        }
+        if (batch == null) {
+            item { StatusCard("Batch unavailable", "Return to Inventory and choose another batch.") }
+        } else {
+            item {
+                BatchDetailCard(
+                    appState = appState,
+                    batch = batch,
+                    onEdit = onEditBatch,
+                    onConsume = { quantity -> scope.launch { appState.consumeSelectedBatch(quantity) } },
+                    onDiscard = { scope.launch { appState.discardBatch(batch.id.toString()) } },
+                    onRestore = { scope.launch { appState.restoreBatch(batch.id.toString()) } },
+                    onClose = onBack,
+                )
             }
         }
     }
@@ -1250,7 +1455,11 @@ private fun ReminderCard(
 }
 
 @Composable
-private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
+private fun ScanScreen(
+    appState: QuartermasterAppState,
+    modifier: Modifier = Modifier,
+    onCreateProduct: () -> Unit = {},
+) {
     val scope = rememberCoroutineScope()
     var barcode by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
@@ -1319,7 +1528,7 @@ private fun ScanScreen(appState: QuartermasterAppState, modifier: Modifier = Mod
         }
         item {
             Button(
-                onClick = appState::showProductCreateForScan,
+                onClick = onCreateProduct,
                 enabled = appState.scanActionInFlight == null,
             ) {
                 Text("Create manual product")
@@ -1473,24 +1682,18 @@ private fun ProductSearchResultCard(
 }
 
 @Composable
-private fun ProductsScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
+private fun ProductListScreen(
+    appState: QuartermasterAppState,
+    modifier: Modifier = Modifier,
+    onCreateProduct: () -> Unit = {},
+    onOpenProduct: (String) -> Unit = {},
+) {
     LaunchedEffect(appState.currentHouseholdId) {
         if (!appState.hasLoadedProductsOnce) {
             appState.refreshProducts(force = true)
         }
     }
 
-    when (appState.productScreenMode) {
-        ProductScreenMode.List -> ProductListScreen(appState, modifier)
-        ProductScreenMode.Detail -> ProductDetailScreen(appState, modifier)
-        ProductScreenMode.Create -> ProductFormScreen(appState, null, modifier)
-        ProductScreenMode.Edit -> ProductFormScreen(appState, appState.selectedCatalogueProduct, modifier)
-        ProductScreenMode.Delete -> ProductDeleteScreen(appState, modifier)
-    }
-}
-
-@Composable
-private fun ProductListScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf(appState.productSearchQuery) }
     var barcode by remember { mutableStateOf("") }
@@ -1511,7 +1714,7 @@ private fun ProductListScreen(appState: QuartermasterAppState, modifier: Modifie
                 Text("Products", style = MaterialTheme.typography.headlineSmall)
                 Button(
                     modifier = Modifier.testTag(SmokeTag.ProductCreateButton),
-                    onClick = appState::showProductCreate,
+                    onClick = onCreateProduct,
                     enabled = appState.productActionInFlight == null,
                 ) {
                     Text("New product")
@@ -1570,7 +1773,13 @@ private fun ProductListScreen(appState: QuartermasterAppState, modifier: Modifie
                     )
                     Button(
                         modifier = Modifier.testTag(SmokeTag.ProductBarcodeButton),
-                        onClick = { scope.launch { appState.lookupProductBarcode(barcode.trim()) } },
+                        onClick = {
+                            scope.launch {
+                                appState.lookupProductBarcode(barcode.trim())?.let { product ->
+                                    onOpenProduct(product.id.toString())
+                                }
+                            }
+                        },
                         enabled = barcode.isNotBlank() && appState.productActionInFlight == null,
                     ) {
                         Text(if (appState.productActionInFlight == ProductAction.BarcodeLookup) "Looking up..." else "Look up barcode")
@@ -1593,7 +1802,7 @@ private fun ProductListScreen(appState: QuartermasterAppState, modifier: Modifie
             }
             items(products, key = { it.id }) { product ->
                 ProductCatalogueRow(appState, product) {
-                    scope.launch { appState.openProduct(product.id.toString()) }
+                    onOpenProduct(product.id.toString())
                 }
             }
         }
@@ -1648,9 +1857,25 @@ private fun ProductFilterButton(
 }
 
 @Composable
-private fun ProductDetailScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
+private fun ProductDetailScreen(
+    appState: QuartermasterAppState,
+    productId: String,
+    modifier: Modifier = Modifier,
+    onBack: () -> Unit = {},
+    onEdit: () -> Unit = {},
+    onDelete: () -> Unit = {},
+) {
     val scope = rememberCoroutineScope()
     val product = appState.selectedCatalogueProduct
+
+    LaunchedEffect(productId) {
+        if (product?.id?.toString() != productId) {
+            appState.openProduct(productId)
+        } else {
+            appState.prepareProductDetail()
+        }
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -1659,7 +1884,7 @@ private fun ProductDetailScreen(appState: QuartermasterAppState, modifier: Modif
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            TextButton(onClick = appState::showProductList) { Text("Back to products") }
+            TextButton(onClick = onBack) { Text("Back to products") }
         }
         if (product == null) {
             item { StatusCard("Product unavailable", "Return to the catalogue and choose another product.") }
@@ -1693,12 +1918,12 @@ private fun ProductDetailScreen(appState: QuartermasterAppState, modifier: Modif
                     appState.isManualProduct(product) && !appState.isDeletedProduct(product) -> {
                         Button(
                             modifier = Modifier.testTag(SmokeTag.ProductEditButton),
-                            onClick = appState::showProductEdit,
+                            onClick = onEdit,
                             enabled = appState.productActionInFlight == null,
                         ) { Text("Edit") }
                         TextButton(
                             modifier = Modifier.testTag(SmokeTag.ProductDeleteButton),
-                            onClick = appState::showProductDelete,
+                            onClick = onDelete,
                             enabled = appState.productActionInFlight == null,
                         ) { Text("Delete") }
                     }
@@ -1727,10 +1952,57 @@ private fun ProductDetailScreen(appState: QuartermasterAppState, modifier: Modif
 }
 
 @Composable
+private fun ProductEditScreen(
+    appState: QuartermasterAppState,
+    productId: String,
+    modifier: Modifier = Modifier,
+    onDone: (ProductDto) -> Unit = {},
+    onCancel: () -> Unit = {},
+) {
+    val product = appState.selectedCatalogueProduct?.takeIf { it.id.toString() == productId }
+
+    LaunchedEffect(productId) {
+        if (product == null) {
+            appState.openProduct(productId)
+        } else {
+            appState.prepareProductDetail()
+        }
+    }
+
+    if (product == null) {
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(16.dp)
+                .testTag(SmokeTag.ProductsScreen),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item { TextButton(onClick = onCancel) { Text("Back to product") } }
+            item {
+                StatusCard(
+                    title = if (appState.productActionInFlight == ProductAction.LoadDetail) "Loading product" else "Product unavailable",
+                    message = "Quartermaster is loading this product before it can be edited.",
+                )
+            }
+        }
+    } else {
+        ProductFormScreen(
+            appState = appState,
+            product = product,
+            modifier = modifier,
+            onDone = onDone,
+            onCancel = onCancel,
+        )
+    }
+}
+
+@Composable
 private fun ProductFormScreen(
     appState: QuartermasterAppState,
     product: ProductDto?,
     modifier: Modifier = Modifier,
+    onDone: (ProductDto) -> Unit = {},
+    onCancel: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var fields by remember(product?.id) {
@@ -1806,11 +2078,12 @@ private fun ProductFormScreen(
                     modifier = Modifier.testTag(SmokeTag.ProductSubmitButton),
                     onClick = {
                         scope.launch {
-                            if (product == null) {
+                            val saved = if (product == null) {
                                 appState.createProduct(fields)
                             } else {
                                 appState.updateSelectedProduct(fields)
                             }
+                            saved?.let(onDone)
                         }
                     },
                     enabled = appState.productActionInFlight == null,
@@ -1823,7 +2096,7 @@ private fun ProductFormScreen(
                         },
                     )
                 }
-                TextButton(onClick = appState::cancelProductForm) {
+                TextButton(onClick = onCancel) {
                     Text("Cancel")
                 }
             }
@@ -1832,9 +2105,24 @@ private fun ProductFormScreen(
 }
 
 @Composable
-private fun ProductDeleteScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
+private fun ProductDeleteScreen(
+    appState: QuartermasterAppState,
+    productId: String,
+    modifier: Modifier = Modifier,
+    onDone: () -> Unit = {},
+    onCancel: () -> Unit = {},
+) {
     val scope = rememberCoroutineScope()
     val product = appState.selectedCatalogueProduct
+
+    LaunchedEffect(productId) {
+        if (product?.id?.toString() != productId) {
+            appState.openProduct(productId)
+        } else {
+            appState.prepareProductDetail()
+        }
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -1856,12 +2144,18 @@ private fun ProductDeleteScreen(appState: QuartermasterAppState, modifier: Modif
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     modifier = Modifier.testTag(SmokeTag.ProductDeleteConfirmButton),
-                    onClick = { scope.launch { appState.deleteSelectedProduct() } },
+                    onClick = {
+                        scope.launch {
+                            if (appState.deleteSelectedProduct()) {
+                                onDone()
+                            }
+                        }
+                    },
                     enabled = product != null && appState.productActionInFlight == null,
                 ) {
                     Text(if (appState.productActionInFlight == ProductAction.Delete) "Deleting..." else "Delete product")
                 }
-                TextButton(onClick = appState::showProductDetail) {
+                TextButton(onClick = onCancel) {
                     Text("Cancel")
                 }
             }
@@ -1870,14 +2164,17 @@ private fun ProductDeleteScreen(appState: QuartermasterAppState, modifier: Modif
 }
 
 @Composable
-private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
+private fun SettingsScreen(
+    appState: QuartermasterAppState,
+    modifier: Modifier = Modifier,
+    onCreateLocation: () -> Unit = {},
+    onEditLocation: (String) -> Unit = {},
+    onDeleteLocation: (String) -> Unit = {},
+) {
     val scope = rememberCoroutineScope()
     var inviteExpiry by remember { mutableStateOf("2999-01-01T00:00:00.000Z") }
     var inviteMaxUses by remember { mutableStateOf("1") }
     var redeemInviteCode by remember { mutableStateOf(appState.pendingInviteContext?.inviteCode.orEmpty()) }
-    var locationForm by remember { mutableStateOf<LocationFormFields?>(null) }
-    var editingLocationId by remember { mutableStateOf<String?>(null) }
-    var deletingLocation by remember { mutableStateOf<LocationDto?>(null) }
 
     LaunchedEffect(appState.currentHouseholdId) { appState.loadSettings() }
     LaunchedEffect(appState.pendingInviteContext) {
@@ -2001,64 +2298,11 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
                 Text("Household locations", style = MaterialTheme.typography.titleMedium)
                 Button(
                     modifier = Modifier.testTag(SmokeTag.LocationCreateButton),
-                    onClick = {
-                        editingLocationId = null
-                        deletingLocation = null
-                        locationForm = LocationFormFields(
-                            sortOrder = (appState.sortedLocations().maxOfOrNull { it.sortOrder } ?: -1L) + 1L,
-                        )
-                    },
+                    onClick = onCreateLocation,
                     enabled = appState.locationActionInFlight == null,
                 ) {
                     Text("New location")
                 }
-            }
-        }
-        locationForm?.let { fields ->
-            item {
-                LocationFormCard(
-                    fields = fields,
-                    isEditing = editingLocationId != null,
-                    actionInFlight = appState.locationActionInFlight,
-                    onFieldsChange = { locationForm = it },
-                    onSubmit = {
-                        locationForm?.let { currentFields ->
-                            scope.launch {
-                                val id = editingLocationId
-                                if (id == null) {
-                                    appState.createLocation(currentFields)
-                                } else {
-                                    appState.updateLocation(id, currentFields)
-                                }
-                                if (appState.settingsError == null) {
-                                    locationForm = null
-                                    editingLocationId = null
-                                }
-                            }
-                        }
-                    },
-                    onCancel = {
-                        locationForm = null
-                        editingLocationId = null
-                    },
-                )
-            }
-        }
-        deletingLocation?.let { location ->
-            item {
-                LocationDeleteCard(
-                    location = location,
-                    actionInFlight = appState.locationActionInFlight,
-                    onConfirm = {
-                        scope.launch {
-                            appState.deleteLocation(location.id.toString())
-                            if (appState.settingsError == null) {
-                                deletingLocation = null
-                            }
-                        }
-                    },
-                    onCancel = { deletingLocation = null },
-                )
             }
         }
         item {
@@ -2078,16 +2322,8 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
                     location = location,
                     isFirst = location == settingsLocations.first(),
                     isLast = location == settingsLocations.last(),
-                    onEdit = {
-                        deletingLocation = null
-                        editingLocationId = location.id.toString()
-                        locationForm = appState.locationFormFields(location)
-                    },
-                    onDelete = {
-                        locationForm = null
-                        editingLocationId = null
-                        deletingLocation = location
-                    },
+                    onEdit = { onEditLocation(location.id.toString()) },
+                    onDelete = { onDeleteLocation(location.id.toString()) },
                     onMove = { delta -> scope.launch { appState.moveLocation(location.id.toString(), delta) } },
                 )
             }
@@ -2160,6 +2396,113 @@ private fun SettingsScreen(appState: QuartermasterAppState, modifier: Modifier =
                 enabled = !appState.authActionInFlight,
             ) {
                 Text("Sign out")
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocationFormScreen(
+    appState: QuartermasterAppState,
+    locationId: String?,
+    onDone: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scope = rememberCoroutineScope()
+    val location = locationId?.let { id -> appState.locations.firstOrNull { it.id.toString() == id } }
+    var fields by remember(locationId, location?.id) {
+        mutableStateOf(
+            location?.let(appState::locationFormFields)
+                ?: LocationFormFields(
+                    sortOrder = (appState.sortedLocations().maxOfOrNull { it.sortOrder } ?: -1L) + 1L,
+                ),
+        )
+    }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            TextButton(onClick = onCancel) {
+                Text("Back to settings")
+            }
+        }
+        appState.settingsError?.let { message ->
+            item { ErrorCard("Location action failed", message) }
+        }
+        if (locationId != null && location == null) {
+            item { StatusCard("Location unavailable", "Return to Settings and choose another location.") }
+        } else {
+            item {
+                LocationFormCard(
+                    fields = fields,
+                    isEditing = locationId != null,
+                    actionInFlight = appState.locationActionInFlight,
+                    onFieldsChange = { fields = it },
+                    onSubmit = {
+                        scope.launch {
+                            val saved = if (locationId == null) {
+                                appState.createLocation(fields)
+                            } else {
+                                appState.updateLocation(locationId, fields)
+                            }
+                            if (saved) {
+                                onDone()
+                            }
+                        }
+                    },
+                    onCancel = onCancel,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocationDeleteScreen(
+    appState: QuartermasterAppState,
+    locationId: String,
+    onDone: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scope = rememberCoroutineScope()
+    val location = appState.locations.firstOrNull { it.id.toString() == locationId }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            TextButton(onClick = onCancel) {
+                Text("Back to settings")
+            }
+        }
+        appState.settingsError?.let { message ->
+            item { ErrorCard("Location action failed", message) }
+        }
+        if (location == null) {
+            item { StatusCard("Location unavailable", "Return to Settings and choose another location.") }
+        } else {
+            item {
+                LocationDeleteCard(
+                    location = location,
+                    actionInFlight = appState.locationActionInFlight,
+                    onConfirm = {
+                        scope.launch {
+                            if (appState.deleteLocation(location.id.toString())) {
+                                onDone()
+                            }
+                        }
+                    },
+                    onCancel = onCancel,
+                )
             }
         }
     }

@@ -505,13 +505,13 @@ class QuartermasterAppStateTest {
         val appState = QuartermasterAppState(FakeSessionStore(), backend)
 
         appState.bootstrap()
-        appState.showProductCreateForScan()
-        appState.createProduct(ProductFormFields(name = "Semolina", preferredUnit = "g"))
+        appState.prepareProductCreateForScan()
+        val saved = appState.createProduct(ProductFormFields(name = "Semolina", preferredUnit = "g"))
 
+        assertEquals(created, saved)
         assertEquals(MainTab.Scan, appState.selectedTab)
         assertEquals(created, appState.selectedProduct)
         assertFalse(appState.returnToScanAfterProductCreate)
-        assertEquals(ProductScreenMode.List, appState.productScreenMode)
     }
 
     @Test
@@ -523,13 +523,12 @@ class QuartermasterAppStateTest {
             )
 
         appState.bootstrap()
-        appState.showProductCreateForScan()
-        appState.cancelProductForm()
+        appState.prepareProductCreateForScan()
+        assertTrue(appState.cancelProductFormForScan())
 
         assertEquals(MainTab.Scan, appState.selectedTab)
         assertNull(appState.selectedProduct)
         assertFalse(appState.returnToScanAfterProductCreate)
-        assertEquals(ProductScreenMode.List, appState.productScreenMode)
     }
 
     @Test
@@ -620,14 +619,14 @@ class QuartermasterAppStateTest {
             )
 
         appState.bootstrap()
-        appState.showProductCreate()
-        appState.createProduct(ProductFormFields(name = "Flour", family = UnitFamily.MASS, preferredUnit = "g"))
+        appState.prepareProductCreate()
+        val created = appState.createProduct(ProductFormFields(name = "Flour", family = UnitFamily.MASS, preferredUnit = "g"))
 
-        assertEquals(ProductScreenMode.Detail, appState.productScreenMode)
+        assertEquals(product, created)
         assertEquals(product, appState.selectedCatalogueProduct)
         assertEquals(1, backend.createProductRequests.size)
 
-        appState.updateSelectedProduct(
+        val saved = appState.updateSelectedProduct(
             ProductFormFields(
                 name = "Flour",
                 brand = "House",
@@ -637,6 +636,7 @@ class QuartermasterAppStateTest {
             ),
         )
 
+        assertEquals(updated, saved)
         assertEquals(updated, appState.selectedCatalogueProduct)
         assertTrue(
             backend.updateProductRequests
@@ -645,10 +645,8 @@ class QuartermasterAppStateTest {
                 .any { it.op == "remove" && it.path == "/image_url" },
         )
 
-        appState.showProductDelete()
-        appState.deleteSelectedProduct()
+        assertTrue(appState.deleteSelectedProduct())
 
-        assertEquals(ProductScreenMode.List, appState.productScreenMode)
         assertNull(appState.selectedCatalogueProduct)
         assertEquals(listOf(product.id.toString()), backend.deletedProductIds)
 

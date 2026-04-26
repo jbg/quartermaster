@@ -627,8 +627,8 @@ def main() -> int:
         adb("shell", "input", "keyevent", "BACK")
         wait_for_tag_with_scroll("smoke-stock-edit-save")
         tap_tag("smoke-stock-edit-save")
-        wait_for_tag("smoke-inventory-screen", timeout=15.0)
         wait_for_tag(f"smoke-selected-batch-{lifecycle_batch_id}", timeout=15.0)
+        assert_tag_missing("smoke-stock-edit-screen", timeout=5.0)
         wait_for_tag(f"smoke-batch-consume-{lifecycle_batch_id}", timeout=15.0)
     exercise_products(fixture)
     if fixture is not None:
