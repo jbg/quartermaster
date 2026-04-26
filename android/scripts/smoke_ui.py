@@ -577,6 +577,96 @@ def exercise_locations() -> None:
     assert_text_missing(renamed_location, timeout=15.0)
 
 
+def exercise_reminders(fixture: dict | None) -> None:
+    tap_tag("smoke-tab-reminders")
+    wait_for_tag("smoke-reminder-screen")
+    if fixture is not None:
+        first_reminder_id = fixture["reminders"][0]["reminder_id"]
+        ack_tag = f"smoke-reminder-ack-{first_reminder_id}"
+        wait_for_tag(ack_tag, timeout=15.0)
+        tap_tag(ack_tag)
+        assert_tag_missing(ack_tag, timeout=15.0)
+    else:
+        wait_for_condition(
+            "a reminder acknowledge action",
+            lambda: bool(find_clickables_with_tag_prefix("smoke-reminder-ack-")),
+            timeout=15.0,
+        )
+        first_ack = find_clickables_with_tag_prefix("smoke-reminder-ack-")[0]
+        ack_tag = first_ack.resource_id.split("/")[-1]
+        tap(first_ack)
+        assert_tag_missing(ack_tag, timeout=15.0)
+    if fixture is not None:
+        open_reminder_payload(fixture["reminders"][1])
+    else:
+        tap_first_tag_prefix("smoke-reminder-open-")
+    wait_for_tag("smoke-reminder-opened-banner")
+    if fixture is not None:
+        wait_for_tag(f"smoke-reminder-target-{fixture['reminders'][1]['batch_id']}")
+    else:
+        assert_text("Reminder target")
+    tap_tag("smoke-reminder-opened-dismiss")
+    if fixture is not None:
+        assert_tag_missing(f"smoke-reminder-target-{fixture['reminders'][1]['batch_id']}")
+    else:
+        assert_text_missing("Reminder target")
+
+
+def exercise_inventory(fixture: dict | None) -> None:
+    if fixture is None:
+        raise RuntimeError("the inventory smoke flow requires --maintenance-token fixture data")
+
+    lifecycle_batch_id = fixture["reminders"][1]["batch_id"]
+    wait_for_tag_with_scroll(f"smoke-inventory-batch-{lifecycle_batch_id}")
+    tap_tag_near_top(f"smoke-inventory-batch-{lifecycle_batch_id}")
+    wait_for_tag(f"smoke-selected-batch-{lifecycle_batch_id}")
+    tap_tag(f"smoke-batch-discard-{lifecycle_batch_id}")
+    wait_for_tag(f"smoke-batch-restore-{lifecycle_batch_id}", timeout=15.0)
+    tap_tag(f"smoke-batch-restore-{lifecycle_batch_id}")
+    assert_tag_missing(f"smoke-batch-restore-{lifecycle_batch_id}", timeout=15.0)
+    wait_for_tag(f"smoke-batch-consume-{lifecycle_batch_id}", timeout=15.0)
+    tap_tag(f"smoke-batch-edit-{lifecycle_batch_id}")
+    wait_for_tag("smoke-stock-edit-screen")
+    replace_text_field_by_tag("smoke-stock-edit-quantity", "750")
+    adb("shell", "input", "keyevent", "BACK")
+    wait_for_tag_with_scroll("smoke-stock-edit-note")
+    replace_text_field_by_tag("smoke-stock-edit-note", "Android fixture correction")
+    adb("shell", "input", "keyevent", "BACK")
+    wait_for_tag_with_scroll("smoke-stock-edit-save")
+    tap_tag_near_top("smoke-stock-edit-save")
+    wait_for_tag(f"smoke-selected-batch-{lifecycle_batch_id}", timeout=15.0)
+    assert_tag_missing("smoke-stock-edit-screen", timeout=5.0)
+    wait_for_tag(f"smoke-batch-consume-{lifecycle_batch_id}", timeout=15.0)
+
+
+def exercise_invite_session(
+    fixture: dict | None,
+    device_server_url: str,
+    username: str,
+    password: str,
+) -> None:
+    if find_clickables_with_tag("smoke-tab-settings"):
+        tap_tag("smoke-tab-settings")
+    wait_for_tag("smoke-settings-screen")
+    invite_code = None
+    if fixture is None:
+        tap_tag("smoke-create-invite-button")
+        invite_code = wait_for_matching_text(INVITE_CODE_RE, timeout=15.0)
+    else:
+        invite_code = fixture["invite_code"]
+    print(f"captured invite code {invite_code}")
+    open_invite_link(invite_code, device_server_url)
+    wait_for_tag_with_scroll("smoke-invite-handoff-card")
+    wait_for_text_with_scroll(invite_code)
+    wait_for_tag_with_scroll("smoke-sign-out-button")
+    tap_tag("smoke-sign-out-button")
+    sign_in(username, password)
+    if find_clickables_with_tag("smoke-tab-settings"):
+        tap_tag("smoke-tab-settings")
+    wait_for_tag("smoke-settings-screen")
+    wait_for_tag("smoke-switch-household-header")
+
+
 def check_backend_health(server_url: str) -> None:
     health_url = server_url.rstrip("/") + "/healthz"
     try:
@@ -611,6 +701,19 @@ def main() -> int:
         action="store_true",
         help="do not clear app data before launching",
     )
+    parser.add_argument(
+        "--flow",
+        choices=(
+            "all",
+            "reminders",
+            "inventory",
+            "products",
+            "locations",
+            "invite-session",
+        ),
+        default="all",
+        help="smoke flow to run; defaults to the full end-to-end path",
+    )
     args = parser.parse_args()
 
     check_backend_health(args.host_server_url)
@@ -627,84 +730,19 @@ def main() -> int:
     adb("reverse", "tcp:8080", "tcp:8080")
     launch(clear_app=not args.preserve_app_data)
     sign_in(args.username, args.password, args.device_server_url)
-    tap_tag("smoke-tab-reminders")
-    wait_for_tag("smoke-reminder-screen")
-    if fixture is not None:
-        first_reminder_id = fixture["reminders"][0]["reminder_id"]
-        ack_tag = f"smoke-reminder-ack-{first_reminder_id}"
-        wait_for_tag(ack_tag, timeout=15.0)
-        tap_tag(ack_tag)
-        assert_tag_missing(ack_tag, timeout=15.0)
-    else:
-        wait_for_condition(
-            "a reminder acknowledge action",
-            lambda: bool(find_clickables_with_tag_prefix("smoke-reminder-ack-")),
-            timeout=15.0,
-        )
-        first_ack = find_clickables_with_tag_prefix("smoke-reminder-ack-")[0]
-        ack_tag = first_ack.resource_id.split("/")[-1]
-        tap(first_ack)
-        assert_tag_missing(ack_tag, timeout=15.0)
-    if fixture is not None:
-        open_reminder_payload(fixture["reminders"][1])
-    else:
-        tap_first_tag_prefix("smoke-reminder-open-")
-    wait_for_tag("smoke-reminder-opened-banner")
-    if fixture is not None:
-        wait_for_tag(f"smoke-reminder-target-{fixture['reminders'][1]['batch_id']}")
-    else:
-        assert_text("Reminder target")
-    tap_tag("smoke-reminder-opened-dismiss")
-    if fixture is not None:
-        assert_tag_missing(f"smoke-reminder-target-{fixture['reminders'][1]['batch_id']}")
-    else:
-        assert_text_missing("Reminder target")
-    if fixture is not None:
-        lifecycle_batch_id = fixture["reminders"][1]["batch_id"]
-        wait_for_tag_with_scroll(f"smoke-inventory-batch-{lifecycle_batch_id}")
-        tap_tag_near_top(f"smoke-inventory-batch-{lifecycle_batch_id}")
-        wait_for_tag(f"smoke-selected-batch-{lifecycle_batch_id}")
-        tap_tag(f"smoke-batch-discard-{lifecycle_batch_id}")
-        wait_for_tag(f"smoke-batch-restore-{lifecycle_batch_id}", timeout=15.0)
-        tap_tag(f"smoke-batch-restore-{lifecycle_batch_id}")
-        assert_tag_missing(f"smoke-batch-restore-{lifecycle_batch_id}", timeout=15.0)
-        wait_for_tag(f"smoke-batch-consume-{lifecycle_batch_id}", timeout=15.0)
-        tap_tag(f"smoke-batch-edit-{lifecycle_batch_id}")
-        wait_for_tag("smoke-stock-edit-screen")
-        replace_text_field_by_tag("smoke-stock-edit-quantity", "750")
-        adb("shell", "input", "keyevent", "BACK")
-        wait_for_tag_with_scroll("smoke-stock-edit-note")
-        replace_text_field_by_tag("smoke-stock-edit-note", "Android fixture correction")
-        adb("shell", "input", "keyevent", "BACK")
-        wait_for_tag_with_scroll("smoke-stock-edit-save")
-        tap_tag_near_top("smoke-stock-edit-save")
-        wait_for_tag(f"smoke-selected-batch-{lifecycle_batch_id}", timeout=15.0)
-        assert_tag_missing("smoke-stock-edit-screen", timeout=5.0)
-        wait_for_tag(f"smoke-batch-consume-{lifecycle_batch_id}", timeout=15.0)
-    exercise_products(fixture)
-    if fixture is not None:
+
+    if args.flow in ("all", "reminders"):
+        exercise_reminders(fixture)
+    if args.flow == "inventory" or (args.flow == "all" and fixture is not None):
+        exercise_inventory(fixture)
+    if args.flow in ("all", "products"):
+        exercise_products(fixture)
+    if args.flow == "locations" or (args.flow == "all" and fixture is not None):
         exercise_locations()
-    if find_clickables_with_tag("smoke-tab-settings"):
-        tap_tag("smoke-tab-settings")
-    wait_for_tag("smoke-settings-screen")
-    invite_code = None
-    if fixture is None:
-        tap_tag("smoke-create-invite-button")
-        invite_code = wait_for_matching_text(INVITE_CODE_RE, timeout=15.0)
-    else:
-        invite_code = fixture["invite_code"]
-    print(f"captured invite code {invite_code}")
-    open_invite_link(invite_code, args.device_server_url)
-    wait_for_tag_with_scroll("smoke-invite-handoff-card")
-    wait_for_text_with_scroll(invite_code)
-    wait_for_tag_with_scroll("smoke-sign-out-button")
-    tap_tag("smoke-sign-out-button")
-    sign_in(args.username, args.password)
-    if find_clickables_with_tag("smoke-tab-settings"):
-        tap_tag("smoke-tab-settings")
-    wait_for_tag("smoke-settings-screen")
-    wait_for_tag("smoke-switch-household-header")
-    print("Android UI smoke passed")
+    if args.flow in ("all", "invite-session"):
+        exercise_invite_session(fixture, args.device_server_url, args.username, args.password)
+
+    print(f"Android UI smoke passed ({args.flow})")
     return 0
 
 
