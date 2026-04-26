@@ -52,7 +52,7 @@ struct RawConfig {
     ios_bundle_id: Option<String>,
     auth_session_sweep_interval_seconds: u64,
     auth_session_sweep_trigger_secret: Option<String>,
-    android_smoke_seed_trigger_secret: Option<String>,
+    smoke_seed_trigger_secret: Option<String>,
     expiry_reminders_enabled: bool,
     expiry_reminder_lead_days: i64,
     expiry_reminder_fire_hour: u32,
@@ -110,7 +110,7 @@ impl Default for RawConfig {
             ios_bundle_id: None,
             auth_session_sweep_interval_seconds: 0,
             auth_session_sweep_trigger_secret: None,
-            android_smoke_seed_trigger_secret: None,
+            smoke_seed_trigger_secret: None,
             expiry_reminders_enabled: false,
             expiry_reminder_lead_days: 1,
             expiry_reminder_fire_hour: 9,
@@ -258,9 +258,9 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         raw.auth_session_sweep_trigger_secret,
         "QM_AUTH_SESSION_SWEEP_TRIGGER_SECRET",
     )?;
-    let android_smoke_seed_trigger_secret = normalize_optional_secret(
-        raw.android_smoke_seed_trigger_secret,
-        "QM_ANDROID_SMOKE_SEED_TRIGGER_SECRET",
+    let smoke_seed_trigger_secret = normalize_optional_secret(
+        raw.smoke_seed_trigger_secret,
+        "QM_SMOKE_SEED_TRIGGER_SECRET",
     )?;
     let ios_release_identity = normalize_ios_release_identity(raw.ios_team_id, raw.ios_bundle_id)?;
     let expiry_reminder_trigger_secret = normalize_optional_secret(
@@ -353,7 +353,7 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
             fire_minute: raw.expiry_reminder_fire_minute,
         },
         expiry_reminder_trigger_secret,
-        android_smoke_seed_trigger_secret,
+        smoke_seed_trigger_secret,
         web_dist_dir,
     });
 
@@ -778,7 +778,7 @@ mod tests {
         let loaded = build_config(RawConfig {
             auth_session_sweep_interval_seconds: 60,
             auth_session_sweep_trigger_secret: Some("secret".into()),
-            android_smoke_seed_trigger_secret: Some("smoke-secret".into()),
+            smoke_seed_trigger_secret: Some("smoke-secret".into()),
             ..RawConfig::default()
         })
         .unwrap();
@@ -794,10 +794,7 @@ mod tests {
             Some("secret")
         );
         assert_eq!(
-            loaded
-                .api_config
-                .android_smoke_seed_trigger_secret
-                .as_deref(),
+            loaded.api_config.smoke_seed_trigger_secret.as_deref(),
             Some("smoke-secret")
         );
     }

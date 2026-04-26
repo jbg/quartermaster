@@ -35,7 +35,7 @@ test.beforeAll(async () => {
       QM_BIND: '127.0.0.1:19080',
       QM_DATABASE_URL: `sqlite://${resolve(tempDir, 'smoke.db')}?mode=rwc`,
       QM_WEB_DIST_DIR: resolve(repoRoot, 'web/build'),
-      QM_ANDROID_SMOKE_SEED_TRIGGER_SECRET: maintenanceToken,
+      QM_SMOKE_SEED_TRIGGER_SECRET: maintenanceToken,
       RUST_LOG: 'warn'
     }
   });

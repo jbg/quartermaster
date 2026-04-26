@@ -20,7 +20,7 @@ class ApiError(RuntimeError):
 
 def request_fixture(server_url: str, maintenance_token: str) -> dict:
     request = urllib.request.Request(
-        server_url.rstrip("/") + "/internal/maintenance/seed-android-smoke",
+        server_url.rstrip("/") + "/internal/maintenance/seed-smoke",
         data=b"",
         method="POST",
         headers={
@@ -33,7 +33,7 @@ def request_fixture(server_url: str, maintenance_token: str) -> dict:
             payload = response.read().decode()
     except urllib.error.HTTPError as exc:
         raise ApiError(
-            f"POST /internal/maintenance/seed-android-smoke failed with HTTP {exc.code}: {exc.read().decode()}"
+            f"POST /internal/maintenance/seed-smoke failed with HTTP {exc.code}: {exc.read().decode()}"
         ) from exc
     except urllib.error.URLError as exc:
         raise ApiError(f"fixture request failed: {exc}") from exc
@@ -50,7 +50,7 @@ def main() -> int:
     parser.add_argument(
         "--maintenance-token",
         default=None,
-        help="shared secret for /internal/maintenance/seed-android-smoke; defaults to QM_ANDROID_SMOKE_MAINTENANCE_TOKEN",
+        help="shared secret for /internal/maintenance/seed-smoke; defaults to QM_ANDROID_SMOKE_MAINTENANCE_TOKEN",
     )
     args = parser.parse_args()
 

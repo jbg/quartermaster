@@ -100,15 +100,6 @@ async fn maintenance_route_is_unmounted_without_secret() {
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     let (status, _) = app
-        .send(
-            Method::POST,
-            "/internal/maintenance/seed-android-smoke",
-            None,
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    let (status, _) = app
         .send(Method::POST, "/internal/maintenance/seed-smoke", None, None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -193,14 +184,20 @@ async fn sweep_expiry_reminders_reconciles_rows_with_valid_secret() {
 }
 
 #[tokio::test]
-async fn seed_android_smoke_requires_shared_secret() {
+async fn seed_smoke_requires_shared_secret() {
     let app = TestApp::start(ApiConfig {
-        android_smoke_seed_trigger_secret: Some("smoke-secret".into()),
+        smoke_seed_trigger_secret: Some("smoke-secret".into()),
         ..ApiConfig::default()
     })
     .await;
 
     let (status, body) = app
+        .send(Method::POST, "/internal/maintenance/seed-smoke", None, None)
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body["code"], "unauthorized");
+
+    let (status, _) = app
         .send(
             Method::POST,
             "/internal/maintenance/seed-android-smoke",
@@ -208,20 +205,13 @@ async fn seed_android_smoke_requires_shared_secret() {
             None,
         )
         .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(body["code"], "unauthorized");
-
-    let (status, body) = app
-        .send(Method::POST, "/internal/maintenance/seed-smoke", None, None)
-        .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(body["code"], "unauthorized");
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
-async fn seed_android_smoke_returns_deterministic_fixture() {
+async fn seed_smoke_returns_deterministic_fixture() {
     let app = TestApp::start(ApiConfig {
-        android_smoke_seed_trigger_secret: Some("smoke-secret".into()),
+        smoke_seed_trigger_secret: Some("smoke-secret".into()),
         expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy {
             enabled: false,
             ..Default::default()
@@ -239,14 +229,14 @@ async fn seed_android_smoke_returns_deterministic_fixture() {
     let (status, body) = app
         .send_with_headers(
             Method::POST,
-            "/internal/maintenance/seed-android-smoke",
+            "/internal/maintenance/seed-smoke",
             None,
             None,
             headers.clone(),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["username"], "android_smoke_18423");
+    assert_eq!(body["username"], "quartermaster_smoke_18423");
     assert_eq!(body["password"], "quartermaster-smoke-18423");
     assert_eq!(body["reminders"].as_array().unwrap().len(), 2);
     assert_eq!(
@@ -260,14 +250,14 @@ async fn seed_android_smoke_returns_deterministic_fixture() {
 
     let household_id = Uuid::parse_str(body["household_id"].as_str().unwrap()).unwrap();
     let location_id = Uuid::parse_str(body["location_id"].as_str().unwrap()).unwrap();
-    let user = qm_db::users::find_by_username(&app.db, "android_smoke_18423")
+    let user = qm_db::users::find_by_username(&app.db, "quartermaster_smoke_18423")
         .await
         .unwrap()
         .unwrap();
     let leftover_product = qm_db::products::create_manual(
         &app.db,
         household_id,
-        "Android Smoke Product leftover",
+        "Smoke Product leftover",
         None,
         "mass",
         Some("g"),
@@ -276,15 +266,10 @@ async fn seed_android_smoke_returns_deterministic_fixture() {
     )
     .await
     .unwrap();
-    let leftover_location = qm_db::locations::create(
-        &app.db,
-        household_id,
-        "Android Smoke Shelf leftover",
-        "pantry",
-        99,
-    )
-    .await
-    .unwrap();
+    let leftover_location =
+        qm_db::locations::create(&app.db, household_id, "Smoke Shelf leftover", "pantry", 99)
+            .await
+            .unwrap();
     qm_db::stock::create(
         &app.db,
         household_id,
@@ -346,7 +331,7 @@ async fn seed_android_smoke_returns_deterministic_fixture() {
         0
     );
 
-    let user = qm_db::users::find_by_username(&app.db, "android_smoke_18423")
+    let user = qm_db::users::find_by_username(&app.db, "quartermaster_smoke_18423")
         .await
         .unwrap()
         .unwrap();
@@ -390,7 +375,7 @@ async fn leftover_product_count(app: &TestApp, household_id: &str) -> i64 {
     sqlx::query(
         "SELECT COUNT(*) AS n \
          FROM product \
-         WHERE created_by_household_id = ? AND name LIKE 'Android Smoke Product %'",
+         WHERE created_by_household_id = ? AND name LIKE 'Smoke Product %'",
     )
     .bind(household_id)
     .fetch_one(&app.db.pool)
@@ -404,7 +389,7 @@ async fn leftover_location_count(app: &TestApp, household_id: &str) -> i64 {
     sqlx::query(
         "SELECT COUNT(*) AS n \
          FROM location \
-         WHERE household_id = ? AND name LIKE 'Android Smoke Shelf %'",
+         WHERE household_id = ? AND name LIKE 'Smoke Shelf %'",
     )
     .bind(household_id)
     .fetch_one(&app.db.pool)

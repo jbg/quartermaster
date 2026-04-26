@@ -12,20 +12,20 @@ use uuid::Uuid;
 use crate::{ApiError, ApiResult, AppState};
 
 pub const MAINTENANCE_TOKEN_HEADER: &str = "x-qm-maintenance-token";
-const ANDROID_SMOKE_USERNAME: &str = "android_smoke_18423";
-const ANDROID_SMOKE_PASSWORD: &str = "quartermaster-smoke-18423";
-const ANDROID_SMOKE_EMAIL: &str = "android-smoke@example.com";
-const ANDROID_SMOKE_HOUSEHOLD_NAME: &str = "Android Smoke Household";
-const ANDROID_SMOKE_TIMEZONE: &str = "UTC";
-const ANDROID_SMOKE_INVITE_EXPIRES_AT: &str = "2999-01-01T00:00:00Z";
-const ANDROID_SMOKE_REMINDER_FIRE_AT: &str = "2000-01-01T00:00:00.000Z";
-const ANDROID_SMOKE_SERVER_URL: &str = "http://127.0.0.1:8080";
-const ANDROID_SMOKE_PRODUCT_PREFIX: &str = "Android Smoke Product %";
-const ANDROID_SMOKE_LOCATION_PREFIX: &str = "Android Smoke Shelf %";
-const WEB_SMOKE_BARCODE: &str = "1111111111111";
-const ANDROID_SMOKE_PRODUCTS: [(&str, &str); 2] = [
-    ("Smoke Rice", "Android smoke seed 1"),
-    ("Smoke Beans", "Android smoke seed 2"),
+const SMOKE_USERNAME: &str = "quartermaster_smoke_18423";
+const SMOKE_PASSWORD: &str = "quartermaster-smoke-18423";
+const SMOKE_EMAIL: &str = "quartermaster-smoke@example.com";
+const SMOKE_HOUSEHOLD_NAME: &str = "Quartermaster Smoke Household";
+const SMOKE_TIMEZONE: &str = "UTC";
+const SMOKE_INVITE_EXPIRES_AT: &str = "2999-01-01T00:00:00Z";
+const SMOKE_REMINDER_FIRE_AT: &str = "2000-01-01T00:00:00.000Z";
+const SMOKE_SERVER_URL: &str = "http://127.0.0.1:8080";
+const SMOKE_PRODUCT_PREFIX: &str = "Smoke Product %";
+const SMOKE_LOCATION_PREFIX: &str = "Smoke Shelf %";
+const SMOKE_BARCODE: &str = "1111111111111";
+const SMOKE_PRODUCTS: [(&str, &str); 2] = [
+    ("Smoke Rice", "Smoke fixture seed 1"),
+    ("Smoke Beans", "Smoke fixture seed 2"),
 ];
 
 #[derive(Debug, Serialize)]
@@ -40,7 +40,7 @@ pub struct SweepExpiryRemindersResponse {
 }
 
 #[derive(Debug, Serialize)]
-pub struct AndroidSmokeReminderSeed {
+pub struct SmokeReminderSeed {
     pub reminder_id: Uuid,
     pub batch_id: Uuid,
     pub product_id: Uuid,
@@ -51,7 +51,7 @@ pub struct AndroidSmokeReminderSeed {
 }
 
 #[derive(Debug, Serialize)]
-pub struct SeedAndroidSmokeResponse {
+pub struct SeedSmokeResponse {
     pub username: String,
     pub password: String,
     pub invite_code: String,
@@ -59,7 +59,7 @@ pub struct SeedAndroidSmokeResponse {
     pub household_id: Uuid,
     pub location_id: Uuid,
     pub barcode: String,
-    pub reminders: Vec<AndroidSmokeReminderSeed>,
+    pub reminders: Vec<SmokeReminderSeed>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -71,10 +71,6 @@ pub fn router() -> Router<AppState> {
         .route(
             "/internal/maintenance/sweep-expiry-reminders",
             post(sweep_expiry_reminders),
-        )
-        .route(
-            "/internal/maintenance/seed-android-smoke",
-            post(seed_android_smoke),
         )
         .route("/internal/maintenance/seed-smoke", post(seed_smoke))
 }
@@ -158,29 +154,13 @@ async fn sweep_expiry_reminders(
     ))
 }
 
-async fn seed_android_smoke(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> ApiResult<(StatusCode, Json<SeedAndroidSmokeResponse>)> {
-    require_maintenance_secret(
-        &headers,
-        state.config.android_smoke_seed_trigger_secret.as_deref(),
-    )?;
-
-    let payload = build_android_smoke_fixture(&state).await?;
-    Ok((StatusCode::OK, Json(payload)))
-}
-
 async fn seed_smoke(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> ApiResult<(StatusCode, Json<SeedAndroidSmokeResponse>)> {
-    require_maintenance_secret(
-        &headers,
-        state.config.android_smoke_seed_trigger_secret.as_deref(),
-    )?;
+) -> ApiResult<(StatusCode, Json<SeedSmokeResponse>)> {
+    require_maintenance_secret(&headers, state.config.smoke_seed_trigger_secret.as_deref())?;
 
-    let payload = build_android_smoke_fixture(&state).await?;
+    let payload = build_smoke_fixture(&state).await?;
     Ok((StatusCode::OK, Json(payload)))
 }
 
@@ -195,9 +175,7 @@ fn require_maintenance_secret(headers: &HeaderMap, expected: Option<&str>) -> Ap
     Ok(())
 }
 
-async fn build_android_smoke_fixture(
-    state: &AppState,
-) -> Result<SeedAndroidSmokeResponse, ApiError> {
+async fn build_smoke_fixture(state: &AppState) -> Result<SeedSmokeResponse, ApiError> {
     let user = find_or_create_smoke_user(&state.db).await?;
     let household_id = find_or_create_smoke_household(&state.db, user.id).await?;
     let pantry = ensure_pantry_location(&state.db, household_id).await?;
@@ -205,8 +183,8 @@ async fn build_android_smoke_fixture(
     reset_smoke_fixture_artifacts(&state.db, household_id).await?;
 
     let policy = smoke_reminder_policy(&state.config.expiry_reminder_policy);
-    let mut reminders = Vec::with_capacity(ANDROID_SMOKE_PRODUCTS.len());
-    for (product_name, note) in ANDROID_SMOKE_PRODUCTS {
+    let mut reminders = Vec::with_capacity(SMOKE_PRODUCTS.len());
+    for (product_name, note) in SMOKE_PRODUCTS {
         let product = find_or_create_smoke_product(&state.db, household_id, product_name).await?;
         let batch = qm_db::stock::create(
             &state.db,
@@ -222,16 +200,13 @@ async fn build_android_smoke_fixture(
             Some(&policy),
         )
         .await?;
-        let reminder = qm_db::reminders::force_due_for_batch(
-            &state.db,
-            batch.id,
-            ANDROID_SMOKE_REMINDER_FIRE_AT,
-        )
-        .await?
-        .ok_or_else(|| {
-            ApiError::BadRequest("android smoke reminder fixture was not created".into())
-        })?;
-        reminders.push(AndroidSmokeReminderSeed {
+        let reminder =
+            qm_db::reminders::force_due_for_batch(&state.db, batch.id, SMOKE_REMINDER_FIRE_AT)
+                .await?
+                .ok_or_else(|| {
+                    ApiError::BadRequest("smoke reminder fixture was not created".into())
+                })?;
+        reminders.push(SmokeReminderSeed {
             reminder_id: reminder.id,
             batch_id: reminder.batch_id,
             product_id: reminder.product_id,
@@ -244,18 +219,18 @@ async fn build_android_smoke_fixture(
 
     let invite = find_or_create_smoke_invite(&state.db, household_id, user.id).await?;
 
-    Ok(SeedAndroidSmokeResponse {
-        username: ANDROID_SMOKE_USERNAME.into(),
-        password: ANDROID_SMOKE_PASSWORD.into(),
+    Ok(SeedSmokeResponse {
+        username: SMOKE_USERNAME.into(),
+        password: SMOKE_PASSWORD.into(),
         invite_code: invite.code,
         server_url: state
             .config
             .public_base_url
             .clone()
-            .unwrap_or_else(|| ANDROID_SMOKE_SERVER_URL.into()),
+            .unwrap_or_else(|| SMOKE_SERVER_URL.into()),
         household_id,
         location_id: pantry.id,
-        barcode: WEB_SMOKE_BARCODE.into(),
+        barcode: SMOKE_BARCODE.into(),
         reminders,
     })
 }
@@ -263,21 +238,15 @@ async fn build_android_smoke_fixture(
 async fn find_or_create_smoke_user(
     db: &qm_db::Database,
 ) -> Result<qm_db::users::UserRow, ApiError> {
-    if let Some(existing) = qm_db::users::find_by_username(db, ANDROID_SMOKE_USERNAME).await? {
+    if let Some(existing) = qm_db::users::find_by_username(db, SMOKE_USERNAME).await? {
         return Ok(existing);
     }
 
-    let password_hash = crate::auth::hash_password(ANDROID_SMOKE_PASSWORD).map_err(|err| {
-        ApiError::BadRequest(format!("failed to hash android smoke password: {err}"))
-    })?;
-    qm_db::users::create(
-        db,
-        ANDROID_SMOKE_USERNAME,
-        Some(ANDROID_SMOKE_EMAIL),
-        &password_hash,
-    )
-    .await
-    .map_err(Into::into)
+    let password_hash = crate::auth::hash_password(SMOKE_PASSWORD)
+        .map_err(|err| ApiError::BadRequest(format!("failed to hash smoke password: {err}")))?;
+    qm_db::users::create(db, SMOKE_USERNAME, Some(SMOKE_EMAIL), &password_hash)
+        .await
+        .map_err(Into::into)
 }
 
 async fn find_or_create_smoke_household(
@@ -292,8 +261,7 @@ async fn find_or_create_smoke_household(
         return Ok(existing.membership.household_id);
     }
 
-    let household =
-        qm_db::households::create(db, ANDROID_SMOKE_HOUSEHOLD_NAME, ANDROID_SMOKE_TIMEZONE).await?;
+    let household = qm_db::households::create(db, SMOKE_HOUSEHOLD_NAME, SMOKE_TIMEZONE).await?;
     qm_db::locations::seed_defaults(db, household.id).await?;
     qm_db::memberships::insert(db, household.id, user_id, "admin").await?;
     Ok(household.id)
@@ -319,10 +287,10 @@ async fn reset_smoke_fixture_artifacts(
          )",
     )
     .bind(&household_id)
-    .bind(ANDROID_SMOKE_PRODUCTS[0].0)
-    .bind(ANDROID_SMOKE_PRODUCTS[1].0)
-    .bind(ANDROID_SMOKE_PRODUCT_PREFIX)
-    .bind(ANDROID_SMOKE_LOCATION_PREFIX)
+    .bind(SMOKE_PRODUCTS[0].0)
+    .bind(SMOKE_PRODUCTS[1].0)
+    .bind(SMOKE_PRODUCT_PREFIX)
+    .bind(SMOKE_LOCATION_PREFIX)
     .execute(&mut *tx)
     .await?;
 
@@ -339,10 +307,10 @@ async fn reset_smoke_fixture_artifacts(
          )",
     )
     .bind(&household_id)
-    .bind(ANDROID_SMOKE_PRODUCTS[0].0)
-    .bind(ANDROID_SMOKE_PRODUCTS[1].0)
-    .bind(ANDROID_SMOKE_PRODUCT_PREFIX)
-    .bind(ANDROID_SMOKE_LOCATION_PREFIX)
+    .bind(SMOKE_PRODUCTS[0].0)
+    .bind(SMOKE_PRODUCTS[1].0)
+    .bind(SMOKE_PRODUCT_PREFIX)
+    .bind(SMOKE_LOCATION_PREFIX)
     .execute(&mut *tx)
     .await?;
 
@@ -359,10 +327,10 @@ async fn reset_smoke_fixture_artifacts(
          )",
     )
     .bind(&household_id)
-    .bind(ANDROID_SMOKE_PRODUCTS[0].0)
-    .bind(ANDROID_SMOKE_PRODUCTS[1].0)
-    .bind(ANDROID_SMOKE_PRODUCT_PREFIX)
-    .bind(ANDROID_SMOKE_LOCATION_PREFIX)
+    .bind(SMOKE_PRODUCTS[0].0)
+    .bind(SMOKE_PRODUCTS[1].0)
+    .bind(SMOKE_PRODUCT_PREFIX)
+    .bind(SMOKE_LOCATION_PREFIX)
     .execute(&mut *tx)
     .await?;
 
@@ -378,10 +346,10 @@ async fn reset_smoke_fixture_artifacts(
          )",
     )
     .bind(&household_id)
-    .bind(ANDROID_SMOKE_PRODUCTS[0].0)
-    .bind(ANDROID_SMOKE_PRODUCTS[1].0)
-    .bind(ANDROID_SMOKE_PRODUCT_PREFIX)
-    .bind(ANDROID_SMOKE_LOCATION_PREFIX)
+    .bind(SMOKE_PRODUCTS[0].0)
+    .bind(SMOKE_PRODUCTS[1].0)
+    .bind(SMOKE_PRODUCT_PREFIX)
+    .bind(SMOKE_LOCATION_PREFIX)
     .execute(&mut *tx)
     .await?;
 
@@ -397,10 +365,10 @@ async fn reset_smoke_fixture_artifacts(
          )",
     )
     .bind(&household_id)
-    .bind(ANDROID_SMOKE_PRODUCTS[0].0)
-    .bind(ANDROID_SMOKE_PRODUCTS[1].0)
-    .bind(ANDROID_SMOKE_PRODUCT_PREFIX)
-    .bind(ANDROID_SMOKE_LOCATION_PREFIX)
+    .bind(SMOKE_PRODUCTS[0].0)
+    .bind(SMOKE_PRODUCTS[1].0)
+    .bind(SMOKE_PRODUCT_PREFIX)
+    .bind(SMOKE_LOCATION_PREFIX)
     .execute(&mut *tx)
     .await?;
 
@@ -410,15 +378,15 @@ async fn reset_smoke_fixture_artifacts(
            AND (name = ? OR name = ? OR name LIKE ?)",
     )
     .bind(&household_id)
-    .bind(ANDROID_SMOKE_PRODUCTS[0].0)
-    .bind(ANDROID_SMOKE_PRODUCTS[1].0)
-    .bind(ANDROID_SMOKE_PRODUCT_PREFIX)
+    .bind(SMOKE_PRODUCTS[0].0)
+    .bind(SMOKE_PRODUCTS[1].0)
+    .bind(SMOKE_PRODUCT_PREFIX)
     .execute(&mut *tx)
     .await?;
 
     sqlx::query("DELETE FROM location WHERE household_id = ? AND name LIKE ?")
         .bind(&household_id)
-        .bind(ANDROID_SMOKE_LOCATION_PREFIX)
+        .bind(SMOKE_LOCATION_PREFIX)
         .execute(&mut *tx)
         .await?;
 
@@ -481,7 +449,7 @@ async fn ensure_smoke_barcode_product(
 ) -> Result<qm_db::products::ProductRow, ApiError> {
     let product = qm_db::products::upsert_from_off(
         db,
-        WEB_SMOKE_BARCODE,
+        SMOKE_BARCODE,
         "Retry Beans",
         Some("Acme"),
         "mass",
@@ -489,7 +457,7 @@ async fn ensure_smoke_barcode_product(
         None,
     )
     .await?;
-    qm_db::barcode_cache::put_hit(db, WEB_SMOKE_BARCODE, product.id).await?;
+    qm_db::barcode_cache::put_hit(db, SMOKE_BARCODE, product.id).await?;
     Ok(product)
 }
 
@@ -520,7 +488,7 @@ async fn find_or_create_smoke_invite(
         household_id,
         &code,
         created_by,
-        ANDROID_SMOKE_INVITE_EXPIRES_AT,
+        SMOKE_INVITE_EXPIRES_AT,
         2,
         "member",
     )

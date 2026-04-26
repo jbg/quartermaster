@@ -412,7 +412,7 @@ def open_invite_link(invite_code: str, server_url: str) -> None:
 
 def request_fixture(server_url: str, maintenance_token: str) -> dict:
     request = urllib.request.Request(
-        server_url.rstrip("/") + "/internal/maintenance/seed-android-smoke",
+        server_url.rstrip("/") + "/internal/maintenance/seed-smoke",
         data=b"",
         method="POST",
         headers={
@@ -485,7 +485,7 @@ def sign_in(username: str, password: str, server_url: str | None = None) -> None
 
 
 def exercise_products(fixture: dict | None) -> None:
-    product_name = f"Android Smoke Product {int(time.time())}"
+    product_name = "Smoke Product UI"
     updated_brand = "Smoke Brand Updated"
 
     tap_tag("smoke-tab-products")
@@ -533,7 +533,7 @@ def exercise_products(fixture: dict | None) -> None:
 
 
 def exercise_locations() -> None:
-    location_name = f"Android Smoke Shelf {int(time.time())}"
+    location_name = "Smoke Shelf UI"
     renamed_location = f"{location_name} Updated"
 
     tap_tag("smoke-tab-settings")
@@ -684,7 +684,7 @@ def main() -> int:
     parser.add_argument(
         "--maintenance-token",
         default=os.environ.get("QM_ANDROID_SMOKE_MAINTENANCE_TOKEN"),
-        help="shared secret for /internal/maintenance/seed-android-smoke",
+        help="shared secret for /internal/maintenance/seed-smoke",
     )
     parser.add_argument(
         "--host-server-url",
