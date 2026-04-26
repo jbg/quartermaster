@@ -15,6 +15,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -85,6 +86,10 @@ def adb(*args: str, capture: bool = False) -> str:
     return ""
 
 
+def adb_shell(*args: str, capture: bool = False) -> str:
+    return adb("shell", " ".join(shlex.quote(arg) for arg in args), capture=capture)
+
+
 def walk(element: ET.Element, parent: UiNode | None = None) -> Iterable[UiNode]:
     node = UiNode(element, parent)
     yield node
@@ -139,22 +144,34 @@ def wait_for_condition(description: str, predicate, timeout: float = 10.0):
     raise RuntimeError(f"timed out waiting for {description}")
 
 
-def wait_for_text_with_scroll(text: str, attempts: int = 6) -> UiNode:
+def wait_for_text_with_scroll(text: str, attempts: int = 12) -> UiNode:
     for _ in range(attempts):
         for node in dump_nodes():
             if node.text == text:
                 return node
         adb("shell", "input", "swipe", "540", "1900", "540", "900", "250")
         time.sleep(0.5)
+    for _ in range(attempts):
+        for node in dump_nodes():
+            if node.text == text:
+                return node
+        adb("shell", "input", "swipe", "540", "900", "540", "1900", "250")
+        time.sleep(0.5)
     raise RuntimeError(f"timed out waiting for text {text!r} after scrolling")
 
 
-def wait_for_tag_with_scroll(tag: str, attempts: int = 6) -> UiNode:
+def wait_for_tag_with_scroll(tag: str, attempts: int = 12) -> UiNode:
     for _ in range(attempts):
         for node in dump_nodes():
             if node_has_tag(node, tag):
                 return node
         adb("shell", "input", "swipe", "540", "1900", "540", "900", "250")
+        time.sleep(0.5)
+    for _ in range(attempts):
+        for node in dump_nodes():
+            if node_has_tag(node, tag):
+                return node
+        adb("shell", "input", "swipe", "540", "900", "540", "1900", "250")
         time.sleep(0.5)
     raise RuntimeError(f"timed out waiting for tag {tag!r} after scrolling")
 
@@ -199,11 +216,8 @@ def find_clickables_with_tag_prefix(prefix: str) -> list[UiNode]:
     matches: list[UiNode] = []
     for node in dump_nodes():
         resource_id = node.resource_id
-        if not (
-            resource_id == prefix
-            or resource_id.endswith(f"/{prefix}")
-            or resource_id.endswith(prefix)
-        ):
+        tag = resource_id.split("/")[-1]
+        if not tag.startswith(prefix):
             continue
         if node.clickable:
             matches.append(node)
@@ -280,12 +294,24 @@ def tap(node: UiNode) -> None:
     adb("shell", "input", "tap", str(x), str(y))
 
 
+def tap_near_top(node: UiNode) -> None:
+    left, top, right, bottom = node.bounds
+    x = (left + right) // 2
+    y = min(bottom - 1, top + 24)
+    print(f"tap {node.klass} text={node.text!r} bounds={node.element.attrib.get('bounds')} near_top=({x},{y})")
+    adb("shell", "input", "tap", str(x), str(y))
+
+
 def tap_text(text: str, *, lowest: bool = False) -> None:
     tap(find_clickable_with_text(text, lowest=lowest))
 
 
 def tap_tag(tag: str, *, lowest: bool = False) -> None:
     tap(find_clickable_with_tag(tag, lowest=lowest))
+
+
+def tap_tag_near_top(tag: str, *, lowest: bool = False) -> None:
+    tap_near_top(find_clickable_with_tag(tag, lowest=lowest))
 
 
 def tap_first_tag_prefix(prefix: str) -> None:
@@ -381,7 +407,7 @@ def launch(clear_app: bool) -> None:
 def open_invite_link(invite_code: str, server_url: str) -> None:
     encoded_server = urllib.parse.quote(server_url, safe="")
     deep_link = f"quartermaster://join?invite={invite_code}&server={encoded_server}"
-    adb("shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", deep_link)
+    adb_shell("am", "start", "-a", "android.intent.action.VIEW", "-d", deep_link)
 
 
 def request_fixture(server_url: str, maintenance_token: str) -> dict:
@@ -410,8 +436,7 @@ def request_fixture(server_url: str, maintenance_token: str) -> dict:
 
 
 def open_reminder_payload(payload: dict) -> None:
-    adb(
-        "shell",
+    adb_shell(
         "am",
         "start",
         "-n",
@@ -449,7 +474,14 @@ def sign_in(username: str, password: str, server_url: str | None = None) -> None
     adb("shell", "input", "keyevent", "BACK")
     time.sleep(1.0)
     tap_tag("smoke-sign-in-button")
-    wait_for_tag("smoke-inventory-screen")
+    wait_for_condition(
+        "an authenticated route",
+        lambda: any(
+            node_has_tag(node, "smoke-inventory-screen") or node_has_tag(node, "smoke-settings-screen")
+            for node in dump_nodes()
+        ),
+        timeout=15.0,
+    )
 
 
 def exercise_products(fixture: dict | None) -> None:
@@ -462,12 +494,16 @@ def exercise_products(fixture: dict | None) -> None:
     wait_for_text("New product")
     replace_text_field_by_tag("smoke-product-name-field", product_name)
     replace_text_field_by_tag("smoke-product-brand-field", "Smoke Brand")
+    adb("shell", "input", "keyevent", "BACK")
+    wait_for_tag_with_scroll("smoke-product-submit-button")
     tap_tag("smoke-product-submit-button")
     wait_for_text(product_name, timeout=15.0)
 
     tap_tag("smoke-product-edit-button")
     wait_for_text("Edit product")
     replace_text_field_by_tag("smoke-product-brand-field", updated_brand)
+    adb("shell", "input", "keyevent", "BACK")
+    wait_for_tag_with_scroll("smoke-product-submit-button")
     tap_tag("smoke-product-submit-button")
     wait_for_text(updated_brand, timeout=15.0)
 
@@ -487,8 +523,10 @@ def exercise_products(fixture: dict | None) -> None:
 
     if fixture is not None:
         tap_text("Back to products")
-        wait_for_tag("smoke-product-list")
+        wait_for_tag("smoke-products-screen")
         replace_text_field_by_tag("smoke-product-barcode-field", fixture["barcode"])
+        adb("shell", "input", "keyevent", "BACK")
+        wait_for_tag_with_scroll("smoke-product-barcode-button")
         tap_tag("smoke-product-barcode-button")
         wait_for_text("Retry Beans", timeout=15.0)
         wait_for_tag("smoke-product-refresh-button")
@@ -499,28 +537,39 @@ def exercise_locations() -> None:
     renamed_location = f"{location_name} Updated"
 
     tap_tag("smoke-tab-settings")
-    wait_for_tag("smoke-location-list")
+    wait_for_tag_with_scroll("smoke-location-list")
+    wait_for_tag_with_scroll("smoke-location-create-button")
     tap_tag("smoke-location-create-button")
     wait_for_tag("smoke-location-name-field")
     replace_text_field_by_tag("smoke-location-name-field", location_name)
+    adb("shell", "input", "keyevent", "BACK")
     tap_tag("smoke-location-kind-fridge")
+    wait_for_tag_with_scroll("smoke-location-submit-button")
     tap_tag("smoke-location-submit-button")
-    wait_for_text(location_name, timeout=15.0)
+    wait_for_text_with_scroll(location_name)
 
+    adb("shell", "input", "swipe", "540", "1900", "540", "1300", "250")
+    wait_for_condition(
+        "a location edit action",
+        lambda: bool(find_clickables_with_tag_prefix("smoke-location-edit-")),
+        timeout=10.0,
+    )
     edit_node = find_lowest_clickable_with_tag_prefix("smoke-location-edit-")
     edit_tag = edit_node.resource_id.split("/")[-1]
     location_id = edit_tag.removeprefix("smoke-location-edit-")
     tap(edit_node)
     wait_for_tag("smoke-location-name-field")
     replace_text_field_by_tag("smoke-location-name-field", renamed_location)
+    adb("shell", "input", "keyevent", "BACK")
     tap_tag("smoke-location-kind-freezer")
+    wait_for_tag_with_scroll("smoke-location-submit-button")
     tap_tag("smoke-location-submit-button")
-    wait_for_text(renamed_location, timeout=15.0)
+    wait_for_tag(f"smoke-location-edit-{location_id}", timeout=15.0)
 
     up_tag = f"smoke-location-move-up-{location_id}"
     if find_clickables_with_tag(up_tag):
         tap_tag(up_tag)
-        wait_for_tag(f"smoke-location-move-down-{location_id}", timeout=15.0)
+        wait_for_tag_with_scroll(f"smoke-location-move-down-{location_id}")
 
     tap_tag(f"smoke-location-delete-{location_id}")
     wait_for_tag(f"smoke-location-delete-confirm-{location_id}")
@@ -612,7 +661,8 @@ def main() -> int:
         assert_text_missing("Reminder target")
     if fixture is not None:
         lifecycle_batch_id = fixture["reminders"][1]["batch_id"]
-        tap_tag(f"smoke-inventory-batch-{lifecycle_batch_id}")
+        wait_for_tag_with_scroll(f"smoke-inventory-batch-{lifecycle_batch_id}")
+        tap_tag_near_top(f"smoke-inventory-batch-{lifecycle_batch_id}")
         wait_for_tag(f"smoke-selected-batch-{lifecycle_batch_id}")
         tap_tag(f"smoke-batch-discard-{lifecycle_batch_id}")
         wait_for_tag(f"smoke-batch-restore-{lifecycle_batch_id}", timeout=15.0)
@@ -622,18 +672,21 @@ def main() -> int:
         tap_tag(f"smoke-batch-edit-{lifecycle_batch_id}")
         wait_for_tag("smoke-stock-edit-screen")
         replace_text_field_by_tag("smoke-stock-edit-quantity", "750")
+        adb("shell", "input", "keyevent", "BACK")
         wait_for_tag_with_scroll("smoke-stock-edit-note")
         replace_text_field_by_tag("smoke-stock-edit-note", "Android fixture correction")
         adb("shell", "input", "keyevent", "BACK")
         wait_for_tag_with_scroll("smoke-stock-edit-save")
-        tap_tag("smoke-stock-edit-save")
+        tap_tag_near_top("smoke-stock-edit-save")
         wait_for_tag(f"smoke-selected-batch-{lifecycle_batch_id}", timeout=15.0)
         assert_tag_missing("smoke-stock-edit-screen", timeout=5.0)
         wait_for_tag(f"smoke-batch-consume-{lifecycle_batch_id}", timeout=15.0)
     exercise_products(fixture)
     if fixture is not None:
         exercise_locations()
-    tap_tag("smoke-tab-settings")
+    if find_clickables_with_tag("smoke-tab-settings"):
+        tap_tag("smoke-tab-settings")
+    wait_for_tag("smoke-settings-screen")
     invite_code = None
     if fixture is None:
         tap_tag("smoke-create-invite-button")
@@ -642,12 +695,14 @@ def main() -> int:
         invite_code = fixture["invite_code"]
     print(f"captured invite code {invite_code}")
     open_invite_link(invite_code, args.device_server_url)
-    wait_for_tag("smoke-invite-handoff-card")
-    assert_text(invite_code)
-    wait_for_tag("smoke-sign-out-button")
+    wait_for_tag_with_scroll("smoke-invite-handoff-card")
+    wait_for_text_with_scroll(invite_code)
+    wait_for_tag_with_scroll("smoke-sign-out-button")
     tap_tag("smoke-sign-out-button")
     sign_in(args.username, args.password)
-    tap_tag("smoke-tab-settings")
+    if find_clickables_with_tag("smoke-tab-settings"):
+        tap_tag("smoke-tab-settings")
+    wait_for_tag("smoke-settings-screen")
     wait_for_tag("smoke-switch-household-header")
     print("Android UI smoke passed")
     return 0

@@ -4,8 +4,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -52,16 +54,16 @@ internal fun InventoryScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text(
-                appState.meOrNull?.currentHousehold?.name ?: "Inventory",
-                style = MaterialTheme.typography.headlineSmall,
+            RouteHeader(
+                title = appState.meOrNull?.currentHousehold?.name ?: "Inventory",
+                subtitle = "Stock grouped by household location, with depleted batches kept for history and restore.",
             )
         }
         if (appState.isInventoryRefreshing) {
             item {
-                StatusCard(
+                InlineStatusCard(
                     title = "Refreshing inventory",
-                    message = "Quartermaster is syncing stock, locations, and recent history for this household.",
+                    message = "Syncing stock, locations, and recent history.",
                 )
             }
         }
@@ -69,14 +71,21 @@ internal fun InventoryScreen(
         when {
             appState.inventoryLoadState == LoadState.Loading && !appState.hasLoadedInventoryOnce -> {
                 item {
-                    StatusCard(
+                    InlineStatusCard(
                         title = "Loading inventory",
-                        message = "Fetching locations, batches, and recent stock history for this household.",
+                        message = "Fetching locations, batches, and recent stock history.",
                     )
                 }
             }
             appState.inventoryError != null && !appState.hasLoadedInventoryOnce -> {
-                item { ErrorCard("Couldn't load inventory", appState.inventoryError!!) }
+                item {
+                    ErrorCard(
+                        title = "Couldn't load inventory",
+                        message = appState.inventoryError!!,
+                        actionLabel = "Retry",
+                        onAction = { scope.launch { appState.refreshInventory(force = true) } },
+                    )
+                }
             }
             appState.locations.isEmpty() -> {
                 item {
@@ -121,7 +130,14 @@ internal fun InventoryScreen(
         }
 
         appState.inventoryError?.let { message ->
-            item { ErrorCard("Inventory action failed", message) }
+            item {
+                ErrorCard(
+                    title = "Inventory action failed",
+                    message = message,
+                    actionLabel = "Refresh inventory",
+                    onAction = { scope.launch { appState.refreshInventory(force = true) } },
+                )
+            }
         }
 
         val target = appState.pendingInventoryTarget
@@ -145,7 +161,10 @@ internal fun InventoryScreen(
 
         if (appState.history.isNotEmpty()) {
             item {
-                Text("Recent history", style = MaterialTheme.typography.titleMedium)
+                SectionHeader(
+                    title = "Recent history",
+                    body = "Latest stock changes across the household.",
+                )
             }
             items(appState.history.take(10), key = { it.id }) { event ->
                 Card {
@@ -155,8 +174,9 @@ internal fun InventoryScreen(
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Text("${event.product.name} · ${event.eventType.name}")
-                        Text("${event.quantityDelta} ${event.unit}")
+                        Text(event.product.name, style = MaterialTheme.typography.titleSmall)
+                        Text("${event.eventType.name.lowercase()} · ${event.quantityDelta} ${event.unit}")
+                        Text(event.createdAt, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -169,7 +189,8 @@ internal fun QuartermasterAppState.batchesForLocation(
     target: InventoryTarget?,
 ): List<StockBatchDto> = batches.filter { it.locationId.toString() == locationId }
     .sortedWith(
-        compareByDescending<StockBatchDto> { it.product.id.toString() == target?.productId }
+        compareByDescending<StockBatchDto> { it.id.toString() == target?.batchId }
+            .thenByDescending { it.product.id.toString() == target?.productId }
             .thenBy { isBatchDepleted(it) }
             .thenBy { it.product.name.lowercase() }
             .thenBy { it.expiresOn ?: "9999-12-31" },
@@ -196,8 +217,16 @@ private fun LocationInventoryCard(
                 if (isTargetLocation) "${location.name} · reminder target" else location.name,
                 style = MaterialTheme.typography.titleMedium,
             )
+            Text(
+                if (batches.isEmpty()) {
+                    "No active or depleted batches in this location."
+                } else {
+                    "${batches.size} ${if (batches.size == 1) "batch" else "batches"}"
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
             if (batches.isEmpty()) {
-                Text("Nothing here yet.")
+                Text("Nothing here yet.", style = MaterialTheme.typography.bodyMedium)
             } else {
                 batches.forEach { batch ->
                     val batchId = batch.id.toString()
@@ -223,11 +252,9 @@ private fun LocationInventoryCard(
                                 .padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
-                            Text("${batch.product.name} · ${batch.quantity} ${batch.unit}")
-                            if (depleted) {
-                                Text("Depleted", style = MaterialTheme.typography.labelMedium)
-                            }
-                            batch.expiresOn?.let { Text("Expires $it") }
+                            Text(batch.product.name, style = MaterialTheme.typography.titleSmall)
+                            Text("${batch.quantity} ${batch.unit} · ${if (depleted) "depleted" else "available"}")
+                            Text("Expires ${batch.expiresOn ?: "not set"}", style = MaterialTheme.typography.bodySmall)
                             batch.note?.takeIf(String::isNotBlank)?.let { Text(it) }
                             if (isTargetBatch) {
                                 Text(
@@ -272,15 +299,30 @@ internal fun BatchDetailScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            TextButton(onClick = onBack) {
-                Text("Back to inventory")
-            }
+            RouteHeader(
+                title = batch?.product?.name ?: "Batch detail",
+                subtitle = batch?.let { "${it.quantity} ${it.unit} in ${appState.locationNameFor(it.locationId.toString())}" },
+                backLabel = "Back to inventory",
+                onBack = onBack,
+            )
         }
         appState.inventoryError?.let { message ->
-            item { ErrorCard("Inventory action failed", message) }
+            item {
+                ErrorCard(
+                    title = "Inventory action failed",
+                    message = message,
+                    actionLabel = "Refresh inventory",
+                    onAction = { scope.launch { appState.refreshInventory(force = true) } },
+                )
+            }
         }
         if (batch == null) {
-            item { StatusCard("Batch unavailable", "Return to Inventory and choose another batch.") }
+            item {
+                StatusCard(
+                    title = "Batch unavailable",
+                    message = "Return to Inventory and choose another batch. The household stock may have refreshed.",
+                )
+            }
         } else {
             item {
                 BatchDetailCard(
@@ -340,8 +382,23 @@ private fun BatchDetailCard(
                 }
             }
             BatchMetadata(batch)
+            action?.let {
+                InlineStatusCard(
+                    title = "Working on this batch",
+                    message = when (it) {
+                        StockAction.LoadEvents -> "Loading the latest batch history."
+                        StockAction.Update -> "Saving stock correction."
+                        StockAction.Consume -> "Recording consumption."
+                        StockAction.Discard -> "Discarding this batch."
+                        StockAction.Restore -> "Restoring this batch."
+                    },
+                )
+            }
             if (depleted) {
-                Text("This batch is depleted.", style = MaterialTheme.typography.bodyMedium)
+                StatusCard(
+                    title = "Batch is depleted",
+                    message = "Consume and edit actions are disabled. Restore is available only when the latest event allows it.",
+                )
             } else {
                 Button(
                     onClick = onEdit,
@@ -384,20 +441,25 @@ private fun BatchDetailCard(
                     Text(if (action == StockAction.Restore) "Restoring..." else "Restore batch")
                 }
             }
-            BatchHistory(appState.selectedBatchEvents, appState.selectedBatchEventLoadState, appState.selectedBatchEventError)
+            BatchHistory(
+                events = appState.selectedBatchEvents,
+                loadState = appState.selectedBatchEventLoadState,
+                error = appState.selectedBatchEventError,
+                onRetry = { appState.loadSelectedBatchEvents() },
+            )
         }
     }
 }
 
 @Composable
 private fun BatchMetadata(batch: StockBatchDto) {
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text("Created ${batch.createdAt}", style = MaterialTheme.typography.bodySmall)
-        Text("Initial quantity ${batch.initialQuantity} ${batch.unit}", style = MaterialTheme.typography.bodySmall)
-        Text("Expires ${batch.expiresOn ?: "No expiry date"}", style = MaterialTheme.typography.bodySmall)
-        Text("Opened ${batch.openedOn ?: "Not marked opened"}", style = MaterialTheme.typography.bodySmall)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        MetadataRow("Created", batch.createdAt)
+        MetadataRow("Initial quantity", "${batch.initialQuantity} ${batch.unit}")
+        MetadataRow("Expiry", batch.expiresOn ?: "No expiry date")
+        MetadataRow("Opened", batch.openedOn ?: "Not marked opened")
         batch.note?.takeIf(String::isNotBlank)?.let {
-            Text("Note: $it", style = MaterialTheme.typography.bodySmall)
+            MetadataRow("Note", it)
         }
     }
 }
@@ -407,13 +469,23 @@ private fun BatchHistory(
     events: List<StockEventDto>,
     loadState: LoadState,
     error: String?,
+    onRetry: suspend () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Batch history", style = MaterialTheme.typography.titleMedium)
+        SectionHeader(
+            title = "Batch history",
+            body = "Audit trail for quantity changes on this batch.",
+        )
         when {
-            loadState == LoadState.Loading && events.isEmpty() -> Text("Loading history...")
-            error != null -> Text(error, style = MaterialTheme.typography.bodyMedium)
-            events.isEmpty() -> Text("No history yet.")
+            loadState == LoadState.Loading && events.isEmpty() -> InlineStatusCard("Loading history", "Fetching the latest events.")
+            error != null -> ErrorCard(
+                title = "Couldn't load history",
+                message = error,
+                actionLabel = "Retry",
+                onAction = { scope.launch { onRetry() } },
+            )
+            events.isEmpty() -> StatusCard("No history yet", "This batch does not have any visible events yet.")
             else -> events.take(8).forEach { event ->
                 Column(
                     modifier = Modifier
@@ -463,6 +535,10 @@ internal fun StockEditScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
+            RouteHeader(
+                title = batch?.let { "Edit ${it.product.name}" } ?: "Edit stock",
+                subtitle = "Correct quantity, location, expiry, opened date, or note for this active batch.",
+            )
             TextButton(
                 modifier = Modifier.testTag(SmokeTag.StockEditCancel),
                 onClick = onCancel,
@@ -477,9 +553,6 @@ internal fun StockEditScreen(
         if (!appState.canEditBatch(batch)) {
             item { StatusCard("Batch is depleted", "Depleted batches cannot be corrected from Android yet.") }
             return@LazyColumn
-        }
-        item {
-            Text("Edit ${batch.product.name}", style = MaterialTheme.typography.headlineSmall)
         }
         appState.inventoryError?.let { message ->
             item { ErrorCard("Stock correction failed", message) }
@@ -559,7 +632,9 @@ internal fun StockEditScreen(
         validation?.let { item { Text(it, style = MaterialTheme.typography.bodySmall) } }
         item {
             Button(
-                modifier = Modifier.testTag(SmokeTag.StockEditSave),
+                modifier = Modifier
+                    .testTag(SmokeTag.StockEditSave)
+                    .fillMaxWidth(),
                 onClick = {
                     scope.launch {
                         if (appState.updateSelectedBatch(fields)) {
@@ -571,6 +646,9 @@ internal fun StockEditScreen(
             ) {
                 Text(if (action == StockAction.Update) "Saving..." else "Save")
             }
+        }
+        item {
+            Spacer(Modifier.height(96.dp))
         }
     }
 }

@@ -4,8 +4,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -57,25 +59,32 @@ internal fun ProductListScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text("Products", style = MaterialTheme.typography.headlineSmall)
-                Button(
-                    modifier = Modifier.testTag(SmokeTag.ProductCreateButton),
-                    onClick = onCreateProduct,
-                    enabled = appState.productActionInFlight == null,
-                ) {
-                    Text("New product")
-                }
-            }
+            RouteHeader(
+                title = "Products",
+                subtitle = "Household catalogue for manual products and cached barcode lookups.",
+                action = {
+                    Button(
+                        modifier = Modifier.testTag(SmokeTag.ProductCreateButton),
+                        onClick = onCreateProduct,
+                        enabled = appState.productActionInFlight == null,
+                    ) {
+                        Text("New product")
+                    }
+                },
+            )
         }
         if (appState.isProductsRefreshing) {
-            item { StatusCard("Refreshing products", "Quartermaster is syncing the household catalogue.") }
+            item { InlineStatusCard("Refreshing products", "Syncing the household catalogue.") }
         }
         appState.productError?.let { message ->
-            item { ErrorCard("Product action failed", message) }
+            item {
+                ErrorCard(
+                    title = "Product action failed",
+                    message = message,
+                    actionLabel = "Refresh products",
+                    onAction = { scope.launch { appState.refreshProducts(force = true) } },
+                )
+            }
         }
         item {
             Card {
@@ -85,6 +94,10 @@ internal fun ProductListScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    SectionHeader(
+                        title = "Find products",
+                        body = "Filter the catalogue or look up a barcode before opening a detail page.",
+                    )
                     OutlinedTextField(
                         value = query,
                         onValueChange = { query = it },
@@ -93,7 +106,7 @@ internal fun ProductListScreen(
                             .fillMaxWidth()
                             .testTag(SmokeTag.ProductSearchField),
                     )
-                    Text("Include", style = MaterialTheme.typography.titleMedium)
+                    Text("Include", style = MaterialTheme.typography.titleSmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ProductFilterButton("Active", SmokeTag.ProductFilterActive, filter == ProductIncludeFilter.Active) {
                             filter = ProductIncludeFilter.Active
@@ -139,14 +152,19 @@ internal fun ProductListScreen(
         }
         val products = appState.visibleProducts()
         if (!appState.hasLoadedProductsOnce && appState.productLoadState == LoadState.Loading) {
-            item { CenteredLoading() }
+            item { InlineStatusCard("Loading products", "Fetching catalogue entries and unit metadata.") }
         } else if (products.isEmpty()) {
-            item { StatusCard("No products found", "Create a manual product or look up a barcode to add one to the catalogue.") }
+            item {
+                StatusCard(
+                    title = "No products found",
+                    message = "Create a manual product, change the filter, or look up a barcode to add one to the catalogue.",
+                )
+            }
         } else {
             item {
-                Text(
-                    "Catalogue",
-                    style = MaterialTheme.typography.titleMedium,
+                SectionHeader(
+                    title = "Catalogue",
+                    body = "${products.size} ${if (products.size == 1) "product" else "products"} shown.",
                     modifier = Modifier.testTag(SmokeTag.ProductList),
                 )
             }
@@ -176,7 +194,8 @@ private fun ProductCatalogueRow(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(product.name, style = MaterialTheme.typography.titleMedium)
-            Text("${product.brand ?: "No brand"} · ${product.family.value} · ${product.preferredUnit}")
+            Text(product.brand ?: "No brand")
+            Text("${product.family.value} · preferred ${product.preferredUnit}")
             Text("${appState.productSourceLabel(product)} · ${if (appState.isDeletedProduct(product)) "Deleted" else "Active"}")
         }
     }
@@ -234,14 +253,31 @@ internal fun ProductDetailScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            TextButton(onClick = onBack) { Text("Back to products") }
+            RouteHeader(
+                title = product?.name ?: "Product detail",
+                subtitle = product?.let { appState.productSourceLabel(it) },
+                backLabel = "Back to products",
+                onBack = onBack,
+            )
         }
         if (product == null) {
-            item { StatusCard("Product unavailable", "Return to the catalogue and choose another product.") }
+            item {
+                StatusCard(
+                    title = if (appState.productActionInFlight == ProductAction.LoadDetail) "Loading product" else "Product unavailable",
+                    message = "Return to the catalogue and choose another product if this one does not load.",
+                )
+            }
             return@LazyColumn
         }
         appState.productError?.let { message ->
-            item { ErrorCard("Product action failed", message) }
+            item {
+                ErrorCard(
+                    title = "Product action failed",
+                    message = message,
+                    actionLabel = "Retry detail",
+                    onAction = { scope.launch { appState.openProduct(productId) } },
+                )
+            }
         }
         item {
             Card {
@@ -252,13 +288,13 @@ internal fun ProductDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(product.name, style = MaterialTheme.typography.headlineSmall)
-                    Text(product.brand ?: "No brand")
-                    Text("Source: ${appState.productSourceLabel(product)}")
-                    Text("Family: ${product.family.value}")
-                    Text("Preferred unit: ${product.preferredUnit}")
-                    Text("Barcode: ${product.barcode ?: "No barcode"}")
-                    Text("Image URL: ${product.imageUrl ?: "No image"}")
-                    Text("Status: ${if (appState.isDeletedProduct(product)) "Deleted ${product.deletedAt}" else "Active"}")
+                    MetadataRow("Brand", product.brand ?: "No brand")
+                    MetadataRow("Source", appState.productSourceLabel(product))
+                    MetadataRow("Family", product.family.value)
+                    MetadataRow("Preferred unit", product.preferredUnit)
+                    MetadataRow("Barcode", product.barcode ?: "No barcode")
+                    MetadataRow("Image URL", product.imageUrl ?: "No image")
+                    MetadataRow("Status", if (appState.isDeletedProduct(product)) "Deleted ${product.deletedAt}" else "Active")
                 }
             }
         }
@@ -327,7 +363,14 @@ internal fun ProductEditScreen(
                 .testTag(SmokeTag.ProductsScreen),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { TextButton(onClick = onCancel) { Text("Back to product") } }
+            item {
+                RouteHeader(
+                    title = "Edit product",
+                    subtitle = "Loading catalogue details before editing.",
+                    backLabel = "Back to product",
+                    onBack = onCancel,
+                )
+            }
             item {
                 StatusCard(
                     title = if (appState.productActionInFlight == ProductAction.LoadDetail) "Loading product" else "Product unavailable",
@@ -370,7 +413,14 @@ internal fun ProductFormScreen(
             .testTag(SmokeTag.ProductsScreen),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { Text(title, style = MaterialTheme.typography.headlineSmall) }
+        item {
+            RouteHeader(
+                title = title,
+                subtitle = "Manual products are scoped to the current household catalogue.",
+                backLabel = "Cancel",
+                onBack = onCancel,
+            )
+        }
         appState.productError?.let { message ->
             item { ErrorCard("Product action failed", message) }
         }
@@ -425,7 +475,9 @@ internal fun ProductFormScreen(
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
-                    modifier = Modifier.testTag(SmokeTag.ProductSubmitButton),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag(SmokeTag.ProductSubmitButton),
                     onClick = {
                         scope.launch {
                             val saved = if (product == null) {
@@ -450,6 +502,9 @@ internal fun ProductFormScreen(
                     Text("Cancel")
                 }
             }
+        }
+        item {
+            Spacer(Modifier.height(96.dp))
         }
     }
 }
@@ -480,7 +535,14 @@ internal fun ProductDeleteScreen(
             .testTag(SmokeTag.ProductsScreen),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { Text("Delete product", style = MaterialTheme.typography.headlineSmall) }
+        item {
+            RouteHeader(
+                title = "Delete product",
+                subtitle = "Deleted manual products stay recoverable from the Deleted filter.",
+                backLabel = "Back to product",
+                onBack = onCancel,
+            )
+        }
         appState.productError?.let { message ->
             item { ErrorCard("Product action failed", message) }
         }
