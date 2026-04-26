@@ -544,6 +544,10 @@ select {
   font-weight: 700;
 }
 
+.reminder-row .inline-status {
+  color: #234a35;
+}
+
 .row-actions,
 .stock-actions {
   display: flex;

@@ -36,6 +36,17 @@ class QuartermasterAppStateTest {
     private val json = Serializer.kotlinxSerializationJson
 
     @Test
+    fun `reminder date formatting is readable with raw fallback`() {
+        assertEquals("not-a-date", formatReminderDate("not-a-date"))
+        assertEquals("not-a-date", formatReminderDateTime("not-a-date"))
+        assertTrue(formatReminderDate("2026-04-24") != "2026-04-24")
+        assertTrue(
+            formatReminderDateTime("2026-04-23T09:00:00+02:00") !=
+                "2026-04-23T09:00:00+02:00",
+        )
+    }
+
+    @Test
     fun `parseInviteContext accepts custom join scheme and trims values`() {
         val context =
             QuartermasterAppState.parseInviteContext(

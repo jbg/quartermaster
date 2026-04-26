@@ -65,6 +65,14 @@ struct ReminderInboxView: View {
                   .font(.caption)
                   .foregroundStyle(.secondary)
               }
+              if appState.isReminderActionInFlight(id: reminder.id) {
+                HStack(spacing: 8) {
+                  ProgressView()
+                  Text("Updating reminder…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+              }
               HStack {
                 Button("Open") {
                   appState.openReminderFromInbox(reminder)

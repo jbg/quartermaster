@@ -215,11 +215,11 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
   await page.goto('/');
 
   const firstReminder = fixture.reminders[0];
-  await page.getByRole('button', { name: 'Open' }).first().click();
+  await page.getByTestId(`reminder-open-${firstReminder.reminder_id}`).click();
   await expect(page.getByRole('heading', { name: /Smoke/ }).last()).toBeVisible();
   await expect(page.getByRole('heading', { name: 'History' })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Ack' }).first().click();
+  await page.getByTestId(`reminder-ack-${firstReminder.reminder_id}`).click();
   await expect(page.getByText(firstReminder.title)).toHaveCount(0);
 
   await page.getByLabel('Consume quantity').fill('10');
