@@ -3,6 +3,7 @@ mod support;
 use axum::http::{HeaderMap, Method, StatusCode};
 use jiff::{SignedDuration, Timestamp};
 use qm_api::ApiConfig;
+use sqlx::Row;
 use support::TestApp;
 use uuid::Uuid;
 
@@ -248,6 +249,72 @@ async fn seed_android_smoke_returns_deterministic_fixture() {
     assert_eq!(body["username"], "android_smoke_18423");
     assert_eq!(body["password"], "quartermaster-smoke-18423");
     assert_eq!(body["reminders"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        smoke_batch_count(&app, body["household_id"].as_str().unwrap()).await,
+        2
+    );
+    assert_eq!(
+        smoke_reminder_count(&app, body["household_id"].as_str().unwrap()).await,
+        2
+    );
+
+    let household_id = Uuid::parse_str(body["household_id"].as_str().unwrap()).unwrap();
+    let location_id = Uuid::parse_str(body["location_id"].as_str().unwrap()).unwrap();
+    let user = qm_db::users::find_by_username(&app.db, "android_smoke_18423")
+        .await
+        .unwrap()
+        .unwrap();
+    let leftover_product = qm_db::products::create_manual(
+        &app.db,
+        household_id,
+        "Android Smoke Product leftover",
+        None,
+        "mass",
+        Some("g"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let leftover_location = qm_db::locations::create(
+        &app.db,
+        household_id,
+        "Android Smoke Shelf leftover",
+        "pantry",
+        99,
+    )
+    .await
+    .unwrap();
+    qm_db::stock::create(
+        &app.db,
+        household_id,
+        leftover_product.id,
+        location_id,
+        "125",
+        "g",
+        Some("2999-01-03"),
+        None,
+        Some("leftover product stock"),
+        user.id,
+        None,
+    )
+    .await
+    .unwrap();
+    qm_db::stock::create(
+        &app.db,
+        household_id,
+        leftover_product.id,
+        leftover_location.id,
+        "250",
+        "g",
+        Some("2999-01-03"),
+        None,
+        Some("leftover location stock"),
+        user.id,
+        None,
+    )
+    .await
+    .unwrap();
 
     let (status, body_again) = app
         .send_with_headers(
@@ -262,6 +329,22 @@ async fn seed_android_smoke_returns_deterministic_fixture() {
     assert_eq!(body_again["username"], body["username"]);
     assert_eq!(body_again["invite_code"], body["invite_code"]);
     assert_eq!(body_again["reminders"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        smoke_batch_count(&app, body_again["household_id"].as_str().unwrap()).await,
+        2
+    );
+    assert_eq!(
+        smoke_reminder_count(&app, body_again["household_id"].as_str().unwrap()).await,
+        2
+    );
+    assert_eq!(
+        leftover_product_count(&app, body_again["household_id"].as_str().unwrap()).await,
+        0
+    );
+    assert_eq!(
+        leftover_location_count(&app, body_again["household_id"].as_str().unwrap()).await,
+        0
+    );
 
     let user = qm_db::users::find_by_username(&app.db, "android_smoke_18423")
         .await
@@ -271,4 +354,62 @@ async fn seed_android_smoke_returns_deterministic_fixture() {
         .await
         .unwrap();
     assert_eq!(memberships.len(), 1);
+}
+
+async fn smoke_batch_count(app: &TestApp, household_id: &str) -> i64 {
+    sqlx::query(
+        "SELECT COUNT(*) AS n \
+         FROM stock_batch b \
+         INNER JOIN product p ON p.id = b.product_id \
+         WHERE b.household_id = ? AND (p.name = 'Smoke Rice' OR p.name = 'Smoke Beans')",
+    )
+    .bind(household_id)
+    .fetch_one(&app.db.pool)
+    .await
+    .unwrap()
+    .try_get("n")
+    .unwrap()
+}
+
+async fn smoke_reminder_count(app: &TestApp, household_id: &str) -> i64 {
+    sqlx::query(
+        "SELECT COUNT(*) AS n \
+         FROM stock_reminder r \
+         INNER JOIN product p ON p.id = r.product_id \
+         WHERE r.household_id = ? AND (p.name = 'Smoke Rice' OR p.name = 'Smoke Beans')",
+    )
+    .bind(household_id)
+    .fetch_one(&app.db.pool)
+    .await
+    .unwrap()
+    .try_get("n")
+    .unwrap()
+}
+
+async fn leftover_product_count(app: &TestApp, household_id: &str) -> i64 {
+    sqlx::query(
+        "SELECT COUNT(*) AS n \
+         FROM product \
+         WHERE created_by_household_id = ? AND name LIKE 'Android Smoke Product %'",
+    )
+    .bind(household_id)
+    .fetch_one(&app.db.pool)
+    .await
+    .unwrap()
+    .try_get("n")
+    .unwrap()
+}
+
+async fn leftover_location_count(app: &TestApp, household_id: &str) -> i64 {
+    sqlx::query(
+        "SELECT COUNT(*) AS n \
+         FROM location \
+         WHERE household_id = ? AND name LIKE 'Android Smoke Shelf %'",
+    )
+    .bind(household_id)
+    .fetch_one(&app.db.pool)
+    .await
+    .unwrap()
+    .try_get("n")
+    .unwrap()
 }
