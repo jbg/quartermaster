@@ -121,8 +121,14 @@ private fun ReminderCard(
         ) {
             Text(reminder.title, style = MaterialTheme.typography.titleMedium)
             Text(reminder.body)
+            reminder.expiresOn?.let { expiresOn ->
+                Text(
+                    "Expires $expiresOn",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             Text(
-                "Fires ${reminder.householdFireLocalAt} ${reminder.householdTimezone}",
+                "Household time ${reminder.householdFireLocalAt} (${reminder.householdTimezone})",
                 style = MaterialTheme.typography.bodySmall,
             )
             if (action != null) {

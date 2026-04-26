@@ -88,6 +88,8 @@ struct BatchReminderContext {
     location_id: Uuid,
     expires_on: Option<String>,
     depleted_at: Option<String>,
+    quantity: String,
+    unit: String,
     product_name: String,
     location_name: String,
 }
@@ -678,6 +680,8 @@ pub fn build_expiry_reminder(
     household_timezone: &str,
     product_name: &str,
     location_name: &str,
+    quantity: &str,
+    unit: &str,
     policy: &ExpiryReminderPolicy,
     now: Timestamp,
 ) -> Result<Option<(String, String, String, String, String)>, sqlx::Error> {
@@ -706,11 +710,12 @@ pub fn build_expiry_reminder(
         1 => format!("{product_name} expires tomorrow"),
         days => format!("{product_name} expires in {days} days"),
     };
+    let body = format!("{quantity} {unit} in {location_name}. Expires on {expires_on}.");
 
     Ok(Some((
         time::format_timestamp(fire_at),
         title,
-        location_name.to_owned(),
+        body,
         household_timezone.to_owned(),
         time::format_zoned_with_offset(&fire_zoned),
     )))
@@ -725,6 +730,7 @@ async fn load_batch_context_tx(
             b.household_id AS household_id, h.timezone AS household_timezone, \
             b.id AS batch_id, b.product_id AS product_id, \
             b.location_id AS location_id, b.expires_on AS expires_on, b.depleted_at AS depleted_at, \
+            b.quantity AS quantity, b.unit AS unit, \
             p.name AS product_name, l.name AS location_name \
          FROM stock_batch b \
          INNER JOIN household h ON h.id = b.household_id \
@@ -753,6 +759,7 @@ async fn load_household_drafts(
             b.household_id AS household_id, h.timezone AS household_timezone, \
             b.id AS batch_id, b.product_id AS product_id, \
             b.location_id AS location_id, b.expires_on AS expires_on, b.depleted_at AS depleted_at, \
+            b.quantity AS quantity, b.unit AS unit, \
             p.name AS product_name, l.name AS location_name \
          FROM stock_batch b \
          INNER JOIN household h ON h.id = b.household_id \
@@ -791,6 +798,8 @@ fn expiry_draft_for_context(
             &ctx.household_timezone,
             &ctx.product_name,
             &ctx.location_name,
+            &ctx.quantity,
+            &ctx.unit,
             policy,
             now,
         )?
@@ -1101,6 +1110,8 @@ fn row_to_context(row: sqlx::any::AnyRow) -> Result<BatchReminderContext, sqlx::
         location_id: uuid_from(&row, "location_id")?,
         expires_on: row.try_get("expires_on")?,
         depleted_at: row.try_get("depleted_at")?,
+        quantity: row.try_get("quantity")?,
+        unit: row.try_get("unit")?,
         product_name: row.try_get("product_name")?,
         location_name: row.try_get("location_name")?,
     })
@@ -1201,6 +1212,8 @@ mod tests {
             "Europe/Madrid",
             "Milk",
             "Fridge",
+            "1000",
+            "ml",
             &policy,
             now,
         )
@@ -1208,7 +1221,7 @@ mod tests {
         let (fire_at, title, body, timezone, household_fire_local_at) = reminder.unwrap();
         assert_eq!(fire_at, "2026-04-23T07:00:00.000Z");
         assert_eq!(title, "Milk expires tomorrow");
-        assert_eq!(body, "Fridge");
+        assert_eq!(body, "1000 ml in Fridge. Expires on 2026-04-24.");
         assert_eq!(timezone, "Europe/Madrid");
         assert_eq!(household_fire_local_at, "2026-04-23T09:00:00+02:00");
     }
@@ -1228,6 +1241,8 @@ mod tests {
             "Pacific/Kiritimati",
             "Milk",
             "Pantry",
+            "1",
+            "piece",
             &policy,
             now,
         )
@@ -1238,6 +1253,8 @@ mod tests {
             "America/Los_Angeles",
             "Milk",
             "Pantry",
+            "1",
+            "piece",
             &policy,
             now,
         )
@@ -1267,6 +1284,8 @@ mod tests {
             "America/New_York",
             "Milk",
             "Fridge",
+            "1",
+            "piece",
             &policy,
             now,
         )
@@ -1292,6 +1311,8 @@ mod tests {
             "America/New_York",
             "Milk",
             "Fridge",
+            "1",
+            "piece",
             &policy,
             now,
         )
@@ -1335,6 +1356,10 @@ mod tests {
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].batch_id, batch.id);
         assert_eq!(page.items[0].title, "Milk expires tomorrow");
+        assert_eq!(
+            page.items[0].body,
+            "1000 ml in Pantry. Expires on 2999-01-03."
+        );
     }
 
     #[tokio::test]

@@ -64,6 +64,10 @@ export function reminderFireAt(reminder: Reminder): string {
   );
 }
 
+export function reminderExpiresOn(reminder: Reminder): string {
+  return reminder.expires_on ?? reminder.expiresOn ?? '';
+}
+
 export function optimisticAckStart(state: ReminderState, id: string): ReminderState {
   const actionIds = new Set(state.actionIds);
   actionIds.add(id);
