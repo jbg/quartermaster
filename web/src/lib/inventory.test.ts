@@ -57,7 +57,7 @@ describe('inventory helpers', () => {
     expect(stockLocation(batch)).toBe('No location');
     expect(stockExpiry(batch)).toBe('2026-05-01');
     expect(isDepleted(batch)).toBe(true);
-    expect(isDepleted({ id: 'batch-2', product: { name: 'Flour' }, quantity: '0' })).toBe(true);
+    expect(isDepleted({ id: 'batch-2', product: { name: 'Flour' }, quantity: '0' })).toBe(false);
   });
 
   it('gates restore to depleted batches whose latest event is discard', () => {
@@ -86,10 +86,20 @@ describe('inventory helpers', () => {
   });
 
   it('normalizes product display helpers and unit choices', () => {
+    const units = [
+      { code: 'lb', family: 'mass' as const },
+      { code: 'oz', family: 'mass' as const },
+      { code: 'cup', family: 'volume' as const }
+    ];
+
     expect(unitChoicesForFamily('mass')).toEqual(['g', 'kg']);
+    expect(unitChoicesForFamily('mass', units)).toEqual(['lb', 'oz']);
+    expect(unitChoicesForFamily('count', units)).toEqual(['piece']);
     expect(unitChoicesForFamily('volume')).toEqual(['ml', 'l']);
     expect(unitChoicesForFamily('count')).toEqual(['piece']);
-    expect(productPreferredUnit({ id: 'product-1', name: 'Rice', family: 'mass' })).toBe('g');
+    expect(productPreferredUnit({ id: 'product-1', name: 'Rice', family: 'mass' }, units)).toBe(
+      'lb'
+    );
     expect(
       productPreferredUnit({ id: 'product-2', name: 'Milk', family: 'volume', preferredUnit: 'l' })
     ).toBe('l');

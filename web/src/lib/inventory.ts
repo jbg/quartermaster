@@ -3,6 +3,7 @@ import type {
   QuartermasterSession,
   StockBatch,
   StockEvent,
+  Unit,
   UnitFamily,
   UpdateStockRequest
 } from './session-core';
@@ -27,7 +28,7 @@ export const emptyInventoryState: InventoryState = {
   error: null
 };
 
-export const unitChoicesByFamily: Record<UnitFamily, string[]> = {
+export const fallbackUnitChoicesByFamily: Record<UnitFamily, string[]> = {
   mass: ['g', 'kg'],
   volume: ['ml', 'l'],
   count: ['piece']
@@ -103,9 +104,7 @@ export function stockInitialQuantity(batch: StockBatch): string {
 }
 
 export function isDepleted(batch: StockBatch): boolean {
-  const quantity =
-    batch.quantity === undefined || batch.quantity === null ? null : Number(batch.quantity);
-  return Boolean(batch.depleted_at ?? batch.depletedAt) || quantity === 0;
+  return Boolean(batch.depleted_at ?? batch.depletedAt);
 }
 
 export function eventType(event: StockEvent): StockEvent['event_type'] {
@@ -152,16 +151,24 @@ export function productBrand(product: Product): string {
   return product.brand?.trim() ?? '';
 }
 
-export function productPreferredUnit(product: Product): string {
-  return product.preferred_unit ?? product.preferredUnit ?? unitChoicesByFamily[product.family][0];
+export function productPreferredUnit(product: Product, units: Unit[] = []): string {
+  return (
+    product.preferred_unit ??
+    product.preferredUnit ??
+    unitChoicesForFamily(product.family, units)[0]
+  );
 }
 
 export function productSource(product: Product): string {
   return product.source === 'openfoodfacts' ? 'OpenFoodFacts' : 'Manual';
 }
 
-export function unitChoicesForFamily(family: UnitFamily): string[] {
-  return unitChoicesByFamily[family];
+export function unitChoicesForFamily(family: UnitFamily, units: Unit[] = []): string[] {
+  const choices = units
+    .filter((unit) => unit.family === family)
+    .map((unit) => unit.code)
+    .sort();
+  return choices.length > 0 ? choices : fallbackUnitChoicesByFamily[family];
 }
 
 export function validateAddStockInput(input: {

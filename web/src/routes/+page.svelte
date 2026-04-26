@@ -57,6 +57,7 @@
     type Reminder,
     type StockBatch,
     type StockEvent,
+    type Unit,
     type UnitFamily
   } from '$lib/session-core';
 
@@ -90,7 +91,7 @@
   let inventory = $state<InventoryState>(emptyInventoryState);
   let reminders = $state<ReminderState>(emptyReminderState);
   let locations = $state<Location[]>([]);
-  let locationNames = $state<Record<string, string>>({});
+  let units = $state<Unit[]>([]);
   let selectedBatchId = $state<string | null>(null);
   let selectedBatch = $state<StockBatch | null>(null);
   let history = $state<HistoryState>(emptyHistoryState);
@@ -134,10 +135,10 @@
   const restoreAvailable = $derived(canRestoreBatch(selectedBatch, history.items));
   const addStockUnitChoices = $derived(
     selectedProduct
-      ? unitChoicesForFamily(selectedProduct.family)
-      : unitChoicesForFamily(manualProductFamily)
+      ? unitChoicesForFamily(selectedProduct.family, units)
+      : unitChoicesForFamily(manualProductFamily, units)
   );
-  const manualProductUnitChoices = $derived(unitChoicesForFamily(manualProductFamily));
+  const manualProductUnitChoices = $derived(unitChoicesForFamily(manualProductFamily, units));
 
   onMount(() => {
     if (!browser) {
@@ -175,9 +176,21 @@
   }
 
   async function refreshWorkspace(preferredBatchId: string | null = selectedBatchId) {
+    await refreshUnits();
     await refreshLocations();
     await refreshInventory(preferredBatchId);
     await refreshReminders();
+  }
+
+  async function refreshUnits() {
+    if (!session) {
+      return;
+    }
+    try {
+      units = await session.unitsList();
+    } catch {
+      units = [];
+    }
   }
 
   async function refreshLocations() {
@@ -187,15 +200,11 @@
     try {
       const rows = await session.locationsList();
       locations = sortLocations(rows);
-      locationNames = Object.fromEntries(
-        locations.map((location: Location) => [location.id, location.name])
-      );
       if (!addStockLocationId && locations[0]) {
         addStockLocationId = locations[0].id;
       }
     } catch {
       locations = [];
-      locationNames = {};
     }
   }
 
@@ -523,9 +532,9 @@
     manualProductName = '';
     manualProductBrand = '';
     manualProductFamily = 'mass';
-    manualProductUnit = 'g';
+    manualProductUnit = unitChoicesForFamily('mass', units)[0];
     addStockQuantity = '';
-    addStockUnit = 'g';
+    addStockUnit = unitChoicesForFamily('mass', units)[0];
     addStockLocationId = locations[0]?.id ?? '';
     addStockExpiresOn = '';
     addStockOpenedOn = '';
@@ -561,7 +570,7 @@
 
   function chooseProduct(product: Product) {
     selectedProduct = product;
-    addStockUnit = productPreferredUnit(product);
+    addStockUnit = productPreferredUnit(product, units);
     addStockError = null;
     barcodeLookupError = null;
   }
@@ -599,7 +608,7 @@
       return;
     }
     manualProductFamily = family;
-    manualProductUnit = unitChoicesForFamily(family)[0];
+    manualProductUnit = unitChoicesForFamily(family, units)[0];
   }
 
   async function createManualProduct() {
@@ -678,7 +687,7 @@
     inventory = emptyInventoryState;
     reminders = emptyReminderState;
     locations = [];
-    locationNames = {};
+    units = [];
     selectedBatch = null;
     selectedBatchId = null;
     history = emptyHistoryState;
@@ -700,8 +709,7 @@
   }
 
   function displayLocation(batch: StockBatch): string {
-    const id = stockLocationId(batch);
-    return (id ? locationNames[id] : null) ?? stockLocation(batch);
+    return stockLocation(batch);
   }
 </script>
 
@@ -861,7 +869,8 @@
                       <h4>{product.name}</h4>
                       <p>
                         {productBrand(product) || 'No brand'} · {product.family} · {productPreferredUnit(
-                          product
+                          product,
+                          units
                         )}
                       </p>
                     </div>

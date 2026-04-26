@@ -168,6 +168,9 @@ describe('QuartermasterSession', () => {
       async stockRestore() {
         throw new Error('unused');
       },
+      async unitsList() {
+        throw new Error('unused');
+      },
       async remindersList() {
         throw new Error('unused');
       },
@@ -277,6 +280,9 @@ describe('QuartermasterSession', () => {
         throw new Error('unused');
       },
       async stockRestore() {
+        throw new Error('unused');
+      },
+      async unitsList() {
         throw new Error('unused');
       },
       async remindersList() {
@@ -467,6 +473,9 @@ describe('QuartermasterSession', () => {
         throw new Error('unused');
       },
       async stockRestore() {
+        throw new Error('unused');
+      },
+      async unitsList() {
         throw new Error('unused');
       },
       async remindersList() {

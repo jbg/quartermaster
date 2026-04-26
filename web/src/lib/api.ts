@@ -29,7 +29,8 @@ import {
   stockList,
   stockListBatchEvents,
   stockRestore,
-  stockUpdate
+  stockUpdate,
+  unitsList
 } from './generated/sdk.gen';
 import { client } from './generated/client.gen';
 import type { SessionTransport, StoredSession } from './session-core';
@@ -133,6 +134,9 @@ export function generatedTransport(): SessionTransport {
     },
     stockRestore(id) {
       return stockRestore({ path: { id } });
+    },
+    unitsList() {
+      return unitsList();
     },
     remindersList(query) {
       return remindersList({ query });
