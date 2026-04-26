@@ -20,6 +20,8 @@ const ANDROID_SMOKE_TIMEZONE: &str = "UTC";
 const ANDROID_SMOKE_INVITE_EXPIRES_AT: &str = "2999-01-01T00:00:00Z";
 const ANDROID_SMOKE_REMINDER_FIRE_AT: &str = "2000-01-01T00:00:00.000Z";
 const ANDROID_SMOKE_SERVER_URL: &str = "http://127.0.0.1:8080";
+const ANDROID_SMOKE_PRODUCT_PREFIX: &str = "Android Smoke Product %";
+const ANDROID_SMOKE_LOCATION_PREFIX: &str = "Android Smoke Shelf %";
 const WEB_SMOKE_BARCODE: &str = "1111111111111";
 const ANDROID_SMOKE_PRODUCTS: [(&str, &str); 2] = [
     ("Smoke Rice", "Android smoke seed 1"),
@@ -200,16 +202,7 @@ async fn build_android_smoke_fixture(
     let household_id = find_or_create_smoke_household(&state.db, user.id).await?;
     let pantry = ensure_pantry_location(&state.db, household_id).await?;
     ensure_smoke_barcode_product(&state.db).await?;
-    let product_ids = existing_smoke_product_ids(&state.db, household_id).await?;
-    if !product_ids.is_empty() {
-        let _ = qm_db::reminders::ack_pending_for_products(
-            &state.db,
-            household_id,
-            &product_ids,
-            &qm_db::now_utc_rfc3339(),
-        )
-        .await?;
-    }
+    reset_smoke_fixture_artifacts(&state.db, household_id).await?;
 
     let policy = smoke_reminder_policy(&state.config.expiry_reminder_policy);
     let mut reminders = Vec::with_capacity(ANDROID_SMOKE_PRODUCTS.len());
@@ -306,6 +299,133 @@ async fn find_or_create_smoke_household(
     Ok(household.id)
 }
 
+async fn reset_smoke_fixture_artifacts(
+    db: &qm_db::Database,
+    household_id: Uuid,
+) -> Result<(), ApiError> {
+    let mut tx = db.pool.begin().await?;
+    let household_id = household_id.to_string();
+
+    sqlx::query(
+        "DELETE FROM reminder_delivery \
+         WHERE reminder_id IN ( \
+           SELECT r.id \
+           FROM stock_reminder r \
+           INNER JOIN stock_batch b ON b.id = r.batch_id \
+           INNER JOIN product p ON p.id = b.product_id \
+           LEFT JOIN location l ON l.id = b.location_id \
+           WHERE b.household_id = ? \
+             AND (p.name = ? OR p.name = ? OR p.name LIKE ? OR l.name LIKE ?) \
+         )",
+    )
+    .bind(&household_id)
+    .bind(ANDROID_SMOKE_PRODUCTS[0].0)
+    .bind(ANDROID_SMOKE_PRODUCTS[1].0)
+    .bind(ANDROID_SMOKE_PRODUCT_PREFIX)
+    .bind(ANDROID_SMOKE_LOCATION_PREFIX)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "DELETE FROM reminder_device_state \
+         WHERE reminder_id IN ( \
+           SELECT r.id \
+           FROM stock_reminder r \
+           INNER JOIN stock_batch b ON b.id = r.batch_id \
+           INNER JOIN product p ON p.id = b.product_id \
+           LEFT JOIN location l ON l.id = b.location_id \
+           WHERE b.household_id = ? \
+             AND (p.name = ? OR p.name = ? OR p.name LIKE ? OR l.name LIKE ?) \
+         )",
+    )
+    .bind(&household_id)
+    .bind(ANDROID_SMOKE_PRODUCTS[0].0)
+    .bind(ANDROID_SMOKE_PRODUCTS[1].0)
+    .bind(ANDROID_SMOKE_PRODUCT_PREFIX)
+    .bind(ANDROID_SMOKE_LOCATION_PREFIX)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "DELETE FROM stock_reminder \
+         WHERE id IN ( \
+           SELECT r.id \
+           FROM stock_reminder r \
+           INNER JOIN stock_batch b ON b.id = r.batch_id \
+           INNER JOIN product p ON p.id = b.product_id \
+           LEFT JOIN location l ON l.id = b.location_id \
+           WHERE b.household_id = ? \
+             AND (p.name = ? OR p.name = ? OR p.name LIKE ? OR l.name LIKE ?) \
+         )",
+    )
+    .bind(&household_id)
+    .bind(ANDROID_SMOKE_PRODUCTS[0].0)
+    .bind(ANDROID_SMOKE_PRODUCTS[1].0)
+    .bind(ANDROID_SMOKE_PRODUCT_PREFIX)
+    .bind(ANDROID_SMOKE_LOCATION_PREFIX)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "DELETE FROM stock_event \
+         WHERE batch_id IN ( \
+           SELECT b.id \
+           FROM stock_batch b \
+           INNER JOIN product p ON p.id = b.product_id \
+           LEFT JOIN location l ON l.id = b.location_id \
+           WHERE b.household_id = ? \
+             AND (p.name = ? OR p.name = ? OR p.name LIKE ? OR l.name LIKE ?) \
+         )",
+    )
+    .bind(&household_id)
+    .bind(ANDROID_SMOKE_PRODUCTS[0].0)
+    .bind(ANDROID_SMOKE_PRODUCTS[1].0)
+    .bind(ANDROID_SMOKE_PRODUCT_PREFIX)
+    .bind(ANDROID_SMOKE_LOCATION_PREFIX)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "DELETE FROM stock_batch \
+         WHERE id IN ( \
+           SELECT b.id \
+           FROM stock_batch b \
+           INNER JOIN product p ON p.id = b.product_id \
+           LEFT JOIN location l ON l.id = b.location_id \
+           WHERE b.household_id = ? \
+             AND (p.name = ? OR p.name = ? OR p.name LIKE ? OR l.name LIKE ?) \
+         )",
+    )
+    .bind(&household_id)
+    .bind(ANDROID_SMOKE_PRODUCTS[0].0)
+    .bind(ANDROID_SMOKE_PRODUCTS[1].0)
+    .bind(ANDROID_SMOKE_PRODUCT_PREFIX)
+    .bind(ANDROID_SMOKE_LOCATION_PREFIX)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "DELETE FROM product \
+         WHERE created_by_household_id = ? \
+           AND (name = ? OR name = ? OR name LIKE ?)",
+    )
+    .bind(&household_id)
+    .bind(ANDROID_SMOKE_PRODUCTS[0].0)
+    .bind(ANDROID_SMOKE_PRODUCTS[1].0)
+    .bind(ANDROID_SMOKE_PRODUCT_PREFIX)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query("DELETE FROM location WHERE household_id = ? AND name LIKE ?")
+        .bind(&household_id)
+        .bind(ANDROID_SMOKE_LOCATION_PREFIX)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
 async fn ensure_pantry_location(
     db: &qm_db::Database,
     household_id: Uuid,
@@ -321,27 +441,6 @@ async fn ensure_pantry_location(
     qm_db::locations::create(db, household_id, "Pantry", "pantry", 0)
         .await
         .map_err(Into::into)
-}
-
-async fn existing_smoke_product_ids(
-    db: &qm_db::Database,
-    household_id: Uuid,
-) -> Result<Vec<Uuid>, ApiError> {
-    let mut ids = Vec::new();
-    for (product_name, _) in ANDROID_SMOKE_PRODUCTS {
-        if let Some(product) =
-            qm_db::products::search_with_deleted(db, household_id, product_name, 20, true)
-                .await?
-                .into_iter()
-                .find(|product| {
-                    product.name == product_name
-                        && product.created_by_household_id == Some(household_id)
-                })
-        {
-            ids.push(product.id);
-        }
-    }
-    Ok(ids)
 }
 
 async fn find_or_create_smoke_product(
