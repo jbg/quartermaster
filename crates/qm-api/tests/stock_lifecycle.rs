@@ -14,13 +14,13 @@ async fn product_stock_history_lifecycle_flows_through_api() {
 
     let me = app.me(&alice).await;
     let household_id = Uuid::parse_str(me_current_household_id(&me).unwrap()).unwrap();
-    let pantry_id = qm_db::locations::list_for_household(&app.db, household_id)
+    let pantry = qm_db::locations::list_for_household(&app.db, household_id)
         .await
         .unwrap()
         .into_iter()
         .find(|loc| loc.kind == "pantry")
-        .unwrap()
-        .id;
+        .unwrap();
+    let pantry_id = pantry.id;
 
     let (status, product) = app
         .send(
@@ -58,6 +58,24 @@ async fn product_stock_history_lifecycle_flows_through_api() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
     let batch_id = batch["id"].as_str().unwrap();
+    assert_eq!(batch["location_id"], pantry_id.to_string());
+    assert_eq!(batch["location_name"].as_str().unwrap(), pantry.name);
+    assert!(batch["depleted_at"].is_null());
+
+    let (status, listed) = app
+        .send(
+            Method::GET,
+            "/api/v1/stock?include_depleted=true",
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        listed["items"][0]["location_name"].as_str().unwrap(),
+        pantry.name
+    );
+    assert!(listed["items"][0]["depleted_at"].is_null());
 
     let (status, updated) = app
         .send(
@@ -98,6 +116,18 @@ async fn product_stock_history_lifecycle_flows_through_api() {
         StatusCode::NO_CONTENT
     );
 
+    let (status, depleted) = app
+        .send(
+            Method::GET,
+            &format!("/api/v1/stock/{batch_id}"),
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(depleted["location_name"].as_str().unwrap(), pantry.name);
+    assert!(depleted["depleted_at"].as_str().is_some());
+
     let (status, restored) = app
         .send(
             Method::POST,
@@ -108,6 +138,8 @@ async fn product_stock_history_lifecycle_flows_through_api() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(restored["quantity"], "250");
+    assert_eq!(restored["location_name"].as_str().unwrap(), pantry.name);
+    assert!(restored["depleted_at"].is_null());
 
     let (status, history) = app
         .send(

@@ -274,10 +274,12 @@ export type RestoreManyResponse = {
 
 export type StockBatchDto = {
     created_at: string;
+    depleted_at?: string | null;
     expires_on?: string | null;
     id: string;
     initial_quantity: string;
     location_id: string;
+    location_name: string;
     note?: string | null;
     opened_on?: string | null;
     product: ProductDto;

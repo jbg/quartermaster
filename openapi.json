@@ -3129,6 +3129,7 @@
           "id",
           "product",
           "location_id",
+          "location_name",
           "initial_quantity",
           "quantity",
           "unit",
@@ -3137,6 +3138,12 @@
         "properties": {
           "created_at": {
             "type": "string"
+          },
+          "depleted_at": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "expires_on": {
             "type": [
@@ -3154,6 +3161,9 @@
           "location_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "location_name": {
+            "type": "string"
           },
           "note": {
             "type": [

@@ -68,6 +68,7 @@ impl StockBatchRow {
 pub struct StockBatchWithProduct {
     pub batch: StockBatchRow,
     pub product: ProductRow,
+    pub location_name: String,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -95,9 +96,11 @@ pub async fn list(
             p.brand AS p_brand, p.family AS p_family, p.default_unit AS p_default_unit, \
             p.image_url AS p_image_url, p.fetched_at AS p_fetched_at, \
             p.created_by_household_id AS p_created_by_household_id, p.created_at AS p_created_at, \
-            p.deleted_at AS p_deleted_at \
+            p.deleted_at AS p_deleted_at, \
+            l.name AS l_name \
          FROM stock_batch s \
          INNER JOIN product p ON p.id = s.product_id \
+         INNER JOIN location l ON l.id = s.location_id \
          WHERE s.household_id = ? ",
     );
     if !filter.include_depleted {
@@ -133,6 +136,57 @@ pub async fn list(
 
     let rows = q.fetch_all(&db.pool).await?;
     rows.into_iter().map(row_to_joined).collect()
+}
+
+pub async fn get_with_product(
+    db: &Database,
+    household_id: Uuid,
+    id: Uuid,
+) -> Result<Option<StockBatchWithProduct>, sqlx::Error> {
+    get_with_product_inner(db, household_id, id, false).await
+}
+
+pub async fn get_with_product_including_deleted(
+    db: &Database,
+    household_id: Uuid,
+    id: Uuid,
+) -> Result<Option<StockBatchWithProduct>, sqlx::Error> {
+    get_with_product_inner(db, household_id, id, true).await
+}
+
+async fn get_with_product_inner(
+    db: &Database,
+    household_id: Uuid,
+    id: Uuid,
+    include_deleted_product: bool,
+) -> Result<Option<StockBatchWithProduct>, sqlx::Error> {
+    let mut sql = String::from(
+        "SELECT \
+            s.id AS s_id, s.household_id AS s_household_id, s.product_id AS s_product_id, \
+            s.location_id AS s_location_id, s.initial_quantity AS s_initial_quantity, \
+            s.quantity AS s_quantity, s.unit AS s_unit, \
+            s.expires_on AS s_expires_on, s.opened_on AS s_opened_on, s.note AS s_note, \
+            s.created_at AS s_created_at, s.created_by AS s_created_by, s.depleted_at AS s_depleted_at, \
+            p.id AS p_id, p.source AS p_source, p.off_barcode AS p_off_barcode, p.name AS p_name, \
+            p.brand AS p_brand, p.family AS p_family, p.default_unit AS p_default_unit, \
+            p.image_url AS p_image_url, p.fetched_at AS p_fetched_at, \
+            p.created_by_household_id AS p_created_by_household_id, p.created_at AS p_created_at, \
+            p.deleted_at AS p_deleted_at, \
+            l.name AS l_name \
+         FROM stock_batch s \
+         INNER JOIN product p ON p.id = s.product_id \
+         INNER JOIN location l ON l.id = s.location_id \
+         WHERE s.household_id = ? AND s.id = ?",
+    );
+    if !include_deleted_product {
+        sql.push_str(" AND p.deleted_at IS NULL");
+    }
+    let row = sqlx::query(&sql)
+        .bind(household_id.to_string())
+        .bind(id.to_string())
+        .fetch_optional(&db.pool)
+        .await?;
+    row.map(row_to_joined).transpose()
 }
 
 pub async fn get(
@@ -839,7 +893,11 @@ fn row_to_joined(row: sqlx::any::AnyRow) -> Result<StockBatchWithProduct, sqlx::
         created_at: row.try_get("p_created_at")?,
         deleted_at: row.try_get("p_deleted_at")?,
     };
-    Ok(StockBatchWithProduct { batch, product })
+    Ok(StockBatchWithProduct {
+        batch,
+        product,
+        location_name: row.try_get("l_name")?,
+    })
 }
 
 fn uuid_from(row: &sqlx::any::AnyRow, col: &str) -> Result<Uuid, sqlx::Error> {

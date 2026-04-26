@@ -974,6 +974,10 @@ class QuartermasterAppState(
 
     fun locationNameFor(locationId: String): String = locations.firstOrNull { it.id.toString() == locationId }?.name ?: "Unknown location"
 
+    fun locationNameFor(batch: StockBatchDto): String = batch.locationName
+        .takeIf { it.isNotBlank() }
+        ?: locationNameFor(batch.locationId.toString())
+
     fun sortedLocations(): List<LocationDto> = sortLocations(locations)
 
     fun locationFormFields(location: LocationDto): LocationFormFields = LocationFormFields(
@@ -990,7 +994,7 @@ class QuartermasterAppState(
         note = batch.note.orEmpty(),
     )
 
-    fun isBatchDepleted(batch: StockBatchDto): Boolean = batch.quantity.toBigDecimalOrNull()?.compareTo(java.math.BigDecimal.ZERO) == 0
+    fun isBatchDepleted(batch: StockBatchDto): Boolean = batch.depletedAt != null
 
     fun canEditBatch(batch: StockBatchDto?): Boolean = batch != null && !isBatchDepleted(batch)
 
