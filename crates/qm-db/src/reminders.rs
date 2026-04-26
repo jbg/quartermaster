@@ -706,11 +706,13 @@ pub fn build_expiry_reminder(
     }
 
     let title = match policy.lead_days {
-        0 => format!("{product_name} expires today"),
-        1 => format!("{product_name} expires tomorrow"),
-        days => format!("{product_name} expires in {days} days"),
+        0 => format!("{product_name} in {location_name} expires today"),
+        1 => format!("{product_name} in {location_name} expires tomorrow"),
+        days => format!("{product_name} in {location_name} expires in {days} days"),
     };
-    let body = format!("{quantity} {unit} in {location_name}. Expires on {expires_on}.");
+    let body = format!(
+        "{quantity} {unit} expires on {expires_on}. Open Quartermaster to use, move, or discard it."
+    );
 
     Ok(Some((
         time::format_timestamp(fire_at),
@@ -1220,8 +1222,11 @@ mod tests {
         .unwrap();
         let (fire_at, title, body, timezone, household_fire_local_at) = reminder.unwrap();
         assert_eq!(fire_at, "2026-04-23T07:00:00.000Z");
-        assert_eq!(title, "Milk expires tomorrow");
-        assert_eq!(body, "1000 ml in Fridge. Expires on 2026-04-24.");
+        assert_eq!(title, "Milk in Fridge expires tomorrow");
+        assert_eq!(
+            body,
+            "1000 ml expires on 2026-04-24. Open Quartermaster to use, move, or discard it."
+        );
         assert_eq!(timezone, "Europe/Madrid");
         assert_eq!(household_fire_local_at, "2026-04-23T09:00:00+02:00");
     }
@@ -1355,10 +1360,10 @@ mod tests {
         .unwrap();
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].batch_id, batch.id);
-        assert_eq!(page.items[0].title, "Milk expires tomorrow");
+        assert_eq!(page.items[0].title, "Milk in Pantry expires tomorrow");
         assert_eq!(
             page.items[0].body,
-            "1000 ml in Pantry. Expires on 2999-01-03."
+            "1000 ml expires on 2999-01-03. Open Quartermaster to use, move, or discard it."
         );
     }
 
