@@ -1186,7 +1186,7 @@ mod tests {
         assert_eq!(captures[0].authorization.as_deref(), Some("Bearer token"));
         assert_eq!(
             captures[0].body["aps"]["alert"]["title"],
-            "Milk expires tomorrow"
+            "Milk in Pantry expires tomorrow"
         );
         assert_eq!(captures[0].body["batch_id"], batch_id.to_string());
 
@@ -1253,7 +1253,7 @@ mod tests {
         );
         assert_eq!(
             captures[0].body["message"]["notification"]["title"],
-            "Milk expires tomorrow"
+            "Milk in Pantry expires tomorrow"
         );
         assert_eq!(
             captures[0].body["message"]["android"]["notification"]["channel_id"],
