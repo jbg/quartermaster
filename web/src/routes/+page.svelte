@@ -39,6 +39,7 @@
     optimisticAckRollback,
     optimisticAckStart,
     reminderBatchId,
+    reminderExpiresOn,
     reminderFireAt,
     type ReminderState
   } from '$lib/reminders';
@@ -1067,7 +1068,10 @@
                   <div>
                     <h3>{reminder.title}</h3>
                     <p>{reminder.body}</p>
-                    <span>{reminderFireAt(reminder)}</span>
+                    {#if reminderExpiresOn(reminder)}
+                      <span>Expires {reminderExpiresOn(reminder)}</span>
+                    {/if}
+                    <span>Household time {reminderFireAt(reminder)}</span>
                   </div>
                   <div class="row-actions">
                     <button

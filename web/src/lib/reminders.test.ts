@@ -4,7 +4,9 @@ import {
   loadReminders,
   optimisticAckRollback,
   optimisticAckStart,
-  reminderBatchId
+  reminderBatchId,
+  reminderExpiresOn,
+  reminderFireAt
 } from './reminders';
 
 describe('reminder helpers', () => {
@@ -60,6 +62,22 @@ describe('reminder helpers', () => {
     expect(
       reminderBatchId({ id: 'reminder-1', title: 'Rice', body: 'Due', batchId: 'batch-1' })
     ).toBe('batch-1');
+    expect(
+      reminderExpiresOn({
+        id: 'reminder-1',
+        title: 'Rice',
+        body: 'Due',
+        expiresOn: '2026-04-24'
+      })
+    ).toBe('2026-04-24');
+    expect(
+      reminderFireAt({
+        id: 'reminder-1',
+        title: 'Rice',
+        body: 'Due',
+        householdFireLocalAt: '2026-04-23T09:00:00+02:00'
+      })
+    ).toBe('2026-04-23T09:00:00+02:00');
     expect(done.actionIds.has('reminder-1')).toBe(false);
   });
 });
