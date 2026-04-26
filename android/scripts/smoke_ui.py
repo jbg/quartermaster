@@ -545,7 +545,7 @@ def exercise_locations() -> None:
     adb("shell", "input", "keyevent", "BACK")
     tap_tag("smoke-location-kind-fridge")
     wait_for_tag_with_scroll("smoke-location-submit-button")
-    tap_tag("smoke-location-submit-button")
+    tap_tag_near_top("smoke-location-submit-button")
     wait_for_text_with_scroll(location_name)
 
     adb("shell", "input", "swipe", "540", "1900", "540", "1300", "250")
@@ -563,7 +563,7 @@ def exercise_locations() -> None:
     adb("shell", "input", "keyevent", "BACK")
     tap_tag("smoke-location-kind-freezer")
     wait_for_tag_with_scroll("smoke-location-submit-button")
-    tap_tag("smoke-location-submit-button")
+    tap_tag_near_top("smoke-location-submit-button")
     wait_for_tag(f"smoke-location-edit-{location_id}", timeout=15.0)
 
     up_tag = f"smoke-location-move-up-{location_id}"
