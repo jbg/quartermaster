@@ -64,10 +64,10 @@ struct StockEventRowView: View {
 
   private var accent: Color {
     switch event.eventType {
-    case .add, .restore: .green
-    case .consume: .blue
-    case .adjust: .orange
-    case .discard: .red
+    case .add, .restore: QuartermasterBrand.successForeground
+    case .consume: QuartermasterBrand.infoForeground
+    case .adjust: QuartermasterBrand.warningForeground
+    case .discard: QuartermasterBrand.beetStrong
     }
   }
 

@@ -86,7 +86,7 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text("Know what’s in your kitchen.", style = MaterialTheme.typography.headlineSmall)
+            Text("Kitchen inventory, kept in order.", style = MaterialTheme.typography.headlineSmall)
         }
         if (appState.hasPendingInviteHandoff) {
             item {
@@ -98,7 +98,7 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
         }
         item {
             Text(
-                "On the Android emulator, the default local server URL uses 10.0.2.2 to reach the host machine running Quartermaster.",
+                "Connect to your Quartermaster server. On the Android emulator, 10.0.2.2 reaches the host machine.",
                 style = MaterialTheme.typography.bodyMedium,
             )
         }

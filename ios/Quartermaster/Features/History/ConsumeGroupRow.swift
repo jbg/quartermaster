@@ -17,16 +17,16 @@ struct ConsumeGroupRow: View {
         toggle()
       } label: {
         HStack(alignment: .top, spacing: 12) {
-          Image(systemName: "fork.knife")
+          Image(systemName: "minus.circle")
             .font(.title3)
-            .foregroundStyle(.blue)
+            .foregroundStyle(QuartermasterBrand.infoForeground)
             .frame(width: 28, height: 28)
-            .background(Color.blue.opacity(0.12))
+            .background(QuartermasterBrand.infoBackground)
             .clipShape(Circle())
 
           VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-              Text("Consumed")
+              Text("Used")
                 .font(.subheadline.weight(.semibold))
               if let sharedExpiry = sharedExpiry {
                 ExpiryBadge(expiresOn: sharedExpiry)
@@ -63,7 +63,7 @@ struct ConsumeGroupRow: View {
             HStack {
               Rectangle()
                 .frame(width: 2)
-                .foregroundStyle(Color.blue.opacity(0.3))
+                .foregroundStyle(QuartermasterBrand.infoForeground.opacity(0.3))
               StockEventRowView(event: event, showExpiry: true)
             }
             .padding(.leading, 36)

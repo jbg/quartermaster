@@ -38,18 +38,18 @@ struct ExpiryBadge: View {
   private var foreground: Color {
     switch severity {
     case .expired: .white
-    case .soon: .orange
-    case .ok: .green
-    case .none: .secondary
+    case .soon: QuartermasterBrand.warningForeground
+    case .ok: QuartermasterBrand.successForeground
+    case .none: QuartermasterBrand.neutralForeground
     }
   }
 
   private var background: AnyShapeStyle {
     switch severity {
-    case .expired: AnyShapeStyle(Color.red)
-    case .soon: AnyShapeStyle(Color.orange.opacity(0.15))
-    case .ok: AnyShapeStyle(Color.green.opacity(0.15))
-    case .none: AnyShapeStyle(Color.secondary.opacity(0.1))
+    case .expired: AnyShapeStyle(QuartermasterBrand.beetStrong)
+    case .soon: AnyShapeStyle(QuartermasterBrand.warningBackground)
+    case .ok: AnyShapeStyle(QuartermasterBrand.successBackground)
+    case .none: AnyShapeStyle(QuartermasterBrand.neutralBackground)
     }
   }
 

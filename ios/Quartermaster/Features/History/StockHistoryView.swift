@@ -146,7 +146,7 @@ struct StockHistoryView: View {
           Spacer()
           Image(systemName: selected.contains(event.id) ? "checkmark.circle.fill" : "circle")
             .font(.title3)
-            .foregroundStyle(event.eventType == .discard ? Color.accentColor : .secondary)
+            .foregroundStyle(event.eventType == .discard ? QuartermasterBrand.green800 : .secondary)
         }
       }
       .buttonStyle(.plain)
@@ -171,7 +171,7 @@ struct StockHistoryView: View {
           } label: {
             Label("Undo", systemImage: "arrow.uturn.backward")
           }
-          .tint(.green)
+          .tint(QuartermasterBrand.successForeground)
         }
       }
     }

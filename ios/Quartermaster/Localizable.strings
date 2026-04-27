@@ -18,7 +18,7 @@
 "REMINDER_INBOX_LOADING" = "Loading reminders…";
 "REMINDER_INBOX_LOAD_ERROR_TITLE" = "Couldn't load reminders";
 "REMINDER_INBOX_RETRY" = "Try again";
-"REMINDER_INBOX_EMPTY_TITLE" = "No reminders";
+"REMINDER_INBOX_EMPTY_TITLE" = "No reminders due";
 "REMINDER_INBOX_EMPTY_BODY" = "Due reminders will show up here.";
 "REMINDER_INBOX_EXPIRY_REMINDER" = "Expiry reminder";
 "REMINDER_INBOX_EXPIRY_DATE" = "Expiry date %@";

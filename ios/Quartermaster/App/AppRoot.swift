@@ -46,8 +46,9 @@ struct AppRoot: View {
 private struct LaunchView: View {
   var body: some View {
     VStack(spacing: 16) {
-      Image(systemName: "fork.knife")
+      Image(systemName: "shippingbox")
         .font(.system(size: 56, weight: .regular))
+        .foregroundStyle(QuartermasterBrand.green800)
       Text("Quartermaster")
         .font(.title.weight(.semibold))
       ProgressView()
@@ -68,7 +69,8 @@ private struct LaunchFailureView: View {
     VStack(spacing: 16) {
       Image(systemName: "wifi.exclamationmark")
         .font(.system(size: 56, weight: .regular))
-      Text("Couldn't Resume Session")
+        .foregroundStyle(QuartermasterBrand.beetStrong)
+      Text("Couldn't resume session")
         .font(.title.weight(.semibold))
       Text(message)
         .font(.body)

@@ -22,6 +22,7 @@ struct QuartermasterApp: App {
     WindowGroup {
       AppRoot()
         .environment(appState)
+        .tint(Color.quartermasterTint)
         .task {
           appDelegate.appState = appState
           await appState.bootstrap()
