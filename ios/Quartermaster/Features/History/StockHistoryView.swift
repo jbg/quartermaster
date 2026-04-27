@@ -42,6 +42,7 @@ struct StockHistoryView: View {
           }
       }
     }
+    .accessibilityIdentifier("stock-history.root")
     .navigationTitle(title)
     .navigationDestination(for: String.self) { batchID in
       BatchDetailView(batchID: batchID)

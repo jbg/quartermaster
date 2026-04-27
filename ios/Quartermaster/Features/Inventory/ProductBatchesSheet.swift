@@ -67,12 +67,14 @@ struct ProductBatchesSheet: View {
             } label: {
               Label("Consume", systemImage: "fork.knife")
             }
+            .accessibilityIdentifier("batch.consume")
             .disabled(!batches.contains(where: { !isDepleted($0) }))
           }
         }
         .task(id: highlightBatchID) { await flashHighlight(proxy: proxy) }
       }
       .navigationTitle(product.displayTitle)
+      .accessibilityIdentifier("batch.sheet")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .topBarLeading) {
@@ -209,6 +211,10 @@ struct BatchRow: View {
       Spacer()
       ExpiryBadge(expiresOn: batch.expiresOn)
     }
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier(
+      isDepleted(batch) ? "batch.row.depleted.\(batch.id)" : "batch.row.active.\(batch.id)"
+    )
     .padding(.vertical, 2)
   }
 

@@ -11,6 +11,7 @@ struct MainTabView: View {
       Tab("Inventory", systemImage: "basket", value: Screen.inventory) {
         NavigationStack { InventoryView() }
       }
+      .accessibilityIdentifier("tab.inventory")
 
       Tab("Reminders", systemImage: "bell", value: Screen.reminders) {
         NavigationStack { ReminderInboxView() }

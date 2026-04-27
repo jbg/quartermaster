@@ -42,6 +42,7 @@ struct InventoryView: View {
         loadedContent
       }
     }
+    .accessibilityIdentifier("inventory.root")
     .navigationTitle("Inventory")
     .toolbar {
       ToolbarItem(placement: .topBarLeading) {
@@ -109,6 +110,7 @@ struct InventoryView: View {
             Text(f.rawValue).tag(f)
           }
         }
+        .accessibilityIdentifier("inventory.filter")
         .pickerStyle(.segmented)
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
@@ -131,6 +133,7 @@ struct InventoryView: View {
                   units: appState.units,
                 )
               }
+              .accessibilityIdentifier("inventory.product.\(group.product.id)")
               .buttonStyle(.plain)
             }
           }
