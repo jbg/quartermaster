@@ -51,6 +51,21 @@ QUARTERMASTER_IOS_BUNDLE_ID=com.yourname.Quartermaster \
 
 The script auto-detects the device when exactly one physical iOS device is connected. If you have multiple devices attached, pass `--device DEVICE_ID`; you can list devices with `xcrun xctrace list devices`.
 
+If Xcode has already installed the app but the script reports missing accounts or profiles, list the local profiles Xcode created:
+
+```sh
+sh ios/scripts/list-signing-profiles.sh
+```
+
+Then reuse the profile name and bundle id shown there:
+
+```sh
+QUARTERMASTER_IOS_DEVELOPMENT_TEAM=YOUR_TEAM_ID \
+QUARTERMASTER_IOS_BUNDLE_ID=com.yourname.Quartermaster \
+QUARTERMASTER_IOS_PROFILE="iOS Team Provisioning Profile: com.yourname.Quartermaster" \
+  sh ios/scripts/install-device.sh
+```
+
 For the latest local checkout, pull first, then run the installer:
 
 ```sh

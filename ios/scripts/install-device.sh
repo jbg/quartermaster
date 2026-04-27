@@ -14,6 +14,7 @@ Options:
   --derived-data-path PATH          DerivedData directory. Default: /tmp/qm-ios-build.
   --team TEAM_ID                    Development team id for signing.
   --bundle-id BUNDLE_ID             App bundle id for signing and launch.
+  --profile PROFILE_NAME            Use a local provisioning profile by name.
   --associated-domain HOSTNAME      Associated domain override for Release builds.
   --no-launch                       Install without launching.
   -h, --help                        Show this help.
@@ -22,6 +23,7 @@ Environment equivalents:
   QM_IOS_DEVICE_ID
   QUARTERMASTER_IOS_DEVELOPMENT_TEAM
   QUARTERMASTER_IOS_BUNDLE_ID
+  QUARTERMASTER_IOS_PROFILE
   QUARTERMASTER_ASSOCIATED_DOMAIN
 EOF
 }
@@ -33,6 +35,7 @@ configuration="${QM_IOS_CONFIGURATION:-Debug}"
 derived_data_path="${QM_IOS_DERIVED_DATA_PATH:-/tmp/qm-ios-build}"
 team="${QUARTERMASTER_IOS_DEVELOPMENT_TEAM:-}"
 bundle_id="${QUARTERMASTER_IOS_BUNDLE_ID:-}"
+profile="${QUARTERMASTER_IOS_PROFILE:-}"
 associated_domain="${QUARTERMASTER_ASSOCIATED_DOMAIN:-}"
 launch=1
 
@@ -56,6 +59,10 @@ while [ "$#" -gt 0 ]; do
 		;;
 	--bundle-id)
 		bundle_id="${2:?--bundle-id requires a value}"
+		shift 2
+		;;
+	--profile)
+		profile="${2:?--profile requires a value}"
 		shift 2
 		;;
 	--associated-domain)
@@ -117,6 +124,10 @@ set -- \
 	--derived-data-path "$derived_data_path" \
 	--team "$team" \
 	--bundle-id "$bundle_id"
+
+if [ -n "$profile" ]; then
+	set -- "$@" --profile "$profile"
+fi
 
 if [ -n "$associated_domain" ]; then
 	set -- "$@" --associated-domain "$associated_domain"
