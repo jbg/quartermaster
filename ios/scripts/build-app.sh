@@ -16,6 +16,8 @@ Options:
   --associated-domain HOSTNAME      Override QUARTERMASTER_ASSOCIATED_DOMAIN.
   --team TEAM_ID                    Override DEVELOPMENT_TEAM.
   --bundle-id BUNDLE_ID             Override PRODUCT_BUNDLE_IDENTIFIER.
+  --profile PROFILE_NAME            Use a local provisioning profile by name.
+                                    Implies manual signing.
   --action ACTION                   xcodebuild action. Default: build.
   --print-app-path                  Print the resulting .app path after a successful build.
   -h, --help                        Show this help.
@@ -23,6 +25,7 @@ Options:
 Environment overrides:
   QUARTERMASTER_IOS_DEVELOPMENT_TEAM
   QUARTERMASTER_IOS_BUNDLE_ID
+  QUARTERMASTER_IOS_PROFILE
   QUARTERMASTER_ASSOCIATED_DOMAIN
   QM_IOS_CONFIGURATION
   QM_IOS_DESTINATION
@@ -40,6 +43,7 @@ action="build"
 print_app_path=0
 team="${QUARTERMASTER_IOS_DEVELOPMENT_TEAM:-}"
 bundle_id="${QUARTERMASTER_IOS_BUNDLE_ID:-}"
+profile="${QUARTERMASTER_IOS_PROFILE:-}"
 associated_domain="${QUARTERMASTER_ASSOCIATED_DOMAIN:-}"
 
 while [ "$#" -gt 0 ]; do
@@ -66,6 +70,10 @@ while [ "$#" -gt 0 ]; do
 		;;
 	--bundle-id)
 		bundle_id="${2:?--bundle-id requires a value}"
+		shift 2
+		;;
+	--profile)
+		profile="${2:?--profile requires a value}"
 		shift 2
 		;;
 	--action)
@@ -129,11 +137,15 @@ if [ -n "$bundle_id" ]; then
 	set -- "$@" PRODUCT_BUNDLE_IDENTIFIER="$bundle_id"
 fi
 
+if [ -n "$profile" ]; then
+	set -- "$@" CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER="$profile"
+fi
+
 if [ -n "$associated_domain" ]; then
 	set -- "$@" QUARTERMASTER_ASSOCIATED_DOMAIN="$associated_domain"
 fi
 
-if [ "$destination" = "generic/platform=iOS" ] || [ "$destination" = "platform=iOS" ]; then
+if { [ "$destination" = "generic/platform=iOS" ] || [ "$destination" = "platform=iOS" ]; } && [ -z "$profile" ]; then
 	set -- "$@" -allowProvisioningUpdates
 fi
 
