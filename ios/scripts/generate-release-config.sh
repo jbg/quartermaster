@@ -47,19 +47,19 @@ if ! printf '%s' "$domain" | grep -Eq '^[A-Za-z0-9.-]+$'; then
 	exit 1
 fi
 
+code_sign_style="Automatic"
+if [ -n "$profile" ]; then
+	code_sign_style="Manual"
+fi
+
 mkdir -p "$(dirname "$out")"
 cat >"$out" <<EOF
-DEVELOPMENT_TEAM = $team
-PRODUCT_BUNDLE_IDENTIFIER = $bundle
+QUARTERMASTER_RELEASE_DEVELOPMENT_TEAM = $team
+QUARTERMASTER_RELEASE_PRODUCT_BUNDLE_IDENTIFIER = $bundle
+QUARTERMASTER_RELEASE_CODE_SIGN_STYLE = $code_sign_style
+QUARTERMASTER_RELEASE_CODE_SIGN_IDENTITY = $signing_certificate
+QUARTERMASTER_RELEASE_PROVISIONING_PROFILE_SPECIFIER = $profile
 QUARTERMASTER_ASSOCIATED_DOMAIN = $domain
 EOF
-
-if [ -n "$profile" ]; then
-	cat >>"$out" <<EOF
-CODE_SIGN_STYLE = Manual
-CODE_SIGN_IDENTITY = $signing_certificate
-PROVISIONING_PROFILE_SPECIFIER = $profile
-EOF
-fi
 
 echo "wrote $out"
