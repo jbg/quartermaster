@@ -1,14 +1,15 @@
 #!/bin/sh
 set -eu
 
-profiles_dir="${1:-$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles}"
-
-if [ ! -d "$profiles_dir" ]; then
-	echo "error: provisioning profiles directory not found: $profiles_dir" >&2
-	exit 1
+if [ "$#" -gt 0 ]; then
+	set -- "$@"
+else
+	set -- \
+		"$HOME/Library/MobileDevice/Provisioning Profiles" \
+		"$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 fi
 
-find "$profiles_dir" -name '*.mobileprovision' -print |
+find "$@" -name '*.mobileprovision' -print 2>/dev/null |
 	while IFS= read -r profile; do
 		plist="$(mktemp)"
 		if ! security cms -D -i "$profile" >"$plist" 2>/dev/null; then
