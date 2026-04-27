@@ -21,6 +21,8 @@ Options:
   --profile PROFILE_NAME            App Store provisioning profile name.
                                     Default: auto-detect an installed profile
                                     for the bundle id.
+  --signing-certificate NAME        Signing certificate identity for archive
+                                    and export. Default: Apple Distribution.
   --associated-domain HOSTNAME      Associated domain for Release entitlements.
   --print-ipa-path                  Print the exported IPA path after success.
   --ipa-path-file PATH              Write the exported IPA path to PATH.
@@ -30,6 +32,7 @@ Environment equivalents:
   QUARTERMASTER_IOS_DEVELOPMENT_TEAM
   QUARTERMASTER_IOS_BUNDLE_ID
   QUARTERMASTER_IOS_PROFILE
+  QUARTERMASTER_IOS_SIGNING_CERTIFICATE
   QUARTERMASTER_ASSOCIATED_DOMAIN
   QM_IOS_MARKETING_VERSION
   QM_IOS_BUILD_NUMBER
@@ -50,6 +53,7 @@ build_number="${QM_IOS_BUILD_NUMBER:-}"
 team="${QUARTERMASTER_IOS_DEVELOPMENT_TEAM:-}"
 bundle_id="${QUARTERMASTER_IOS_BUNDLE_ID:-}"
 profile="${QUARTERMASTER_IOS_PROFILE:-}"
+signing_certificate="${QUARTERMASTER_IOS_SIGNING_CERTIFICATE:-Apple Distribution}"
 associated_domain="${QUARTERMASTER_ASSOCIATED_DOMAIN:-}"
 print_ipa_path=0
 ipa_path_file="${QM_IOS_IPA_PATH_FILE:-}"
@@ -86,6 +90,10 @@ while [ "$#" -gt 0 ]; do
 		;;
 	--profile)
 		profile="${2:?--profile requires a value}"
+		shift 2
+		;;
+	--signing-certificate)
+		signing_certificate="${2:?--signing-certificate requires a value}"
 		shift 2
 		;;
 	--associated-domain)
@@ -156,6 +164,11 @@ if [ -z "$profile" ]; then
 	exit 2
 fi
 
+if [ -z "$signing_certificate" ]; then
+	echo "error: --signing-certificate must not be empty" >&2
+	exit 2
+fi
+
 QUARTERMASTER_IOS_DEVELOPMENT_TEAM="$team" \
 	QUARTERMASTER_IOS_BUNDLE_ID="$bundle_id" \
 	QUARTERMASTER_ASSOCIATED_DOMAIN="$associated_domain" \
@@ -176,6 +189,7 @@ set -- \
 	PRODUCT_BUNDLE_IDENTIFIER="$bundle_id" \
 	QUARTERMASTER_ASSOCIATED_DOMAIN="$associated_domain" \
 	CODE_SIGN_STYLE=Manual \
+	CODE_SIGN_IDENTITY="$signing_certificate" \
 	PROVISIONING_PROFILE_SPECIFIER="$profile"
 
 if [ -n "$version" ]; then
@@ -195,6 +209,8 @@ cp "$ios_dir/ExportOptions.plist" "$export_options"
 /usr/libexec/PlistBuddy -c "Add :provisioningProfiles dict" "$export_options" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:$bundle_id $profile" "$export_options" 2>/dev/null ||
 	/usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$bundle_id string $profile" "$export_options"
+/usr/libexec/PlistBuddy -c "Set :signingCertificate $signing_certificate" "$export_options" 2>/dev/null ||
+	/usr/libexec/PlistBuddy -c "Add :signingCertificate string $signing_certificate" "$export_options"
 
 xcodebuild \
 	-exportArchive \

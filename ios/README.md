@@ -124,6 +124,8 @@ QUARTERMASTER_ASSOCIATED_DOMAIN=quartermaster.example.com \
   sh ios/scripts/archive-app.sh --version 1.2.3 --build-number 123 --print-ipa-path
 ```
 
+`archive-app.sh` defaults to `Apple Distribution` for release archive signing and export. Set optional `QUARTERMASTER_IOS_SIGNING_CERTIFICATE` or pass `--signing-certificate` only if the imported distribution certificate needs a different identity string or SHA.
+
 ## Universal-link setup
 
 Quartermaster keeps the custom `quartermaster://` scheme as a fallback, but iOS can also open invite links directly from HTTPS when the build has a matching Associated Domains entitlement.
