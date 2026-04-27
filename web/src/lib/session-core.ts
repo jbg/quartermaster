@@ -65,6 +65,7 @@ export interface StockBatch {
   product?: {
     id?: string;
     name?: string;
+    brand?: string | null;
     unit_family?: string;
     unitFamily?: string;
   };
