@@ -12,8 +12,13 @@
 
 <main class="join-shell">
   <section class="join-panel">
-    <p class="eyebrow">Household invite</p>
-    <h1>Join Quartermaster</h1>
+    <div class="brand-heading">
+      <img class="brand-mark" src="/brand/quartermaster-mark.svg" alt="" />
+      <div>
+        <p class="eyebrow">Household invite</p>
+        <h1>Join Quartermaster</h1>
+      </div>
+    </div>
     <p class="lede">Open the app to join a household with the invite details below.</p>
     <a class="primary-action" href={deepLink}>Open in Quartermaster</a>
 

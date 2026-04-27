@@ -117,9 +117,12 @@
 
 <main class="app-shell">
   <header class="topbar">
-    <div>
-      <p class="eyebrow">Product</p>
-      <h1>{product?.name ?? 'Product'}</h1>
+    <div class="brand-heading">
+      <img class="brand-mark" src="/brand/quartermaster-mark.svg" alt="" />
+      <div>
+        <p class="eyebrow">Product</p>
+        <h1>{product?.name ?? 'Product'}</h1>
+      </div>
     </div>
     <div class="heading-actions">
       <a class="secondary-action" href="/products">Products</a>

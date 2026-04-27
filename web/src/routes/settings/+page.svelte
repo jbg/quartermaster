@@ -216,9 +216,12 @@
 
 <main class="app-shell">
   <header class="topbar">
-    <div>
-      <p class="eyebrow">Quartermaster</p>
-      <h1>Settings</h1>
+    <div class="brand-heading">
+      <img class="brand-mark" src="/brand/quartermaster-mark.svg" alt="" />
+      <div>
+        <p class="eyebrow">Quartermaster</p>
+        <h1>Settings</h1>
+      </div>
     </div>
     <div class="heading-actions">
       <a class="secondary-action" href="/">Inventory</a>
@@ -273,7 +276,7 @@
               <article class="location-row" data-testid={`location-row-${location.name}`}>
                 <div>
                   <h3>{location.name}</h3>
-                  <p>{location.kind ?? 'pantry'} · order {locationSortOrder(location) + 1}</p>
+                  <p>{location.kind ?? 'pantry'} - order {locationSortOrder(location) + 1}</p>
                 </div>
                 <div class="row-actions">
                   <button

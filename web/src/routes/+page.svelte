@@ -809,7 +809,7 @@
     } else if (group.depletedCount > 0) {
       parts.push(`${group.depletedCount} depleted`);
     }
-    return parts.join(' · ');
+    return parts.join(' - ');
   }
 </script>
 
@@ -819,9 +819,12 @@
 
 <main class="app-shell">
   <header class="topbar">
-    <div>
-      <p class="eyebrow">Quartermaster</p>
-      <h1>Kitchen inventory</h1>
+    <div class="brand-heading">
+      <img class="brand-mark" src="/brand/quartermaster-mark.svg" alt="" />
+      <div>
+        <p class="eyebrow">Quartermaster</p>
+        <h1>Kitchen inventory</h1>
+      </div>
     </div>
     {#if authenticated}
       <div class="heading-actions">
@@ -955,7 +958,7 @@
             {#if productSearchStatus === 'error'}
               <p class="error-text">Products could not be searched.</p>
             {:else if productSearchStatus === 'loaded' && productSearchResults.length === 0}
-              <p class="muted">No matching products.</p>
+              <p class="muted">No products match this search.</p>
             {:else if productSearchResults.length > 0}
               <div class="product-results">
                 {#each productSearchResults as product}
@@ -968,7 +971,7 @@
                     <div>
                       <h4>{product.name}</h4>
                       <p>
-                        {productBrand(product) || 'No brand'} · {product.family} · {productPreferredUnit(
+                        {productBrand(product) || 'No brand'} - {product.family} - {productPreferredUnit(
                           product,
                           units
                         )}
@@ -1242,7 +1245,7 @@
             <h2>Batches</h2>
           </div>
           <div class="heading-actions">
-            <span>{inventoryActiveCount} active · {inventoryDepletedCount} depleted</span>
+            <span>{inventoryActiveCount} active - {inventoryDepletedCount} depleted</span>
             <button class="primary-action small" type="button" onclick={openAddStock}
               >Add stock</button
             >
@@ -1275,7 +1278,7 @@
         {:else if inventory.status === 'error'}
           <p class="error-text">{inventory.error}</p>
         {:else if inventory.items.length === 0}
-          <p class="muted">No stock is currently visible for this household.</p>
+          <p class="muted">No stock recorded.</p>
         {:else if visibleProductGroupCount === 0}
           <p class="muted">
             No {inventoryFilterLabel(inventoryFilter).toLowerCase()} stock matches the current search.
@@ -1291,7 +1294,7 @@
                   <div>
                     <h3>{locationGroup.location.name}</h3>
                     <p>
-                      {locationGroup.activeCount} active · {locationGroup.depletedCount} depleted
+                      {locationGroup.activeCount} active - {locationGroup.depletedCount} depleted
                     </p>
                   </div>
                   <span>{locationGroup.productGroups.length}</span>
@@ -1315,7 +1318,7 @@
                         <h3>{productGroup.productName}</h3>
                         <p>
                           {productGroup.productBrand
-                            ? `${productGroup.productBrand} · `
+                            ? `${productGroup.productBrand} - `
                             : ''}{productGroupMeta(productGroup)}
                         </p>
                       </div>
@@ -1513,7 +1516,7 @@
                   <article class="history-row">
                     <div>
                       <h3>{eventType(event)}</h3>
-                      <p>{eventActor(event)} · {formatDateTime(eventCreated(event))}</p>
+                      <p>{eventActor(event)} - {formatDateTime(eventCreated(event))}</p>
                       {#if event.note}
                         <p>{event.note}</p>
                       {/if}
