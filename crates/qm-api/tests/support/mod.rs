@@ -158,11 +158,22 @@ impl TestApp {
 
     #[allow(dead_code)]
     pub async fn raw(&self, method: Method, path: &str) -> (StatusCode, HeaderMap, String) {
+        self.raw_with_headers(method, path, HeaderMap::new()).await
+    }
+
+    #[allow(dead_code)]
+    pub async fn raw_with_headers(
+        &self,
+        method: Method,
+        path: &str,
+        extra_headers: HeaderMap,
+    ) -> (StatusCode, HeaderMap, String) {
         let mut req = Request::builder()
             .method(method)
             .uri(path)
             .body(Body::empty())
             .unwrap();
+        req.headers_mut().extend(extra_headers);
         req.extensions_mut().insert(axum::extract::ConnectInfo(
             SocketAddr::from_str("127.0.0.1:3000").unwrap(),
         ));

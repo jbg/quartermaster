@@ -42,17 +42,16 @@ function normalizedBaseUrl(serverUrl: string): string {
 
 export function generatedTransport(): SessionTransport {
   let current: StoredSession = {
-    serverUrl: '',
-    accessToken: null,
-    refreshToken: null
+    serverUrl: ''
   };
+  installCsrfInterceptor();
 
   return {
     configure(session) {
       current = { ...session };
       client.setConfig({
         baseUrl: normalizedBaseUrl(current.serverUrl),
-        auth: () => current.accessToken ?? undefined
+        credentials: 'include'
       });
     },
     login(body) {
@@ -62,7 +61,7 @@ export function generatedTransport(): SessionTransport {
       return authRegister({ body });
     },
     refresh(body) {
-      return authRefresh({ body });
+      return authRefresh({ body: body ?? {} });
     },
     logout() {
       return authLogout();
@@ -155,4 +154,46 @@ export function generatedTransport(): SessionTransport {
       return remindersAck({ path: { id } });
     }
   };
+}
+
+let csrfInterceptorInstalled = false;
+
+function installCsrfInterceptor(): void {
+  if (csrfInterceptorInstalled) {
+    return;
+  }
+  client.interceptors.request.use((request) => {
+    return withCsrfHeader(request);
+  });
+  csrfInterceptorInstalled = true;
+}
+
+function requiresCsrf(method: string): boolean {
+  return !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase());
+}
+
+export function browserCookie(name: string): string | null {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+  return (
+    document.cookie
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${name}=`))
+      ?.slice(name.length + 1) ?? null
+  );
+}
+
+export function withCsrfHeader(request: Request): Request {
+  if (!requiresCsrf(request.method)) {
+    return request;
+  }
+  const csrf = browserCookie('qm_csrf');
+  if (!csrf) {
+    return request;
+  }
+  const headers = new Headers(request.headers);
+  headers.set('X-QM-CSRF', csrf);
+  return new Request(request, { headers });
 }

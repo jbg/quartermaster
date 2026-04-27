@@ -48,12 +48,7 @@
       generatedTransport()
     );
     session = created;
-    const hasToken = Boolean(created.snapshot().accessToken);
-    authenticated = hasToken;
-    if (!hasToken) {
-      loading = false;
-      return;
-    }
+    authenticated = true;
     void loadSettings();
   });
 

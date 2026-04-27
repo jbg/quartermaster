@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     middleware,
     routing::{get, post},
     Json, Router,
@@ -76,7 +76,7 @@ pub struct LoginRequest {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct RefreshRequest {
-    pub refresh_token: String,
+    pub refresh_token: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -177,7 +177,7 @@ pub struct SwitchHouseholdRequest {
 pub async fn register(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
-) -> ApiResult<(StatusCode, Json<TokenPair>)> {
+) -> ApiResult<(StatusCode, HeaderMap, Json<TokenPair>)> {
     validate_credentials(&req.username, &req.password)?;
 
     let existing_count = qm_db::users::count(&state.db).await?;
@@ -272,7 +272,8 @@ pub async fn register(
         initial_household_id,
     )
     .await?;
-    Ok((StatusCode::CREATED, Json(pair)))
+    let headers = session_cookie_headers(&state, &pair);
+    Ok((StatusCode::CREATED, headers, Json(pair)))
 }
 
 #[utoipa::path(
@@ -290,7 +291,7 @@ pub async fn register(
 pub async fn login(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
-) -> ApiResult<Json<TokenPair>> {
+) -> ApiResult<(HeaderMap, Json<TokenPair>)> {
     let user = qm_db::users::find_by_username(&state.db, &req.username)
         .await?
         .ok_or(ApiError::Unauthorized)?;
@@ -308,7 +309,8 @@ pub async fn login(
         initial_household_id,
     )
     .await?;
-    Ok(Json(pair))
+    let headers = session_cookie_headers(&state, &pair);
+    Ok((headers, Json(pair)))
 }
 
 #[utoipa::path(
@@ -325,9 +327,28 @@ pub async fn login(
 )]
 pub async fn refresh(
     State(state): State<AppState>,
-    Json(req): Json<RefreshRequest>,
-) -> ApiResult<Json<TokenPair>> {
-    let hash = auth::sha256_hex(&req.refresh_token);
+    headers: HeaderMap,
+    req: Option<Json<RefreshRequest>>,
+) -> ApiResult<(HeaderMap, Json<TokenPair>)> {
+    let body_refresh_token = req
+        .as_ref()
+        .and_then(|Json(req)| req.refresh_token.as_deref())
+        .map(str::to_owned);
+    let cookie_refresh_token = body_refresh_token
+        .is_none()
+        .then(|| auth::cookie_value(&headers, auth::REFRESH_COOKIE))
+        .flatten();
+    if cookie_refresh_token.is_some() {
+        let cookie_csrf = auth::cookie_value(&headers, auth::CSRF_COOKIE);
+        let header_csrf = headers.get(auth::CSRF_HEADER).and_then(|v| v.to_str().ok());
+        if cookie_csrf.as_deref().is_none() || cookie_csrf.as_deref() != header_csrf {
+            return Err(ApiError::Forbidden);
+        }
+    }
+    let refresh_token = body_refresh_token
+        .or(cookie_refresh_token)
+        .ok_or(ApiError::Unauthorized)?;
+    let hash = auth::sha256_hex(&refresh_token);
     let token = qm_db::tokens::find_active_by_hash(&state.db, &hash)
         .await?
         .ok_or(ApiError::Unauthorized)?;
@@ -357,7 +378,8 @@ pub async fn refresh(
     )
     .await?;
     auth::cleanup_session_if_unused(&state.db, token.session_id).await?;
-    Ok(Json(pair))
+    let headers = session_cookie_headers(&state, &pair);
+    Ok((headers, Json(pair)))
 }
 
 #[utoipa::path(
@@ -372,7 +394,7 @@ pub async fn logout(
     State(state): State<AppState>,
     current: CurrentUser,
     header: axum::http::HeaderMap,
-) -> ApiResult<StatusCode> {
+) -> ApiResult<(HeaderMap, StatusCode)> {
     let session_id = current.session_id;
     if let Some(bearer) = header
         .get(axum::http::header::AUTHORIZATION)
@@ -384,8 +406,9 @@ pub async fn logout(
             qm_db::tokens::revoke_session(&state.db, token.session_id).await?;
         }
     }
+    qm_db::tokens::revoke_session(&state.db, session_id).await?;
     qm_db::auth_sessions::delete(&state.db, session_id).await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok((clear_session_cookie_headers(&state), StatusCode::NO_CONTENT))
 }
 
 #[utoipa::path(
@@ -508,6 +531,95 @@ async fn issue_token_pair(
         token_type: "Bearer",
         expires_in: state.config.access_token_ttl_seconds,
     })
+}
+
+fn session_cookie_headers(state: &AppState, pair: &TokenPair) -> HeaderMap {
+    let csrf = auth::generate_token();
+    let mut headers = HeaderMap::new();
+    append_cookie(
+        &mut headers,
+        build_cookie(
+            state,
+            auth::ACCESS_COOKIE,
+            &pair.access_token,
+            true,
+            Some(pair.expires_in),
+        ),
+    );
+    append_cookie(
+        &mut headers,
+        build_cookie(
+            state,
+            auth::REFRESH_COOKIE,
+            &pair.refresh_token,
+            true,
+            Some(state.config.refresh_token_ttl_seconds),
+        ),
+    );
+    append_cookie(
+        &mut headers,
+        build_cookie(
+            state,
+            auth::CSRF_COOKIE,
+            &csrf,
+            false,
+            Some(state.config.refresh_token_ttl_seconds),
+        ),
+    );
+    headers
+}
+
+fn clear_session_cookie_headers(state: &AppState) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    for name in [auth::ACCESS_COOKIE, auth::REFRESH_COOKIE, auth::CSRF_COOKIE] {
+        append_cookie(
+            &mut headers,
+            build_cookie(state, name, "", name != auth::CSRF_COOKIE, Some(0)),
+        );
+    }
+    headers
+}
+
+fn append_cookie(headers: &mut HeaderMap, value: String) {
+    headers.append(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&value).expect("cookie value is ASCII"),
+    );
+}
+
+fn build_cookie(
+    state: &AppState,
+    name: &str,
+    value: &str,
+    http_only: bool,
+    max_age_seconds: Option<i64>,
+) -> String {
+    let mut cookie = format!(
+        "{name}={value}; Path=/api/v1; SameSite={}",
+        cookie_same_site(state)
+    );
+    if let Some(max_age_seconds) = max_age_seconds {
+        cookie.push_str(&format!("; Max-Age={max_age_seconds}"));
+    }
+    if http_only {
+        cookie.push_str("; HttpOnly");
+    }
+    if cookie_secure(state) {
+        cookie.push_str("; Secure");
+    }
+    cookie
+}
+
+fn cookie_same_site(state: &AppState) -> &'static str {
+    if state.config.web_auth_allowed_origins.is_empty() {
+        "Lax"
+    } else {
+        "None"
+    }
+}
+
+fn cookie_secure(state: &AppState) -> bool {
+    !state.config.web_auth_allowed_origins.is_empty() || state.config.public_base_url.is_some()
 }
 
 pub(crate) async fn build_me_response(

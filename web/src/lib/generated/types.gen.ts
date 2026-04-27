@@ -209,7 +209,7 @@ export type RedeemInviteRequest = {
 };
 
 export type RefreshRequest = {
-    refresh_token: string;
+    refresh_token?: string | null;
 };
 
 export type RegisterDeviceRequest = {

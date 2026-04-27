@@ -182,10 +182,8 @@
     );
     session = created;
     serverUrl = created.snapshot().serverUrl;
-    if (created.snapshot().accessToken) {
-      authenticated = true;
-      void refreshMe();
-    }
+    authenticated = true;
+    void refreshMe();
   });
 
   async function refreshMe() {
@@ -202,6 +200,7 @@
       }
     } catch {
       me = null;
+      authenticated = false;
       clearHouseholdState();
       authError = 'Sign in again to continue.';
     }

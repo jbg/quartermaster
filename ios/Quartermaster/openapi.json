@@ -2916,12 +2916,12 @@
       },
       "RefreshRequest": {
         "type": "object",
-        "required": [
-          "refresh_token"
-        ],
         "properties": {
           "refresh_token": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

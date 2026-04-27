@@ -88,6 +88,7 @@ Common settings:
 | `QM_REGISTRATION_MODE` | `first_run_only`            | `first_run_only`, `invite_only`, or `open`          |
 | `QM_PUBLIC_BASE_URL`   | unset                       | Public HTTPS origin for invite/share links          |
 | `QM_WEB_DIST_DIR`      | `web/build`                 | Built web shell directory served by the API process |
+| `QM_WEB_AUTH_ALLOWED_ORIGINS` | unset                | Comma-separated HTTPS browser origins allowed to use credentialed cookie auth |
 | `RUST_LOG`             | `info`                      | Tracing filter                                      |
 
 Rate limiting and reverse proxies:
