@@ -7,21 +7,21 @@ APP_USER="quartermaster"
 export QM_DATABASE_URL="${QM_DATABASE_URL:-sqlite:///data/data.db?mode=rwc}"
 
 set_from_options() {
-  option_name="$1"
-  env_name="$2"
+	option_name="$1"
+	env_name="$2"
 
-  if [ ! -r "$OPTIONS_FILE" ]; then
-    return
-  fi
+	if [ ! -r "$OPTIONS_FILE" ]; then
+		return
+	fi
 
-  if ! jq -e --arg key "$option_name" 'has($key) and .[$key] != null' "$OPTIONS_FILE" >/dev/null; then
-    return
-  fi
+	if ! jq -e --arg key "$option_name" 'has($key) and .[$key] != null' "$OPTIONS_FILE" >/dev/null; then
+		return
+	fi
 
-  value="$(jq -r --arg key "$option_name" '.[$key]' "$OPTIONS_FILE")"
-  if [ -n "$value" ]; then
-    export "${env_name}=${value}"
-  fi
+	value="$(jq -r --arg key "$option_name" '.[$key]' "$OPTIONS_FILE")"
+	if [ -n "$value" ]; then
+		export "${env_name}=${value}"
+	fi
 }
 
 set_from_options "public_base_url" "QM_PUBLIC_BASE_URL"
@@ -36,9 +36,9 @@ set_from_options "log_format" "QM_LOG_FORMAT"
 set_from_options "rust_log" "RUST_LOG"
 
 if [ "$(id -u)" = "0" ]; then
-  mkdir -p /data
-  chown -R "$APP_USER:$APP_USER" /data
-  exec gosu "$APP_USER" "$@"
+	mkdir -p /data
+	chown -R "$APP_USER:$APP_USER" /data
+	exec gosu "$APP_USER" "$@"
 fi
 
 exec "$@"
