@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.6](https://github.com/jbg/quartermaster/compare/1.2.5...1.2.6) (2026-04-27)
+
+
+### Bug Fixes
+
+* add iOS app store metadata ([87fb98f](https://github.com/jbg/quartermaster/commit/87fb98fa53a645ab3a4c3c93e1acc9690d1824d0))
+
 ## [1.2.5](https://github.com/jbg/quartermaster/compare/1.2.4...1.2.5) (2026-04-27)
 
 
