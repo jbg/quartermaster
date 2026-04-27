@@ -128,9 +128,12 @@
 
 <main class="app-shell">
   <header class="topbar">
-    <div>
-      <p class="eyebrow">Quartermaster</p>
-      <h1>Products</h1>
+    <div class="brand-heading">
+      <img class="brand-mark" src="/brand/quartermaster-mark.svg" alt="" />
+      <div>
+        <p class="eyebrow">Quartermaster</p>
+        <h1>Products</h1>
+      </div>
     </div>
     <div class="heading-actions">
       <a class="secondary-action" href="/">Inventory</a>
@@ -231,7 +234,7 @@
         {/if}
 
         {#if visibleProducts.length === 0}
-          <p class="muted">No products found.</p>
+          <p class="muted">No products match this search.</p>
         {:else}
           <div class="product-catalogue-list" data-testid="product-catalogue-list">
             {#each visibleProducts as product}
@@ -252,17 +255,17 @@
                     <a href={`/products/${product.id}`}>{product.name}</a>
                   </h3>
                   <p>
-                    {productBrand(product) || 'No brand'} · {product.family} · {productPreferredUnit(
+                    {productBrand(product) || 'No brand'} - {product.family} - {productPreferredUnit(
                       product
                     )}
                   </p>
                   <p>
                     {productSourceLabel(product)}
                     {#if productBarcode(product)}
-                      · {productBarcode(product)}
+                      - {productBarcode(product)}
                     {/if}
                     {#if isDeletedProduct(product)}
-                      · Deleted
+                      - Deleted
                     {/if}
                   </p>
                 </div>

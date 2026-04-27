@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Quartermaster app icon</title>
+  <desc id="desc">Deep green app icon with the Quartermaster Q ledger mark.</desc>
+  <rect width="1024" height="1024" rx="224" fill="#173326" />
+  <path
+    fill="#F7F8F4"
+    fill-rule="evenodd"
+    d="M268 164h488c57.438 0 104 46.562 104 104v380c0 57.438-46.562 104-104 104H268c-57.438 0-104-46.562-104-104V268c0-57.438 46.562-104 104-104Zm76 176c-30.928 0-56 25.072-56 56v140c0 30.928 25.072 56 56 56h336c30.928 0 56-25.072 56-56V396c0-30.928-25.072-56-56-56H344Z"
+  />
+  <path d="M625 669l198 198" fill="none" stroke="#F7F8F4" stroke-linecap="round" stroke-width="128" />
+  <rect x="388" y="444" width="248" height="52" rx="26" fill="#A66F2B" />
+</svg>

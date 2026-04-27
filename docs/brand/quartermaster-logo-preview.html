@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Quartermaster Logo Preview</title>
+    <style>
+      :root {
+        color: #18201c;
+        background: #f7f8f4;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 32px;
+        background: #f7f8f4;
+      }
+
+      main {
+        display: grid;
+        gap: 24px;
+        max-width: 980px;
+        margin: 0 auto;
+      }
+
+      section {
+        display: grid;
+        gap: 16px;
+        padding: 20px;
+        border: 1px solid #d9ded6;
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        color: #173326;
+        font-size: 32px;
+      }
+
+      h2 {
+        color: #334039;
+        font-size: 14px;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 24px;
+      }
+
+      .swatch {
+        display: grid;
+        min-width: 168px;
+        min-height: 168px;
+        place-items: center;
+        border: 1px solid #d9ded6;
+        border-radius: 8px;
+        background: #f7f8f4;
+      }
+
+      .dark {
+        background: #173326;
+      }
+
+      .mono {
+        color: #173326;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Quartermaster Logo Preview</h1>
+        <p>Q Ledger Mark: storage bay, shelf aperture, and ledger tick.</p>
+      </header>
+
+      <section>
+        <h2>Primary lockup</h2>
+        <img src="./quartermaster-lockup.svg" alt="Quartermaster logo lockup" width="620" />
+      </section>
+
+      <section>
+        <h2>Marks</h2>
+        <div class="row">
+          <div class="swatch">
+            <img src="./quartermaster-mark.svg" alt="Quartermaster mark" width="128" />
+          </div>
+          <div class="swatch dark">
+            <img src="./quartermaster-app-icon.svg" alt="Quartermaster app icon" width="128" />
+          </div>
+          <div class="swatch mono">
+            <img src="./quartermaster-mark-mono.svg" alt="Quartermaster monochrome mark" width="96" />
+          </div>
+          <div class="swatch">
+            <img src="./quartermaster-mark.svg" alt="Quartermaster small mark" width="32" />
+            <img src="./quartermaster-mark.svg" alt="Quartermaster tiny mark" width="20" />
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
