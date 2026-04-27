@@ -152,13 +152,18 @@ Push-related settings:
 | `QM_PUSH_WORKER_BATCH_SIZE`            | `25`      | Max deliveries claimed per cycle           |
 | `QM_PUSH_WORKER_CLAIM_TTL_SECONDS`     | `60`      | Claim timeout before retry                 |
 | `QM_PUSH_WORKER_RETRY_BACKOFF_SECONDS` | `300`     | Retry delay after retryable failures       |
-| `QM_APNS_ENABLED`                      | `false`   | Enable iOS APNs delivery                   |
-| `QM_APNS_ENVIRONMENT`                  | `sandbox` | `sandbox` or `production`                  |
-| `QM_APNS_TOPIC`                        | unset     | APNs topic / bundle identifier             |
-| `QM_APNS_AUTH_TOKEN`                   | unset     | APNs bearer token                          |
-| `QM_FCM_ENABLED`                       | `false`   | Enable Android FCM delivery                |
-| `QM_FCM_PROJECT_ID`                    | unset     | Firebase project ID                        |
-| `QM_FCM_SERVICE_ACCOUNT_JSON_PATH`     | unset     | Firebase service-account JSON path         |
+| `QM_APNS_ENABLED`                      | `false`   | Enable iOS APNs delivery                                |
+| `QM_APNS_ENVIRONMENT`                  | `sandbox` | `sandbox` or `production`                               |
+| `QM_APNS_TOPIC`                        | unset     | APNs topic / bundle identifier                          |
+| `QM_APNS_AUTH_TOKEN`                   | unset     | APNs bearer token; takes precedence over JWT config     |
+| `QM_APNS_KEY_ID`                       | unset     | APNs signing key ID for `.p8` JWT auth                  |
+| `QM_APNS_TEAM_ID`                      | unset     | Apple developer team ID for `.p8` JWT auth              |
+| `QM_APNS_PRIVATE_KEY_PATH`             | unset     | APNs `.p8` private-key path                             |
+| `QM_APNS_PRIVATE_KEY`                  | unset     | APNs `.p8` private-key content                          |
+| `QM_FCM_ENABLED`                       | `false`   | Enable Android FCM delivery                             |
+| `QM_FCM_PROJECT_ID`                    | unset     | Firebase project ID                                     |
+| `QM_FCM_SERVICE_ACCOUNT_JSON_PATH`     | unset     | Firebase service-account JSON path                      |
+| `QM_FCM_SERVICE_ACCOUNT_JSON`          | unset     | Firebase service-account JSON content; mutually exclusive with path |
 
 For a fuller reminder deployment walkthrough, see [docs/hosted-reminders.md](docs/hosted-reminders.md).
 

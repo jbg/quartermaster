@@ -68,10 +68,15 @@ struct RawConfig {
     apns_environment: String,
     apns_topic: Option<String>,
     apns_auth_token: Option<String>,
+    apns_key_id: Option<String>,
+    apns_team_id: Option<String>,
+    apns_private_key_path: Option<String>,
+    apns_private_key: Option<String>,
     apns_base_url: Option<String>,
     fcm_enabled: bool,
     fcm_project_id: Option<String>,
     fcm_service_account_json_path: Option<String>,
+    fcm_service_account_json: Option<String>,
     fcm_base_url: Option<String>,
     fcm_token_url: Option<String>,
     metrics_enabled: bool,
@@ -126,10 +131,15 @@ impl Default for RawConfig {
             apns_environment: "sandbox".into(),
             apns_topic: None,
             apns_auth_token: None,
+            apns_key_id: None,
+            apns_team_id: None,
+            apns_private_key_path: None,
+            apns_private_key: None,
             apns_base_url: None,
             fcm_enabled: false,
             fcm_project_id: None,
             fcm_service_account_json_path: None,
+            fcm_service_account_json: None,
             fcm_base_url: None,
             fcm_token_url: None,
             metrics_enabled: false,
@@ -291,11 +301,30 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         None => None,
     };
     let apns_auth_token = normalize_optional_secret(raw.apns_auth_token, "QM_APNS_AUTH_TOKEN")?;
+    let apns_key_id = normalize_optional_secret(raw.apns_key_id, "QM_APNS_KEY_ID")?;
+    let apns_team_id = normalize_optional_secret(raw.apns_team_id, "QM_APNS_TEAM_ID")?;
+    let apns_private_key_path =
+        normalize_optional_secret(raw.apns_private_key_path, "QM_APNS_PRIVATE_KEY_PATH")?;
+    let apns_private_key = normalize_optional_secret(raw.apns_private_key, "QM_APNS_PRIVATE_KEY")?;
+    let apns_jwt = build_apns_jwt_config(
+        apns_auth_token.as_ref(),
+        apns_key_id,
+        apns_team_id,
+        apns_private_key_path,
+        apns_private_key,
+    )?;
     let fcm_project_id = normalize_optional_secret(raw.fcm_project_id, "QM_FCM_PROJECT_ID")?;
     let fcm_service_account_json_path = normalize_optional_secret(
         raw.fcm_service_account_json_path,
         "QM_FCM_SERVICE_ACCOUNT_JSON_PATH",
     )?;
+    let fcm_service_account_json =
+        normalize_optional_secret(raw.fcm_service_account_json, "QM_FCM_SERVICE_ACCOUNT_JSON")?;
+    if fcm_service_account_json_path.is_some() && fcm_service_account_json.is_some() {
+        anyhow::bail!(
+            "QM_FCM_SERVICE_ACCOUNT_JSON and QM_FCM_SERVICE_ACCOUNT_JSON_PATH must not both be set"
+        );
+    }
     let metrics_trigger_secret =
         normalize_optional_secret(raw.metrics_trigger_secret, "QM_METRICS_TRIGGER_SECRET")?;
     let web_dist_dir = raw
@@ -378,12 +407,14 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
             environment: apns_environment,
             topic: apns_topic,
             auth_token: apns_auth_token,
+            jwt: apns_jwt,
             base_url: raw.apns_base_url,
         },
         fcm_config: push::FcmConfig::new(
             raw.fcm_enabled,
             fcm_project_id,
             fcm_service_account_json_path,
+            fcm_service_account_json,
             raw.fcm_base_url,
             raw.fcm_token_url,
         ),
@@ -448,6 +479,40 @@ fn normalize_optional_secret(
         Some(value) => Ok(Some(value)),
         None => Ok(None),
     }
+}
+
+fn build_apns_jwt_config(
+    auth_token: Option<&String>,
+    key_id: Option<String>,
+    team_id: Option<String>,
+    private_key_path: Option<String>,
+    private_key: Option<String>,
+) -> anyhow::Result<Option<push::ApnsJwtConfig>> {
+    if auth_token.is_some() {
+        return Ok(None);
+    }
+    if private_key_path.is_some() && private_key.is_some() {
+        anyhow::bail!("QM_APNS_PRIVATE_KEY and QM_APNS_PRIVATE_KEY_PATH must not both be set");
+    }
+    let any_jwt = key_id.is_some()
+        || team_id.is_some()
+        || private_key_path.is_some()
+        || private_key.is_some();
+    if !any_jwt {
+        return Ok(None);
+    }
+    let key_id = key_id.context("QM_APNS_KEY_ID is required for APNs JWT auth")?;
+    let team_id = team_id.context("QM_APNS_TEAM_ID is required for APNs JWT auth")?;
+    let private_key = match (private_key, private_key_path) {
+        (Some(value), None) => value,
+        (None, Some(path)) => std::fs::read_to_string(&path)
+            .with_context(|| format!("reading APNs private key from {path}"))?,
+        (None, None) => anyhow::bail!(
+            "QM_APNS_PRIVATE_KEY or QM_APNS_PRIVATE_KEY_PATH is required for APNs JWT auth"
+        ),
+        (Some(_), Some(_)) => unreachable!(),
+    };
+    Ok(Some(push::ApnsJwtConfig::new(key_id, team_id, private_key)))
 }
 
 #[tokio::main]
@@ -834,5 +899,49 @@ mod tests {
         let identity = loaded.api_config.ios_release_identity.as_ref().unwrap();
         assert_eq!(identity.team_id(), "42J2SSX5SM");
         assert_eq!(identity.bundle_id(), "com.example.quartermaster");
+    }
+
+    #[test]
+    fn rejects_multiple_fcm_service_account_sources() {
+        let err = build_config(RawConfig {
+            fcm_service_account_json_path: Some("/run/secrets/fcm.json".into()),
+            fcm_service_account_json: Some("{}".into()),
+            ..RawConfig::default()
+        })
+        .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("QM_FCM_SERVICE_ACCOUNT_JSON and QM_FCM_SERVICE_ACCOUNT_JSON_PATH"));
+    }
+
+    #[test]
+    fn apns_bearer_token_takes_precedence_over_jwt_config() {
+        let loaded = build_config(RawConfig {
+            apns_auth_token: Some("operator-token".into()),
+            apns_key_id: Some("KEYID12345".into()),
+            apns_team_id: Some("TEAMID1234".into()),
+            apns_private_key: Some("unused".into()),
+            ..RawConfig::default()
+        })
+        .unwrap();
+        assert_eq!(
+            loaded.apns_config.auth_token.as_deref(),
+            Some("operator-token")
+        );
+        assert!(loaded.apns_config.jwt.is_none());
+    }
+
+    #[test]
+    fn builds_apns_jwt_config_from_inline_private_key() {
+        let loaded = build_config(RawConfig {
+            apns_key_id: Some("KEYID12345".into()),
+            apns_team_id: Some("TEAMID1234".into()),
+            apns_private_key: Some("private-key".into()),
+            ..RawConfig::default()
+        })
+        .unwrap();
+        let jwt = loaded.apns_config.jwt.as_ref().unwrap();
+        assert_eq!(jwt.key_id, "KEYID12345");
+        assert_eq!(jwt.team_id, "TEAMID1234");
     }
 }

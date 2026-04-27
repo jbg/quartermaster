@@ -5,6 +5,7 @@ import {
   authRefresh,
   authRegister,
   authSwitchHousehold,
+  deviceRegister,
   locationsCreate,
   locationsDelete,
   locationsList,
@@ -71,6 +72,9 @@ export function generatedTransport(): SessionTransport {
     },
     switchHousehold(body) {
       return authSwitchHousehold({ body });
+    },
+    registerDevice(body) {
+      return deviceRegister({ body });
     },
     locationsList() {
       return locationsList();

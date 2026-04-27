@@ -306,6 +306,45 @@ describe('QuartermasterSession', () => {
     expect(storage.value.refreshToken).toBeNull();
   });
 
+  it('registers a stable browser device before reminder actions', async () => {
+    const storage = memoryStorage({
+      serverUrl: 'http://localhost:8080',
+      accessToken: 'access',
+      refreshToken: 'refresh'
+    });
+    const calls: string[] = [];
+    const transport = {
+      configure() {},
+      async registerDevice(body: {
+        device_id: string;
+        platform: string;
+        push_authorization: string;
+        push_token?: string | null;
+      }) {
+        calls.push(
+          `device:${body.device_id}:${body.platform}:${body.push_authorization}:${body.push_token ?? 'none'}`
+        );
+        return { response: { status: 204 } };
+      },
+      async remindersList() {
+        calls.push('reminders');
+        return { data: { items: [] }, response: { status: 200 } };
+      }
+    } as Partial<SessionTransport> as SessionTransport;
+
+    const session = new QuartermasterSession(storage, transport);
+    await expect(session.remindersList({ limit: 50 })).resolves.toEqual({ items: [] });
+    await expect(session.remindersList({ limit: 50 })).resolves.toEqual({ items: [] });
+
+    expect(storage.value.browserDeviceId).toMatch(/^web-/);
+    expect(calls).toEqual([
+      `device:${storage.value.browserDeviceId}:web:denied:none`,
+      'reminders',
+      `device:${storage.value.browserDeviceId}:web:denied:none`,
+      'reminders'
+    ]);
+  });
+
   it('passes product and stock creation calls through the authenticated transport', async () => {
     const storage = memoryStorage({
       serverUrl: 'http://localhost:8080',

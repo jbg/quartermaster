@@ -45,12 +45,13 @@ pub struct ApnsConfig {
     pub environment: ApnsEnvironment,
     pub topic: Option<String>,
     pub auth_token: Option<String>,
+    pub jwt: Option<ApnsJwtConfig>,
     pub base_url: Option<String>,
 }
 
 impl ApnsConfig {
     pub fn is_ready(&self) -> bool {
-        self.enabled && self.topic.is_some()
+        self.enabled && self.topic.is_some() && (self.auth_token.is_some() || self.jwt.is_some())
     }
 
     pub fn endpoint(&self) -> &'static str {
@@ -66,10 +67,30 @@ impl ApnsConfig {
 }
 
 #[derive(Clone, Debug)]
+pub struct ApnsJwtConfig {
+    pub key_id: String,
+    pub team_id: String,
+    pub private_key: String,
+    auth_cache: Arc<Mutex<Option<CachedApnsAuthToken>>>,
+}
+
+impl ApnsJwtConfig {
+    pub fn new(key_id: String, team_id: String, private_key: String) -> Self {
+        Self {
+            key_id,
+            team_id,
+            private_key,
+            auth_cache: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct FcmConfig {
     pub enabled: bool,
     pub project_id: Option<String>,
     pub service_account_json_path: Option<String>,
+    pub service_account_json: Option<String>,
     pub base_url: Option<String>,
     pub token_url: Option<String>,
     auth_cache: Arc<Mutex<Option<CachedFcmAccessToken>>>,
@@ -80,6 +101,7 @@ impl FcmConfig {
         enabled: bool,
         project_id: Option<String>,
         service_account_json_path: Option<String>,
+        service_account_json: Option<String>,
         base_url: Option<String>,
         token_url: Option<String>,
     ) -> Self {
@@ -87,6 +109,7 @@ impl FcmConfig {
             enabled,
             project_id,
             service_account_json_path,
+            service_account_json,
             base_url,
             token_url,
             auth_cache: Arc::new(Mutex::new(None)),
@@ -94,7 +117,9 @@ impl FcmConfig {
     }
 
     pub fn is_ready(&self) -> bool {
-        self.enabled && self.project_id.is_some() && self.service_account_json_path.is_some()
+        self.enabled
+            && self.project_id.is_some()
+            && (self.service_account_json_path.is_some() || self.service_account_json.is_some())
     }
 
     pub fn base_url(&self) -> &str {
@@ -198,6 +223,18 @@ struct ServiceAccountJson {
 struct CachedFcmAccessToken {
     access_token: String,
     refresh_at: Instant,
+}
+
+#[derive(Clone, Debug)]
+struct CachedApnsAuthToken {
+    auth_token: String,
+    refresh_at: Instant,
+}
+
+#[derive(Debug, Serialize)]
+struct ApnsJwtClaims<'a> {
+    iss: &'a str,
+    iat: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -401,6 +438,8 @@ async fn send_apns(
     }
     if let Some(token) = &apns.auth_token {
         request = request.bearer_auth(token);
+    } else if let Some(jwt) = &apns.jwt {
+        request = request.bearer_auth(apns_auth_token(jwt).await?);
     }
 
     let alert = if let Some(expires_on) = item.expires_on.as_deref() {
@@ -545,7 +584,39 @@ async fn fcm_access_token(http: &reqwest::Client, fcm: &FcmConfig) -> anyhow::Re
     Ok(access_token)
 }
 
+async fn apns_auth_token(jwt: &ApnsJwtConfig) -> anyhow::Result<String> {
+    let mut cache = jwt.auth_cache.lock().await;
+    if let Some(cached) = cache.as_ref() {
+        if Instant::now() < cached.refresh_at {
+            return Ok(cached.auth_token.clone());
+        }
+    }
+
+    let issued_at = unix_timestamp_seconds() as usize;
+    let token = build_apns_jwt(jwt, issued_at)?;
+    *cache = Some(CachedApnsAuthToken {
+        auth_token: token.clone(),
+        refresh_at: Instant::now() + Duration::from_secs(50 * 60),
+    });
+    Ok(token)
+}
+
+fn build_apns_jwt(jwt: &ApnsJwtConfig, issued_at: usize) -> anyhow::Result<String> {
+    let mut header = Header::new(Algorithm::ES256);
+    header.kid = Some(jwt.key_id.clone());
+    let claims = ApnsJwtClaims {
+        iss: &jwt.team_id,
+        iat: issued_at,
+    };
+    let key =
+        EncodingKey::from_ec_pem(jwt.private_key.as_bytes()).context("loading APNs private key")?;
+    jsonwebtoken::encode(&header, &claims, &key).context("encoding APNs JWT")
+}
+
 async fn read_service_account_json(fcm: &FcmConfig) -> anyhow::Result<ServiceAccountJson> {
+    if let Some(raw) = &fcm.service_account_json {
+        return serde_json::from_str(raw).context("parsing FCM service account JSON");
+    }
     let path = fcm.service_account_path()?;
     let raw = tokio::fs::read_to_string(&path)
         .await
@@ -737,6 +808,7 @@ mod tests {
         routing::post,
         Router,
     };
+    use base64::Engine;
     use serde_json::Value;
     use sqlx::Row;
     use std::{collections::VecDeque, sync::Arc};
@@ -848,12 +920,21 @@ mod tests {
         }
     }
 
+    fn test_ec_private_key() -> &'static str {
+        "-----BEGIN PRIVATE KEY-----\n\
+         MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg/C2dD7bdjAs0Ej3R\n\
+         z7QcUPqN0Koqig35tv/q8Ozdu3KhRANCAAQ+r0jjCurTGYgQsy8YSs2pgOEuuE9u\n\
+         +NQBWq5/ZD3+zfy0M0PLvlgQM+9IUlbTlcpCdQvey5MS6T4pyYsV2Mu7\n\
+         -----END PRIVATE KEY-----\n"
+    }
+
     fn apns_config(base_url: String) -> ApnsConfig {
         ApnsConfig {
             enabled: true,
             environment: ApnsEnvironment::Sandbox,
             topic: Some("com.example.quartermaster".into()),
             auth_token: Some("token".into()),
+            jwt: None,
             base_url: Some(base_url),
         }
     }
@@ -864,6 +945,7 @@ mod tests {
             environment: ApnsEnvironment::Sandbox,
             topic: None,
             auth_token: None,
+            jwt: None,
             base_url: None,
         }
     }
@@ -873,6 +955,7 @@ mod tests {
             true,
             Some("quartermaster-test".into()),
             Some("/tmp/unused-service-account.json".into()),
+            None,
             Some(base_url),
             Some("http://127.0.0.1:9/token".into()),
         );
@@ -1116,6 +1199,7 @@ mod tests {
             Some("/tmp/unused-service-account.json".into()),
             None,
             None,
+            None,
         );
         *fcm.auth_cache.lock().await = Some(CachedFcmAccessToken {
             access_token: "ya29.cached".into(),
@@ -1127,6 +1211,68 @@ mod tests {
         let second = fcm_access_token(&http, &fcm).await.unwrap();
         assert_eq!(first, "ya29.cached");
         assert_eq!(second, "ya29.cached");
+    }
+
+    #[test]
+    fn build_apns_jwt_sets_expected_header_and_claims() {
+        let jwt = ApnsJwtConfig::new(
+            "KEYID12345".into(),
+            "TEAMID1234".into(),
+            test_ec_private_key().into(),
+        );
+        let token = build_apns_jwt(&jwt, 1_776_000_000).unwrap();
+        let header = jsonwebtoken::decode_header(&token).unwrap();
+        assert_eq!(header.alg, Algorithm::ES256);
+        assert_eq!(header.kid.as_deref(), Some("KEYID12345"));
+
+        let payload = token.split('.').nth(1).unwrap();
+        let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(payload)
+            .unwrap();
+        let claims: Value = serde_json::from_slice(&decoded).unwrap();
+        assert_eq!(claims["iss"], "TEAMID1234");
+        assert_eq!(claims["iat"], 1_776_000_000);
+    }
+
+    #[tokio::test]
+    async fn apns_auth_token_reuses_cached_token() {
+        let jwt = ApnsJwtConfig::new(
+            "KEYID12345".into(),
+            "TEAMID1234".into(),
+            test_ec_private_key().into(),
+        );
+        let first = apns_auth_token(&jwt).await.unwrap();
+        let second = apns_auth_token(&jwt).await.unwrap();
+        assert_eq!(first, second);
+    }
+
+    #[tokio::test]
+    async fn fcm_service_account_can_be_read_from_inline_json() {
+        let fcm = FcmConfig::new(
+            true,
+            Some("quartermaster-test".into()),
+            None,
+            Some(
+                json!({
+                    "client_email": "firebase@example.iam.gserviceaccount.com",
+                    "private_key": "private-key",
+                    "token_uri": "https://oauth2.example/token"
+                })
+                .to_string(),
+            ),
+            None,
+            None,
+        );
+        let credentials = read_service_account_json(&fcm).await.unwrap();
+        assert_eq!(
+            credentials.client_email,
+            "firebase@example.iam.gserviceaccount.com"
+        );
+        assert_eq!(credentials.private_key, "private-key");
+        assert_eq!(
+            credentials.token_uri.as_deref(),
+            Some("https://oauth2.example/token")
+        );
     }
 
     #[tokio::test]
@@ -1154,7 +1300,7 @@ mod tests {
             &db,
             &http,
             &apns,
-            &FcmConfig::new(false, None, None, None, None),
+            &FcmConfig::new(false, None, None, None, None, None),
             &worker_config(),
         )
         .await
@@ -1192,7 +1338,7 @@ mod tests {
             &db,
             &reqwest::Client::new(),
             &apns_config(server.base_url.clone()),
-            &FcmConfig::new(false, None, None, None, None),
+            &FcmConfig::new(false, None, None, None, None, None),
             &worker_config(),
         )
         .await

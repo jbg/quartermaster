@@ -310,7 +310,7 @@ async fn present_open_and_ack_are_device_aware() {
 }
 
 #[tokio::test]
-async fn reminder_device_state_is_per_device_but_ack_is_household_global() {
+async fn reminder_dismissal_is_device_local() {
     let app = TestApp::start(ApiConfig {
         expiry_reminder_policy: enabled_policy(),
         ..ApiConfig::default()
@@ -437,7 +437,7 @@ async fn reminder_device_state_is_per_device_but_ack_is_household_global() {
         .send(Method::GET, "/api/v1/reminders", None, Some(&alice_phone))
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert!(phone_after_ack["items"].as_array().unwrap().is_empty());
+    assert_eq!(phone_after_ack["items"].as_array().unwrap().len(), 1);
 
     let (status, tablet_after_ack) = app
         .send(Method::GET, "/api/v1/reminders", None, Some(&alice_tablet))

@@ -236,6 +236,7 @@ export interface StoredSession {
   serverUrl: string;
   accessToken: string | null;
   refreshToken: string | null;
+  browserDeviceId?: string | null;
 }
 
 export interface SessionTransport {
@@ -251,6 +252,13 @@ export interface SessionTransport {
   logout(): Promise<ApiResult<void>>;
   me(): Promise<ApiResult<MeResponse>>;
   switchHousehold(body: { household_id: string }): Promise<ApiResult<MeResponse>>;
+  registerDevice?(body: {
+    device_id: string;
+    platform: string;
+    push_token?: string | null;
+    push_authorization: 'not_determined' | 'denied' | 'authorized' | 'provisional';
+    app_version?: string | null;
+  }): Promise<ApiResult<void>>;
   locationsList(): Promise<ApiResult<Location[]>>;
   locationsCreate(body: CreateLocationRequest): Promise<ApiResult<Location>>;
   locationsUpdate(id: string, body: UpdateLocationRequest): Promise<ApiResult<Location>>;
@@ -354,7 +362,8 @@ export function createBrowserSessionStorage(
         serverUrl:
           localStorage.getItem('quartermaster.serverUrl')?.trim() || defaultServerUrl(location),
         accessToken: localStorage.getItem('quartermaster.accessToken'),
-        refreshToken: localStorage.getItem('quartermaster.refreshToken')
+        refreshToken: localStorage.getItem('quartermaster.refreshToken'),
+        browserDeviceId: localStorage.getItem('quartermaster.browserDeviceId')
       };
     },
     write(session) {
@@ -369,6 +378,9 @@ export function createBrowserSessionStorage(
       } else {
         localStorage.removeItem('quartermaster.refreshToken');
       }
+      if (session.browserDeviceId) {
+        localStorage.setItem('quartermaster.browserDeviceId', session.browserDeviceId);
+      }
     },
     clear() {
       localStorage.removeItem('quartermaster.accessToken');
@@ -380,6 +392,7 @@ export function createBrowserSessionStorage(
 export class QuartermasterSession {
   private session: StoredSession;
   private refreshInFlight: Promise<boolean> | null = null;
+  private browserDeviceRegistrationInFlight: Promise<void> | null = null;
 
   constructor(
     private readonly storage: SessionStorage,
@@ -404,6 +417,7 @@ export class QuartermasterSession {
   async login(username: string, password: string): Promise<void> {
     const result = await this.transport.login({ username, password });
     this.storeTokenResult(result);
+    await this.ensureBrowserDeviceRegistered();
   }
 
   async register(
@@ -419,6 +433,7 @@ export class QuartermasterSession {
       invite_code: inviteCode || null
     });
     this.storeTokenResult(result);
+    await this.ensureBrowserDeviceRegistered();
   }
 
   async logout(): Promise<void> {
@@ -543,19 +558,31 @@ export class QuartermasterSession {
     after_id?: string | null;
     limit?: number | null;
   }): Promise<ReminderListResponse> {
-    return this.authed(() => this.transport.remindersList(query));
+    return this.authed(async () => {
+      await this.ensureBrowserDeviceRegistered();
+      return this.transport.remindersList(query);
+    });
   }
 
   remindersPresent(id: string): Promise<void> {
-    return this.authed(() => this.transport.remindersPresent(id));
+    return this.authed(async () => {
+      await this.ensureBrowserDeviceRegistered();
+      return this.transport.remindersPresent(id);
+    });
   }
 
   remindersOpen(id: string): Promise<void> {
-    return this.authed(() => this.transport.remindersOpen(id));
+    return this.authed(async () => {
+      await this.ensureBrowserDeviceRegistered();
+      return this.transport.remindersOpen(id);
+    });
   }
 
   remindersAck(id: string): Promise<void> {
-    return this.authed(() => this.transport.remindersAck(id));
+    return this.authed(async () => {
+      await this.ensureBrowserDeviceRegistered();
+      return this.transport.remindersAck(id);
+    });
   }
 
   private async authed<T>(run: () => Promise<ApiResult<T>>): Promise<T> {
@@ -609,10 +636,51 @@ export class QuartermasterSession {
     this.persist();
   }
 
+  private async ensureBrowserDeviceRegistered(): Promise<void> {
+    if (!this.session.accessToken || !this.transport.registerDevice) {
+      return;
+    }
+    this.browserDeviceRegistrationInFlight ??= this.registerBrowserDevice().finally(() => {
+      this.browserDeviceRegistrationInFlight = null;
+    });
+    await this.browserDeviceRegistrationInFlight;
+  }
+
+  private async registerBrowserDevice(): Promise<void> {
+    if (!this.session.browserDeviceId) {
+      this.session = {
+        ...this.session,
+        browserDeviceId: stableBrowserDeviceId()
+      };
+      this.persist();
+    }
+    const deviceId = this.session.browserDeviceId;
+    if (!deviceId) {
+      return;
+    }
+    await this.transport
+      .registerDevice({
+        device_id: deviceId,
+        platform: 'web',
+        push_token: null,
+        push_authorization: 'denied',
+        app_version: null
+      })
+      .catch(() => undefined);
+  }
+
   private persist(): void {
     this.storage.write(this.session);
     this.transport.configure(this.session);
   }
+}
+
+function stableBrowserDeviceId(): string {
+  const randomUUID = globalThis.crypto?.randomUUID?.bind(globalThis.crypto);
+  if (randomUUID) {
+    return `web-${randomUUID()}`;
+  }
+  return `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
 export function unwrap<T>(result: ApiResult<T>): T {
