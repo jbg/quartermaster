@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.5](https://github.com/jbg/quartermaster/compare/1.2.4...1.2.5) (2026-04-27)
+
+
+### Bug Fixes
+
+* resolve release signing from generated config ([168f7cc](https://github.com/jbg/quartermaster/commit/168f7cc155b971d744b9bdd9d07c2d1afffc52c1))
+
 ## [1.2.4](https://github.com/jbg/quartermaster/compare/1.2.3...1.2.4) (2026-04-27)
 
 
