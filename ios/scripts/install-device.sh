@@ -14,7 +14,9 @@ Options:
   --derived-data-path PATH          DerivedData directory. Default: /tmp/qm-ios-build.
   --team TEAM_ID                    Development team id for signing.
   --bundle-id BUNDLE_ID             App bundle id for signing and launch.
-  --profile PROFILE_NAME            Use a local provisioning profile by name.
+  --profile PROFILE_NAME            Use a manually managed provisioning profile
+                                    by name. Do not use for "iOS Team
+                                    Provisioning Profile: ..." profiles.
   --associated-domain HOSTNAME      Associated domain override for Release builds.
   --no-launch                       Install without launching.
   -h, --help                        Show this help.
