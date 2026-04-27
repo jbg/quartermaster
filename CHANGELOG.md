@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.4](https://github.com/jbg/quartermaster/compare/1.2.3...1.2.4) (2026-04-27)
+
+
+### Bug Fixes
+
+* move iOS archive signing into release config ([5be6877](https://github.com/jbg/quartermaster/commit/5be68772124c23638a88ecc0e4d31ff1db0a30e2))
+
 ## [1.2.3](https://github.com/jbg/quartermaster/compare/1.2.2...1.2.3) (2026-04-27)
 
 
