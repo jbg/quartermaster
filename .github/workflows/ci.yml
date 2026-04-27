@@ -122,14 +122,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Generate release identity config
-        working-directory: ios
-        env:
-          QUARTERMASTER_IOS_DEVELOPMENT_TEAM: CIQUARTERMASTER
-          QUARTERMASTER_IOS_BUNDLE_ID: dev.quartermaster.ci
-          QUARTERMASTER_ASSOCIATED_DOMAIN: ci.quartermaster.example.com
-        run: sh scripts/generate-release-config.sh
-
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -144,15 +136,14 @@ jobs:
         run: xcodegen generate
 
       - name: Build iOS app
+        env:
+          QUARTERMASTER_IOS_DEVELOPMENT_TEAM: CIQUARTERMASTER
+          QUARTERMASTER_IOS_BUNDLE_ID: dev.quartermaster.ci
+          QUARTERMASTER_ASSOCIATED_DOMAIN: ci.quartermaster.example.com
         run: >-
-          xcodebuild
-          -project ios/Quartermaster.xcodeproj
-          -scheme Quartermaster
-          -configuration Release
-          -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2'
-          -skipPackagePluginValidation
-          QUARTERMASTER_ASSOCIATED_DOMAIN=ci.quartermaster.example.com
-          build
+          sh ios/scripts/build-app.sh
+          --configuration Release
+          --destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2'
 
   android-build:
     runs-on: ubuntu-latest

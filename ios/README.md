@@ -39,6 +39,29 @@ Simulator-backed `xcodebuild` runs are host-only checks. Run them from a normal 
 
 If the server rejects registration (`registration_disabled`), the backend has already had a first user created — either delete `data.db` at the repo root and restart the backend, or switch Onboarding to **Sign in**.
 
+## Installing on an iPhone from Terminal
+
+You can build, install, and launch the app on a connected iPhone without opening Xcode:
+
+```sh
+QUARTERMASTER_IOS_DEVELOPMENT_TEAM=YOUR_TEAM_ID \
+QUARTERMASTER_IOS_BUNDLE_ID=com.yourname.Quartermaster \
+  sh ios/scripts/install-device.sh
+```
+
+The script auto-detects the device when exactly one physical iOS device is connected. If you have multiple devices attached, pass `--device DEVICE_ID`; you can list devices with `xcrun xctrace list devices`.
+
+For the latest local checkout, pull first, then run the installer:
+
+```sh
+git pull --ff-only
+QUARTERMASTER_IOS_DEVELOPMENT_TEAM=YOUR_TEAM_ID \
+QUARTERMASTER_IOS_BUNDLE_ID=com.yourname.Quartermaster \
+  sh ios/scripts/install-device.sh
+```
+
+The shared build entry point is `ios/scripts/build-app.sh`. CI uses the same script in simulator build-only mode, while `install-device.sh` wraps it with physical-device install and launch steps.
+
 ## Universal-link setup
 
 Quartermaster keeps the custom `quartermaster://` scheme as a fallback, but iOS can also open invite links directly from HTTPS when the build has a matching Associated Domains entitlement.
