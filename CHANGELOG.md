@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2](https://github.com/jbg/quartermaster/compare/1.2.1...1.2.2) (2026-04-27)
+
+
+### Bug Fixes
+
+* use distribution identity for iOS archives ([93be6a7](https://github.com/jbg/quartermaster/commit/93be6a75c6ecedff38ee8c86dff977ff8f2dbd9b))
+
 ## [1.2.1](https://github.com/jbg/quartermaster/compare/1.2.0...1.2.1) (2026-04-27)
 
 
