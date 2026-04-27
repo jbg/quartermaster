@@ -127,11 +127,8 @@ struct AppStateNotifications {
 
   static let live = Self(
     currentAuthorization: {
-      await withCheckedContinuation { continuation in
-        UNUserNotificationCenter.current().getNotificationSettings { settings in
-          continuation.resume(returning: AppState.mapAuthorization(settings.authorizationStatus))
-        }
-      }
+      let settings = await UNUserNotificationCenter.current().notificationSettings()
+      return AppState.mapAuthorization(settings.authorizationStatus)
     },
     requestAuthorization: {
       try await UNUserNotificationCenter.current()
