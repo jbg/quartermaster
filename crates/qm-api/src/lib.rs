@@ -4,13 +4,14 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use axum::{
     extract::{MatchedPath, State},
-    http::{Method, StatusCode, Uri},
+    http::{header, HeaderName, HeaderValue, Method, StatusCode, Uri},
     response::{Html, IntoResponse},
     routing::get,
     Json, Router,
 };
 use tower::ServiceBuilder;
 use tower_http::{
+    cors::{AllowOrigin, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     services::ServeDir,
     trace::{DefaultOnFailure, DefaultOnResponse, TraceLayer},
@@ -76,6 +77,7 @@ pub struct ApiConfig {
     pub expiry_reminder_trigger_secret: Option<String>,
     pub smoke_seed_trigger_secret: Option<String>,
     pub web_dist_dir: Option<PathBuf>,
+    pub web_auth_allowed_origins: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -174,6 +176,7 @@ impl Default for ApiConfig {
             expiry_reminder_trigger_secret: None,
             smoke_seed_trigger_secret: None,
             web_dist_dir: None,
+            web_auth_allowed_origins: Vec::new(),
         }
     }
 }
@@ -371,6 +374,7 @@ pub fn router(state: AppState) -> Router {
                 async move { Json(spec) }
             }),
         );
+    let api_routes = with_web_auth_cors(api_routes, &state.config.web_auth_allowed_origins);
     let maintenance_routes = if state.config.auth_session_sweep_trigger_secret.is_some()
         || state.config.expiry_reminder_trigger_secret.is_some()
         || state.config.smoke_seed_trigger_secret.is_some()
@@ -438,6 +442,35 @@ pub fn router(state: AppState) -> Router {
     } else {
         app
     }
+}
+
+fn with_web_auth_cors(router: Router<AppState>, allowed_origins: &[String]) -> Router<AppState> {
+    if allowed_origins.is_empty() {
+        return router;
+    }
+    let allowed: Vec<HeaderValue> = allowed_origins
+        .iter()
+        .filter_map(|origin| HeaderValue::from_str(origin).ok())
+        .collect();
+    router.layer(
+        CorsLayer::new()
+            .allow_origin(AllowOrigin::predicate(move |origin, _| {
+                allowed.iter().any(|allowed| allowed == origin)
+            }))
+            .allow_credentials(true)
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PATCH,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
+            .allow_headers([
+                header::CONTENT_TYPE,
+                header::AUTHORIZATION,
+                HeaderName::from_static(auth::CSRF_HEADER),
+            ]),
+    )
 }
 
 fn web_router(dist_dir: PathBuf) -> Router {

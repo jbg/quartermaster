@@ -83,6 +83,7 @@ struct RawConfig {
     metrics_bind: String,
     metrics_trigger_secret: Option<String>,
     web_dist_dir: Option<String>,
+    web_auth_allowed_origins: Option<String>,
 }
 
 impl Default for RawConfig {
@@ -146,6 +147,7 @@ impl Default for RawConfig {
             metrics_bind: "127.0.0.1:9091".into(),
             metrics_trigger_secret: None,
             web_dist_dir: Some("web/build".into()),
+            web_auth_allowed_origins: None,
         }
     }
 }
@@ -344,6 +346,8 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
     } else {
         None
     };
+    let web_auth_allowed_origins =
+        normalize_web_auth_allowed_origins(raw.web_auth_allowed_origins)?;
 
     let api_config = Arc::new(ApiConfig {
         registration_mode: RegistrationMode::from_str(&raw.registration_mode)
@@ -384,6 +388,7 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         expiry_reminder_trigger_secret,
         smoke_seed_trigger_secret,
         web_dist_dir,
+        web_auth_allowed_origins,
     });
 
     Ok(LoadedConfig {
@@ -425,6 +430,34 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
             handle: metrics_handle,
         },
     })
+}
+
+fn normalize_web_auth_allowed_origins(raw: Option<String>) -> anyhow::Result<Vec<String>> {
+    let Some(raw) = raw else {
+        return Ok(Vec::new());
+    };
+    raw.split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            let url = reqwest::Url::parse(value).context("parsing QM_WEB_AUTH_ALLOWED_ORIGINS")?;
+            if url.scheme() != "https" {
+                anyhow::bail!("QM_WEB_AUTH_ALLOWED_ORIGINS entries must use https");
+            }
+            if !url.username().is_empty() || url.password().is_some() {
+                anyhow::bail!("QM_WEB_AUTH_ALLOWED_ORIGINS entries must not include user info");
+            }
+            if url.query().is_some() || url.fragment().is_some() || url.path() != "/" {
+                anyhow::bail!(
+                    "QM_WEB_AUTH_ALLOWED_ORIGINS entries must be origins without path, query, or fragment"
+                );
+            }
+            if url.host_str().is_none() {
+                anyhow::bail!("QM_WEB_AUTH_ALLOWED_ORIGINS entries must be origin URLs");
+            }
+            Ok(url.origin().ascii_serialization())
+        })
+        .collect()
 }
 
 fn normalize_public_base_url(raw: Option<String>) -> anyhow::Result<Option<String>> {
@@ -824,6 +857,30 @@ mod tests {
         assert!(err
             .to_string()
             .contains("QM_PUBLIC_BASE_URL must be an origin without path, query, or fragment"));
+    }
+
+    #[test]
+    fn normalizes_web_auth_allowed_origins() {
+        let origins = normalize_web_auth_allowed_origins(Some(
+            "https://web.example.com, https://admin.example.com/".into(),
+        ))
+        .unwrap();
+        assert_eq!(
+            origins,
+            vec![
+                "https://web.example.com".to_owned(),
+                "https://admin.example.com".to_owned()
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_non_https_web_auth_allowed_origins() {
+        let err =
+            normalize_web_auth_allowed_origins(Some("http://web.example.com".into())).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("QM_WEB_AUTH_ALLOWED_ORIGINS entries must use https"));
     }
 
     #[test]

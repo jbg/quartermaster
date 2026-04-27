@@ -6,7 +6,7 @@ use argon2::{
 };
 use axum::{
     extract::{FromRef, FromRequestParts},
-    http::{header, request::Parts},
+    http::{header, request::Parts, HeaderMap, Method},
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use jiff::Timestamp;
@@ -15,6 +15,11 @@ use tracing::Span;
 use uuid::Uuid;
 
 use crate::{error::ApiError, AppState};
+
+pub const ACCESS_COOKIE: &str = "qm_access";
+pub const REFRESH_COOKIE: &str = "qm_refresh";
+pub const CSRF_COOKIE: &str = "qm_csrf";
+pub const CSRF_HEADER: &str = "x-qm-csrf";
 
 #[derive(Clone, Debug)]
 pub struct ResolvedHousehold {
@@ -119,10 +124,24 @@ where
             .headers
             .get(header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.strip_prefix("Bearer "))
+            .and_then(|s| s.strip_prefix("Bearer "));
+        let cookie_access = bearer
+            .is_none()
+            .then(|| cookie_value(&parts.headers, ACCESS_COOKIE))
+            .flatten();
+        let token_value = bearer
+            .or(cookie_access.as_deref())
             .ok_or(ApiError::Unauthorized)?;
 
-        let hash = sha256_hex(bearer);
+        if bearer.is_none() && requires_csrf(&parts.method) {
+            let cookie_csrf = cookie_value(&parts.headers, CSRF_COOKIE);
+            let header_csrf = parts.headers.get(CSRF_HEADER).and_then(|v| v.to_str().ok());
+            if cookie_csrf.as_deref().is_none() || cookie_csrf.as_deref() != header_csrf {
+                return Err(ApiError::Forbidden);
+            }
+        }
+
+        let hash = sha256_hex(token_value);
         let token = qm_db::tokens::find_active_by_hash(&app_state.db, &hash)
             .await?
             .ok_or(ApiError::Unauthorized)?;
@@ -158,4 +177,20 @@ where
             role: resolved.role,
         })
     }
+}
+
+pub fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(header::COOKIE)?
+        .to_str()
+        .ok()?
+        .split(';')
+        .find_map(|part| {
+            let (cookie_name, value) = part.trim().split_once('=')?;
+            (cookie_name == name).then(|| value.to_owned())
+        })
+}
+
+fn requires_csrf(method: &Method) -> bool {
+    !matches!(method, &Method::GET | &Method::HEAD | &Method::OPTIONS)
 }

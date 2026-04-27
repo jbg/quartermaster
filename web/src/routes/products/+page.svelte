@@ -52,11 +52,7 @@
       generatedTransport()
     );
     session = created;
-    authenticated = Boolean(created.snapshot().accessToken);
-    if (!authenticated) {
-      loading = false;
-      return;
-    }
+    authenticated = true;
     void loadProducts();
   });
 

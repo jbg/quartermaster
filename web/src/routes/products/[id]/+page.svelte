@@ -44,11 +44,7 @@
       generatedTransport()
     );
     session = created;
-    authenticated = Boolean(created.snapshot().accessToken);
-    if (!authenticated) {
-      loading = false;
-      return;
-    }
+    authenticated = true;
     void loadProduct();
   });
 
@@ -66,6 +62,7 @@
       }
     } catch {
       product = null;
+      authenticated = false;
       error = 'Product could not be loaded.';
     } finally {
       loading = false;

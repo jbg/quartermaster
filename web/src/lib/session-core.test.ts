@@ -16,9 +16,7 @@ function memoryStorage(initial: StoredSession): SessionStorage & { value: Stored
     write(session) {
       this.value = { ...session };
     },
-    clear() {
-      this.value = { ...this.value, accessToken: null, refreshToken: null };
-    }
+    clear() {}
   };
 }
 
@@ -67,14 +65,12 @@ describe('QuartermasterSession', () => {
 
   it('refreshes once and retries an authenticated request after a 401', async () => {
     const storage = memoryStorage({
-      serverUrl: 'http://localhost:8080',
-      accessToken: 'old-access',
-      refreshToken: 'old-refresh'
+      serverUrl: 'http://localhost:8080'
     });
     const calls: string[] = [];
     const transport: SessionTransport = {
       configure(session) {
-        calls.push(`configure:${session.accessToken ?? 'none'}`);
+        calls.push(`configure:${session.serverUrl}`);
       },
       async login() {
         throw new Error('unused');
@@ -189,15 +185,20 @@ describe('QuartermasterSession', () => {
     const me = await session.me();
 
     expect(me.current_household?.name).toBe('Home');
-    expect(storage.value.accessToken).toBe('new-access');
-    expect(calls).toEqual(['configure:old-access', 'me', 'refresh', 'configure:new-access', 'me']);
+    expect(storage.value).toEqual({ serverUrl: 'http://localhost:8080' });
+    expect(calls).toEqual([
+      'configure:http://localhost:8080',
+      'me',
+      'refresh',
+      'configure:http://localhost:8080',
+      'me'
+    ]);
   });
 
-  it('clears tokens when refresh fails', async () => {
+  it('leaves non-secret session state when cookie refresh fails', async () => {
     const storage = memoryStorage({
       serverUrl: 'http://localhost:8080',
-      accessToken: 'old-access',
-      refreshToken: 'old-refresh'
+      browserDeviceId: 'web-existing'
     });
     const transport: SessionTransport = {
       configure() {},
@@ -302,15 +303,15 @@ describe('QuartermasterSession', () => {
     const session = new QuartermasterSession(storage, transport);
 
     await expect(session.me()).rejects.toMatchObject({ status: 401 });
-    expect(storage.value.accessToken).toBeNull();
-    expect(storage.value.refreshToken).toBeNull();
+    expect(storage.value).toEqual({
+      serverUrl: 'http://localhost:8080',
+      browserDeviceId: 'web-existing'
+    });
   });
 
   it('registers a stable browser device before reminder actions', async () => {
     const storage = memoryStorage({
-      serverUrl: 'http://localhost:8080',
-      accessToken: 'access',
-      refreshToken: 'refresh'
+      serverUrl: 'http://localhost:8080'
     });
     const calls: string[] = [];
     const transport = {
@@ -347,9 +348,7 @@ describe('QuartermasterSession', () => {
 
   it('passes product and stock creation calls through the authenticated transport', async () => {
     const storage = memoryStorage({
-      serverUrl: 'http://localhost:8080',
-      accessToken: 'access',
-      refreshToken: 'refresh'
+      serverUrl: 'http://localhost:8080'
     });
     const calls: string[] = [];
     const transport: SessionTransport = {

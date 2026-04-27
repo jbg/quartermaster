@@ -234,8 +234,6 @@ export interface SessionStorage {
 
 export interface StoredSession {
   serverUrl: string;
-  accessToken: string | null;
-  refreshToken: string | null;
   browserDeviceId?: string | null;
 }
 
@@ -248,7 +246,7 @@ export interface SessionTransport {
     email?: string | null;
     invite_code?: string | null;
   }): Promise<ApiResult<TokenPair>>;
-  refresh(body: { refresh_token: string }): Promise<ApiResult<TokenPair>>;
+  refresh(body?: { refresh_token?: string | null }): Promise<ApiResult<TokenPair>>;
   logout(): Promise<ApiResult<void>>;
   me(): Promise<ApiResult<MeResponse>>;
   switchHousehold(body: { household_id: string }): Promise<ApiResult<MeResponse>>;
@@ -340,14 +338,6 @@ export function defaultServerUrl(location: BrowserLocationLike | string = ''): s
   return trimTrailingSlashes(`${location.origin}${ingressBasePath(location.pathname)}`);
 }
 
-export function tokenPairAccess(pair: TokenPair): string {
-  return pair.access_token ?? pair.accessToken ?? '';
-}
-
-export function tokenPairRefresh(pair: TokenPair): string {
-  return pair.refresh_token ?? pair.refreshToken ?? '';
-}
-
 export function currentHousehold(me: MeResponse): HouseholdSummary | null {
   return me.current_household ?? me.currentHousehold ?? null;
 }
@@ -361,31 +351,16 @@ export function createBrowserSessionStorage(
       return {
         serverUrl:
           localStorage.getItem('quartermaster.serverUrl')?.trim() || defaultServerUrl(location),
-        accessToken: localStorage.getItem('quartermaster.accessToken'),
-        refreshToken: localStorage.getItem('quartermaster.refreshToken'),
         browserDeviceId: localStorage.getItem('quartermaster.browserDeviceId')
       };
     },
     write(session) {
       localStorage.setItem('quartermaster.serverUrl', session.serverUrl);
-      if (session.accessToken) {
-        localStorage.setItem('quartermaster.accessToken', session.accessToken);
-      } else {
-        localStorage.removeItem('quartermaster.accessToken');
-      }
-      if (session.refreshToken) {
-        localStorage.setItem('quartermaster.refreshToken', session.refreshToken);
-      } else {
-        localStorage.removeItem('quartermaster.refreshToken');
-      }
       if (session.browserDeviceId) {
         localStorage.setItem('quartermaster.browserDeviceId', session.browserDeviceId);
       }
     },
-    clear() {
-      localStorage.removeItem('quartermaster.accessToken');
-      localStorage.removeItem('quartermaster.refreshToken');
-    }
+    clear() {}
   };
 }
 
@@ -416,7 +391,7 @@ export class QuartermasterSession {
 
   async login(username: string, password: string): Promise<void> {
     const result = await this.transport.login({ username, password });
-    this.storeTokenResult(result);
+    unwrap(result);
     await this.ensureBrowserDeviceRegistered();
   }
 
@@ -432,17 +407,12 @@ export class QuartermasterSession {
       email: email || null,
       invite_code: inviteCode || null
     });
-    this.storeTokenResult(result);
+    unwrap(result);
     await this.ensureBrowserDeviceRegistered();
   }
 
   async logout(): Promise<void> {
     await this.transport.logout().catch(() => undefined);
-    this.session = {
-      ...this.session,
-      accessToken: null,
-      refreshToken: null
-    };
     this.persist();
   }
 
@@ -587,7 +557,7 @@ export class QuartermasterSession {
 
   private async authed<T>(run: () => Promise<ApiResult<T>>): Promise<T> {
     let result = await run();
-    if (result.response?.status === 401 && this.session.refreshToken) {
+    if (result.response?.status === 401) {
       const refreshed = await this.refreshOnce();
       if (refreshed) {
         result = await run();
@@ -604,40 +574,17 @@ export class QuartermasterSession {
   }
 
   private async refreshTokens(): Promise<boolean> {
-    const refreshToken = this.session.refreshToken;
-    if (!refreshToken) {
-      return false;
-    }
-    const result = await this.transport.refresh({ refresh_token: refreshToken });
+    const result = await this.transport.refresh();
     if (!result.data || result.response?.status === 401) {
-      this.session = {
-        ...this.session,
-        accessToken: null,
-        refreshToken: null
-      };
       this.persist();
       return false;
     }
-    this.applyTokens(result.data);
+    this.persist();
     return true;
   }
 
-  private storeTokenResult(result: ApiResult<TokenPair>): void {
-    const pair = unwrap(result);
-    this.applyTokens(pair);
-  }
-
-  private applyTokens(pair: TokenPair): void {
-    this.session = {
-      ...this.session,
-      accessToken: tokenPairAccess(pair),
-      refreshToken: tokenPairRefresh(pair)
-    };
-    this.persist();
-  }
-
   private async ensureBrowserDeviceRegistered(): Promise<void> {
-    if (!this.session.accessToken || !this.transport.registerDevice) {
+    if (!this.transport.registerDevice) {
       return;
     }
     this.browserDeviceRegistrationInFlight ??= this.registerBrowserDevice().finally(() => {
