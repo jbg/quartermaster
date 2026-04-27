@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.3](https://github.com/jbg/quartermaster/compare/1.2.2...1.2.3) (2026-04-27)
+
+
+### Bug Fixes
+
+* scope iOS archive provisioning to device builds ([882f215](https://github.com/jbg/quartermaster/commit/882f215a227e54df0a1079699a2a845f4b66c455))
+
 ## [1.2.2](https://github.com/jbg/quartermaster/compare/1.2.1...1.2.2) (2026-04-27)
 
 
