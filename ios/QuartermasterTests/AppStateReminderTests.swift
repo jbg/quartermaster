@@ -194,6 +194,55 @@ final class AppStateReminderTests: XCTestCase {
     XCTAssertEqual(appState.lastError, "Ack failed")
   }
 
+  func testAcknowledgeReminderRemovesReminderRefreshesAndClearsInFlight() async {
+    let first = reminder()
+    let second = reminder(id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    let api = FakeAPI(
+      reminderResponses: [
+        .success(reminderListResponse([first, second])),
+        .success(reminderListResponse([second])),
+      ],
+      ackResponses: [.success(())]
+    )
+    let appState = makeAppState(api: api)
+    appState.phase = .authenticated(me())
+    await appState.loadReminderInbox(limit: 50)
+
+    await appState.acknowledgeReminder(id: first.id)
+
+    XCTAssertEqual(appState.reminders.map(\.id), [second.id])
+    XCTAssertEqual(appState.activeReminder?.id, second.id)
+    let ackedReminderIDs = await api.ackedReminderIDs()
+    XCTAssertEqual(ackedReminderIDs, [first.id])
+    XCTAssertFalse(appState.isReminderActionInFlight(id: first.id))
+  }
+
+  func testDuplicateAcknowledgeWhileInFlightIsIgnored() async {
+    let gate = AsyncGate()
+    let item = reminder()
+    let api = FakeAPI(
+      reminderResponses: [
+        .success(reminderListResponse([item])),
+        .success(reminderListResponse([])),
+      ],
+      ackResponses: [.success(())],
+      ackGate: gate
+    )
+    let appState = makeAppState(api: api)
+    appState.phase = .authenticated(me())
+    await appState.loadReminderInbox(limit: 50)
+
+    let first = Task { await appState.acknowledgeReminder(id: item.id) }
+    await eventually { appState.isReminderActionInFlight(id: item.id) }
+    await appState.acknowledgeReminder(id: item.id)
+    await gate.release()
+    await first.value
+
+    let ackedReminderIDs = await api.ackedReminderIDs()
+    XCTAssertEqual(ackedReminderIDs, [item.id])
+    XCTAssertFalse(appState.isReminderActionInFlight(id: item.id))
+  }
+
   func testOpenReminderSetsFallbackTargetAndRefreshesState() async {
     let first = reminder()
     let second = reminder(id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
@@ -215,6 +264,79 @@ final class AppStateReminderTests: XCTestCase {
     let openedReminderIDs = await api.openedReminderIDs()
     XCTAssertEqual(openedReminderIDs, [first.id])
     XCTAssertNotEqual(appState.activeReminder?.id, first.id)
+  }
+
+  func testOpenReminderFromInboxRemovesReminderAndRefreshesState() async {
+    let first = reminder()
+    let second = reminder(id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    let api = FakeAPI(
+      reminderResponses: [
+        .success(reminderListResponse([first, second])),
+        .success(reminderListResponse([second])),
+      ],
+      openResponses: [.success(())]
+    )
+    let appState = makeAppState(api: api)
+    appState.phase = .authenticated(me())
+    await appState.loadReminderInbox(limit: 50)
+
+    appState.openReminderFromInbox(first)
+    await eventually { appState.pendingInventoryTarget?.highlightBatchID == first.batchID }
+    await eventually { appState.reminders.map(\.id) == [second.id] }
+
+    XCTAssertEqual(appState.pendingInventoryTarget?.productID, first.productID)
+    XCTAssertEqual(appState.reminders.map(\.id), [second.id])
+    XCTAssertEqual(appState.activeReminder?.id, second.id)
+    let openedReminderIDs = await api.openedReminderIDs()
+    XCTAssertEqual(openedReminderIDs, [first.id])
+    XCTAssertFalse(appState.isReminderActionInFlight(id: first.id))
+  }
+
+  func testDuplicateOpenWhileInFlightIsIgnored() async {
+    let gate = AsyncGate()
+    let item = reminder()
+    let api = FakeAPI(
+      reminderResponses: [
+        .success(reminderListResponse([item])),
+        .success(reminderListResponse([])),
+      ],
+      openResponses: [.success(())],
+      openGate: gate
+    )
+    let appState = makeAppState(api: api)
+    appState.phase = .authenticated(me())
+    await appState.loadReminderInbox(limit: 50)
+
+    appState.openReminderFromInbox(item)
+    await eventually { appState.isReminderActionInFlight(id: item.id) }
+    appState.openReminderFromInbox(item)
+    await gate.release()
+    await eventually { appState.pendingInventoryTarget?.highlightBatchID == item.batchID }
+
+    let openedReminderIDs = await api.openedReminderIDs()
+    XCTAssertEqual(openedReminderIDs, [item.id])
+    XCTAssertFalse(appState.isReminderActionInFlight(id: item.id))
+  }
+
+  func testReminderRefreshPrunesStaleActiveAndKeepsValidQueuedReminder() async {
+    let stale = reminder()
+    let valid = reminder(id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    let api = FakeAPI(
+      reminderResponses: [
+        .success(reminderListResponse([stale, valid])),
+        .success(reminderListResponse([valid])),
+      ]
+    )
+    let appState = makeAppState(api: api)
+    appState.phase = .authenticated(me())
+    await appState.loadReminderInbox(limit: 50)
+
+    await appState.refreshRemindersAfterUserAction(limit: 50)
+
+    XCTAssertEqual(appState.reminders.map(\.id), [valid.id])
+    XCTAssertEqual(appState.activeReminder?.id, valid.id)
+    let presentedIDs = await api.presentedReminderIDs()
+    XCTAssertEqual(presentedIDs, [stale.id, valid.id])
   }
 
   func testOpenReminderFailureStillKeepsFallbackInventoryTarget() async throws {
@@ -344,7 +466,10 @@ private actor FakeAPI: AppStateAPI {
   private var ackResponses: [Result<Void, Error>]
   private var openResponses: [Result<Void, Error>]
   private let reminderGate: AsyncGate?
+  private let ackGate: AsyncGate?
+  private let openGate: AsyncGate?
   private var presentedIDs: [String] = []
+  private var ackedIDs: [String] = []
   private var openedIDs: [String] = []
   private var listReminderCalls = 0
 
@@ -353,16 +478,21 @@ private actor FakeAPI: AppStateAPI {
     reminderResponses: [Result<ReminderListResponse, Error>] = [.success(reminderListResponse([]))],
     ackResponses: [Result<Void, Error>] = [.success(())],
     openResponses: [Result<Void, Error>] = [.success(())],
-    reminderGate: AsyncGate? = nil
+    reminderGate: AsyncGate? = nil,
+    ackGate: AsyncGate? = nil,
+    openGate: AsyncGate? = nil
   ) {
     self.meResponses = meResponses
     self.reminderResponses = reminderResponses
     self.ackResponses = ackResponses
     self.openResponses = openResponses
     self.reminderGate = reminderGate
+    self.ackGate = ackGate
+    self.openGate = openGate
   }
 
   func presentedReminderIDs() -> [String] { presentedIDs }
+  func ackedReminderIDs() -> [String] { ackedIDs }
   func openedReminderIDs() -> [String] { openedIDs }
   func listReminderCallCount() -> Int { listReminderCalls }
 
@@ -449,11 +579,17 @@ private actor FakeAPI: AppStateAPI {
   }
 
   func ackReminder(id: String) async throws {
-    _ = id
+    if let ackGate {
+      await ackGate.wait()
+    }
+    ackedIDs.append(id)
     try next(&ackResponses)
   }
 
   func openReminder(id: String) async throws {
+    if let openGate {
+      await openGate.wait()
+    }
     openedIDs.append(id)
     try next(&openResponses)
   }
