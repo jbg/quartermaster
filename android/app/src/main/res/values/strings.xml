@@ -1,3 +1,42 @@
 <resources>
     <string name="app_name">Quartermaster</string>
+    <string name="expiry_reminder_title">%1$s in %2$s</string>
+    <string name="expiry_reminder_body">%1$s %2$s expires on %3$s.</string>
+    <string name="expiry_reminder_body_no_date">%1$s %2$s has an expiry reminder.</string>
+    <string name="expiry_reminder_urgency_expired">Expired</string>
+    <string name="expiry_reminder_urgency_expired_yesterday">Expired yesterday</string>
+    <plurals name="expiry_reminder_urgency_expired_days_ago">
+        <item quantity="one">Expired %1$d day ago</item>
+        <item quantity="other">Expired %1$d days ago</item>
+    </plurals>
+    <string name="expiry_reminder_urgency_today">Expires today</string>
+    <string name="expiry_reminder_urgency_tomorrow">Expires tomorrow</string>
+    <string name="expiry_reminder_urgency_soon">Expires soon</string>
+    <plurals name="expiry_reminder_urgency_future_days">
+        <item quantity="one">Expires in %1$d day</item>
+        <item quantity="other">Expires in %1$d days</item>
+    </plurals>
+    <string name="reminder_inbox_title">Reminders</string>
+    <string name="reminder_inbox_subtitle">Due expiry reminders stay here until someone opens or acknowledges them.</string>
+    <string name="reminder_inbox_loading_title">Loading reminders</string>
+    <string name="reminder_inbox_loading_body">Fetching the household inbox and marking unseen items as presented.</string>
+    <string name="reminder_inbox_load_error_title">Couldn\'t load reminders</string>
+    <string name="reminder_inbox_retry">Retry</string>
+    <string name="reminder_inbox_empty_title">No due reminders</string>
+    <string name="reminder_inbox_empty_body">Expiry reminders stay here until someone opens or acknowledges them.</string>
+    <string name="reminder_inbox_refreshing_title">Refreshing reminders</string>
+    <string name="reminder_inbox_refreshing_body">Syncing the latest due reminders for this household.</string>
+    <string name="reminder_inbox_action_error_title">Reminder action failed</string>
+    <string name="reminder_inbox_refresh_action">Refresh reminders</string>
+    <string name="reminder_inbox_expiry_date">Expiry date %1$s</string>
+    <string name="reminder_inbox_household_time">Household time %1$s (%2$s)</string>
+    <string name="reminder_inbox_updating_title">Updating reminder</string>
+    <string name="reminder_inbox_opening_body">Opening reminder and refreshing inventory…</string>
+    <string name="reminder_inbox_acknowledging_body">Acknowledging reminder and removing it from the inbox…</string>
+    <string name="reminder_inbox_open">Open</string>
+    <string name="reminder_inbox_opening_action">Opening…</string>
+    <string name="reminder_inbox_acknowledge">Acknowledge</string>
+    <string name="reminder_inbox_acknowledging_action">Acknowledging…</string>
+    <string name="push_expiry_reminder_channel_name">Expiry reminders</string>
+    <string name="push_expiry_reminder_channel_description">Quartermaster expiry and stock reminders</string>
 </resources>

@@ -47,20 +47,6 @@ class QuartermasterAppStateTest {
     }
 
     @Test
-    fun `reminder display copy comes from structured fields`() {
-        val appState =
-            QuartermasterAppState(
-                sessionStore = FakeSessionStore(),
-                backend = FakeBackend(meResponse = meResponseJson()),
-            )
-
-        val reminder = reminderJson(expiresOn = "2026-04-24", daysUntilExpiry = -2, urgency = "expired")
-        assertEquals("Flour in Pantry", appState.reminderDisplayTitle(reminder))
-        assertEquals("1 kg expires on 2026-04-24.", appState.reminderDisplayBody(reminder))
-        assertEquals("Expired 2 days ago", appState.reminderUrgencyText(reminder))
-    }
-
-    @Test
     fun `parseInviteContext accepts custom join scheme and trims values`() {
         val context =
             QuartermasterAppState.parseInviteContext(

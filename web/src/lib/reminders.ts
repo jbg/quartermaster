@@ -1,4 +1,12 @@
 import type { QuartermasterSession, Reminder } from './session-core';
+import {
+  formatReminderDateText,
+  formatReminderDateTimeText,
+  reminderBodyText,
+  reminderMessages,
+  reminderTitleText,
+  reminderUrgencyText
+} from './reminder-messages';
 
 export type ReminderActionKind = 'open' | 'ack';
 
@@ -43,7 +51,7 @@ export async function loadReminders(
     return {
       status: 'error',
       items: fallbackItems,
-      error: 'Reminders could not be loaded.',
+      error: reminderMessages.loadError,
       actionIds: new Set(existingActionIds),
       actionKinds: { ...existingActionKinds }
     };
@@ -89,46 +97,19 @@ export function sortReminders(reminders: Reminder[]): Reminder[] {
 }
 
 export function reminderTitle(reminder: Reminder): string {
-  return `${reminderProductName(reminder)} in ${reminderLocationName(reminder)}`;
+  return reminderTitleText(reminder);
 }
 
 export function reminderBody(reminder: Reminder): string {
-  const expiry = reminderExpiresOn(reminder);
-  const suffix = expiry ? ` expires on ${expiry}` : ' has an expiry reminder';
-  return `${reminder.quantity} ${reminder.unit}${suffix}.`;
+  return reminderBodyText(reminder);
 }
 
 export function reminderUrgency(reminder: Reminder): string {
-  const days = reminderDaysUntilExpiry(reminder);
-  switch (reminder.urgency) {
-    case 'expired': {
-      if (days === -1) {
-        return 'Expired yesterday';
-      }
-      const count = days == null ? 0 : Math.abs(days);
-      return count > 1 ? `Expired ${count} days ago` : 'Expired';
-    }
-    case 'expires_today':
-      return 'Expires today';
-    case 'expires_tomorrow':
-      return 'Expires tomorrow';
-    case 'expires_future':
-      return days == null ? 'Expires soon' : `Expires in ${days} days`;
-    default:
-      return 'Expiry date unavailable';
-  }
+  return reminderUrgencyText(reminder);
 }
 
 function reminderDaysUntilExpiry(reminder: Reminder): number | null {
   return reminder.days_until_expiry ?? null;
-}
-
-function reminderProductName(reminder: Reminder): string {
-  return reminder.product_name;
-}
-
-function reminderLocationName(reminder: Reminder): string {
-  return reminder.location_name;
 }
 
 function compareNumbers(a: number | null, b: number | null): number {
@@ -145,27 +126,11 @@ function compareNumbers(a: number | null, b: number | null): number {
 }
 
 export function formatReminderDate(value: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) {
-    return value;
-  }
-  const [, year, month, day] = match;
-  const parsed = new Date(Number(year), Number(month) - 1, Number(day));
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(parsed);
+  return formatReminderDateText(value);
 }
 
 export function formatReminderDateTime(value: string): string {
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) {
-    return value;
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  }).format(new Date(parsed));
+  return formatReminderDateTimeText(value);
 }
 
 export function startReminderAction(
