@@ -121,7 +121,7 @@ extension AppStateAPI {
 }
 
 struct AppStateNotifications {
-  var currentAuthorization: @MainActor @Sendable () async -> PushAuthorizationStatus
+  var currentAuthorization: @Sendable () async -> PushAuthorizationStatus
   var requestAuthorization: @MainActor @Sendable () async throws -> Bool
   var registerForRemoteNotifications: @MainActor @Sendable () -> Void
 
