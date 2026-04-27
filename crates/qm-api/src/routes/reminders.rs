@@ -291,8 +291,14 @@ pub async fn ack(
     Path(id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    let found =
-        qm_db::reminders::ack(&state.db, household_id, id, &qm_db::now_utc_rfc3339()).await?;
+    let found = qm_db::reminders::dismiss_for_device(
+        &state.db,
+        household_id,
+        current.session_id,
+        id,
+        &qm_db::now_utc_rfc3339(),
+    )
+    .await?;
     if found {
         Ok(StatusCode::NO_CONTENT)
     } else {

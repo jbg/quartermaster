@@ -183,7 +183,8 @@ pub async fn list_due(
                  INNER JOIN location l ON l.id = r.location_id \
                  LEFT JOIN reminder_device_state s \
                    ON s.reminder_id = r.id AND s.device_id = ? \
-                 WHERE r.household_id = ? AND r.acked_at IS NULL AND r.fire_at <= ? ",
+                 WHERE r.household_id = ? AND r.acked_at IS NULL AND r.fire_at <= ? \
+                   AND s.dismissed_at IS NULL ",
             ),
             Some(device.id.to_string()),
         )
@@ -272,9 +273,10 @@ pub async fn mark_presented(
     if !pending_exists(db, household_id, id).await? {
         return Ok(false);
     }
-    if let Some(device) = devices::find_latest_for_session(db, session_id).await? {
-        upsert_device_state_seen(db, id, device.id, Some(presented_at), None).await?;
-    }
+    let Some(device) = devices::find_latest_for_session(db, session_id).await? else {
+        return Ok(false);
+    };
+    upsert_device_state_seen(db, id, device.id, Some(presented_at), None).await?;
     Ok(true)
 }
 
@@ -288,39 +290,28 @@ pub async fn mark_opened(
     if !pending_exists(db, household_id, id).await? {
         return Ok(false);
     }
-    if let Some(device) = devices::find_latest_for_session(db, session_id).await? {
-        upsert_device_state_seen(db, id, device.id, Some(opened_at), Some(opened_at)).await?;
-    }
+    let Some(device) = devices::find_latest_for_session(db, session_id).await? else {
+        return Ok(false);
+    };
+    upsert_device_state_seen(db, id, device.id, Some(opened_at), Some(opened_at)).await?;
     Ok(true)
 }
 
-pub async fn ack(
+pub async fn dismiss_for_device(
     db: &Database,
     household_id: Uuid,
+    session_id: Uuid,
     id: Uuid,
-    acked_at: &str,
+    dismissed_at: &str,
 ) -> Result<bool, sqlx::Error> {
-    let updated = sqlx::query(
-        "UPDATE stock_reminder SET acked_at = ? \
-         WHERE id = ? AND household_id = ? AND acked_at IS NULL",
-    )
-    .bind(acked_at)
-    .bind(id.to_string())
-    .bind(household_id.to_string())
-    .execute(&db.pool)
-    .await?
-    .rows_affected();
-
-    if updated > 0 {
-        return Ok(true);
+    if !pending_exists(db, household_id, id).await? {
+        return Ok(false);
     }
-
-    let exists = sqlx::query("SELECT 1 AS x FROM stock_reminder WHERE id = ? AND household_id = ?")
-        .bind(id.to_string())
-        .bind(household_id.to_string())
-        .fetch_optional(&db.pool)
-        .await?;
-    Ok(exists.is_some())
+    let Some(device) = devices::find_latest_for_session(db, session_id).await? else {
+        return Ok(false);
+    };
+    upsert_device_state_dismissed(db, id, device.id, dismissed_at).await?;
+    Ok(true)
 }
 
 pub async fn ack_pending_for_products(
@@ -964,6 +955,62 @@ async fn upsert_device_state_seen(
             .bind(presented_at)
             .bind(opened_at)
             .bind(&now)
+            .bind(reminder_id.to_string())
+            .bind(device_id.to_string())
+            .execute(&db.pool)
+            .await?;
+            Ok(())
+        }
+        Err(err) => Err(err),
+    }
+}
+
+async fn upsert_device_state_dismissed(
+    db: &Database,
+    reminder_id: Uuid,
+    device_id: Uuid,
+    dismissed_at: &str,
+) -> Result<(), sqlx::Error> {
+    let updated = sqlx::query(
+        "UPDATE reminder_device_state \
+         SET dismissed_at = COALESCE(dismissed_at, ?), updated_at = ? \
+         WHERE reminder_id = ? AND device_id = ?",
+    )
+    .bind(dismissed_at)
+    .bind(dismissed_at)
+    .bind(reminder_id.to_string())
+    .bind(device_id.to_string())
+    .execute(&db.pool)
+    .await?
+    .rows_affected();
+    if updated > 0 {
+        return Ok(());
+    }
+
+    let inserted = sqlx::query(
+        "INSERT INTO reminder_device_state \
+         (reminder_id, device_id, first_push_attempted_at, last_push_attempted_at, last_push_status, \
+          last_push_token, next_retry_at, last_error_code, last_error_message, first_presented_at, \
+          opened_at, dismissed_at, created_at, updated_at) \
+         VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, ?)",
+    )
+    .bind(reminder_id.to_string())
+    .bind(device_id.to_string())
+    .bind(dismissed_at)
+    .bind(dismissed_at)
+    .bind(dismissed_at)
+    .execute(&db.pool)
+    .await;
+    match inserted {
+        Ok(_) => Ok(()),
+        Err(err) if is_unique_constraint_error(&err) => {
+            sqlx::query(
+                "UPDATE reminder_device_state \
+                 SET dismissed_at = COALESCE(dismissed_at, ?), updated_at = ? \
+                 WHERE reminder_id = ? AND device_id = ?",
+            )
+            .bind(dismissed_at)
+            .bind(dismissed_at)
             .bind(reminder_id.to_string())
             .bind(device_id.to_string())
             .execute(&db.pool)
