@@ -6,7 +6,17 @@ import UserNotifications
 struct QuartermasterApp: App {
   @Environment(\.scenePhase) private var scenePhase
   @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-  @State private var appState = AppState()
+  @State private var appState: AppState
+
+  init() {
+    #if DEBUG
+      if let fixture = AppState.uiTestFixtureIfRequested() {
+        _appState = State(initialValue: fixture)
+        return
+      }
+    #endif
+    _appState = State(initialValue: AppState())
+  }
 
   var body: some Scene {
     WindowGroup {
