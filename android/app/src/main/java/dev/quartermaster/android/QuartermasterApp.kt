@@ -6,16 +6,18 @@ import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.QrCodeScanner
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,22 +67,32 @@ fun QuartermasterApp(appState: QuartermasterAppState) {
         }
     }
 
-    MaterialTheme {
+    QuartermasterTheme {
         Scaffold(
             modifier = Modifier.semantics { testTagsAsResourceId = true },
+            containerColor = MaterialTheme.colorScheme.background,
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
             topBar = {
-                TopAppBar(title = { Text("Quartermaster") })
+                TopAppBar(
+                    title = { Text("Quartermaster") },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background,
+                        titleContentColor = QuartermasterColors.Green900,
+                    ),
+                )
             },
             bottomBar = {
                 if (appState.phase is AppPhase.Authenticated && appState.currentHouseholdId != null) {
-                    NavigationBar {
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        tonalElevation = NavigationBarDefaults.Elevation,
+                    ) {
                         listOf(
                             MainTab.Inventory to Pair("Inventory", Icons.Outlined.Inventory2),
                             MainTab.Products to Pair("Products", Icons.Outlined.Category),
                             MainTab.Reminders to Pair("Reminders", Icons.Outlined.Notifications),
                             MainTab.Scan to Pair("Scan", Icons.Outlined.QrCodeScanner),
-                            MainTab.Settings to Pair("Settings", Icons.Outlined.Settings),
+                            MainTab.Settings to Pair("Settings", Icons.Outlined.Tune),
                         ).forEach { (tab, labelIcon) ->
                             NavigationBarItem(
                                 modifier = Modifier.testTag(

@@ -280,7 +280,7 @@ extension StockEventType {
   var displayLabel: String {
     switch self {
     case .add: "Added"
-    case .consume: "Consumed"
+    case .consume: "Used"
     case .adjust: "Adjusted"
     case .discard: "Discarded"
     case .restore: "Restored"

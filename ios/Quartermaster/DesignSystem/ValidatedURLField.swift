@@ -21,7 +21,7 @@ struct ValidatedURLField: View {
       if !isValid {
         Text("Must start with http:// or https://")
           .font(.caption)
-          .foregroundStyle(.red)
+          .foregroundStyle(Color.quartermasterError)
       }
     }
   }

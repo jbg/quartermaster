@@ -21,7 +21,7 @@ export const reminderMessages = {
   expiryDateLabel: 'Expiry date',
   householdTimeLabel: 'Household time',
   openAction: 'Open',
-  ackAction: 'Ack',
+  ackAction: 'Acknowledge',
   openingAction: 'Opening...',
   acknowledgingAction: 'Acknowledging...',
   openingStatus: 'Opening reminder...',

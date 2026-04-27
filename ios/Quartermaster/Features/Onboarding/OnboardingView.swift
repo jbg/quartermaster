@@ -62,7 +62,7 @@ struct OnboardingView: View {
         if let message = appState.lastError {
           Section {
             Text(message)
-              .foregroundStyle(.red)
+              .foregroundStyle(Color.quartermasterError)
           }
         }
 
@@ -105,14 +105,14 @@ struct OnboardingView: View {
 
   private var brandHeader: some View {
     HStack(spacing: 12) {
-      Image(systemName: "fork.knife.circle.fill")
+      Image(systemName: "shippingbox.circle.fill")
         .font(.system(size: 36))
-        .foregroundStyle(.tint)
+        .foregroundStyle(QuartermasterBrand.green800)
       VStack(alignment: .leading, spacing: 2) {
         Text("Quartermaster")
           .font(.title2.weight(.semibold))
           .foregroundStyle(.primary)
-        Text("Know what's in your kitchen.")
+        Text("Kitchen inventory, kept in order.")
           .font(.footnote)
           .foregroundStyle(.secondary)
       }

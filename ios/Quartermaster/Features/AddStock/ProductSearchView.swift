@@ -148,7 +148,7 @@ struct ProductListRow: View {
           }
           if product.isDeleted {
             Text("· Deleted")
-              .foregroundStyle(.red)
+              .foregroundStyle(Color.quartermasterError)
           }
         }
         .font(.caption)

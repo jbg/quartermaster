@@ -228,7 +228,7 @@ private fun LocationInventoryCard(
                 style = MaterialTheme.typography.bodySmall,
             )
             if (batches.isEmpty()) {
-                Text("Nothing here yet.", style = MaterialTheme.typography.bodyMedium)
+                Text("No stock recorded.", style = MaterialTheme.typography.bodyMedium)
             } else {
                 batches.forEach { batch ->
                     val batchId = batch.id.toString()
@@ -412,7 +412,7 @@ private fun BatchDetailCard(
                 OutlinedTextField(
                     value = consumeQuantity,
                     onValueChange = { consumeQuantity = it },
-                    label = { Text("Consume quantity (${batch.unit})") },
+                    label = { Text("Use quantity (${batch.unit})") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier
                         .testTag(SmokeTag.batchConsumeField(batchId))
@@ -424,7 +424,7 @@ private fun BatchDetailCard(
                     enabled = consumeDisabledReason == null && action == null,
                     modifier = Modifier.testTag(SmokeTag.batchConsumeButton(batchId)),
                 ) {
-                    Text(if (action == StockAction.Consume) "Consuming..." else "Consume")
+                    Text(if (action == StockAction.Consume) "Using..." else "Use stock")
                 }
                 TextButton(
                     onClick = onDiscard,

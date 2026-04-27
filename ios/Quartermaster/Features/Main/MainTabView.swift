@@ -8,7 +8,7 @@ struct MainTabView: View {
 
   var body: some View {
     TabView(selection: $selection) {
-      Tab("Inventory", systemImage: "basket", value: Screen.inventory) {
+      Tab("Inventory", systemImage: "shippingbox", value: Screen.inventory) {
         NavigationStack { InventoryView() }
       }
       .accessibilityIdentifier("tab.inventory")
@@ -21,7 +21,7 @@ struct MainTabView: View {
         NavigationStack { ScanScreen() }
       }
 
-      Tab("Settings", systemImage: "gear", value: Screen.settings) {
+      Tab("Settings", systemImage: "slider.horizontal.3", value: Screen.settings) {
         NavigationStack { SettingsView() }
       }
     }

@@ -52,7 +52,7 @@ struct ManualProductForm: View {
         }
         if let msg = errorMessage {
           Section {
-            Text(msg).foregroundStyle(.red)
+            Text(msg).foregroundStyle(Color.quartermasterError)
           }
         }
         Section {

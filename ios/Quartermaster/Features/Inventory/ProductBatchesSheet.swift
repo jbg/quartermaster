@@ -42,7 +42,7 @@ struct ProductBatchesSheet: View {
                   } label: {
                     Label("Edit", systemImage: "pencil")
                   }
-                  .tint(.blue)
+                  .tint(QuartermasterBrand.blueprint)
                 }
               }
               .contentShape(Rectangle())
@@ -55,7 +55,7 @@ struct ProductBatchesSheet: View {
               }
               .listRowBackground(
                 flashingBatchID == batch.id
-                  ? Color.accentColor.opacity(0.18)
+                  ? QuartermasterBrand.sage100
                   : Color.clear,
               )
               .animation(.easeOut(duration: 0.4), value: flashingBatchID)
@@ -65,7 +65,7 @@ struct ProductBatchesSheet: View {
             Button {
               consumeTarget = batches.first(where: { !isDepleted($0) })
             } label: {
-              Label("Consume", systemImage: "fork.knife")
+              Label("Use stock", systemImage: "minus.circle")
             }
             .accessibilityIdentifier("batch.consume")
             .disabled(!batches.contains(where: { !isDepleted($0) }))
@@ -316,7 +316,7 @@ private struct EditBatchForm: View {
           TextField("Optional", text: $note, axis: .vertical)
         }
         if let msg = errorMessage {
-          Section { Text(msg).foregroundStyle(.red) }
+          Section { Text(msg).foregroundStyle(Color.quartermasterError) }
         }
       }
       .navigationTitle("Edit batch")
@@ -424,10 +424,10 @@ private struct ConsumeForm: View {
             .foregroundStyle(.secondary)
         }
         if let msg = errorMessage {
-          Section { Text(msg).foregroundStyle(.red) }
+          Section { Text(msg).foregroundStyle(Color.quartermasterError) }
         }
       }
-      .navigationTitle("Consume \(product.name)")
+      .navigationTitle("Use \(product.name)")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
@@ -437,13 +437,13 @@ private struct ConsumeForm: View {
           Button {
             Task { await submit() }
           } label: {
-            if isSubmitting { ProgressView() } else { Text("Consume").fontWeight(.semibold) }
+            if isSubmitting { ProgressView() } else { Text("Use").fontWeight(.semibold) }
           }
           .disabled(!canSubmit || isSubmitting)
         }
       }
       .alert(
-        "Consumed",
+        "Stock used",
         isPresented: Binding(
           get: { successMessage != nil },
           set: { if !$0 { successMessage = nil } }
@@ -494,9 +494,9 @@ private struct ConsumeForm: View {
     let totalLabel = "\(Self.format(total)) \(unitCode)"
     let count = response.consumed.count
     if count <= 1 {
-      return "Consumed \(totalLabel)."
+      return "Used \(totalLabel)."
     }
-    return "Consumed \(totalLabel) across \(count) batches."
+    return "Used \(totalLabel) across \(count) batches."
   }
 
   private static func format(_ d: Decimal) -> String {
