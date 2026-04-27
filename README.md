@@ -8,12 +8,12 @@ There is no hosted Quartermaster service today. To use it, you run your own Quar
 
 ## Status
 
-Quartermaster is pre-1.0 and still changing, but it is far enough along for adventurous self-hosters to try with real household data.
+Quartermaster is usable today for adventurous self-hosters and is still evolving quickly. Expect occasional breaking changes between releases and read [CHANGELOG.md](CHANGELOG.md) before upgrading a running household.
 
 - **Server:** Rust API, SQLite by default, optional Postgres, Docker image support, local accounts, invite-based household sharing, barcode lookup, stock history, reminders, push-worker support, and optional Prometheus metrics.
 - **iOS:** Native SwiftUI client is the primary client. It supports onboarding, sign-in, household switching, inventory, stock creation/editing/consumption, barcode scanning on physical devices, history, settings, invite links, and reminders.
 - **Android:** Native Jetpack Compose client exists and can connect to self-hosted servers. It supports the core account, inventory, reminder, and invite flows, with push configuration available for self-hosters who provide Firebase details.
-- **Web:** A SvelteKit web shell is included and can be served by the API process. It is useful for basic self-hosted access and smoke testing, but the mobile apps are the main experience.
+- **Web:** A SvelteKit web client is included and can be served by the API process. It supports core inventory, location, product, barcode, history, invite, settings, and reminder flows. The native mobile apps remain the most complete experience.
 
 Quartermaster is intentionally narrow: it is inventory software, not recipe planning, grocery automation, or a general household task app.
 
@@ -80,50 +80,50 @@ Users can belong to multiple households. Each signed-in session keeps its own se
 
 Common settings:
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `QM_BIND` | `0.0.0.0:8080` | Server bind address |
-| `QM_DATABASE_URL` | `sqlite://data.db?mode=rwc` | SQLite or Postgres connection string |
-| `QM_LOG_FORMAT` | `text` | `text` or `json` logs |
-| `QM_REGISTRATION_MODE` | `first_run_only` | `first_run_only`, `invite_only`, or `open` |
-| `QM_PUBLIC_BASE_URL` | unset | Public HTTPS origin for invite/share links |
-| `QM_WEB_DIST_DIR` | `web/build` | Built web shell directory served by the API process |
-| `RUST_LOG` | `info` | Tracing filter |
+| Variable               | Default                     | Meaning                                             |
+| ---------------------- | --------------------------- | --------------------------------------------------- |
+| `QM_BIND`              | `0.0.0.0:8080`              | Server bind address                                 |
+| `QM_DATABASE_URL`      | `sqlite://data.db?mode=rwc` | SQLite or Postgres connection string                |
+| `QM_LOG_FORMAT`        | `text`                      | `text` or `json` logs                               |
+| `QM_REGISTRATION_MODE` | `first_run_only`            | `first_run_only`, `invite_only`, or `open`          |
+| `QM_PUBLIC_BASE_URL`   | unset                       | Public HTTPS origin for invite/share links          |
+| `QM_WEB_DIST_DIR`      | `web/build`                 | Built web shell directory served by the API process |
+| `RUST_LOG`             | `info`                      | Tracing filter                                      |
 
 Rate limiting and reverse proxies:
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `QM_RATE_LIMIT_CLIENT_IP_MODE` | `socket` | Use `socket` directly, or `x-forwarded-for` behind a trusted reverse proxy |
-| `QM_RATE_LIMIT_TRUSTED_PROXY_CIDRS` | unset | Comma-separated trusted proxy CIDRs allowed to supply `X-Forwarded-For` |
-| `QM_RATE_LIMIT_AUTH_PER_MINUTE` | `10` | Per-client auth refill rate |
-| `QM_RATE_LIMIT_AUTH_BURST` | `5` | Per-client auth burst |
-| `QM_RATE_LIMIT_BARCODE_PER_MINUTE` | `60` | Per-client barcode lookup refill rate |
-| `QM_RATE_LIMIT_BARCODE_BURST` | `20` | Per-client barcode lookup burst |
-| `QM_RATE_LIMIT_HISTORY_PER_MINUTE` | `120` | Per-client history refill rate |
-| `QM_RATE_LIMIT_HISTORY_BURST` | `40` | Per-client history burst |
+| Variable                            | Default  | Meaning                                                                    |
+| ----------------------------------- | -------- | -------------------------------------------------------------------------- |
+| `QM_RATE_LIMIT_CLIENT_IP_MODE`      | `socket` | Use `socket` directly, or `x-forwarded-for` behind a trusted reverse proxy |
+| `QM_RATE_LIMIT_TRUSTED_PROXY_CIDRS` | unset    | Comma-separated trusted proxy CIDRs allowed to supply `X-Forwarded-For`    |
+| `QM_RATE_LIMIT_AUTH_PER_MINUTE`     | `10`     | Per-client auth refill rate                                                |
+| `QM_RATE_LIMIT_AUTH_BURST`          | `5`      | Per-client auth burst                                                      |
+| `QM_RATE_LIMIT_BARCODE_PER_MINUTE`  | `60`     | Per-client barcode lookup refill rate                                      |
+| `QM_RATE_LIMIT_BARCODE_BURST`       | `20`     | Per-client barcode lookup burst                                            |
+| `QM_RATE_LIMIT_HISTORY_PER_MINUTE`  | `120`    | Per-client history refill rate                                             |
+| `QM_RATE_LIMIT_HISTORY_BURST`       | `40`     | Per-client history burst                                                   |
 
 Barcode lookup tuning:
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `QM_OFF_API_BASE_URL` | `https://world.openfoodfacts.org/api/v2/product` | Barcode product API base URL |
-| `QM_OFF_TIMEOUT_SECONDS` | `5` | Timeout for one barcode lookup request |
-| `QM_OFF_MAX_RETRIES` | `2` | Retry count for transient lookup failures |
-| `QM_OFF_RETRY_BASE_DELAY_MS` | `200` | Base retry backoff |
-| `QM_OFF_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `5` | Consecutive transient failures before fail-fast mode |
-| `QM_OFF_CIRCUIT_BREAKER_OPEN_SECONDS` | `60` | Fail-fast duration |
+| Variable                                   | Default                                          | Meaning                                              |
+| ------------------------------------------ | ------------------------------------------------ | ---------------------------------------------------- |
+| `QM_OFF_API_BASE_URL`                      | `https://world.openfoodfacts.org/api/v2/product` | Barcode product API base URL                         |
+| `QM_OFF_TIMEOUT_SECONDS`                   | `5`                                              | Timeout for one barcode lookup request               |
+| `QM_OFF_MAX_RETRIES`                       | `2`                                              | Retry count for transient lookup failures            |
+| `QM_OFF_RETRY_BASE_DELAY_MS`               | `200`                                            | Base retry backoff                                   |
+| `QM_OFF_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `5`                                              | Consecutive transient failures before fail-fast mode |
+| `QM_OFF_CIRCUIT_BREAKER_OPEN_SECONDS`      | `60`                                             | Fail-fast duration                                   |
 
 Reminder settings:
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `QM_EXPIRY_REMINDERS_ENABLED` | `false` | Enables backend expiry reminder generation |
-| `QM_EXPIRY_REMINDER_LEAD_DAYS` | `1` | Days before expiry when reminders fire |
-| `QM_EXPIRY_REMINDER_FIRE_HOUR` | `9` | Household-local reminder hour |
-| `QM_EXPIRY_REMINDER_FIRE_MINUTE` | `0` | Household-local reminder minute |
-| `QM_EXPIRY_REMINDER_SWEEP_INTERVAL_SECONDS` | `0` | In-process reminder reconciliation interval; `0` disables it |
-| `QM_EXPIRY_REMINDER_TRIGGER_SECRET` | unset | Enables the internal manual reminder sweep endpoint |
+| Variable                                    | Default | Meaning                                                      |
+| ------------------------------------------- | ------- | ------------------------------------------------------------ |
+| `QM_EXPIRY_REMINDERS_ENABLED`               | `false` | Enables backend expiry reminder generation                   |
+| `QM_EXPIRY_REMINDER_LEAD_DAYS`              | `1`     | Days before expiry when reminders fire                       |
+| `QM_EXPIRY_REMINDER_FIRE_HOUR`              | `9`     | Household-local reminder hour                                |
+| `QM_EXPIRY_REMINDER_FIRE_MINUTE`            | `0`     | Household-local reminder minute                              |
+| `QM_EXPIRY_REMINDER_SWEEP_INTERVAL_SECONDS` | `0`     | In-process reminder reconciliation interval; `0` disables it |
+| `QM_EXPIRY_REMINDER_TRIGGER_SECRET`         | unset   | Enables the internal manual reminder sweep endpoint          |
 
 Household expiry dates are calendar dates in the household timezone. Reminder fire times are computed in that same household-local timezone and stored as UTC instants.
 
@@ -145,20 +145,20 @@ cargo run -p qm-server -- push-worker
 
 Push-related settings:
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `QM_PUSH_WORKER_ENABLED` | `false` | Run the push worker inside the API process |
-| `QM_PUSH_WORKER_POLL_INTERVAL_SECONDS` | `30` | Worker polling interval |
-| `QM_PUSH_WORKER_BATCH_SIZE` | `25` | Max deliveries claimed per cycle |
-| `QM_PUSH_WORKER_CLAIM_TTL_SECONDS` | `60` | Claim timeout before retry |
-| `QM_PUSH_WORKER_RETRY_BACKOFF_SECONDS` | `300` | Retry delay after retryable failures |
-| `QM_APNS_ENABLED` | `false` | Enable iOS APNs delivery |
-| `QM_APNS_ENVIRONMENT` | `sandbox` | `sandbox` or `production` |
-| `QM_APNS_TOPIC` | unset | APNs topic / bundle identifier |
-| `QM_APNS_AUTH_TOKEN` | unset | APNs bearer token |
-| `QM_FCM_ENABLED` | `false` | Enable Android FCM delivery |
-| `QM_FCM_PROJECT_ID` | unset | Firebase project ID |
-| `QM_FCM_SERVICE_ACCOUNT_JSON_PATH` | unset | Firebase service-account JSON path |
+| Variable                               | Default   | Meaning                                    |
+| -------------------------------------- | --------- | ------------------------------------------ |
+| `QM_PUSH_WORKER_ENABLED`               | `false`   | Run the push worker inside the API process |
+| `QM_PUSH_WORKER_POLL_INTERVAL_SECONDS` | `30`      | Worker polling interval                    |
+| `QM_PUSH_WORKER_BATCH_SIZE`            | `25`      | Max deliveries claimed per cycle           |
+| `QM_PUSH_WORKER_CLAIM_TTL_SECONDS`     | `60`      | Claim timeout before retry                 |
+| `QM_PUSH_WORKER_RETRY_BACKOFF_SECONDS` | `300`     | Retry delay after retryable failures       |
+| `QM_APNS_ENABLED`                      | `false`   | Enable iOS APNs delivery                   |
+| `QM_APNS_ENVIRONMENT`                  | `sandbox` | `sandbox` or `production`                  |
+| `QM_APNS_TOPIC`                        | unset     | APNs topic / bundle identifier             |
+| `QM_APNS_AUTH_TOKEN`                   | unset     | APNs bearer token                          |
+| `QM_FCM_ENABLED`                       | `false`   | Enable Android FCM delivery                |
+| `QM_FCM_PROJECT_ID`                    | unset     | Firebase project ID                        |
+| `QM_FCM_SERVICE_ACCOUNT_JSON_PATH`     | unset     | Firebase service-account JSON path         |
 
 For a fuller reminder deployment walkthrough, see [docs/hosted-reminders.md](docs/hosted-reminders.md).
 
@@ -166,13 +166,13 @@ For a fuller reminder deployment walkthrough, see [docs/hosted-reminders.md](doc
 
 Quartermaster exposes a small set of internal maintenance hooks when you configure shared secrets. These routes are not part of the public API contract.
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `QM_AUTH_SESSION_SWEEP_INTERVAL_SECONDS` | `0` | Periodic stale-session sweep interval; `0` disables it |
-| `QM_AUTH_SESSION_SWEEP_TRIGGER_SECRET` | unset | Enables manual auth-session sweeping |
-| `QM_METRICS_ENABLED` | `false` | Enables internal Prometheus metrics |
-| `QM_METRICS_BIND` | `127.0.0.1:9091` | Dedicated metrics/health bind for split worker mode |
-| `QM_METRICS_TRIGGER_SECRET` | unset | Required token for `GET /internal/metrics` |
+| Variable                                 | Default          | Meaning                                                |
+| ---------------------------------------- | ---------------- | ------------------------------------------------------ |
+| `QM_AUTH_SESSION_SWEEP_INTERVAL_SECONDS` | `0`              | Periodic stale-session sweep interval; `0` disables it |
+| `QM_AUTH_SESSION_SWEEP_TRIGGER_SECRET`   | unset            | Enables manual auth-session sweeping                   |
+| `QM_METRICS_ENABLED`                     | `false`          | Enables internal Prometheus metrics                    |
+| `QM_METRICS_BIND`                        | `127.0.0.1:9091` | Dedicated metrics/health bind for split worker mode    |
+| `QM_METRICS_TRIGGER_SECRET`              | unset            | Required token for `GET /internal/metrics`             |
 
 When metrics are enabled, callers must supply `X-QM-Maintenance-Token`.
 
@@ -182,9 +182,9 @@ If `QM_PUBLIC_BASE_URL` is set, it must be an `https://` origin with no path, qu
 
 For iOS Universal Links, configure:
 
-| Variable | Meaning |
-| --- | --- |
-| `QM_IOS_TEAM_ID` | Apple Team ID used in the AASA payload |
+| Variable           | Meaning                                        |
+| ------------------ | ---------------------------------------------- |
+| `QM_IOS_TEAM_ID`   | Apple Team ID used in the AASA payload         |
 | `QM_IOS_BUNDLE_ID` | iOS bundle identifier used in the AASA payload |
 
 The iOS app build also needs a matching associated-domain entitlement. Without that setup, invite links still work through the browser fallback and manual invite entry.

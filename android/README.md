@@ -84,7 +84,7 @@ The Android app uses the repo-root `openapi.json` as its single API source of tr
      -d "http://10.0.2.2:8080/join?invite=CODE&server=http%3A%2F%2F10.0.2.2%3A8080"
    ```
 
-   For repeatable UI smoke testing, prefer the UIAutomator driver over manual taps. It finds controls from the accessibility tree by text/label and taps their actual bounds:
+   For repeatable UI smoke testing, prefer the UIAutomator driver over manual taps. It finds critical controls from stable Compose test tags and falls back to accessible text/labels where appropriate:
 
    ```sh
    QM_ANDROID_SMOKE_MAINTENANCE_TOKEN=... \
@@ -133,6 +133,12 @@ gradle assembleDebug
 ```
 
 The emulator smoke path is also host-only because it depends on `adb`, a running emulator, and host backend access outside the sandbox.
+
+On some Homebrew command-line-tools emulator setups, `gradle installDebug` may fail while selecting the device ABI/API level. In that case, use `gradle assembleDebug` and install the APK directly:
+
+```sh
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
 
 ## Generated client
 
