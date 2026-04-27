@@ -188,9 +188,9 @@ set -- \
 	DEVELOPMENT_TEAM="$team" \
 	PRODUCT_BUNDLE_IDENTIFIER="$bundle_id" \
 	QUARTERMASTER_ASSOCIATED_DOMAIN="$associated_domain" \
-	CODE_SIGN_STYLE=Manual \
-	CODE_SIGN_IDENTITY="$signing_certificate" \
-	PROVISIONING_PROFILE_SPECIFIER="$profile"
+	"CODE_SIGN_STYLE[sdk=iphoneos*]=Manual" \
+	"CODE_SIGN_IDENTITY[sdk=iphoneos*]=$signing_certificate" \
+	"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]=$profile"
 
 if [ -n "$version" ]; then
 	set -- "$@" MARKETING_VERSION="$version"
