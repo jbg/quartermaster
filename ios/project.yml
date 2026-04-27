@@ -57,6 +57,8 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_CFBundleIconName: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: Quartermaster
         INFOPLIST_KEY_CFBundleURLTypes: '[{"CFBundleURLName":"$(PRODUCT_BUNDLE_IDENTIFIER)","CFBundleURLSchemes":["quartermaster"]}]'
         INFOPLIST_KEY_NSCameraUsageDescription: "Quartermaster scans barcodes to look up products when you add items to your inventory."
