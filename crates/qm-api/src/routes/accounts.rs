@@ -594,8 +594,13 @@ fn build_cookie(
     http_only: bool,
     max_age_seconds: Option<i64>,
 ) -> String {
+    let path = if name == auth::CSRF_COOKIE {
+        "/"
+    } else {
+        "/api/v1"
+    };
     let mut cookie = format!(
-        "{name}={value}; Path=/api/v1; SameSite={}",
+        "{name}={value}; Path={path}; SameSite={}",
         cookie_same_site(state)
     );
     if let Some(max_age_seconds) = max_age_seconds {

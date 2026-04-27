@@ -263,11 +263,11 @@ fn assert_cookie_names(headers: &HeaderMap) {
     assert!(cookies
         .iter()
         .filter(|value| value.starts_with("qm_access=") || value.starts_with("qm_refresh="))
-        .all(|value| value.contains("HttpOnly")));
+        .all(|value| value.contains("HttpOnly") && value.contains("Path=/api/v1")));
     assert!(cookies
         .iter()
         .find(|value| value.starts_with("qm_csrf="))
-        .is_some_and(|value| !value.contains("HttpOnly")));
+        .is_some_and(|value| !value.contains("HttpOnly") && value.contains("Path=/")));
 }
 
 fn cookie_header(headers: &HeaderMap) -> String {
