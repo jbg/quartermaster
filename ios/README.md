@@ -1,6 +1,6 @@
 # Quartermaster iOS
 
-SwiftUI app, iOS 26 target, Liquid Glass design language. Built concurrently with the backend.
+SwiftUI app, iOS 26 target, Liquid Glass design language.
 
 ## Generating the Xcode project
 
@@ -35,7 +35,7 @@ Simulator-backed `xcodebuild` runs are host-only checks. Run them from a normal 
 
 2. Build + run the **Quartermaster** scheme in Xcode on an iOS 26 simulator. The simulator reaches the Mac host at `http://localhost:8080`, which is what the app uses by default.
 
-3. First launch: the Onboarding screen appears with **Get started** selected. Enter a username + password, tap *Create household*, and the app should land on the Inventory tab with the three seeded locations (Pantry / Fridge / Freezer) showing empty states.
+3. First launch: the Onboarding screen appears with **Get started** selected. Enter a username + password, tap _Create household_, and the app should land on the Inventory tab with the three seeded locations (Pantry / Fridge / Freezer) showing empty states.
 
 If the server rejects registration (`registration_disabled`), the backend has already had a first user created — either delete `data.db` at the repo root and restart the backend, or switch Onboarding to **Sign in**.
 
@@ -69,11 +69,16 @@ Quartermaster/
 │   ├── Auth/          Keychain-backed TokenStore
 │   └── Networking/    APIClient (URLSession + bearer + refresh rotation), DTOs, errors
 ├── Features/
-│   ├── Onboarding/    Register / sign-in
+│   ├── AddStock/      Product search, manual product entry, and stock creation
+│   ├── History/       Stock event history and batch detail recovery actions
+│   ├── Households/    Shared household switching, redeem, and create surfaces
+│   ├── Inventory/     Grouped inventory, filters, batch edit/consume/discard/restore
 │   ├── Main/          TabView shell
-│   ├── Inventory/     List view that pulls /locations
-│   ├── Scan/          Placeholder — VisionKit integration comes in slice 2
-│   └── Settings/      Account info + sign out
+│   ├── Onboarding/    Register / sign-in
+│   ├── Products/      Product detail, edit, delete, and restore
+│   ├── Reminders/     Durable reminder inbox
+│   ├── Scan/          VisionKit barcode scanning on supported physical devices
+│   └── Settings/      Household settings, locations, members, invites, and sign out
 └── DesignSystem/      Shared visual primitives (grows with Liquid Glass work)
 ```
 

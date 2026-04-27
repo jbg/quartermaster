@@ -1,6 +1,6 @@
 # Contributing
 
-Quartermaster is pre-1.0 and the v1 scope is intentionally narrow. Please open an issue to discuss larger feature ideas before writing code.
+Quartermaster is usable for self-hosted households and still evolving quickly. Please open an issue to discuss larger feature ideas before writing code.
 
 Use small, focused pull requests and Conventional Commits:
 
