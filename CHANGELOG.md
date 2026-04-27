@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/jbg/quartermaster/compare/1.2.0...1.2.1) (2026-04-27)
+
+
+### Bug Fixes
+
+* pass downloaded iOS provisioning profile to archive ([8750940](https://github.com/jbg/quartermaster/commit/8750940ba0217f0b59e768dbe2be4071ac0aee29))
+
 ## [1.2.0](https://github.com/jbg/quartermaster/compare/1.1.1...1.2.0) (2026-04-27)
 
 
