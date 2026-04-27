@@ -78,6 +78,52 @@ QUARTERMASTER_IOS_BUNDLE_ID=com.yourname.Quartermaster \
 
 The shared build entry point is `ios/scripts/build-app.sh`. CI uses the same script in simulator build-only mode, while `install-device.sh` wraps it with physical-device install and launch steps.
 
+## TestFlight release setup
+
+Merging a Release Please PR creates a GitHub release and calls the release workflow. That workflow archives the iOS app, exports an App Store Connect IPA, and uploads it to TestFlight.
+
+Apple account prerequisites:
+
+- A paid Apple Developer Program team.
+- An explicit app ID for the release bundle id, with Push Notifications and Associated Domains enabled.
+- An App Store Connect app record for the same bundle id.
+- An Apple Distribution certificate exported as a password-protected `.p12`.
+- An App Store provisioning profile for the same bundle id.
+- An App Store Connect API key with access to TestFlight uploads and provisioning profile downloads.
+
+GitHub repository variables:
+
+```text
+APPSTORE_API_KEY_ID
+APPSTORE_ISSUER_ID
+QUARTERMASTER_IOS_DEVELOPMENT_TEAM
+QUARTERMASTER_IOS_BUNDLE_ID
+QUARTERMASTER_ASSOCIATED_DOMAIN
+```
+
+GitHub repository secrets:
+
+```text
+APPSTORE_API_PRIVATE_KEY
+APPSTORE_CERTIFICATES_FILE_BASE64
+APPSTORE_CERTIFICATES_PASSWORD
+```
+
+Create `APPSTORE_CERTIFICATES_FILE_BASE64` from the exported `.p12`:
+
+```sh
+base64 -i ios_distribution.p12 | pbcopy
+```
+
+The archive/export entry point is reusable locally:
+
+```sh
+QUARTERMASTER_IOS_DEVELOPMENT_TEAM=YOUR_TEAM_ID \
+QUARTERMASTER_IOS_BUNDLE_ID=com.yourname.Quartermaster \
+QUARTERMASTER_ASSOCIATED_DOMAIN=quartermaster.example.com \
+  sh ios/scripts/archive-app.sh --version 1.2.3 --build-number 123 --print-ipa-path
+```
+
 ## Universal-link setup
 
 Quartermaster keeps the custom `quartermaster://` scheme as a fallback, but iOS can also open invite links directly from HTTPS when the build has a matching Associated Domains entitlement.
