@@ -477,6 +477,34 @@ select {
   margin-top: 18px;
 }
 
+.inventory-group {
+  display: grid;
+  gap: 10px;
+}
+
+.inventory-group + .inventory-group {
+  margin-top: 14px;
+}
+
+.subsection-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #58645f;
+}
+
+.subsection-heading h3 {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.subsection-heading span {
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .stock-row,
 .reminder-row,
 .history-row {

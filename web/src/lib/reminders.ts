@@ -26,7 +26,7 @@ export async function loadReminders(
 ): Promise<ReminderState> {
   try {
     const response = await session.remindersList({ limit: 50 });
-    const items = response.items ?? [];
+    const items = sortReminders(response.items ?? []);
     await Promise.all(
       items
         .filter((reminder) => !reminderPresentedAt(reminder) && !existingActionIds.has(reminder.id))
@@ -74,6 +74,48 @@ export function reminderFireAt(reminder: Reminder): string {
 
 export function reminderExpiresOn(reminder: Reminder): string {
   return reminder.expires_on ?? reminder.expiresOn ?? '';
+}
+
+export function sortReminders(reminders: Reminder[]): Reminder[] {
+  return [...reminders].sort((a, b) => {
+    const expires = compareStrings(reminderExpiresOn(a), reminderExpiresOn(b));
+    if (expires !== 0) {
+      return expires;
+    }
+    const fireAt = compareStrings(reminderFireAt(a), reminderFireAt(b));
+    if (fireAt !== 0) {
+      return fireAt;
+    }
+    return a.id.localeCompare(b.id);
+  });
+}
+
+export function reminderUrgency(reminder: Reminder): string {
+  const expiresOn = reminderExpiresOn(reminder);
+  if (!expiresOn) {
+    return 'Expiry date unavailable';
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(expiresOn);
+  if (!match) {
+    return `Expires ${expiresOn}`;
+  }
+  const [, year, month, day] = match;
+  const expires = new Date(Number(year), Number(month) - 1, Number(day));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  expires.setHours(0, 0, 0, 0);
+  const days = Math.round((expires.getTime() - today.getTime()) / 86_400_000);
+  if (days < 0) {
+    const count = Math.abs(days);
+    return count === 1 ? 'Expired yesterday' : `Expired ${count} days ago`;
+  }
+  if (days === 0) {
+    return 'Expires today';
+  }
+  if (days === 1) {
+    return 'Expires tomorrow';
+  }
+  return `Expires in ${days} days`;
 }
 
 export function formatReminderDate(value: string): string {
@@ -133,7 +175,7 @@ export function optimisticAckRollback(
   const { [reminder.id]: _removed, ...actionKinds } = state.actionKinds;
   const items = state.items.some((item) => item.id === reminder.id)
     ? state.items
-    : [reminder, ...state.items];
+    : sortReminders([reminder, ...state.items]);
   return {
     ...state,
     items,
@@ -141,6 +183,19 @@ export function optimisticAckRollback(
     actionIds,
     actionKinds
   };
+}
+
+function compareStrings(a: string, b: string): number {
+  if (!a && !b) {
+    return 0;
+  }
+  if (!a) {
+    return 1;
+  }
+  if (!b) {
+    return -1;
+  }
+  return a.localeCompare(b);
 }
 
 export function actionDone(state: ReminderState, id: string): ReminderState {

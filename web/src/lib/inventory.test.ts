@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   buildStockUpdateRequest,
   canRestoreBatch,
+  groupInventory,
   isDepleted,
   loadInventory,
   productPreferredUnit,
   productSource,
   selectBatchAfterRefresh,
   stockEditFields,
+  stockDepletedAt,
   stockExpiry,
   stockLocation,
   stockName,
@@ -83,6 +85,20 @@ describe('inventory helpers', () => {
     expect(selectBatchAfterRefresh(items, 'batch-2')?.id).toBe('batch-2');
     expect(selectBatchAfterRefresh(items, 'missing')?.id).toBe('batch-1');
     expect(selectBatchAfterRefresh([], 'batch-2')).toBeNull();
+  });
+
+  it('partitions active and depleted inventory without reordering rows', () => {
+    const active = { id: 'batch-1', product: { name: 'Rice' } };
+    const depleted = {
+      id: 'batch-2',
+      product: { name: 'Beans' },
+      depletedAt: '2026-04-01T00:00:00Z'
+    };
+    const groups = groupInventory([depleted, active]);
+
+    expect(groups.active).toEqual([active]);
+    expect(groups.depleted).toEqual([depleted]);
+    expect(stockDepletedAt(depleted)).toBe('2026-04-01T00:00:00Z');
   });
 
   it('normalizes product display helpers and unit choices', () => {
