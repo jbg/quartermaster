@@ -22,6 +22,7 @@ find "$@" -name '*.mobileprovision' -print 2>/dev/null |
 		team="$(plutil -extract TeamIdentifier.0 raw -o - "$plist" 2>/dev/null || true)"
 		app_id="$(plutil -extract Entitlements.application-identifier raw -o - "$plist" 2>/dev/null || true)"
 		expires="$(plutil -extract ExpirationDate raw -o - "$plist" 2>/dev/null || true)"
+		provisioned_devices="$(plutil -extract ProvisionedDevices raw -o - "$plist" 2>/dev/null || true)"
 
 		rm -f "$plist"
 
@@ -31,7 +32,12 @@ find "$@" -name '*.mobileprovision' -print 2>/dev/null |
 		esac
 
 		if [ -n "$name" ] && [ -n "$team" ] && [ -n "$bundle_id" ]; then
-			printf 'name: %s\nteam: %s\nbundle_id: %s\nuuid: %s\nexpires: %s\n\n' \
-				"$name" "$team" "$bundle_id" "$uuid" "$expires"
+			if [ -n "$provisioned_devices" ]; then
+				distribution="development_or_ad_hoc"
+			else
+				distribution="app_store"
+			fi
+			printf 'name: %s\nteam: %s\nbundle_id: %s\ndistribution: %s\nuuid: %s\nexpires: %s\n\n' \
+				"$name" "$team" "$bundle_id" "$distribution" "$uuid" "$expires"
 		fi
 	done

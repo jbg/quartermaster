@@ -23,6 +23,7 @@ Options:
                                     for the bundle id.
   --associated-domain HOSTNAME      Associated domain for Release entitlements.
   --print-ipa-path                  Print the exported IPA path after success.
+  --ipa-path-file PATH              Write the exported IPA path to PATH.
   -h, --help                        Show this help.
 
 Environment equivalents:
@@ -51,6 +52,7 @@ bundle_id="${QUARTERMASTER_IOS_BUNDLE_ID:-}"
 profile="${QUARTERMASTER_IOS_PROFILE:-}"
 associated_domain="${QUARTERMASTER_ASSOCIATED_DOMAIN:-}"
 print_ipa_path=0
+ipa_path_file="${QM_IOS_IPA_PATH_FILE:-}"
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
@@ -94,6 +96,10 @@ while [ "$#" -gt 0 ]; do
 		print_ipa_path=1
 		shift
 		;;
+	--ipa-path-file)
+		ipa_path_file="${2:?--ipa-path-file requires a value}"
+		shift 2
+		;;
 	-h | --help)
 		usage
 		exit 0
@@ -130,16 +136,23 @@ if [ -z "$profile" ]; then
 					sub(/^ /, "")
 					name = $0
 				}
-				$1 == "bundle_id:" && $2 == bundle {
+				$1 == "bundle_id:" {
+					matches_bundle = ($2 == bundle)
+				}
+				$1 == "distribution:" && matches_bundle && $2 == "app_store" {
 					print name
 					exit
+				}
+				$0 == "" {
+					name = ""
+					matches_bundle = 0
 				}
 			'
 	)"
 fi
 
 if [ -z "$profile" ]; then
-	echo "error: no installed provisioning profile found for $bundle_id; pass --profile" >&2
+	echo "error: no installed App Store provisioning profile found for $bundle_id; pass --profile" >&2
 	exit 2
 fi
 
@@ -199,6 +212,11 @@ fi
 if [ -z "$ipa_path" ] || [ ! -f "$ipa_path" ]; then
 	echo "error: no IPA was exported to $export_path" >&2
 	exit 1
+fi
+
+if [ -n "$ipa_path_file" ]; then
+	mkdir -p "$(dirname "$ipa_path_file")"
+	printf '%s\n' "$ipa_path" >"$ipa_path_file"
 fi
 
 if [ "$print_ipa_path" -eq 1 ]; then
