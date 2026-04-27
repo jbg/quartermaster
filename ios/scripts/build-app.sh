@@ -16,8 +16,9 @@ Options:
   --associated-domain HOSTNAME      Override QUARTERMASTER_ASSOCIATED_DOMAIN.
   --team TEAM_ID                    Override DEVELOPMENT_TEAM.
   --bundle-id BUNDLE_ID             Override PRODUCT_BUNDLE_IDENTIFIER.
-  --profile PROFILE_NAME            Use a local provisioning profile by name.
-                                    Implies manual signing.
+  --profile PROFILE_NAME            Use a manually managed provisioning profile
+                                    by name. Do not use for "iOS Team
+                                    Provisioning Profile: ..." profiles.
   --action ACTION                   xcodebuild action. Default: build.
   --print-app-path                  Print the resulting .app path after a successful build.
   -h, --help                        Show this help.
@@ -138,6 +139,12 @@ if [ -n "$bundle_id" ]; then
 fi
 
 if [ -n "$profile" ]; then
+	case "$profile" in
+	"iOS Team Provisioning Profile:"*)
+		echo "error: --profile is only for manually managed profiles; omit it for Xcode-managed iOS Team Provisioning profiles" >&2
+		exit 2
+		;;
+	esac
 	set -- "$@" CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER="$profile"
 fi
 
