@@ -384,6 +384,7 @@ actor APIClient: AppStateAPI {
     locationID: String? = nil,
     productID: String? = nil,
     expiringBefore: String? = nil,
+    includeDepleted: Bool = false,
   ) async throws -> [StockBatch] {
     let response = try await client.stockList(
       .init(
@@ -391,6 +392,7 @@ actor APIClient: AppStateAPI {
           locationId: locationID,
           productId: productID,
           expiringBefore: expiringBefore,
+          includeDepleted: includeDepleted,
         ),
       ))
     switch response {

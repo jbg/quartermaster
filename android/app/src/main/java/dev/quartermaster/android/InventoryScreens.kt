@@ -149,6 +149,7 @@ internal fun InventoryScreen(
             LocationInventoryCard(
                 location = location,
                 batches = appState.batchesForLocation(location.id.toString(), target),
+                counts = appState.batchCountsForLocation(location.id.toString()),
                 target = target,
                 selectedBatchId = appState.selectedBatchId,
                 isBatchDepleted = appState::isBatchDepleted,
@@ -200,6 +201,7 @@ internal fun QuartermasterAppState.batchesForLocation(
 private fun LocationInventoryCard(
     location: LocationDto,
     batches: List<StockBatchDto>,
+    counts: BatchCounts,
     target: InventoryTarget?,
     selectedBatchId: String?,
     isBatchDepleted: (StockBatchDto) -> Boolean,
@@ -221,7 +223,7 @@ private fun LocationInventoryCard(
                 if (batches.isEmpty()) {
                     "No active or depleted batches in this location."
                 } else {
-                    "${batches.size} ${if (batches.size == 1) "batch" else "batches"}"
+                    "${counts.active} active · ${counts.depleted} depleted"
                 },
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -253,7 +255,7 @@ private fun LocationInventoryCard(
                             verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
                             Text(batch.product.name, style = MaterialTheme.typography.titleSmall)
-                            Text("${batch.quantity} ${batch.unit} · ${if (depleted) "depleted" else "available"}")
+                            Text("${batch.quantity} ${batch.unit} · ${if (depleted) "depleted history" else "available"}")
                             Text("Expires ${batch.expiresOn ?: "not set"}", style = MaterialTheme.typography.bodySmall)
                             batch.note?.takeIf(String::isNotBlank)?.let { Text(it) }
                             if (isTargetBatch) {
