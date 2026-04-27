@@ -647,6 +647,10 @@ export class QuartermasterSession {
   }
 
   private async registerBrowserDevice(): Promise<void> {
+    const registerDevice = this.transport.registerDevice;
+    if (!registerDevice) {
+      return;
+    }
     if (!this.session.browserDeviceId) {
       this.session = {
         ...this.session,
@@ -658,8 +662,8 @@ export class QuartermasterSession {
     if (!deviceId) {
       return;
     }
-    await this.transport
-      .registerDevice({
+    await registerDevice
+      .call(this.transport, {
         device_id: deviceId,
         platform: 'web',
         push_token: null,
