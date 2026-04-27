@@ -7,6 +7,8 @@ out="$root_dir/Config/ReleaseIdentity.generated.xcconfig"
 team="${QUARTERMASTER_IOS_DEVELOPMENT_TEAM:-}"
 bundle="${QUARTERMASTER_IOS_BUNDLE_ID:-}"
 domain="${QUARTERMASTER_ASSOCIATED_DOMAIN:-}"
+profile="${QUARTERMASTER_IOS_PROFILE:-}"
+signing_certificate="${QUARTERMASTER_IOS_SIGNING_CERTIFICATE:-Apple Distribution}"
 
 if [ -z "$team" ]; then
 	echo "error: QUARTERMASTER_IOS_DEVELOPMENT_TEAM must be set" >&2
@@ -51,5 +53,13 @@ DEVELOPMENT_TEAM = $team
 PRODUCT_BUNDLE_IDENTIFIER = $bundle
 QUARTERMASTER_ASSOCIATED_DOMAIN = $domain
 EOF
+
+if [ -n "$profile" ]; then
+	cat >>"$out" <<EOF
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = $signing_certificate
+PROVISIONING_PROFILE_SPECIFIER = $profile
+EOF
+fi
 
 echo "wrote $out"

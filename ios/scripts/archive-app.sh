@@ -171,6 +171,8 @@ fi
 
 QUARTERMASTER_IOS_DEVELOPMENT_TEAM="$team" \
 	QUARTERMASTER_IOS_BUNDLE_ID="$bundle_id" \
+	QUARTERMASTER_IOS_PROFILE="$profile" \
+	QUARTERMASTER_IOS_SIGNING_CERTIFICATE="$signing_certificate" \
 	QUARTERMASTER_ASSOCIATED_DOMAIN="$associated_domain" \
 	sh "$script_dir/generate-release-config.sh"
 
@@ -184,13 +186,7 @@ set -- \
 	-destination "generic/platform=iOS" \
 	-archivePath "$archive_path" \
 	-derivedDataPath "$derived_data_path" \
-	-skipPackagePluginValidation \
-	DEVELOPMENT_TEAM="$team" \
-	PRODUCT_BUNDLE_IDENTIFIER="$bundle_id" \
-	QUARTERMASTER_ASSOCIATED_DOMAIN="$associated_domain" \
-	"CODE_SIGN_STYLE[sdk=iphoneos*]=Manual" \
-	"CODE_SIGN_IDENTITY[sdk=iphoneos*]=$signing_certificate" \
-	"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]=$profile"
+	-skipPackagePluginValidation
 
 if [ -n "$version" ]; then
 	set -- "$@" MARKETING_VERSION="$version"
