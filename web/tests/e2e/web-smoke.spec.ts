@@ -227,21 +227,21 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
   await expect(page.getByTestId('detail-quantity')).toHaveText('490 g');
 
   await page.getByRole('button', { name: 'Discard' }).click();
-  await expect(page.getByText('Depleted')).toBeVisible();
+  await expect(page.getByTestId('detail-status')).toHaveText('Depleted');
   await expect(page.getByRole('button', { name: 'Restore' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Restore' }).click();
-  await expect(page.getByText('In stock')).toBeVisible();
+  await expect(page.getByTestId('detail-status')).toHaveText('In stock');
 
   await page.getByRole('button', { name: 'Discard' }).click();
-  await expect(page.getByText('Depleted')).toBeVisible();
+  await expect(page.getByTestId('detail-status')).toHaveText('Depleted');
 
   await page
     .locator('.inventory-list')
     .getByRole('button', { name: /Smoke Oats Edited/ })
     .click();
   await page.getByRole('button', { name: 'Discard' }).click();
-  await expect(page.getByText('Depleted')).toBeVisible();
+  await expect(page.getByTestId('detail-status')).toHaveText('Depleted');
 
   await page.goto(`/products/${productId}/delete`);
   await page.getByTestId('product-delete-confirm').click();
