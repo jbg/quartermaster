@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   buildStockUpdateRequest,
   canRestoreBatch,
+  chooseBestBatch,
+  groupInventoryByLocation,
   groupInventory,
   isDepleted,
   loadInventory,
+  matchesInventorySearch,
   productPreferredUnit,
   productSource,
   selectBatchAfterRefresh,
@@ -99,6 +102,163 @@ describe('inventory helpers', () => {
     expect(groups.active).toEqual([active]);
     expect(groups.depleted).toEqual([depleted]);
     expect(stockDepletedAt(depleted)).toBe('2026-04-01T00:00:00Z');
+  });
+
+  it('groups visible inventory by sorted locations and products', () => {
+    const locations = [
+      { id: 'pantry', name: 'Pantry', sort_order: 0 },
+      { id: 'fridge', name: 'Fridge', sort_order: 1 }
+    ];
+    const items = [
+      {
+        id: 'batch-1',
+        product: { id: 'rice', name: 'Rice' },
+        location_id: 'pantry',
+        quantity: '2',
+        unit: 'kg',
+        expires_on: '2026-05-01'
+      },
+      {
+        id: 'batch-2',
+        product: { id: 'rice', name: 'Rice' },
+        location_id: 'pantry',
+        quantity: '3',
+        unit: 'kg',
+        expires_on: '2026-05-03'
+      },
+      {
+        id: 'batch-3',
+        product: { id: 'milk', name: 'Milk' },
+        location_id: 'fridge',
+        quantity: '1',
+        unit: 'l',
+        expires_on: '2026-04-29'
+      }
+    ];
+
+    const groups = groupInventoryByLocation({
+      items,
+      locations,
+      filter: 'active',
+      search: '',
+      today: new Date('2026-04-27T12:00:00')
+    });
+
+    expect(groups.map((group) => group.location.name)).toEqual(['Pantry', 'Fridge']);
+    expect(groups[0].activeCount).toBe(2);
+    expect(groups[0].productGroups).toHaveLength(1);
+    expect(groups[0].productGroups[0]).toMatchObject({
+      productName: 'Rice',
+      totalQuantity: '5',
+      totalUnit: 'kg',
+      earliestExpiry: '2026-05-01'
+    });
+  });
+
+  it('filters active depleted expired and soon inventory', () => {
+    const locations = [{ id: 'pantry', name: 'Pantry' }];
+    const items = [
+      {
+        id: 'active',
+        product: { id: 'rice', name: 'Rice' },
+        location_id: 'pantry',
+        quantity: '1',
+        unit: 'kg',
+        expires_on: '2026-05-01'
+      },
+      {
+        id: 'expired',
+        product: { id: 'beans', name: 'Beans' },
+        location_id: 'pantry',
+        quantity: '1',
+        unit: 'kg',
+        expires_on: '2026-04-26'
+      },
+      {
+        id: 'later',
+        product: { id: 'pasta', name: 'Pasta' },
+        location_id: 'pantry',
+        quantity: '1',
+        unit: 'kg',
+        expires_on: '2026-05-10'
+      },
+      {
+        id: 'depleted',
+        product: { id: 'flour', name: 'Flour' },
+        location_id: 'pantry',
+        quantity: '0',
+        unit: 'kg',
+        depleted_at: '2026-04-20T00:00:00Z',
+        expires_on: '2026-04-25'
+      }
+    ];
+
+    const grouped = (filter: Parameters<typeof groupInventoryByLocation>[0]['filter']) =>
+      groupInventoryByLocation({
+        items,
+        locations,
+        filter,
+        search: '',
+        today: new Date('2026-04-27T12:00:00')
+      })[0].productGroups.map((group) => group.bestBatch.id);
+
+    expect(grouped('active')).toEqual(['expired', 'active', 'later']);
+    expect(grouped('expiring_soon')).toEqual(['active']);
+    expect(grouped('expired')).toEqual(['expired']);
+    expect(grouped('depleted')).toEqual(['depleted']);
+    expect(grouped('all')).toEqual(['expired', 'active', 'later', 'depleted']);
+  });
+
+  it('searches product brand location note unit and expiry fields', () => {
+    const location = { id: 'pantry', name: 'Pantry' };
+    const batch = {
+      id: 'batch-1',
+      product: { id: 'rice', name: 'Rice', brand: 'Acme' },
+      location_id: 'pantry',
+      location_name: 'Pantry',
+      quantity: '2',
+      unit: 'kg',
+      expires_on: '2026-05-01',
+      note: 'top shelf'
+    };
+
+    expect(matchesInventorySearch(batch, location, 'acme')).toBe(true);
+    expect(matchesInventorySearch(batch, location, 'pantry')).toBe(true);
+    expect(matchesInventorySearch(batch, location, 'top shelf')).toBe(true);
+    expect(matchesInventorySearch(batch, location, 'kg')).toBe(true);
+    expect(matchesInventorySearch(batch, location, '2026-05')).toBe(true);
+    expect(matchesInventorySearch(batch, location, 'freezer')).toBe(false);
+  });
+
+  it('chooses highlighted then earliest active then depleted batches', () => {
+    const depleted = {
+      id: 'depleted',
+      product: { id: 'rice', name: 'Rice' },
+      location_id: 'pantry',
+      quantity: '0',
+      unit: 'kg',
+      depleted_at: '2026-04-01T00:00:00Z'
+    };
+    const later = {
+      id: 'later',
+      product: { id: 'rice', name: 'Rice' },
+      location_id: 'pantry',
+      quantity: '1',
+      unit: 'kg',
+      expires_on: '2026-05-03'
+    };
+    const sooner = {
+      id: 'sooner',
+      product: { id: 'rice', name: 'Rice' },
+      location_id: 'pantry',
+      quantity: '1',
+      unit: 'kg',
+      expires_on: '2026-05-01'
+    };
+
+    expect(chooseBestBatch([depleted, later, sooner])?.id).toBe('sooner');
+    expect(chooseBestBatch([depleted, later, sooner], 'later')?.id).toBe('later');
+    expect(chooseBestBatch([depleted])?.id).toBe('depleted');
   });
 
   it('normalizes product display helpers and unit choices', () => {

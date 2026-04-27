@@ -11,7 +11,8 @@
     eventCreated,
     eventDelta,
     eventType,
-    groupInventory,
+    groupInventoryByLocation,
+    inventoryFilterLabel,
     isDepleted,
     loadInventory,
     productBrand,
@@ -31,6 +32,9 @@
     unitChoicesForFamily,
     validateAddStockInput,
     validateStockEditInput,
+    type InventoryFilterMode,
+    type InventoryLocationGroup,
+    type InventoryProductGroup,
     type InventoryState
   } from '$lib/inventory';
   import { sortLocations } from '$lib/locations';
@@ -94,6 +98,8 @@
   let authBusy = $state(false);
   let authenticated = $state(false);
   let inventory = $state<InventoryState>(emptyInventoryState);
+  let inventoryFilter = $state<InventoryFilterMode>('active');
+  let inventorySearch = $state('');
   let reminders = $state<ReminderState>(emptyReminderState);
   let locations = $state<Location[]>([]);
   let units = $state<Unit[]>([]);
@@ -130,6 +136,7 @@
   let addStockExpiresOn = $state('');
   let addStockOpenedOn = $state('');
   let addStockNote = $state('');
+  let lastAddStockLocationId = $state<string | null>(null);
   let addStockBusy = $state(false);
   let addStockError = $state<string | null>(null);
   let manualProductBusy = $state(false);
@@ -138,7 +145,26 @@
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
   const households = $derived(me?.households ?? []);
   const restoreAvailable = $derived(canRestoreBatch(selectedBatch, history.items));
-  const inventoryGroups = $derived(groupInventory(inventory.items));
+  const inventoryLocationGroups = $derived(
+    sortHighlightedLocationGroups(
+      groupInventoryByLocation({
+        items: inventory.items,
+        locations,
+        filter: inventoryFilter,
+        search: inventorySearch,
+        highlightBatchId
+      })
+    )
+  );
+  const inventoryActiveCount = $derived(
+    inventoryLocationGroups.reduce((sum, group) => sum + group.activeCount, 0)
+  );
+  const inventoryDepletedCount = $derived(
+    inventoryLocationGroups.reduce((sum, group) => sum + group.depletedCount, 0)
+  );
+  const visibleProductGroupCount = $derived(
+    inventoryLocationGroups.reduce((sum, group) => sum + group.productGroups.length, 0)
+  );
   const addStockUnitChoices = $derived(
     selectedProduct
       ? unitChoicesForFamily(selectedProduct.family, units)
@@ -207,7 +233,7 @@
       const rows = await session.locationsList();
       locations = sortLocations(rows);
       if (!addStockLocationId && locations[0]) {
-        addStockLocationId = locations[0].id;
+        addStockLocationId = preferredAddStockLocationId();
       }
     } catch {
       locations = [];
@@ -363,6 +389,10 @@
     await refreshBatchDetail(batch.id);
   }
 
+  async function selectProductGroup(group: InventoryProductGroup) {
+    await selectBatch(group.bestBatch);
+  }
+
   async function openReminder(reminder: Reminder) {
     if (!session) {
       return;
@@ -373,6 +403,8 @@
       await session.remindersOpen(id);
       const batchId = reminderBatchId(reminder);
       highlightBatchId = batchId;
+      inventoryFilter = 'all';
+      inventorySearch = '';
       await refreshInventory(batchId);
       await refreshReminders({ preserveItems: true });
     } catch {
@@ -518,7 +550,7 @@
     addStockError = null;
     manualProductError = null;
     if (!addStockLocationId && locations[0]) {
-      addStockLocationId = locations[0].id;
+      addStockLocationId = preferredAddStockLocationId();
     }
   }
 
@@ -541,7 +573,7 @@
     manualProductUnit = unitChoicesForFamily('mass', units)[0];
     addStockQuantity = '';
     addStockUnit = unitChoicesForFamily('mass', units)[0];
-    addStockLocationId = locations[0]?.id ?? '';
+    addStockLocationId = preferredAddStockLocationId();
     addStockExpiresOn = '';
     addStockOpenedOn = '';
     addStockNote = '';
@@ -669,15 +701,19 @@
     addStockBusy = true;
     addStockError = null;
     try {
+      const createdLocationId = addStockLocationId;
       const created = await session.stockCreate({
         product_id: selectedProduct!.id,
-        location_id: addStockLocationId,
+        location_id: createdLocationId,
         quantity: addStockQuantity.trim(),
         unit: addStockUnit,
         expires_on: addStockExpiresOn || null,
         opened_on: addStockOpenedOn || null,
         note: addStockNote.trim() || null
       });
+      lastAddStockLocationId = createdLocationId;
+      inventoryFilter = 'active';
+      inventorySearch = '';
       addStockOpen = false;
       resetAddStockForm();
       highlightBatchId = created.id;
@@ -702,6 +738,7 @@
     stockActionError = null;
     closeStockEdit();
     highlightBatchId = null;
+    lastAddStockLocationId = null;
     resetAddStockForm();
     addStockOpen = false;
   }
@@ -716,6 +753,59 @@
 
   function displayLocation(batch: StockBatch): string {
     return stockLocation(batch);
+  }
+
+  function preferredAddStockLocationId(): string {
+    if (
+      lastAddStockLocationId &&
+      locations.some((location) => location.id === lastAddStockLocationId)
+    ) {
+      return lastAddStockLocationId;
+    }
+    return locations[0]?.id ?? '';
+  }
+
+  function sortHighlightedLocationGroups(
+    groups: InventoryLocationGroup[]
+  ): InventoryLocationGroup[] {
+    const highlighted = highlightBatchId;
+    if (!highlighted) {
+      return groups;
+    }
+    return [...groups].sort((left, right) => {
+      const leftHasHighlight = locationGroupHasBatch(left, highlighted);
+      const rightHasHighlight = locationGroupHasBatch(right, highlighted);
+      if (leftHasHighlight !== rightHasHighlight) {
+        return leftHasHighlight ? -1 : 1;
+      }
+      return 0;
+    });
+  }
+
+  function locationGroupHasBatch(group: InventoryLocationGroup, batchId: string): boolean {
+    return group.productGroups.some((productGroup) =>
+      productGroup.visibleBatches.some((batch) => batch.id === batchId)
+    );
+  }
+
+  function productGroupQuantity(group: InventoryProductGroup): string {
+    if (group.totalQuantity && group.totalUnit) {
+      return `${group.totalQuantity} ${group.totalUnit}`;
+    }
+    return `${group.visibleBatches.length} ${group.visibleBatches.length === 1 ? 'batch' : 'batches'}`;
+  }
+
+  function productGroupMeta(group: InventoryProductGroup): string {
+    const parts = [
+      group.earliestExpiry ? `Earliest ${group.earliestExpiry}` : 'No expiry date',
+      `${group.visibleBatches.length} ${group.visibleBatches.length === 1 ? 'batch' : 'batches'}`
+    ];
+    if (group.depletedCount > 0 && group.activeCount === 0) {
+      parts.push('depleted history');
+    } else if (group.depletedCount > 0) {
+      parts.push(`${group.depletedCount} depleted`);
+    }
+    return parts.join(' · ');
   }
 </script>
 
@@ -1148,13 +1238,32 @@
             <h2>Batches</h2>
           </div>
           <div class="heading-actions">
-            <span
-              >{inventoryGroups.active.length} active · {inventoryGroups.depleted.length} depleted</span
-            >
+            <span>{inventoryActiveCount} active · {inventoryDepletedCount} depleted</span>
             <button class="primary-action small" type="button" onclick={openAddStock}
               >Add stock</button
             >
           </div>
+        </div>
+
+        <div class="inventory-controls">
+          <label>
+            Search inventory
+            <input
+              bind:value={inventorySearch}
+              data-testid="inventory-search-input"
+              placeholder="Product, location, note..."
+            />
+          </label>
+          <label>
+            Show
+            <select bind:value={inventoryFilter} data-testid="inventory-filter-select">
+              <option value="active">Active</option>
+              <option value="expiring_soon">Expiring soon</option>
+              <option value="expired">Expired</option>
+              <option value="depleted">Depleted</option>
+              <option value="all">All</option>
+            </select>
+          </label>
         </div>
 
         {#if inventory.status === 'loading'}
@@ -1163,59 +1272,58 @@
           <p class="error-text">{inventory.error}</p>
         {:else if inventory.items.length === 0}
           <p class="muted">No stock is currently visible for this household.</p>
+        {:else if visibleProductGroupCount === 0}
+          <p class="muted">
+            No {inventoryFilterLabel(inventoryFilter).toLowerCase()} stock matches the current search.
+          </p>
         {:else}
-          <div class="inventory-list">
-            {#if inventoryGroups.active.length > 0}
-              <section class="inventory-group" aria-labelledby="active-stock-heading">
+          <div class="location-inventory-list">
+            {#each inventoryLocationGroups as locationGroup}
+              <section
+                class="location-inventory-group"
+                data-testid={`inventory-location-${locationGroup.location.name}`}
+              >
                 <div class="subsection-heading">
-                  <h3 id="active-stock-heading">In stock</h3>
-                  <span>{inventoryGroups.active.length}</span>
+                  <div>
+                    <h3>{locationGroup.location.name}</h3>
+                    <p>
+                      {locationGroup.activeCount} active · {locationGroup.depletedCount} depleted
+                    </p>
+                  </div>
+                  <span>{locationGroup.productGroups.length}</span>
                 </div>
-                {#each inventoryGroups.active as batch}
-                  <button
-                    class:active={selectedBatchId === batch.id}
-                    class:highlight={highlightBatchId === batch.id}
-                    class="stock-row"
-                    type="button"
-                    onclick={() => selectBatch(batch)}
-                  >
-                    <div>
-                      <h3>{stockName(batch)}</h3>
-                      <p>{displayLocation(batch)} · Expires {stockExpiry(batch)}</p>
-                    </div>
-                    <strong>{batch.quantity ?? '?'} {stockUnit(batch)}</strong>
-                  </button>
-                {/each}
+                {#if locationGroup.productGroups.length === 0}
+                  <p class="muted location-empty">{locationGroup.emptyMessage}</p>
+                {:else}
+                  {#each locationGroup.productGroups as productGroup}
+                    <button
+                      class:active={productGroup.visibleBatches.some(
+                        (batch) => selectedBatchId === batch.id
+                      )}
+                      class:highlight={productGroup.visibleBatches.some(
+                        (batch) => highlightBatchId === batch.id
+                      )}
+                      class="stock-row product-group-row"
+                      type="button"
+                      onclick={() => selectProductGroup(productGroup)}
+                    >
+                      <div>
+                        <h3>{productGroup.productName}</h3>
+                        <p>
+                          {productGroup.productBrand
+                            ? `${productGroup.productBrand} · `
+                            : ''}{productGroupMeta(productGroup)}
+                        </p>
+                      </div>
+                      <div class="product-group-summary">
+                        <strong>{productGroupQuantity(productGroup)}</strong>
+                        <span>Open</span>
+                      </div>
+                    </button>
+                  {/each}
+                {/if}
               </section>
-            {/if}
-
-            {#if inventoryGroups.depleted.length > 0}
-              <section class="inventory-group" aria-labelledby="depleted-stock-heading">
-                <div class="subsection-heading">
-                  <h3 id="depleted-stock-heading">Depleted history</h3>
-                  <span>{inventoryGroups.depleted.length}</span>
-                </div>
-                {#each inventoryGroups.depleted as batch}
-                  <button
-                    class:active={selectedBatchId === batch.id}
-                    class:highlight={highlightBatchId === batch.id}
-                    class="stock-row depleted"
-                    type="button"
-                    onclick={() => selectBatch(batch)}
-                  >
-                    <div>
-                      <h3>{stockName(batch)}</h3>
-                      <p>
-                        {displayLocation(batch)} · Depleted {formatDateTime(
-                          stockDepletedAt(batch)
-                        ) || 'recently'}
-                      </p>
-                    </div>
-                    <strong>{batch.quantity ?? '?'} {stockUnit(batch)}</strong>
-                  </button>
-                {/each}
-              </section>
-            {/if}
+            {/each}
           </div>
         {/if}
       </section>

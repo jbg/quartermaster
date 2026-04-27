@@ -155,7 +155,7 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
     .selectOption({ label: 'Smoke Shelf Renamed' });
   await page.locator('.stock-create-form').getByRole('button', { name: 'Add stock' }).click();
   await page
-    .locator('.inventory-list')
+    .locator('.location-inventory-list')
     .getByRole('button', { name: /Smoke Oats/ })
     .click();
   await expect(page.getByTestId('detail-quantity')).toHaveText('2 kg');
@@ -173,13 +173,13 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
     .selectOption({ label: 'Smoke Shelf Renamed' });
   await page.locator('.stock-create-form').getByRole('button', { name: 'Add stock' }).click();
   await page
-    .locator('.inventory-list')
+    .locator('.location-inventory-list')
     .getByRole('button', { name: /Retry Beans/ })
     .click();
   await expect(page.getByTestId('detail-quantity')).toHaveText('3 g');
 
   await page
-    .locator('.inventory-list')
+    .locator('.location-inventory-list')
     .getByRole('button', { name: /Smoke Oats Edited/ })
     .click();
   await expect(page.getByTestId('detail-quantity')).toHaveText('2 kg');
@@ -238,10 +238,12 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
 
   await page.getByRole('button', { name: 'Discard' }).click();
   await expect(page.getByTestId('detail-status')).toHaveText('Depleted');
-  await expect(page.getByRole('heading', { name: 'Depleted history' })).toBeVisible();
+  await page.getByTestId('inventory-filter-select').selectOption('depleted');
+  await expect(page.getByRole('button', { name: /Smoke/ }).first()).toBeVisible();
+  await page.getByTestId('inventory-filter-select').selectOption('active');
 
   await page
-    .locator('.inventory-list')
+    .locator('.location-inventory-list')
     .getByRole('button', { name: /Smoke Oats Edited/ })
     .click();
   await page.getByRole('button', { name: 'Discard' }).click();
