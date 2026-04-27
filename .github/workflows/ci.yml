@@ -137,7 +137,7 @@ jobs:
         run: brew install swift-format
 
       - name: Check Swift formatting
-        run: swift-format lint --strict --recursive ios/Quartermaster
+        run: swift-format lint --strict --recursive ios/Quartermaster ios/QuartermasterTests
 
       - name: Generate Xcode project
         working-directory: ios
@@ -238,6 +238,17 @@ jobs:
         env:
           VOLTA_FEATURE_PNPM: "1"
         run: pnpm -C web test:e2e
+
+  shell-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install shfmt
+        run: sudo apt-get update && sudo apt-get install -y shfmt
+
+      - name: Check shell formatting
+        run: shfmt -d docker/entrypoint.sh ios/scripts/generate-release-config.sh ios/scripts/validate-release-config.sh scripts/update-ha-app-repo.sh
 
   docker-build:
     runs-on: ubuntu-latest

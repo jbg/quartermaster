@@ -2,8 +2,8 @@
 set -euo pipefail
 
 if [ "$#" -ne 1 ]; then
-  echo "usage: $0 <home-assistant-apps-repo-path>" >&2
-  exit 2
+	echo "usage: $0 <home-assistant-apps-repo-path>" >&2
+	exit 2
 fi
 
 repo_path="$1"
@@ -11,13 +11,13 @@ repo_path="$1"
 : "${RELEASE_VERSION:?RELEASE_VERSION is required}"
 : "${RELEASE_TAG:?RELEASE_TAG is required}"
 if [ -z "${RELEASE_NOTES:-}" ]; then
-  RELEASE_NOTES="No release notes provided."
+	RELEASE_NOTES="No release notes provided."
 fi
 export RELEASE_NOTES
 
 if [ ! -f "$repo_path/quartermaster/config.yaml" ]; then
-  echo "missing $repo_path/quartermaster/config.yaml" >&2
-  exit 1
+	echo "missing $repo_path/quartermaster/config.yaml" >&2
+	exit 1
 fi
 
 python3 - "$repo_path" <<'PY'
