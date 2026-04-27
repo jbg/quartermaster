@@ -280,6 +280,7 @@ impl Modify for SecurityAddon {
         types::StockEventType,
         types::MembershipRole,
         types::ReminderKind,
+        types::ReminderUrgency,
         routes::health::HealthResponse,
         routes::accounts::RegisterRequest,
         routes::accounts::LoginRequest,

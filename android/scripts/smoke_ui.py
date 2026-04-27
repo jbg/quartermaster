@@ -33,8 +33,11 @@ EXTRA_BATCH_ID = "quartermaster.batch_id"
 EXTRA_PRODUCT_ID = "quartermaster.product_id"
 EXTRA_LOCATION_ID = "quartermaster.location_id"
 EXTRA_KIND = "quartermaster.kind"
-EXTRA_TITLE = "quartermaster.title"
-EXTRA_BODY = "quartermaster.body"
+EXTRA_PRODUCT_NAME = "quartermaster.product_name"
+EXTRA_LOCATION_NAME = "quartermaster.location_name"
+EXTRA_QUANTITY = "quartermaster.quantity"
+EXTRA_UNIT = "quartermaster.unit"
+EXTRA_EXPIRES_ON = "quartermaster.expires_on"
 
 
 @dataclass(frozen=True)
@@ -457,11 +460,20 @@ def open_reminder_payload(payload: dict) -> None:
         EXTRA_KIND,
         payload["kind"],
         "--es",
-        EXTRA_TITLE,
-        payload["title"],
+        EXTRA_PRODUCT_NAME,
+        payload["product_name"],
         "--es",
-        EXTRA_BODY,
-        payload["body"],
+        EXTRA_LOCATION_NAME,
+        payload["location_name"],
+        "--es",
+        EXTRA_QUANTITY,
+        payload["quantity"],
+        "--es",
+        EXTRA_UNIT,
+        payload["unit"],
+        "--es",
+        EXTRA_EXPIRES_ON,
+        payload["expires_on"],
     )
 
 
@@ -621,6 +633,9 @@ def exercise_inventory(fixture: dict | None) -> None:
     tap_tag_near_top(f"smoke-inventory-batch-{lifecycle_batch_id}")
     wait_for_tag(f"smoke-selected-batch-{lifecycle_batch_id}")
     tap_tag(f"smoke-batch-discard-{lifecycle_batch_id}")
+    wait_for_text_with_scroll("Batch is depleted", timeout=15.0)
+    assert_tag_missing(f"smoke-batch-edit-{lifecycle_batch_id}", timeout=5.0)
+    assert_tag_missing(f"smoke-batch-consume-{lifecycle_batch_id}", timeout=5.0)
     wait_for_tag(f"smoke-batch-restore-{lifecycle_batch_id}", timeout=15.0)
     tap_tag(f"smoke-batch-restore-{lifecycle_batch_id}")
     assert_tag_missing(f"smoke-batch-restore-{lifecycle_batch_id}", timeout=15.0)

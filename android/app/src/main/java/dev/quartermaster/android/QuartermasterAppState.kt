@@ -23,6 +23,7 @@ import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.ProductSource
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
 import dev.quartermaster.android.generated.models.ReminderDto
+import dev.quartermaster.android.generated.models.ReminderUrgency
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventType
@@ -31,8 +32,6 @@ import dev.quartermaster.android.generated.models.UnitFamily
 import dev.quartermaster.android.generated.models.UpdateLocationRequest
 import java.net.URI
 import java.net.URLDecoder
-import java.time.LocalDate
-import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 enum class MainTab { Inventory, Products, Reminders, Scan, Settings }
@@ -1013,6 +1012,7 @@ class QuartermasterAppState(
 
     fun sortReminders(items: List<ReminderDto>): List<ReminderDto> = items.sortedWith(
         compareBy<ReminderDto>(
+            { it.daysUntilExpiry ?: Long.MAX_VALUE },
             { it.expiresOn ?: "9999-12-31" },
             { it.householdFireLocalAt },
             { it.id.toString() },
@@ -1020,18 +1020,31 @@ class QuartermasterAppState(
     )
 
     fun reminderUrgencyText(reminder: ReminderDto): String? {
-        val expiresOn = reminder.expiresOn ?: return null
-        val expiry = runCatching { LocalDate.parse(expiresOn) }.getOrNull()
-            ?: return "Expires $expiresOn"
-        val days = ChronoUnit.DAYS.between(LocalDate.now(), expiry)
-        return when {
-            days < 0 -> {
-                val count = -days
-                if (count == 1L) "Expired yesterday" else "Expired $count days ago"
+        val urgency = reminder.urgency ?: return null
+        val days = reminder.daysUntilExpiry
+        return when (urgency) {
+            ReminderUrgency.EXPIRED -> {
+                val count = days?.let { -it }
+                when (count) {
+                    1L -> "Expired yesterday"
+                    null -> "Expired"
+                    else -> "Expired $count days ago"
+                }
             }
-            days == 0L -> "Expires today"
-            days == 1L -> "Expires tomorrow"
-            else -> "Expires in $days days"
+            ReminderUrgency.EXPIRES_TODAY -> "Expires today"
+            ReminderUrgency.EXPIRES_TOMORROW -> "Expires tomorrow"
+            ReminderUrgency.EXPIRES_FUTURE -> days?.let { "Expires in $it days" } ?: "Expires soon"
+        }
+    }
+
+    fun reminderDisplayTitle(reminder: ReminderDto): String = "${reminder.productName} in ${reminder.locationName}"
+
+    fun reminderDisplayBody(reminder: ReminderDto): String {
+        val expiry = reminder.expiresOn
+        return if (expiry == null) {
+            "${reminder.quantity} ${reminder.unit} has an expiry reminder."
+        } else {
+            "${reminder.quantity} ${reminder.unit} expires on $expiry."
         }
     }
 

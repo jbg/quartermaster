@@ -138,6 +138,13 @@ async fn list_returns_due_reminders_for_active_household_only() {
         body["items"][0]["batch_id"].as_str().unwrap(),
         batch_a.id.to_string()
     );
+    assert!(body["items"][0].get("title").is_none());
+    assert!(body["items"][0].get("body").is_none());
+    assert_eq!(body["items"][0]["product_name"], "Milk");
+    assert_eq!(body["items"][0]["location_name"], "Pantry");
+    assert_eq!(body["items"][0]["quantity"], "1000");
+    assert_eq!(body["items"][0]["unit"], "ml");
+    assert_eq!(body["items"][0]["urgency"], "expires_future");
 
     let switched = app
         .send(
@@ -158,6 +165,9 @@ async fn list_returns_due_reminders_for_active_household_only() {
         body["items"][0]["batch_id"].as_str().unwrap(),
         batch_b.id.to_string()
     );
+    assert_eq!(body["items"][0]["product_name"], "Yogurt");
+    assert_eq!(body["items"][0]["quantity"], "2");
+    assert_eq!(body["items"][0]["unit"], "piece");
 }
 
 #[tokio::test]

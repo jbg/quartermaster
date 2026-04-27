@@ -101,6 +101,8 @@ internal fun ReminderScreen(appState: QuartermasterAppState, modifier: Modifier 
             ReminderCard(
                 reminder = reminder,
                 action = appState.reminderActionFor(reminder.id.toString()),
+                title = appState.reminderDisplayTitle(reminder),
+                body = appState.reminderDisplayBody(reminder),
                 urgency = appState.reminderUrgencyText(reminder),
                 onOpen = { scope.launch { appState.openReminder(reminder) } },
                 onAcknowledge = { scope.launch { appState.acknowledgeReminder(reminder.id.toString()) } },
@@ -113,6 +115,8 @@ internal fun ReminderScreen(appState: QuartermasterAppState, modifier: Modifier 
 private fun ReminderCard(
     reminder: ReminderDto,
     action: ReminderAction?,
+    title: String,
+    body: String,
     urgency: String?,
     onOpen: () -> Unit,
     onAcknowledge: () -> Unit,
@@ -125,8 +129,8 @@ private fun ReminderCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(reminder.title, style = MaterialTheme.typography.titleMedium)
-            Text(reminder.body)
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(body)
             urgency?.let {
                 Text(
                     it,

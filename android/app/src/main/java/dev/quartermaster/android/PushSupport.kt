@@ -33,9 +33,20 @@ data class ReminderPushPayload(
     val productId: String,
     val locationId: String,
     val kind: String,
-    val title: String,
-    val body: String,
+    val productName: String,
+    val locationName: String,
+    val quantity: String,
+    val unit: String,
+    val expiresOn: String?,
 )
+
+fun reminderNotificationTitle(payload: ReminderPushPayload): String = "${payload.productName} in ${payload.locationName}"
+
+fun reminderNotificationBody(payload: ReminderPushPayload): String = if (payload.expiresOn == null) {
+    "${payload.quantity} ${payload.unit} has an expiry reminder."
+} else {
+    "${payload.quantity} ${payload.unit} expires on ${payload.expiresOn}."
+}
 
 class QuartermasterApplication : Application() {
     override fun onCreate() {
@@ -76,8 +87,11 @@ object PushSupport {
     private const val EXTRA_PRODUCT_ID = "quartermaster.product_id"
     private const val EXTRA_LOCATION_ID = "quartermaster.location_id"
     private const val EXTRA_KIND = "quartermaster.kind"
-    private const val EXTRA_TITLE = "quartermaster.title"
-    private const val EXTRA_BODY = "quartermaster.body"
+    private const val EXTRA_PRODUCT_NAME = "quartermaster.product_name"
+    private const val EXTRA_LOCATION_NAME = "quartermaster.location_name"
+    private const val EXTRA_QUANTITY = "quartermaster.quantity"
+    private const val EXTRA_UNIT = "quartermaster.unit"
+    private const val EXTRA_EXPIRES_ON = "quartermaster.expires_on"
 
     fun isFirebaseConfigured(): Boolean = BuildConfig.FIREBASE_PROJECT_ID.isNotBlank() &&
         BuildConfig.FIREBASE_APPLICATION_ID.isNotBlank() &&
@@ -202,16 +216,21 @@ object PushSupport {
         val productId = extras.getString(EXTRA_PRODUCT_ID) ?: return null
         val locationId = extras.getString(EXTRA_LOCATION_ID) ?: return null
         val kind = extras.getString(EXTRA_KIND) ?: return null
-        val title = extras.getString(EXTRA_TITLE) ?: return null
-        val body = extras.getString(EXTRA_BODY) ?: return null
+        val productName = extras.getString(EXTRA_PRODUCT_NAME) ?: return null
+        val locationName = extras.getString(EXTRA_LOCATION_NAME) ?: return null
+        val quantity = extras.getString(EXTRA_QUANTITY) ?: return null
+        val unit = extras.getString(EXTRA_UNIT) ?: return null
         return ReminderPushPayload(
             reminderId = reminderId,
             batchId = batchId,
             productId = productId,
             locationId = locationId,
             kind = kind,
-            title = title,
-            body = body,
+            productName = productName,
+            locationName = locationName,
+            quantity = quantity,
+            unit = unit,
+            expiresOn = extras.getString(EXTRA_EXPIRES_ON),
         )
     }
 
@@ -224,8 +243,11 @@ object PushSupport {
         .putExtra(EXTRA_PRODUCT_ID, payload.productId)
         .putExtra(EXTRA_LOCATION_ID, payload.locationId)
         .putExtra(EXTRA_KIND, payload.kind)
-        .putExtra(EXTRA_TITLE, payload.title)
-        .putExtra(EXTRA_BODY, payload.body)
+        .putExtra(EXTRA_PRODUCT_NAME, payload.productName)
+        .putExtra(EXTRA_LOCATION_NAME, payload.locationName)
+        .putExtra(EXTRA_QUANTITY, payload.quantity)
+        .putExtra(EXTRA_UNIT, payload.unit)
+        .putExtra(EXTRA_EXPIRES_ON, payload.expiresOn)
 
     fun payloadFromMap(data: Map<String, String>): ReminderPushPayload? {
         val reminderId = data["reminder_id"] ?: return null
@@ -233,16 +255,21 @@ object PushSupport {
         val productId = data["product_id"] ?: return null
         val locationId = data["location_id"] ?: return null
         val kind = data["kind"] ?: return null
-        val title = data["title"] ?: return null
-        val body = data["body"] ?: return null
+        val productName = data["product_name"] ?: return null
+        val locationName = data["location_name"] ?: return null
+        val quantity = data["quantity"] ?: return null
+        val unit = data["unit"] ?: return null
         return ReminderPushPayload(
             reminderId = reminderId,
             batchId = batchId,
             productId = productId,
             locationId = locationId,
             kind = kind,
-            title = title,
-            body = body,
+            productName = productName,
+            locationName = locationName,
+            quantity = quantity,
+            unit = unit,
+            expiresOn = data["expires_on"]?.takeIf(String::isNotBlank),
         )
     }
 
@@ -268,8 +295,8 @@ object PushSupport {
             NotificationCompat
                 .Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle(payload.title)
-                .setContentText(payload.body)
+                .setContentTitle(reminderNotificationTitle(payload))
+                .setContentText(reminderNotificationBody(payload))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent)

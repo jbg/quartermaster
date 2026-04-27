@@ -22,7 +22,8 @@ interface SmokeFixture {
   reminders: Array<{
     reminder_id: string;
     batch_id: string;
-    title: string;
+    product_name: string;
+    location_name: string;
   }>;
 }
 
@@ -220,7 +221,9 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
   await expect(page.getByRole('heading', { name: 'History' })).toBeVisible();
 
   await page.getByTestId(`reminder-ack-${firstReminder.reminder_id}`).click();
-  await expect(page.getByText(firstReminder.title)).toHaveCount(0);
+  await expect(
+    page.getByText(`${firstReminder.product_name} in ${firstReminder.location_name}`)
+  ).toHaveCount(0);
 
   await page.getByLabel('Consume quantity').fill('10');
   await page.getByRole('button', { name: 'Consume' }).click();
@@ -235,6 +238,7 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
 
   await page.getByRole('button', { name: 'Discard' }).click();
   await expect(page.getByTestId('detail-status')).toHaveText('Depleted');
+  await expect(page.getByRole('heading', { name: 'Depleted history' })).toBeVisible();
 
   await page
     .locator('.inventory-list')

@@ -32,6 +32,8 @@ class PushSupportTest {
         val intent = PushSupport.applyReminderPayload(Intent("test.action.OPEN"), payload)
 
         assertEquals(payload, PushSupport.payloadFromIntent(intent))
+        assertEquals("Milk in Pantry", reminderNotificationTitle(payload))
+        assertEquals("1 carton expires on 2026-04-24.", reminderNotificationBody(payload))
     }
 
     @Test
@@ -93,7 +95,10 @@ class PushSupportTest {
         productId = "44444444-4444-4444-4444-444444444444",
         locationId = "22222222-2222-2222-2222-222222222222",
         kind = "expiry",
-        title = "Milk expires tomorrow",
-        body = "Pantry",
+        productName = "Milk",
+        locationName = "Pantry",
+        quantity = "1",
+        unit = "carton",
+        expiresOn = "2026-04-24",
     )
 }

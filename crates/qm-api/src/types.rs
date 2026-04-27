@@ -137,6 +137,15 @@ impl FromStr for ReminderKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ReminderUrgency {
+    Expired,
+    ExpiresToday,
+    ExpiresTomorrow,
+    ExpiresFuture,
+}
+
 impl fmt::Display for StockEventType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())

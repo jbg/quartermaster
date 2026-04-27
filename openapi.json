@@ -2996,22 +2996,28 @@
         "required": [
           "id",
           "kind",
-          "title",
-          "body",
           "fire_at",
           "household_timezone",
           "household_fire_local_at",
           "batch_id",
           "product_id",
-          "location_id"
+          "location_id",
+          "product_name",
+          "location_name",
+          "quantity",
+          "unit"
         ],
         "properties": {
           "batch_id": {
             "type": "string",
             "format": "uuid"
           },
-          "body": {
-            "type": "string"
+          "days_until_expiry": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           },
           "expires_on": {
             "type": [
@@ -3039,6 +3045,9 @@
             "type": "string",
             "format": "uuid"
           },
+          "location_name": {
+            "type": "string"
+          },
           "opened_on_device_at": {
             "type": [
               "string",
@@ -3055,8 +3064,17 @@
             "type": "string",
             "format": "uuid"
           },
-          "title": {
+          "product_name": {
             "type": "string"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "urgency": {
+            "$ref": "#/components/schemas/ReminderUrgency"
           }
         }
       },
@@ -3092,6 +3110,15 @@
             "format": "uuid"
           }
         }
+      },
+      "ReminderUrgency": {
+        "type": "string",
+        "enum": [
+          "expired",
+          "expires_today",
+          "expires_tomorrow",
+          "expires_future"
+        ]
       },
       "RestoreManyRequest": {
         "type": "object",

@@ -1,0 +1,3 @@
+"EXPIRY_REMINDER_TITLE" = "%@ in %@";
+"EXPIRY_REMINDER_BODY" = "%@ %@ expires on %@.";
+"EXPIRY_REMINDER_BODY_NO_DATE" = "%@ %@ has an expiry reminder.";

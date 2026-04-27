@@ -47,18 +47,17 @@ class QuartermasterAppStateTest {
     }
 
     @Test
-    fun `reminder urgency formatting falls back for missing and raw dates`() {
+    fun `reminder display copy comes from structured fields`() {
         val appState =
             QuartermasterAppState(
                 sessionStore = FakeSessionStore(),
                 backend = FakeBackend(meResponse = meResponseJson()),
             )
 
-        assertNull(appState.reminderUrgencyText(reminderJson(expiresOn = null)))
-        assertEquals(
-            "Expires not-a-date",
-            appState.reminderUrgencyText(reminderJson(expiresOn = "not-a-date")),
-        )
+        val reminder = reminderJson(expiresOn = "2026-04-24", daysUntilExpiry = -2, urgency = "expired")
+        assertEquals("Flour in Pantry", appState.reminderDisplayTitle(reminder))
+        assertEquals("1 kg expires on 2026-04-24.", appState.reminderDisplayBody(reminder))
+        assertEquals("Expired 2 days ago", appState.reminderUrgencyText(reminder))
     }
 
     @Test
@@ -221,25 +220,30 @@ class QuartermasterAppStateTest {
     }
 
     @Test
-    fun `refreshReminders sorts by expiry fire time and id`() = runTest {
+    fun `refreshReminders sorts by semantic days expiry fire time and id`() = runTest {
         val laterExpiry = reminderJson(
             id = "cccccccc-cccc-cccc-cccc-cccccccccccc",
             expiresOn = "2026-04-26",
+            daysUntilExpiry = 2,
             householdFireLocalAt = "2026-04-25T09:00:00",
         )
         val laterFire = reminderJson(
             id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
             expiresOn = "2026-04-24",
+            daysUntilExpiry = 0,
             householdFireLocalAt = "2026-04-24T10:00:00",
         )
         val first = reminderJson(
             id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
             expiresOn = "2026-04-24",
+            daysUntilExpiry = 0,
             householdFireLocalAt = "2026-04-24T09:00:00",
         )
         val missingExpiry = reminderJson(
             id = "dddddddd-dddd-dddd-dddd-dddddddddddd",
             expiresOn = null,
+            daysUntilExpiry = null,
+            urgency = null,
             householdFireLocalAt = "2026-04-23T09:00:00",
         )
         val appState =
@@ -266,7 +270,6 @@ class QuartermasterAppStateTest {
         val secondReminder =
             reminderJson(
                 id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-                title = "Use beans soon",
             )
         val backend =
             FakeBackend(
@@ -1101,8 +1104,11 @@ class QuartermasterAppStateTest {
         productId = "44444444-4444-4444-4444-444444444444",
         locationId = "22222222-2222-2222-2222-222222222222",
         kind = "expiry",
-        title = "Use flour soon",
-        body = "Pantry flour expires tomorrow.",
+        productName = "Flour",
+        locationName = "Pantry",
+        quantity = "1",
+        unit = "kg",
+        expiresOn = "2026-04-24",
     )
 
     private fun meResponseJson(
@@ -1273,23 +1279,28 @@ class QuartermasterAppStateTest {
 
     private fun reminderJson(
         id: String = "55555555-5555-5555-5555-555555555555",
-        title: String = "Use flour soon",
         expiresOn: String? = "2026-04-24",
+        daysUntilExpiry: Long? = 1,
+        urgency: String? = "expires_tomorrow",
         householdFireLocalAt: String = "2026-04-23T09:00:00",
     ): ReminderDto = json.decodeFromString(
         """
             {
               "id": "$id",
               "kind": "expiry",
-              "title": "$title",
-              "body": "Pantry flour expires tomorrow.",
               "fire_at": "2026-04-23T09:00:00Z",
               "household_timezone": "UTC",
               "household_fire_local_at": "$householdFireLocalAt",
               "batch_id": "33333333-3333-3333-3333-333333333333",
               "product_id": "44444444-4444-4444-4444-444444444444",
               "location_id": "22222222-2222-2222-2222-222222222222",
-              "expires_on": ${expiresOn?.let { "\"$it\"" } ?: "null"}
+              "product_name": "Flour",
+              "location_name": "Pantry",
+              "quantity": "1",
+              "unit": "kg",
+              "expires_on": ${expiresOn?.let { "\"$it\"" } ?: "null"},
+              "days_until_expiry": ${daysUntilExpiry?.toString() ?: "null"},
+              "urgency": ${urgency?.let { "\"$it\"" } ?: "null"}
             }
         """.trimIndent(),
     )
