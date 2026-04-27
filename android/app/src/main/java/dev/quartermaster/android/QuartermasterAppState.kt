@@ -23,7 +23,6 @@ import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.ProductSource
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
 import dev.quartermaster.android.generated.models.ReminderDto
-import dev.quartermaster.android.generated.models.ReminderUrgency
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventType
@@ -1018,35 +1017,6 @@ class QuartermasterAppState(
             { it.id.toString() },
         ),
     )
-
-    fun reminderUrgencyText(reminder: ReminderDto): String? {
-        val urgency = reminder.urgency ?: return null
-        val days = reminder.daysUntilExpiry
-        return when (urgency) {
-            ReminderUrgency.EXPIRED -> {
-                val count = days?.let { -it }
-                when (count) {
-                    1L -> "Expired yesterday"
-                    null -> "Expired"
-                    else -> "Expired $count days ago"
-                }
-            }
-            ReminderUrgency.EXPIRES_TODAY -> "Expires today"
-            ReminderUrgency.EXPIRES_TOMORROW -> "Expires tomorrow"
-            ReminderUrgency.EXPIRES_FUTURE -> days?.let { "Expires in $it days" } ?: "Expires soon"
-        }
-    }
-
-    fun reminderDisplayTitle(reminder: ReminderDto): String = "${reminder.productName} in ${reminder.locationName}"
-
-    fun reminderDisplayBody(reminder: ReminderDto): String {
-        val expiry = reminder.expiresOn
-        return if (expiry == null) {
-            "${reminder.quantity} ${reminder.unit} has an expiry reminder."
-        } else {
-            "${reminder.quantity} ${reminder.unit} expires on $expiry."
-        }
-    }
 
     fun canEditBatch(batch: StockBatchDto?): Boolean = batch != null && !isBatchDepleted(batch)
 

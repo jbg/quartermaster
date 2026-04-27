@@ -23,15 +23,20 @@ struct AppRoot: View {
       }
     }
     .alert(
-      appState.activeReminder?.displayTitle ?? "Reminder",
+      appState.activeReminder?.displayTitle
+        ?? NSLocalizedString("REMINDER_ALERT_TITLE", comment: ""),
       isPresented: Binding(
         get: { appState.activeReminder != nil },
         set: { _ in }
       ),
       presenting: appState.activeReminder
     ) { _ in
-      Button("Open") { appState.openActiveReminder() }
-      Button("Dismiss", role: .cancel) { appState.dismissActiveReminder() }
+      Button(NSLocalizedString("REMINDER_ALERT_OPEN", comment: "")) {
+        appState.openActiveReminder()
+      }
+      Button(NSLocalizedString("REMINDER_ALERT_DISMISS", comment: ""), role: .cancel) {
+        appState.dismissActiveReminder()
+      }
     } message: { reminder in
       Text(reminder.displayBody)
     }

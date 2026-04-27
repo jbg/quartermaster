@@ -55,6 +55,11 @@
     startReminderAction,
     type ReminderState
   } from '$lib/reminders';
+  import {
+    reminderActionLabel,
+    reminderActionStatus,
+    reminderMessages
+  } from '$lib/reminder-messages';
   import { barcodeLookupErrorMessage } from '$lib/products';
   import {
     currentHousehold,
@@ -407,7 +412,7 @@
       await refreshInventory(batchId);
       await refreshReminders({ preserveItems: true });
     } catch {
-      reminders = { ...reminders, error: 'Reminder could not be opened.' };
+      reminders = { ...reminders, error: reminderMessages.openError };
     } finally {
       reminders = actionDone(reminders, id);
     }
@@ -423,7 +428,7 @@
       reminders = actionDone(reminders, reminder.id);
       await refreshReminders({ preserveItems: true });
     } catch {
-      reminders = optimisticAckRollback(reminders, reminder, 'Reminder could not be acknowledged.');
+      reminders = optimisticAckRollback(reminders, reminder, reminderMessages.ackError);
     }
   }
 
@@ -1164,21 +1169,21 @@
         <section class="inbox-region" aria-labelledby="reminder-heading">
           <div class="section-heading compact">
             <div>
-              <p class="eyebrow">Due now</p>
-              <h2 id="reminder-heading">Reminders</h2>
+              <p class="eyebrow">{reminderMessages.headingEyebrow}</p>
+              <h2 id="reminder-heading">{reminderMessages.headingTitle}</h2>
             </div>
             <span>{reminders.items.length}</span>
           </div>
 
           {#if reminders.status === 'loading' && reminders.items.length === 0}
-            <p class="muted">Loading reminders...</p>
+            <p class="muted">{reminderMessages.loading}</p>
           {:else if reminders.status === 'error' && reminders.items.length === 0}
             <p class="error-text">{reminders.error}</p>
           {:else if reminders.items.length === 0}
-            <p class="muted">No due reminders.</p>
+            <p class="muted">{reminderMessages.empty}</p>
           {:else}
             {#if reminders.status === 'loading'}
-              <p class="muted">Refreshing reminders...</p>
+              <p class="muted">{reminderMessages.refreshing}</p>
             {:else if reminders.status === 'error'}
               <p class="error-text">{reminders.error}</p>
             {/if}
@@ -1190,14 +1195,18 @@
                     <p>{reminderBody(reminder)}</p>
                     {#if reminderExpiresOn(reminder)}
                       <span>{reminderUrgency(reminder)}</span>
-                      <span>Expiry date {formatReminderDate(reminderExpiresOn(reminder))}</span>
+                      <span>
+                        {reminderMessages.expiryDateLabel}
+                        {formatReminderDate(reminderExpiresOn(reminder))}
+                      </span>
                     {/if}
-                    <span>Household time {formatReminderDateTime(reminderFireAt(reminder))}</span>
-                    {#if reminders.actionKinds[reminder.id]}
+                    <span>
+                      {reminderMessages.householdTimeLabel}
+                      {formatReminderDateTime(reminderFireAt(reminder))}
+                    </span>
+                    {#if reminderActionStatus(reminders.actionKinds[reminder.id])}
                       <span class="inline-status">
-                        {reminders.actionKinds[reminder.id] === 'open'
-                          ? 'Opening reminder...'
-                          : 'Acknowledging reminder...'}
+                        {reminderActionStatus(reminders.actionKinds[reminder.id])}
                       </span>
                     {/if}
                   </div>
@@ -1208,9 +1217,7 @@
                       data-testid={`reminder-open-${reminder.id}`}
                       disabled={reminders.actionIds.has(reminder.id)}
                       onclick={() => openReminder(reminder)}
-                      >{reminders.actionKinds[reminder.id] === 'open'
-                        ? 'Opening...'
-                        : 'Open'}</button
+                      >{reminderActionLabel(reminders.actionKinds[reminder.id], 'open')}</button
                     >
                     <button
                       class="ghost-button small"
@@ -1218,9 +1225,7 @@
                       data-testid={`reminder-ack-${reminder.id}`}
                       disabled={reminders.actionIds.has(reminder.id)}
                       onclick={() => ackReminder(reminder)}
-                      >{reminders.actionKinds[reminder.id] === 'ack'
-                        ? 'Acknowledging...'
-                        : 'Ack'}</button
+                      >{reminderActionLabel(reminders.actionKinds[reminder.id], 'ack')}</button
                     >
                   </div>
                 </article>

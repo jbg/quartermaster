@@ -119,10 +119,10 @@ object PushSupport {
         val channel =
             NotificationChannel(
                 CHANNEL_ID,
-                "Expiry reminders",
+                context.getString(R.string.push_expiry_reminder_channel_name),
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
-                description = "Quartermaster expiry and stock reminders"
+                description = context.getString(R.string.push_expiry_reminder_channel_description)
             }
         manager.createNotificationChannel(channel)
     }

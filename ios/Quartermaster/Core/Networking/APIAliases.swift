@@ -197,28 +197,56 @@ extension Reminder: Identifiable {
   var batchID: String { batchId }
   var productID: String { productId }
   var locationID: String { locationId }
-  var displayTitle: String { "\(productName) in \(locationName)" }
+  var displayTitle: String {
+    String(
+      format: NSLocalizedString("EXPIRY_REMINDER_TITLE", comment: ""),
+      productName,
+      locationName
+    )
+  }
   var displayBody: String {
     if let expiresOn {
-      "\(quantity) \(unit) expires on \(expiresOn)."
+      String(
+        format: NSLocalizedString("EXPIRY_REMINDER_BODY", comment: ""),
+        quantity,
+        unit,
+        expiresOn
+      )
     } else {
-      "\(quantity) \(unit) has an expiry reminder."
+      String(
+        format: NSLocalizedString("EXPIRY_REMINDER_BODY_NO_DATE", comment: ""),
+        quantity,
+        unit
+      )
     }
   }
   var displayUrgency: String? {
     guard let urgency else { return nil }
     switch urgency {
     case .expired:
-      guard let daysUntilExpiry else { return "Expired" }
+      guard let daysUntilExpiry else {
+        return NSLocalizedString("EXPIRY_REMINDER_URGENCY_EXPIRED", comment: "")
+      }
       let count = abs(daysUntilExpiry)
-      return count == 1 ? "Expired yesterday" : "Expired \(count) days ago"
+      if count == 1 {
+        return NSLocalizedString("EXPIRY_REMINDER_URGENCY_EXPIRED_YESTERDAY", comment: "")
+      }
+      return String(
+        format: NSLocalizedString("EXPIRY_REMINDER_URGENCY_EXPIRED_DAYS_AGO", comment: ""),
+        count
+      )
     case .expiresToday:
-      return "Expires today"
+      return NSLocalizedString("EXPIRY_REMINDER_URGENCY_TODAY", comment: "")
     case .expiresTomorrow:
-      return "Expires tomorrow"
+      return NSLocalizedString("EXPIRY_REMINDER_URGENCY_TOMORROW", comment: "")
     case .expiresFuture:
-      guard let daysUntilExpiry else { return "Expires soon" }
-      return "Expires in \(daysUntilExpiry) days"
+      guard let daysUntilExpiry else {
+        return NSLocalizedString("EXPIRY_REMINDER_URGENCY_SOON", comment: "")
+      }
+      return String(
+        format: NSLocalizedString("EXPIRY_REMINDER_URGENCY_FUTURE_DAYS", comment: ""),
+        daysUntilExpiry
+      )
     }
   }
   var fireAtDate: Date? { Self.iso.date(from: fireAt) }

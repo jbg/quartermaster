@@ -20,8 +20,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.quartermaster.android.generated.models.ReminderDto
+import dev.quartermaster.android.generated.models.ReminderUrgency
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.OffsetDateTime
@@ -45,8 +48,8 @@ internal fun ReminderScreen(appState: QuartermasterAppState, modifier: Modifier 
     ) {
         item {
             RouteHeader(
-                title = "Reminders",
-                subtitle = "Due expiry reminders stay here until someone opens or acknowledges them.",
+                title = stringResource(R.string.reminder_inbox_title),
+                subtitle = stringResource(R.string.reminder_inbox_subtitle),
             )
         }
 
@@ -54,17 +57,17 @@ internal fun ReminderScreen(appState: QuartermasterAppState, modifier: Modifier 
             appState.remindersLoadState == LoadState.Loading && appState.reminders.isEmpty() -> {
                 item {
                     InlineStatusCard(
-                        title = "Loading reminders",
-                        message = "Fetching the household inbox and marking unseen items as presented.",
+                        title = stringResource(R.string.reminder_inbox_loading_title),
+                        message = stringResource(R.string.reminder_inbox_loading_body),
                     )
                 }
             }
             appState.reminderError != null && appState.reminders.isEmpty() -> {
                 item {
                     ErrorCard(
-                        title = "Couldn't load reminders",
+                        title = stringResource(R.string.reminder_inbox_load_error_title),
                         message = appState.reminderError!!,
-                        actionLabel = "Retry",
+                        actionLabel = stringResource(R.string.reminder_inbox_retry),
                         onAction = { scope.launch { appState.refreshReminders(limit = 50) } },
                     )
                 }
@@ -72,8 +75,8 @@ internal fun ReminderScreen(appState: QuartermasterAppState, modifier: Modifier 
             appState.reminders.isEmpty() -> {
                 item {
                     StatusCard(
-                        title = "No due reminders",
-                        message = "Expiry reminders stay here until someone opens or acknowledges them.",
+                        title = stringResource(R.string.reminder_inbox_empty_title),
+                        message = stringResource(R.string.reminder_inbox_empty_body),
                     )
                 }
             }
@@ -81,17 +84,17 @@ internal fun ReminderScreen(appState: QuartermasterAppState, modifier: Modifier 
         if (appState.isRemindersRefreshing && appState.reminders.isNotEmpty()) {
             item {
                 InlineStatusCard(
-                    title = "Refreshing reminders",
-                    message = "Syncing the latest due reminders for this household.",
+                    title = stringResource(R.string.reminder_inbox_refreshing_title),
+                    message = stringResource(R.string.reminder_inbox_refreshing_body),
                 )
             }
         }
         appState.reminderError?.takeIf { appState.reminders.isNotEmpty() }?.let { message ->
             item {
                 ErrorCard(
-                    title = "Reminder action failed",
+                    title = stringResource(R.string.reminder_inbox_action_error_title),
                     message = message,
-                    actionLabel = "Refresh reminders",
+                    actionLabel = stringResource(R.string.reminder_inbox_refresh_action),
                     onAction = { scope.launch { appState.refreshReminders(limit = 50) } },
                 )
             }
@@ -101,9 +104,6 @@ internal fun ReminderScreen(appState: QuartermasterAppState, modifier: Modifier 
             ReminderCard(
                 reminder = reminder,
                 action = appState.reminderActionFor(reminder.id.toString()),
-                title = appState.reminderDisplayTitle(reminder),
-                body = appState.reminderDisplayBody(reminder),
-                urgency = appState.reminderUrgencyText(reminder),
                 onOpen = { scope.launch { appState.openReminder(reminder) } },
                 onAcknowledge = { scope.launch { appState.acknowledgeReminder(reminder.id.toString()) } },
             )
@@ -115,12 +115,12 @@ internal fun ReminderScreen(appState: QuartermasterAppState, modifier: Modifier 
 private fun ReminderCard(
     reminder: ReminderDto,
     action: ReminderAction?,
-    title: String,
-    body: String,
-    urgency: String?,
     onOpen: () -> Unit,
     onAcknowledge: () -> Unit,
 ) {
+    val title = reminderDisplayTitle(reminder)
+    val body = reminderDisplayBody(reminder)
+    val urgency = reminderUrgencyText(reminder)
     Card {
         Column(
             modifier = Modifier
@@ -139,22 +139,26 @@ private fun ReminderCard(
             }
             reminder.expiresOn?.let { expiresOn ->
                 Text(
-                    "Expiry date ${formatReminderDate(expiresOn)}",
+                    stringResource(R.string.reminder_inbox_expiry_date, formatReminderDate(expiresOn)),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
             Text(
-                "Household time ${formatReminderDateTime(reminder.householdFireLocalAt)} (${reminder.householdTimezone})",
+                stringResource(
+                    R.string.reminder_inbox_household_time,
+                    formatReminderDateTime(reminder.householdFireLocalAt),
+                    reminder.householdTimezone,
+                ),
                 style = MaterialTheme.typography.bodySmall,
             )
             if (action != null) {
                 InlineStatusCard(
-                    title = "Updating reminder",
+                    title = stringResource(R.string.reminder_inbox_updating_title),
                     message =
                     if (action == ReminderAction.Open) {
-                        "Opening reminder and refreshing inventory…"
+                        stringResource(R.string.reminder_inbox_opening_body)
                     } else {
-                        "Acknowledging reminder and removing it from the inbox…"
+                        stringResource(R.string.reminder_inbox_acknowledging_body)
                     },
                 )
             }
@@ -164,17 +168,62 @@ private fun ReminderCard(
                     onClick = onOpen,
                     enabled = action == null,
                 ) {
-                    Text(if (action == ReminderAction.Open) "Opening..." else "Open")
+                    Text(
+                        if (action == ReminderAction.Open) {
+                            stringResource(R.string.reminder_inbox_opening_action)
+                        } else {
+                            stringResource(R.string.reminder_inbox_open)
+                        },
+                    )
                 }
                 TextButton(
                     modifier = Modifier.testTag(SmokeTag.reminderAckButton(reminder.id.toString())),
                     onClick = onAcknowledge,
                     enabled = action == null,
                 ) {
-                    Text(if (action == ReminderAction.Acknowledge) "Acknowledging..." else "Acknowledge")
+                    Text(
+                        if (action == ReminderAction.Acknowledge) {
+                            stringResource(R.string.reminder_inbox_acknowledging_action)
+                        } else {
+                            stringResource(R.string.reminder_inbox_acknowledge)
+                        },
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun reminderDisplayTitle(reminder: ReminderDto): String = stringResource(R.string.expiry_reminder_title, reminder.productName, reminder.locationName)
+
+@Composable
+private fun reminderDisplayBody(reminder: ReminderDto): String = reminder.expiresOn?.let { expiresOn ->
+    stringResource(R.string.expiry_reminder_body, reminder.quantity, reminder.unit, expiresOn)
+} ?: stringResource(R.string.expiry_reminder_body_no_date, reminder.quantity, reminder.unit)
+
+@Composable
+private fun reminderUrgencyText(reminder: ReminderDto): String? {
+    val urgency = reminder.urgency ?: return null
+    val days = reminder.daysUntilExpiry
+    return when (urgency) {
+        ReminderUrgency.EXPIRED -> {
+            val count = days?.let { -it }
+            when (count) {
+                1L -> stringResource(R.string.expiry_reminder_urgency_expired_yesterday)
+                null -> stringResource(R.string.expiry_reminder_urgency_expired)
+                else -> pluralStringResource(
+                    R.plurals.expiry_reminder_urgency_expired_days_ago,
+                    count.toInt(),
+                    count,
+                )
+            }
+        }
+        ReminderUrgency.EXPIRES_TODAY -> stringResource(R.string.expiry_reminder_urgency_today)
+        ReminderUrgency.EXPIRES_TOMORROW -> stringResource(R.string.expiry_reminder_urgency_tomorrow)
+        ReminderUrgency.EXPIRES_FUTURE -> days?.let {
+            pluralStringResource(R.plurals.expiry_reminder_urgency_future_days, it.toInt(), it)
+        } ?: stringResource(R.string.expiry_reminder_urgency_soon)
     }
 }
 
