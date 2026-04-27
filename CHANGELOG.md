@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1](https://github.com/jbg/quartermaster/compare/1.1.0...1.1.1) (2026-04-27)
+
+
+### Bug Fixes
+
+* clarify Xcode managed signing profiles ([6d0669f](https://github.com/jbg/quartermaster/commit/6d0669f5af1b4842bb5ec958fde1161c3eb41bb1))
+* support local iOS provisioning profiles ([c2762a9](https://github.com/jbg/quartermaster/commit/c2762a92deb446b897636b973b1d63c2de80331f))
+
 ## [1.1.0](https://github.com/jbg/quartermaster/compare/1.0.0...1.1.0) (2026-04-27)
 
 
