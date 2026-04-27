@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/jbg/quartermaster/compare/1.2.6...1.3.0) (2026-04-27)
+
+
+### Features
+
+* add Quartermaster brand identity assets ([f52d060](https://github.com/jbg/quartermaster/commit/f52d060afcf4c7f0feb3862d9397d13df07ccbb6))
+
 ## [1.2.6](https://github.com/jbg/quartermaster/compare/1.2.5...1.2.6) (2026-04-27)
 
 
