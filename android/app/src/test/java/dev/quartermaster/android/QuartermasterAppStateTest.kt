@@ -47,6 +47,21 @@ class QuartermasterAppStateTest {
     }
 
     @Test
+    fun `reminder urgency formatting falls back for missing and raw dates`() {
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend = FakeBackend(meResponse = meResponseJson()),
+            )
+
+        assertNull(appState.reminderUrgencyText(reminderJson(expiresOn = null)))
+        assertEquals(
+            "Expires not-a-date",
+            appState.reminderUrgencyText(reminderJson(expiresOn = "not-a-date")),
+        )
+    }
+
+    @Test
     fun `parseInviteContext accepts custom join scheme and trims values`() {
         val context =
             QuartermasterAppState.parseInviteContext(
@@ -203,6 +218,46 @@ class QuartermasterAppStateTest {
         assertEquals("33333333-3333-3333-3333-333333333333", appState.pendingInventoryTarget?.batchId)
         assertTrue(appState.hasLoadedInventoryOnce)
         assertTrue(appState.hasLoadedRemindersOnce)
+    }
+
+    @Test
+    fun `refreshReminders sorts by expiry fire time and id`() = runTest {
+        val laterExpiry = reminderJson(
+            id = "cccccccc-cccc-cccc-cccc-cccccccccccc",
+            expiresOn = "2026-04-26",
+            householdFireLocalAt = "2026-04-25T09:00:00",
+        )
+        val laterFire = reminderJson(
+            id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            expiresOn = "2026-04-24",
+            householdFireLocalAt = "2026-04-24T10:00:00",
+        )
+        val first = reminderJson(
+            id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            expiresOn = "2026-04-24",
+            householdFireLocalAt = "2026-04-24T09:00:00",
+        )
+        val missingExpiry = reminderJson(
+            id = "dddddddd-dddd-dddd-dddd-dddddddddddd",
+            expiresOn = null,
+            householdFireLocalAt = "2026-04-23T09:00:00",
+        )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    reminders = listOf(laterExpiry, laterFire, missingExpiry, first),
+                ),
+            )
+
+        appState.bootstrap()
+
+        assertEquals(
+            listOf(first.id, laterFire.id, laterExpiry.id, missingExpiry.id),
+            appState.reminders.map { it.id },
+        )
     }
 
     @Test
@@ -906,6 +961,35 @@ class QuartermasterAppStateTest {
     }
 
     @Test
+    fun `batchCountsForLocation separates active and depleted stock`() = runTest {
+        val location = locationJson()
+        val active = stockBatchJson()
+        val depleted = stockBatchJson(
+            id = "55555555-5555-5555-5555-555555555555",
+            quantity = "0",
+            depletedAt = "2026-04-22T12:30:00Z",
+        )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    stock = listOf(depleted, active),
+                    locations = listOf(location),
+                ),
+            )
+
+        appState.bootstrap()
+
+        assertEquals(BatchCounts(active = 1, depleted = 1), appState.batchCountsForLocation(location.id.toString()))
+        assertEquals(
+            listOf(active.id, depleted.id),
+            appState.batchesForLocation(location.id.toString(), target = null).map { it.id },
+        )
+    }
+
+    @Test
     fun `stock update failure clears in flight state and stores inventory error`() = runTest {
         val batch = stockBatchJson()
         val appState =
@@ -1190,6 +1274,8 @@ class QuartermasterAppStateTest {
     private fun reminderJson(
         id: String = "55555555-5555-5555-5555-555555555555",
         title: String = "Use flour soon",
+        expiresOn: String? = "2026-04-24",
+        householdFireLocalAt: String = "2026-04-23T09:00:00",
     ): ReminderDto = json.decodeFromString(
         """
             {
@@ -1199,10 +1285,11 @@ class QuartermasterAppStateTest {
               "body": "Pantry flour expires tomorrow.",
               "fire_at": "2026-04-23T09:00:00Z",
               "household_timezone": "UTC",
-              "household_fire_local_at": "2026-04-23T09:00:00",
+              "household_fire_local_at": "$householdFireLocalAt",
               "batch_id": "33333333-3333-3333-3333-333333333333",
               "product_id": "44444444-4444-4444-4444-444444444444",
-              "location_id": "22222222-2222-2222-2222-222222222222"
+              "location_id": "22222222-2222-2222-2222-222222222222",
+              "expires_on": ${expiresOn?.let { "\"$it\"" } ?: "null"}
             }
         """.trimIndent(),
     )

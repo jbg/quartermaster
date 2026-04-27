@@ -31,6 +31,8 @@ import dev.quartermaster.android.generated.models.UnitFamily
 import dev.quartermaster.android.generated.models.UpdateLocationRequest
 import java.net.URI
 import java.net.URLDecoder
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 enum class MainTab { Inventory, Products, Reminders, Scan, Settings }
@@ -121,6 +123,11 @@ data class StockEditFields(
     val expiresOn: String = "",
     val openedOn: String = "",
     val note: String = "",
+)
+
+data class BatchCounts(
+    val active: Int,
+    val depleted: Int,
 )
 
 sealed interface HouseholdScopedResolution {
@@ -623,7 +630,7 @@ class QuartermasterAppState(
         onFailure = { reminderError = it },
         onFinish = { remindersLoadState = LoadState.Idle },
     ) {
-        reminders = backend.listReminders(limit).sortedBy { it.householdFireLocalAt }
+        reminders = sortReminders(backend.listReminders(limit))
         val inFlightIds = reminderActionInFlight.keys
         reminders.filter { it.presentedOnDeviceAt == null && !inFlightIds.contains(it.id.toString()) }.forEach { reminder ->
             runCatching { backend.presentReminder(reminder.id.toString()) }
@@ -995,6 +1002,38 @@ class QuartermasterAppState(
     )
 
     fun isBatchDepleted(batch: StockBatchDto): Boolean = batch.depletedAt != null
+
+    fun batchCountsForLocation(locationId: String): BatchCounts {
+        val inLocation = batches.filter { it.locationId.toString() == locationId }
+        return BatchCounts(
+            active = inLocation.count { !isBatchDepleted(it) },
+            depleted = inLocation.count { isBatchDepleted(it) },
+        )
+    }
+
+    fun sortReminders(items: List<ReminderDto>): List<ReminderDto> = items.sortedWith(
+        compareBy<ReminderDto>(
+            { it.expiresOn ?: "9999-12-31" },
+            { it.householdFireLocalAt },
+            { it.id.toString() },
+        ),
+    )
+
+    fun reminderUrgencyText(reminder: ReminderDto): String? {
+        val expiresOn = reminder.expiresOn ?: return null
+        val expiry = runCatching { LocalDate.parse(expiresOn) }.getOrNull()
+            ?: return "Expires $expiresOn"
+        val days = ChronoUnit.DAYS.between(LocalDate.now(), expiry)
+        return when {
+            days < 0 -> {
+                val count = -days
+                if (count == 1L) "Expired yesterday" else "Expired $count days ago"
+            }
+            days == 0L -> "Expires today"
+            days == 1L -> "Expires tomorrow"
+            else -> "Expires in $days days"
+        }
+    }
 
     fun canEditBatch(batch: StockBatchDto?): Boolean = batch != null && !isBatchDepleted(batch)
 

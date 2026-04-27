@@ -28,6 +28,48 @@ final class AppStateReminderTests: XCTestCase {
         XCTAssertEqual(appState.reminders.map(\.id), ["r1", "r2"])
     }
 
+    func testReminderSnapshotsSortByExpiryFireTimeAndID() async {
+        let laterExpiry = reminder(
+            id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+            expiresOn: "2026-04-26",
+            householdFireLocalAt: "2026-04-25T09:00:00Z"
+        )
+        let laterFire = reminder(
+            id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            expiresOn: "2026-04-24",
+            householdFireLocalAt: "2026-04-24T10:00:00Z"
+        )
+        let first = reminder(
+            id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            expiresOn: "2026-04-24",
+            householdFireLocalAt: "2026-04-24T09:00:00Z"
+        )
+        let missingExpiry = reminder(
+            id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+            expiresOn: nil,
+            householdFireLocalAt: "2026-04-23T09:00:00Z"
+        )
+        let api = FakeAPI(
+            reminderResponses: [
+                .success(reminderListResponse([laterExpiry, laterFire, missingExpiry, first]))
+            ]
+        )
+        let appState = makeAppState(api: api)
+        appState.phase = .authenticated(me())
+
+        await appState.loadReminderInbox(limit: 50)
+
+        XCTAssertEqual(
+            appState.reminders.map(\.id),
+            [
+                "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                "cccccccc-cccc-cccc-cccc-cccccccccccc",
+                "dddddddd-dddd-dddd-dddd-dddddddddddd",
+            ]
+        )
+    }
+
     func testInitialLoadShowsLoadingUntilFirstReminderFetchCompletes() async {
         let gate = AsyncGate()
         let api = FakeAPI(
@@ -336,7 +378,7 @@ private actor FakeAPI: AppStateAPI {
     func deleteProduct(id: String) async throws {}
     func refreshProduct(id: String) async throws -> Product { fatalError("unused") }
     func restoreProduct(id: String) async throws -> Product { fatalError("unused") }
-    func listStock(locationID: String?, productID: String?, expiringBefore: String?) async throws -> [StockBatch] { [] }
+    func listStock(locationID: String?, productID: String?, expiringBefore: String?, includeDepleted: Bool) async throws -> [StockBatch] { [] }
     func getStock(id: String) async throws -> StockBatch { fatalError("unused") }
     func createStock(_ request: CreateStockRequest) async throws -> StockBatch { fatalError("unused") }
     func updateStock(id: String, request: UpdateStockRequest) async throws -> StockBatch { fatalError("unused") }
@@ -443,7 +485,9 @@ private func householdJSON() -> String {
 }
 
 private func reminder(
-    id: String = "55555555-5555-5555-5555-555555555555"
+    id: String = "55555555-5555-5555-5555-555555555555",
+    expiresOn: String? = nil,
+    householdFireLocalAt: String = "2026-04-23T09:00:00Z"
 ) -> Reminder {
     decode(from: """
     {
@@ -453,10 +497,11 @@ private func reminder(
       "body": "Pantry flour expires tomorrow.",
       "fire_at": "2026-04-23T09:00:00Z",
       "household_timezone": "UTC",
-      "household_fire_local_at": "2026-04-23T09:00:00Z",
+      "household_fire_local_at": "\(householdFireLocalAt)",
       "batch_id": "33333333-3333-3333-3333-333333333333",
       "product_id": "44444444-4444-4444-4444-444444444444",
       "location_id": "22222222-2222-2222-2222-222222222222",
+      "expires_on": \(jsonString(expiresOn)),
       "presented_on_device_at": null,
       "opened_on_device_at": null
     }

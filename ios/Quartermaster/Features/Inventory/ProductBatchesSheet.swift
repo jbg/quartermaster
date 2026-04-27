@@ -27,22 +27,32 @@ struct ProductBatchesSheet: View {
           ForEach(batches) { batch in
             BatchRow(batch: batch)
               .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                Button(role: .destructive) {
-                  Task { await delete(batch) }
-                } label: {
-                  Label("Delete", systemImage: "trash")
+                if !isDepleted(batch) {
+                  Button(role: .destructive) {
+                    Task { await delete(batch) }
+                  } label: {
+                    Label("Delete", systemImage: "trash")
+                  }
                 }
               }
               .swipeActions(edge: .leading) {
-                Button {
-                  editing = batch
-                } label: {
-                  Label("Edit", systemImage: "pencil")
+                if !isDepleted(batch) {
+                  Button {
+                    editing = batch
+                  } label: {
+                    Label("Edit", systemImage: "pencil")
+                  }
+                  .tint(.blue)
                 }
-                .tint(.blue)
               }
               .contentShape(Rectangle())
-              .onTapGesture { editing = batch }
+              .onTapGesture {
+                if isDepleted(batch) {
+                  showBatchHistory = batch
+                } else {
+                  editing = batch
+                }
+              }
               .listRowBackground(
                 flashingBatchID == batch.id
                   ? Color.accentColor.opacity(0.18)
@@ -53,11 +63,11 @@ struct ProductBatchesSheet: View {
           }
           Section {
             Button {
-              consumeTarget = batches.first
+              consumeTarget = batches.first(where: { !isDepleted($0) })
             } label: {
               Label("Consume", systemImage: "fork.knife")
             }
-            .disabled(batches.isEmpty)
+            .disabled(!batches.contains(where: { !isDepleted($0) }))
           }
         }
         .task(id: highlightBatchID) { await flashHighlight(proxy: proxy) }
@@ -99,7 +109,7 @@ struct ProductBatchesSheet: View {
         ConsumeForm(product: product, location: location) {
           await onMutated()
           if let refreshed = try? await appState.api.listStock(
-            locationID: location.id, productID: product.id)
+            locationID: location.id, productID: product.id, includeDepleted: true)
           {
             batches = refreshed
           }
@@ -126,6 +136,7 @@ struct ProductBatchesSheet: View {
             if let refreshed = try? await appState.api.listStock(
               locationID: location.id,
               productID: product.id,
+              includeDepleted: true,
             ) {
               batches = refreshed
             }
@@ -189,6 +200,11 @@ struct BatchRow: View {
             .font(.caption2)
             .foregroundStyle(.secondary)
         }
+        if isDepleted(batch) {
+          Label("Depleted", systemImage: "archivebox")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+        }
       }
       Spacer()
       ExpiryBadge(expiresOn: batch.expiresOn)
@@ -202,6 +218,10 @@ struct BatchRow: View {
     formatter.timeStyle = .none
     return formatter.string(from: d)
   }
+}
+
+private func isDepleted(_ batch: StockBatch) -> Bool {
+  batch.depletedAt != nil
 }
 
 private struct EditBatchForm: View {

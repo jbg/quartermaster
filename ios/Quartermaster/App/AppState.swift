@@ -40,8 +40,9 @@ protocol AppStateAPI: Actor {
   func deleteProduct(id: String) async throws
   func refreshProduct(id: String) async throws -> Product
   func restoreProduct(id: String) async throws -> Product
-  func listStock(locationID: String?, productID: String?, expiringBefore: String?) async throws
-    -> [StockBatch]
+  func listStock(
+    locationID: String?, productID: String?, expiringBefore: String?, includeDepleted: Bool
+  ) async throws -> [StockBatch]
   func getStock(id: String) async throws -> StockBatch
   func createStock(_ request: CreateStockRequest) async throws -> StockBatch
   func updateStock(id: String, request: UpdateStockRequest) async throws -> StockBatch
@@ -76,11 +77,29 @@ extension AppStateAPI {
   }
 
   func listStock() async throws -> [StockBatch] {
-    try await listStock(locationID: nil, productID: nil, expiringBefore: nil)
+    try await listStock(
+      locationID: nil, productID: nil, expiringBefore: nil, includeDepleted: false)
+  }
+
+  func listStock(includeDepleted: Bool) async throws -> [StockBatch] {
+    try await listStock(
+      locationID: nil, productID: nil, expiringBefore: nil, includeDepleted: includeDepleted)
   }
 
   func listStock(locationID: String?, productID: String?) async throws -> [StockBatch] {
-    try await listStock(locationID: locationID, productID: productID, expiringBefore: nil)
+    try await listStock(
+      locationID: locationID, productID: productID, expiringBefore: nil, includeDepleted: false)
+  }
+
+  func listStock(locationID: String?, productID: String?, includeDepleted: Bool) async throws
+    -> [StockBatch]
+  {
+    try await listStock(
+      locationID: locationID,
+      productID: productID,
+      expiringBefore: nil,
+      includeDepleted: includeDepleted,
+    )
   }
 
   func createLocation(name: String, kind: String) async throws -> Location {
@@ -393,9 +412,10 @@ final class AppState {
         let response = try await api.listReminders(limit: limit)
         hasLoadedReminderInbox = true
         reminderInboxError = nil
-        applyReminderSnapshot(response.items)
+        let sortedItems = Self.sortedReminders(response.items)
+        applyReminderSnapshot(sortedItems)
         let existingIDs = Set(queuedReminders.map(\.id) + (activeReminder.map { [$0.id] } ?? []))
-        for reminder in response.items
+        for reminder in sortedItems
         where reminder.presentedOnDeviceAt == nil
           && !existingIDs.contains(reminder.id)
           && !reminderActionInFlightIDs.contains(reminder.id)
@@ -623,6 +643,22 @@ final class AppState {
     return Self.displayDateFormatter.string(from: date)
   }
 
+  func reminderUrgencyText(for reminder: Reminder) -> String? {
+    guard let expiresOn = reminder.expiresOn else { return nil }
+    guard let days = householdDayDifference(for: expiresOn) else {
+      return "Expires \(displayDate(for: expiresOn) ?? expiresOn)"
+    }
+    if days < 0 {
+      let count = abs(days)
+      return count == 1 ? "Expired yesterday" : "Expired \(count) days ago"
+    }
+    switch days {
+    case 0: return "Expires today"
+    case 1: return "Expires tomorrow"
+    default: return "Expires in \(days) days"
+    }
+  }
+
   private func presentNextReminderIfNeeded() {
     guard activeReminder == nil, !queuedReminders.isEmpty else { return }
     activeReminder = queuedReminders.removeFirst()
@@ -703,11 +739,27 @@ final class AppState {
   }
 
   private func applyReminderSnapshot(_ snapshot: [Reminder]) {
-    reminders = snapshot
+    reminders = Self.sortedReminders(snapshot)
     let validIDs = Set(snapshot.map(\.id))
     queuedReminders.removeAll { !validIDs.contains($0.id) }
     if let activeReminder, !validIDs.contains(activeReminder.id) {
       self.activeReminder = nil
+    }
+  }
+
+  private static func sortedReminders(_ reminders: [Reminder]) -> [Reminder] {
+    reminders.sorted { lhs, rhs in
+      let lhsExpires = lhs.expiresOn ?? ""
+      let rhsExpires = rhs.expiresOn ?? ""
+      if lhsExpires != rhsExpires {
+        if lhsExpires.isEmpty { return false }
+        if rhsExpires.isEmpty { return true }
+        return lhsExpires < rhsExpires
+      }
+      if lhs.householdFireLocalAt != rhs.householdFireLocalAt {
+        return lhs.householdFireLocalAt < rhs.householdFireLocalAt
+      }
+      return lhs.id < rhs.id
     }
   }
 

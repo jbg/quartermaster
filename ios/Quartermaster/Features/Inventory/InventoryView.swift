@@ -226,7 +226,7 @@ struct InventoryView: View {
     isLoading = true
     loadError = nil
     async let locs = appState.api.locations()
-    async let stock = appState.api.listStock()
+    async let stock = appState.api.listStock(includeDepleted: true)
     do {
       let (l, s) = try await (locs, stock)
       locations = l.sorted { $0.sortOrder < $1.sortOrder }

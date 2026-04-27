@@ -56,8 +56,14 @@ struct ReminderInboxView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
               if let expiresOn = reminder.expiresOn {
-                Text("Expires \(appState.displayDate(for: expiresOn) ?? expiresOn)")
-                  .font(.caption)
+                Text(
+                  appState.reminderUrgencyText(for: reminder)
+                    ?? "Expires \(appState.displayDate(for: expiresOn) ?? expiresOn)"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                Text("Expiry date \(appState.displayDate(for: expiresOn) ?? expiresOn)")
+                  .font(.caption2)
                   .foregroundStyle(.secondary)
               }
               if let schedule = scheduleText(for: reminder) {
