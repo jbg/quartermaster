@@ -236,6 +236,7 @@ jobs:
           p12-password: ${{ secrets.APPSTORE_CERTIFICATES_PASSWORD }}
 
       - name: Download App Store provisioning profile
+        id: provisioning
         uses: apple-actions/download-provisioning-profiles@v4
         with:
           bundle-id: ${{ vars.QUARTERMASTER_IOS_BUNDLE_ID }}
@@ -250,6 +251,7 @@ jobs:
         env:
           QUARTERMASTER_IOS_DEVELOPMENT_TEAM: ${{ vars.QUARTERMASTER_IOS_DEVELOPMENT_TEAM }}
           QUARTERMASTER_IOS_BUNDLE_ID: ${{ vars.QUARTERMASTER_IOS_BUNDLE_ID }}
+          QUARTERMASTER_IOS_PROFILE: ${{ fromJSON(steps.provisioning.outputs.profiles)[0].name }}
           QUARTERMASTER_ASSOCIATED_DOMAIN: ${{ vars.QUARTERMASTER_ASSOCIATED_DOMAIN }}
         run: |
           ipa_path_file="$RUNNER_TEMP/quartermaster-ipa-path.txt"
