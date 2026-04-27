@@ -70,6 +70,14 @@ final class AppStateReminderTests: XCTestCase {
         )
     }
 
+    func testReminderDisplayCopyComesFromStructuredFields() {
+        let item = reminder(expiresOn: "2026-04-24")
+
+        XCTAssertEqual(item.displayTitle, "Flour in Pantry")
+        XCTAssertEqual(item.displayBody, "1 kg expires on 2026-04-24.")
+        XCTAssertEqual(item.displayUrgency, "Expires tomorrow")
+    }
+
     func testInitialLoadShowsLoadingUntilFirstReminderFetchCompletes() async {
         let gate = AsyncGate()
         let api = FakeAPI(
@@ -493,15 +501,19 @@ private func reminder(
     {
       "id": "\(id)",
       "kind": "expiry",
-      "title": "Use flour soon",
-      "body": "Pantry flour expires tomorrow.",
       "fire_at": "2026-04-23T09:00:00Z",
       "household_timezone": "UTC",
       "household_fire_local_at": "\(householdFireLocalAt)",
       "batch_id": "33333333-3333-3333-3333-333333333333",
       "product_id": "44444444-4444-4444-4444-444444444444",
       "location_id": "22222222-2222-2222-2222-222222222222",
+      "product_name": "Flour",
+      "location_name": "Pantry",
+      "quantity": "1",
+      "unit": "kg",
       "expires_on": \(jsonString(expiresOn)),
+      "days_until_expiry": 1,
+      "urgency": "expires_tomorrow",
       "presented_on_device_at": null,
       "opened_on_device_at": null
     }
@@ -514,14 +526,18 @@ private func reminderListResponse(_ items: [Reminder]) -> ReminderListResponse {
         {
           "id": "\(item.id)",
           "kind": "expiry",
-          "title": "\(item.title)",
-          "body": "\(item.body)",
           "fire_at": "\(item.fireAt)",
           "household_timezone": "\(item.householdTimezone)",
           "household_fire_local_at": "\(item.householdFireLocalAt)",
           "batch_id": "\(item.batchID)",
           "product_id": "\(item.productID)",
           "location_id": "\(item.locationID)",
+          "product_name": "\(item.productName)",
+          "location_name": "\(item.locationName)",
+          "quantity": "\(item.quantity)",
+          "unit": "\(item.unit)",
+          "days_until_expiry": \(item.daysUntilExpiry.map(String.init) ?? "null"),
+          "urgency": \(jsonString(item.urgency?.rawValue)),
           "presented_on_device_at": \(jsonString(item.presentedOnDeviceAt)),
           "opened_on_device_at": \(jsonString(item.openedOnDeviceAt)),
           "expires_on": \(jsonString(item.expiresOn))

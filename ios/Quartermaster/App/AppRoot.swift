@@ -23,7 +23,7 @@ struct AppRoot: View {
       }
     }
     .alert(
-      appState.activeReminder?.title ?? "Reminder",
+      appState.activeReminder?.displayTitle ?? "Reminder",
       isPresented: Binding(
         get: { appState.activeReminder != nil },
         set: { _ in }
@@ -33,7 +33,7 @@ struct AppRoot: View {
       Button("Open") { appState.openActiveReminder() }
       Button("Dismiss", role: .cancel) { appState.dismissActiveReminder() }
     } message: { reminder in
-      Text(reminder.body)
+      Text(reminder.displayBody)
     }
   }
 }

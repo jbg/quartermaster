@@ -50,15 +50,14 @@ struct ReminderInboxView: View {
         } else {
           ForEach(appState.reminders) { reminder in
             VStack(alignment: .leading, spacing: 8) {
-              Text(reminder.title)
+              Text(reminder.displayTitle)
                 .font(.headline)
-              Text(reminder.body)
+              Text(reminder.displayBody)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
               if let expiresOn = reminder.expiresOn {
                 Text(
-                  appState.reminderUrgencyText(for: reminder)
-                    ?? "Expires \(appState.displayDate(for: expiresOn) ?? expiresOn)"
+                  appState.reminderUrgencyText(for: reminder) ?? "Expiry reminder"
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)

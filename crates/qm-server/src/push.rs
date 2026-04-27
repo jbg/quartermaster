@@ -403,12 +403,24 @@ async fn send_apns(
         request = request.bearer_auth(token);
     }
 
+    let alert = if let Some(expires_on) = item.expires_on.as_deref() {
+        json!({
+            "title-loc-key": "EXPIRY_REMINDER_TITLE",
+            "title-loc-args": [item.product_name, item.location_name],
+            "loc-key": "EXPIRY_REMINDER_BODY",
+            "loc-args": [item.quantity, item.unit, expires_on],
+        })
+    } else {
+        json!({
+            "title-loc-key": "EXPIRY_REMINDER_TITLE",
+            "title-loc-args": [item.product_name, item.location_name],
+            "loc-key": "EXPIRY_REMINDER_BODY_NO_DATE",
+            "loc-args": [item.quantity, item.unit],
+        })
+    };
     let payload = json!({
         "aps": {
-            "alert": {
-                "title": item.title,
-                "body": item.body,
-            },
+            "alert": alert,
             "sound": "default",
         },
         "reminder_id": item.reminder_id,
@@ -416,6 +428,11 @@ async fn send_apns(
         "product_id": item.product_id,
         "location_id": item.location_id,
         "kind": item.kind,
+        "product_name": item.product_name,
+        "location_name": item.location_name,
+        "quantity": item.quantity,
+        "unit": item.unit,
+        "expires_on": item.expires_on,
     });
     let response = request
         .json(&payload)
@@ -459,18 +476,17 @@ async fn send_fcm(
                     "channel_id": "expiry_reminders"
                 }
             },
-            "notification": {
-                "title": item.title,
-                "body": item.body
-            },
             "data": {
                 "reminder_id": item.reminder_id.to_string(),
                 "batch_id": item.batch_id.to_string(),
                 "product_id": item.product_id.to_string(),
                 "location_id": item.location_id.to_string(),
                 "kind": item.kind.clone(),
-                "title": item.title.clone(),
-                "body": item.body.clone()
+                "product_name": item.product_name.clone(),
+                "location_name": item.location_name.clone(),
+                "quantity": item.quantity.clone(),
+                "unit": item.unit.clone(),
+                "expires_on": item.expires_on.clone().unwrap_or_default()
             }
         }
     });
@@ -1020,8 +1036,11 @@ mod tests {
             product_id: Uuid::now_v7(),
             location_id: Uuid::now_v7(),
             kind: reminders::KIND_EXPIRY.into(),
-            title: "Milk expires tomorrow".into(),
-            body: "Pantry".into(),
+            expires_on: Some("2999-01-03".into()),
+            product_name: "Milk".into(),
+            location_name: "Pantry".into(),
+            quantity: "1".into(),
+            unit: "carton".into(),
             device_row_id: Uuid::now_v7(),
             device_token: "token".into(),
         }
@@ -1185,8 +1204,20 @@ mod tests {
         assert_eq!(captures[0].path, "/3/device/token-apns");
         assert_eq!(captures[0].authorization.as_deref(), Some("Bearer token"));
         assert_eq!(
-            captures[0].body["aps"]["alert"]["title"],
-            "Milk in Pantry expires tomorrow"
+            captures[0].body["aps"]["alert"]["title-loc-key"],
+            "EXPIRY_REMINDER_TITLE"
+        );
+        assert_eq!(
+            captures[0].body["aps"]["alert"]["title-loc-args"],
+            json!(["Milk", "Pantry"])
+        );
+        assert_eq!(
+            captures[0].body["aps"]["alert"]["loc-key"],
+            "EXPIRY_REMINDER_BODY"
+        );
+        assert_eq!(
+            captures[0].body["aps"]["alert"]["loc-args"],
+            json!(["1", "ml", "2999-01-03"])
         );
         assert_eq!(captures[0].body["batch_id"], batch_id.to_string());
 
@@ -1251,10 +1282,7 @@ mod tests {
             captures[0].authorization.as_deref(),
             Some("Bearer ya29.cached")
         );
-        assert_eq!(
-            captures[0].body["message"]["notification"]["title"],
-            "Milk in Pantry expires tomorrow"
-        );
+        assert!(captures[0].body["message"].get("notification").is_none());
         assert_eq!(
             captures[0].body["message"]["android"]["notification"]["channel_id"],
             "expiry_reminders"
@@ -1262,6 +1290,17 @@ mod tests {
         assert_eq!(
             captures[0].body["message"]["data"]["batch_id"],
             batch_id.to_string()
+        );
+        assert_eq!(captures[0].body["message"]["data"]["product_name"], "Milk");
+        assert_eq!(
+            captures[0].body["message"]["data"]["location_name"],
+            "Pantry"
+        );
+        assert_eq!(captures[0].body["message"]["data"]["quantity"], "1");
+        assert_eq!(captures[0].body["message"]["data"]["unit"], "ml");
+        assert_eq!(
+            captures[0].body["message"]["data"]["expires_on"],
+            "2999-01-03"
         );
 
         let row = sqlx::query(

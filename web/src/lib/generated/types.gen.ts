@@ -237,7 +237,7 @@ export type RegisterRequest = {
 
 export type ReminderDto = {
     batch_id: string;
-    body: string;
+    days_until_expiry?: number | null;
     expires_on?: string | null;
     fire_at: string;
     household_fire_local_at: string;
@@ -245,10 +245,14 @@ export type ReminderDto = {
     id: string;
     kind: ReminderKind;
     location_id: string;
+    location_name: string;
     opened_on_device_at?: string | null;
     presented_on_device_at?: string | null;
     product_id: string;
-    title: string;
+    product_name: string;
+    quantity: string;
+    unit: string;
+    urgency?: ReminderUrgency;
 };
 
 export type ReminderKind = 'expiry';
@@ -258,6 +262,8 @@ export type ReminderListResponse = {
     next_after_fire_at?: string | null;
     next_after_id?: string | null;
 };
+
+export type ReminderUrgency = 'expired' | 'expires_today' | 'expires_tomorrow' | 'expires_future';
 
 export type RestoreManyRequest = {
     /**

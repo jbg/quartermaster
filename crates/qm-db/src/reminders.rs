@@ -44,8 +44,10 @@ pub struct ReminderRow {
     pub household_timezone: String,
     pub household_fire_local_at: String,
     pub expires_on: Option<String>,
-    pub title: String,
-    pub body: String,
+    pub product_name: String,
+    pub location_name: String,
+    pub quantity: String,
+    pub unit: String,
     pub created_at: String,
     pub presented_on_device_at: Option<String>,
     pub opened_on_device_at: Option<String>,
@@ -75,8 +77,6 @@ struct ReminderDraft {
     household_timezone: String,
     household_fire_local_at: String,
     expires_on: Option<String>,
-    title: String,
-    body: String,
 }
 
 #[derive(Debug, Clone)]
@@ -104,8 +104,11 @@ pub struct PushWorkItem {
     pub product_id: Uuid,
     pub location_id: Uuid,
     pub kind: String,
-    pub title: String,
-    pub body: String,
+    pub expires_on: Option<String>,
+    pub product_name: String,
+    pub location_name: String,
+    pub quantity: String,
+    pub unit: String,
     pub device_row_id: Uuid,
     pub device_token: String,
 }
@@ -170,10 +173,14 @@ pub async fn list_due(
             String::from(
                 "SELECT r.id, r.household_id, r.batch_id, r.product_id, r.location_id, r.kind, \
                         r.fire_at, r.household_timezone, r.household_fire_local_at, \
-                        r.expires_on, r.title, r.body, r.created_at, \
+                        r.expires_on, b.quantity, b.unit, p.name AS product_name, \
+                        l.name AS location_name, r.created_at, \
                         s.first_presented_at AS presented_on_device_at, \
                         s.opened_at AS opened_on_device_at \
                  FROM stock_reminder r \
+                 INNER JOIN stock_batch b ON b.id = r.batch_id \
+                 INNER JOIN product p ON p.id = r.product_id \
+                 INNER JOIN location l ON l.id = r.location_id \
                  LEFT JOIN reminder_device_state s \
                    ON s.reminder_id = r.id AND s.device_id = ? \
                  WHERE r.household_id = ? AND r.acked_at IS NULL AND r.fire_at <= ? ",
@@ -185,10 +192,14 @@ pub async fn list_due(
             String::from(
                 "SELECT r.id, r.household_id, r.batch_id, r.product_id, r.location_id, r.kind, \
                         r.fire_at, r.household_timezone, r.household_fire_local_at, \
-                        r.expires_on, r.title, r.body, r.created_at, \
+                        r.expires_on, b.quantity, b.unit, p.name AS product_name, \
+                        l.name AS location_name, r.created_at, \
                         NULL AS presented_on_device_at, \
                         NULL AS opened_on_device_at \
                  FROM stock_reminder r \
+                 INNER JOIN stock_batch b ON b.id = r.batch_id \
+                 INNER JOIN product p ON p.id = r.product_id \
+                 INNER JOIN location l ON l.id = r.location_id \
                  WHERE r.household_id = ? AND r.acked_at IS NULL AND r.fire_at <= ? ",
             ),
             None,
@@ -196,8 +207,8 @@ pub async fn list_due(
     };
     match (after_fire_at, after_id) {
         (Some(fire_at), Some(id)) => {
-            sql.push_str("AND (fire_at > ? OR (fire_at = ? AND id > ?)) ");
-            sql.push_str("ORDER BY fire_at ASC, id ASC LIMIT ?");
+            sql.push_str("AND (r.fire_at > ? OR (r.fire_at = ? AND r.id > ?)) ");
+            sql.push_str("ORDER BY r.fire_at ASC, r.id ASC LIMIT ?");
             let mut query = sqlx::query(&sql);
             if let Some(device_id) = &bind_device_id {
                 query = query.bind(device_id);
@@ -214,8 +225,8 @@ pub async fn list_due(
             return page_from_rows(rows, limit);
         }
         (Some(fire_at), None) => {
-            sql.push_str("AND fire_at > ? ");
-            sql.push_str("ORDER BY fire_at ASC, id ASC LIMIT ?");
+            sql.push_str("AND r.fire_at > ? ");
+            sql.push_str("ORDER BY r.fire_at ASC, r.id ASC LIMIT ?");
             let mut query = sqlx::query(&sql);
             if let Some(device_id) = &bind_device_id {
                 query = query.bind(device_id);
@@ -237,7 +248,7 @@ pub async fn list_due(
         (None, None) => {}
     }
 
-    sql.push_str("ORDER BY fire_at ASC, id ASC LIMIT ?");
+    sql.push_str("ORDER BY r.fire_at ASC, r.id ASC LIMIT ?");
     let mut query = sqlx::query(&sql);
     if let Some(device_id) = &bind_device_id {
         query = query.bind(device_id);
@@ -356,11 +367,21 @@ pub async fn force_due_for_batch(
 
     let row = sqlx::query(
         "SELECT id, household_id, batch_id, product_id, location_id, kind, fire_at, \
-                household_timezone, household_fire_local_at, expires_on, title, body, \
+                household_timezone, household_fire_local_at, expires_on, quantity, unit, \
+                product_name, location_name, \
                 created_at, NULL AS presented_on_device_at, NULL AS opened_on_device_at \
-         FROM stock_reminder \
-         WHERE batch_id = ? AND kind = ? AND acked_at IS NULL \
-         ORDER BY created_at DESC LIMIT 1",
+         FROM ( \
+             SELECT r.id, r.household_id, r.batch_id, r.product_id, r.location_id, r.kind, \
+                    r.fire_at, r.household_timezone, r.household_fire_local_at, r.expires_on, \
+                    b.quantity, b.unit, p.name AS product_name, l.name AS location_name, \
+                    r.created_at \
+             FROM stock_reminder r \
+             INNER JOIN stock_batch b ON b.id = r.batch_id \
+             INNER JOIN product p ON p.id = r.product_id \
+             INNER JOIN location l ON l.id = r.location_id \
+             WHERE r.batch_id = ? AND r.kind = ? AND r.acked_at IS NULL \
+             ORDER BY r.created_at DESC LIMIT 1 \
+         )",
     )
     .bind(batch_id.to_string())
     .bind(KIND_EXPIRY)
@@ -429,8 +450,12 @@ pub async fn claim_due_push_work(
 ) -> Result<PushClaimResult, sqlx::Error> {
     let rows = sqlx::query(
         "SELECT r.id AS reminder_id, r.household_id, r.batch_id, r.product_id, r.location_id, \
-                r.kind, r.title, r.body, d.id AS device_row_id, d.push_token, d.platform \
+                r.kind, r.expires_on, b.quantity, b.unit, p.name AS product_name, l.name AS location_name, \
+                d.id AS device_row_id, d.push_token, d.platform \
          FROM stock_reminder r \
+         INNER JOIN stock_batch b ON b.id = r.batch_id \
+         INNER JOIN product p ON p.id = r.product_id \
+         INNER JOIN location l ON l.id = r.location_id \
          INNER JOIN membership m ON m.household_id = r.household_id \
          INNER JOIN notification_device d ON d.user_id = m.user_id \
          LEFT JOIN reminder_device_state s \
@@ -531,8 +556,11 @@ pub async fn claim_due_push_work(
                     product_id: uuid_from(&row, "product_id")?,
                     location_id: uuid_from(&row, "location_id")?,
                     kind: row.try_get("kind")?,
-                    title: row.try_get("title")?,
-                    body: row.try_get("body")?,
+                    expires_on: row.try_get("expires_on")?,
+                    product_name: row.try_get("product_name")?,
+                    location_name: row.try_get("location_name")?,
+                    quantity: row.try_get("quantity")?,
+                    unit: row.try_get("unit")?,
                     device_row_id,
                     device_token: push_token,
                 });
@@ -678,13 +706,13 @@ pub async fn push_delivery_metrics_summary(
 pub fn build_expiry_reminder(
     expires_on: &str,
     household_timezone: &str,
-    product_name: &str,
-    location_name: &str,
-    quantity: &str,
-    unit: &str,
+    _product_name: &str,
+    _location_name: &str,
+    _quantity: &str,
+    _unit: &str,
     policy: &ExpiryReminderPolicy,
     now: Timestamp,
-) -> Result<Option<(String, String, String, String, String)>, sqlx::Error> {
+) -> Result<Option<(String, String, String)>, sqlx::Error> {
     if !policy.enabled {
         return Ok(None);
     }
@@ -705,19 +733,8 @@ pub fn build_expiry_reminder(
         return Ok(None);
     }
 
-    let title = match policy.lead_days {
-        0 => format!("{product_name} in {location_name} expires today"),
-        1 => format!("{product_name} in {location_name} expires tomorrow"),
-        days => format!("{product_name} in {location_name} expires in {days} days"),
-    };
-    let body = format!(
-        "{quantity} {unit} expires on {expires_on}. Open Quartermaster to use, move, or discard it."
-    );
-
     Ok(Some((
         time::format_timestamp(fire_at),
-        title,
-        body,
         household_timezone.to_owned(),
         time::format_zoned_with_offset(&fire_zoned),
     )))
@@ -794,17 +811,16 @@ fn expiry_draft_for_context(
         return Ok(None);
     };
     let now = Timestamp::now();
-    let Some((fire_at, title, body, household_timezone, household_fire_local_at)) =
-        build_expiry_reminder(
-            expires_on,
-            &ctx.household_timezone,
-            &ctx.product_name,
-            &ctx.location_name,
-            &ctx.quantity,
-            &ctx.unit,
-            policy,
-            now,
-        )?
+    let Some((fire_at, household_timezone, household_fire_local_at)) = build_expiry_reminder(
+        expires_on,
+        &ctx.household_timezone,
+        &ctx.product_name,
+        &ctx.location_name,
+        &ctx.quantity,
+        &ctx.unit,
+        policy,
+        now,
+    )?
     else {
         return Ok(None);
     };
@@ -819,8 +835,6 @@ fn expiry_draft_for_context(
         household_timezone,
         household_fire_local_at,
         expires_on: ctx.expires_on.clone(),
-        title,
-        body,
     }))
 }
 
@@ -873,8 +887,8 @@ async fn insert_draft_tx(
     .bind(&draft.household_timezone)
     .bind(&draft.household_fire_local_at)
     .bind(&draft.expires_on)
-    .bind(&draft.title)
-    .bind(&draft.body)
+    .bind("expiry")
+    .bind("expiry")
     .bind(now_utc_rfc3339())
     .execute(&mut **tx)
     .await?;
@@ -1131,8 +1145,10 @@ fn row_to_reminder(row: sqlx::any::AnyRow) -> Result<ReminderRow, sqlx::Error> {
         household_timezone: row.try_get("household_timezone")?,
         household_fire_local_at: row.try_get("household_fire_local_at")?,
         expires_on: row.try_get("expires_on")?,
-        title: row.try_get("title")?,
-        body: row.try_get("body")?,
+        product_name: row.try_get("product_name")?,
+        location_name: row.try_get("location_name")?,
+        quantity: row.try_get("quantity")?,
+        unit: row.try_get("unit")?,
         created_at: row.try_get("created_at")?,
         presented_on_device_at: row.try_get("presented_on_device_at")?,
         opened_on_device_at: row.try_get("opened_on_device_at")?,
@@ -1201,7 +1217,7 @@ mod tests {
     }
 
     #[test]
-    fn build_expiry_reminder_formats_title_and_body() {
+    fn build_expiry_reminder_formats_schedule_metadata() {
         let now: Timestamp = "2026-04-22T08:00:00.000Z".parse().unwrap();
         let policy = ExpiryReminderPolicy {
             enabled: true,
@@ -1220,13 +1236,8 @@ mod tests {
             now,
         )
         .unwrap();
-        let (fire_at, title, body, timezone, household_fire_local_at) = reminder.unwrap();
+        let (fire_at, timezone, household_fire_local_at) = reminder.unwrap();
         assert_eq!(fire_at, "2026-04-23T07:00:00.000Z");
-        assert_eq!(title, "Milk in Fridge expires tomorrow");
-        assert_eq!(
-            body,
-            "1000 ml expires on 2026-04-24. Open Quartermaster to use, move, or discard it."
-        );
         assert_eq!(timezone, "Europe/Madrid");
         assert_eq!(household_fire_local_at, "2026-04-23T09:00:00+02:00");
     }
@@ -1267,11 +1278,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(kiritimati.0, "2026-01-01T19:00:00.000Z");
-        assert_eq!(kiritimati.3, "Pacific/Kiritimati");
-        assert_eq!(kiritimati.4, "2026-01-02T09:00:00+14:00");
+        assert_eq!(kiritimati.1, "Pacific/Kiritimati");
+        assert_eq!(kiritimati.2, "2026-01-02T09:00:00+14:00");
         assert_eq!(los_angeles.0, "2026-01-02T17:00:00.000Z");
-        assert_eq!(los_angeles.3, "America/Los_Angeles");
-        assert_eq!(los_angeles.4, "2026-01-02T09:00:00-08:00");
+        assert_eq!(los_angeles.1, "America/Los_Angeles");
+        assert_eq!(los_angeles.2, "2026-01-02T09:00:00-08:00");
     }
 
     #[test]
@@ -1298,7 +1309,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(reminder.0, "2026-03-09T13:00:00.000Z");
-        assert_eq!(reminder.4, "2026-03-09T09:00:00-04:00");
+        assert_eq!(reminder.2, "2026-03-09T09:00:00-04:00");
     }
 
     #[test]
@@ -1325,7 +1336,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(reminder.0, "2026-11-01T14:00:00.000Z");
-        assert_eq!(reminder.4, "2026-11-01T09:00:00-05:00");
+        assert_eq!(reminder.2, "2026-11-01T09:00:00-05:00");
     }
 
     #[tokio::test]
@@ -1360,11 +1371,10 @@ mod tests {
         .unwrap();
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].batch_id, batch.id);
-        assert_eq!(page.items[0].title, "Milk in Pantry expires tomorrow");
-        assert_eq!(
-            page.items[0].body,
-            "1000 ml expires on 2999-01-03. Open Quartermaster to use, move, or discard it."
-        );
+        assert_eq!(page.items[0].product_name, "Milk");
+        assert_eq!(page.items[0].location_name, "Pantry");
+        assert_eq!(page.items[0].quantity, "1000");
+        assert_eq!(page.items[0].unit, "ml");
     }
 
     #[tokio::test]

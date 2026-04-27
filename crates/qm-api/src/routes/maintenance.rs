@@ -46,8 +46,11 @@ pub struct SmokeReminderSeed {
     pub product_id: Uuid,
     pub location_id: Uuid,
     pub kind: String,
-    pub title: String,
-    pub body: String,
+    pub product_name: String,
+    pub location_name: String,
+    pub quantity: String,
+    pub unit: String,
+    pub expires_on: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -212,8 +215,11 @@ async fn build_smoke_fixture(state: &AppState) -> Result<SeedSmokeResponse, ApiE
             product_id: reminder.product_id,
             location_id: reminder.location_id,
             kind: reminder.kind,
-            title: reminder.title,
-            body: reminder.body,
+            product_name: reminder.product_name,
+            location_name: reminder.location_name,
+            quantity: reminder.quantity,
+            unit: reminder.unit,
+            expires_on: reminder.expires_on,
         });
     }
 

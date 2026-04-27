@@ -43,8 +43,10 @@
     optimisticAckRollback,
     optimisticAckStart,
     reminderBatchId,
+    reminderBody,
     reminderExpiresOn,
     reminderFireAt,
+    reminderTitle,
     reminderUrgency,
     startReminderAction,
     type ReminderState
@@ -1095,8 +1097,8 @@
               {#each reminders.items as reminder}
                 <article class="reminder-row" data-testid={`reminder-row-${reminder.id}`}>
                   <div>
-                    <h3>{reminder.title}</h3>
-                    <p>{reminder.body}</p>
+                    <h3>{reminderTitle(reminder)}</h3>
+                    <p>{reminderBody(reminder)}</p>
                     {#if reminderExpiresOn(reminder)}
                       <span>{reminderUrgency(reminder)}</span>
                       <span>Expiry date {formatReminderDate(reminderExpiresOn(reminder))}</span>

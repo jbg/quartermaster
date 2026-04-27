@@ -51,33 +51,31 @@ export async function loadReminders(
 }
 
 export function reminderBatchId(reminder: Reminder): string {
-  return reminder.batch_id ?? reminder.batchId ?? '';
+  return reminder.batch_id;
 }
 
 export function reminderProductId(reminder: Reminder): string {
-  return reminder.product_id ?? reminder.productId ?? '';
+  return reminder.product_id;
 }
 
 export function reminderPresentedAt(reminder: Reminder): string | null {
-  return reminder.presented_on_device_at ?? reminder.presentedOnDeviceAt ?? null;
+  return reminder.presented_on_device_at ?? null;
 }
 
 export function reminderFireAt(reminder: Reminder): string {
-  return (
-    reminder.household_fire_local_at ??
-    reminder.householdFireLocalAt ??
-    reminder.fire_at ??
-    reminder.fireAt ??
-    ''
-  );
+  return reminder.household_fire_local_at;
 }
 
 export function reminderExpiresOn(reminder: Reminder): string {
-  return reminder.expires_on ?? reminder.expiresOn ?? '';
+  return reminder.expires_on ?? '';
 }
 
 export function sortReminders(reminders: Reminder[]): Reminder[] {
   return [...reminders].sort((a, b) => {
+    const days = compareNumbers(reminderDaysUntilExpiry(a), reminderDaysUntilExpiry(b));
+    if (days !== 0) {
+      return days;
+    }
     const expires = compareStrings(reminderExpiresOn(a), reminderExpiresOn(b));
     if (expires !== 0) {
       return expires;
@@ -90,32 +88,60 @@ export function sortReminders(reminders: Reminder[]): Reminder[] {
   });
 }
 
+export function reminderTitle(reminder: Reminder): string {
+  return `${reminderProductName(reminder)} in ${reminderLocationName(reminder)}`;
+}
+
+export function reminderBody(reminder: Reminder): string {
+  const expiry = reminderExpiresOn(reminder);
+  const suffix = expiry ? ` expires on ${expiry}` : ' has an expiry reminder';
+  return `${reminder.quantity} ${reminder.unit}${suffix}.`;
+}
+
 export function reminderUrgency(reminder: Reminder): string {
-  const expiresOn = reminderExpiresOn(reminder);
-  if (!expiresOn) {
-    return 'Expiry date unavailable';
+  const days = reminderDaysUntilExpiry(reminder);
+  switch (reminder.urgency) {
+    case 'expired': {
+      if (days === -1) {
+        return 'Expired yesterday';
+      }
+      const count = days == null ? 0 : Math.abs(days);
+      return count > 1 ? `Expired ${count} days ago` : 'Expired';
+    }
+    case 'expires_today':
+      return 'Expires today';
+    case 'expires_tomorrow':
+      return 'Expires tomorrow';
+    case 'expires_future':
+      return days == null ? 'Expires soon' : `Expires in ${days} days`;
+    default:
+      return 'Expiry date unavailable';
   }
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(expiresOn);
-  if (!match) {
-    return `Expires ${expiresOn}`;
+}
+
+function reminderDaysUntilExpiry(reminder: Reminder): number | null {
+  return reminder.days_until_expiry ?? null;
+}
+
+function reminderProductName(reminder: Reminder): string {
+  return reminder.product_name;
+}
+
+function reminderLocationName(reminder: Reminder): string {
+  return reminder.location_name;
+}
+
+function compareNumbers(a: number | null, b: number | null): number {
+  if (a == null && b == null) {
+    return 0;
   }
-  const [, year, month, day] = match;
-  const expires = new Date(Number(year), Number(month) - 1, Number(day));
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  expires.setHours(0, 0, 0, 0);
-  const days = Math.round((expires.getTime() - today.getTime()) / 86_400_000);
-  if (days < 0) {
-    const count = Math.abs(days);
-    return count === 1 ? 'Expired yesterday' : `Expired ${count} days ago`;
+  if (a == null) {
+    return 1;
   }
-  if (days === 0) {
-    return 'Expires today';
+  if (b == null) {
+    return -1;
   }
-  if (days === 1) {
-    return 'Expires tomorrow';
-  }
-  return `Expires in ${days} days`;
+  return a - b;
 }
 
 export function formatReminderDate(value: string): string {

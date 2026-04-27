@@ -644,19 +644,7 @@ final class AppState {
   }
 
   func reminderUrgencyText(for reminder: Reminder) -> String? {
-    guard let expiresOn = reminder.expiresOn else { return nil }
-    guard let days = householdDayDifference(for: expiresOn) else {
-      return "Expires \(displayDate(for: expiresOn) ?? expiresOn)"
-    }
-    if days < 0 {
-      let count = abs(days)
-      return count == 1 ? "Expired yesterday" : "Expired \(count) days ago"
-    }
-    switch days {
-    case 0: return "Expires today"
-    case 1: return "Expires tomorrow"
-    default: return "Expires in \(days) days"
-    }
+    reminder.displayUrgency
   }
 
   private func presentNextReminderIfNeeded() {

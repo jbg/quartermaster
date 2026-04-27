@@ -197,6 +197,30 @@ extension Reminder: Identifiable {
   var batchID: String { batchId }
   var productID: String { productId }
   var locationID: String { locationId }
+  var displayTitle: String { "\(productName) in \(locationName)" }
+  var displayBody: String {
+    if let expiresOn {
+      "\(quantity) \(unit) expires on \(expiresOn)."
+    } else {
+      "\(quantity) \(unit) has an expiry reminder."
+    }
+  }
+  var displayUrgency: String? {
+    guard let urgency else { return nil }
+    switch urgency {
+    case .expired:
+      guard let daysUntilExpiry else { return "Expired" }
+      let count = abs(daysUntilExpiry)
+      return count == 1 ? "Expired yesterday" : "Expired \(count) days ago"
+    case .expiresToday:
+      return "Expires today"
+    case .expiresTomorrow:
+      return "Expires tomorrow"
+    case .expiresFuture:
+      guard let daysUntilExpiry else { return "Expires soon" }
+      return "Expires in \(daysUntilExpiry) days"
+    }
+  }
   var fireAtDate: Date? { Self.iso.date(from: fireAt) }
   var householdFireLocalAtDate: Date? { Self.iso.date(from: householdFireLocalAt) }
   var presentedOnDeviceDate: Date? {

@@ -136,23 +136,20 @@ export interface StockEventListResponse {
 
 export interface Reminder {
   id: string;
-  kind?: string;
-  title: string;
-  body: string;
-  fire_at?: string;
-  fireAt?: string;
-  household_timezone?: string;
-  householdTimezone?: string;
-  household_fire_local_at?: string;
-  householdFireLocalAt?: string;
+  kind: 'expiry';
+  fire_at: string;
+  household_timezone: string;
+  household_fire_local_at: string;
   expires_on?: string | null;
-  expiresOn?: string | null;
-  batch_id?: string;
-  batchId?: string;
-  product_id?: string;
-  productId?: string;
-  location_id?: string;
-  locationId?: string;
+  days_until_expiry?: number | null;
+  urgency?: 'expired' | 'expires_today' | 'expires_tomorrow' | 'expires_future' | null;
+  batch_id: string;
+  product_id: string;
+  location_id: string;
+  product_name: string;
+  location_name: string;
+  quantity: string;
+  unit: string;
   presented_on_device_at?: string | null;
   presentedOnDeviceAt?: string | null;
   opened_on_device_at?: string | null;
