@@ -1222,7 +1222,9 @@
         {#if selectedBatch}
           <div class="section-heading">
             <div>
-              <p class="eyebrow">{isDepleted(selectedBatch) ? 'Depleted' : 'In stock'}</p>
+              <p class="eyebrow" data-testid="detail-status">
+                {isDepleted(selectedBatch) ? 'Depleted' : 'In stock'}
+              </p>
               <h2>{stockName(selectedBatch)}</h2>
             </div>
             <div class="heading-actions">
