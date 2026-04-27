@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0](https://github.com/jbg/quartermaster/compare/1.1.1...1.2.0) (2026-04-27)
+
+
+### Features
+
+* add cookie-backed web auth ([8e2b97c](https://github.com/jbg/quartermaster/commit/8e2b97cdc586991bb004cbb15addcfcac8efc82f))
+* localize reminder client copy ([ad5f60a](https://github.com/jbg/quartermaster/commit/ad5f60a2db435690237978bf1cf9937582fa9117))
+
+
+### Bug Fixes
+
+* expose csrf cookie to web routes ([515b651](https://github.com/jbg/quartermaster/commit/515b651310b45bdd3222992c6a8b843aa8be675e))
+
 ## [1.1.1](https://github.com/jbg/quartermaster/compare/1.1.0...1.1.1) (2026-04-27)
 
 
