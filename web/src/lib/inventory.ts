@@ -14,6 +14,11 @@ export interface InventoryState {
   error: string | null;
 }
 
+export interface InventoryGroups {
+  active: StockBatch[];
+  depleted: StockBatch[];
+}
+
 export interface StockEditFields {
   quantity: string;
   locationId: string;
@@ -51,6 +56,13 @@ export async function loadInventory(
       error: 'Inventory could not be loaded.'
     };
   }
+}
+
+export function groupInventory(items: StockBatch[]): InventoryGroups {
+  return {
+    active: items.filter((item) => !isDepleted(item)),
+    depleted: items.filter(isDepleted)
+  };
 }
 
 export function batchProductId(batch: StockBatch): string {
@@ -105,6 +117,10 @@ export function stockInitialQuantity(batch: StockBatch): string {
 
 export function isDepleted(batch: StockBatch): boolean {
   return Boolean(batch.depleted_at ?? batch.depletedAt);
+}
+
+export function stockDepletedAt(batch: StockBatch): string {
+  return batch.depleted_at ?? batch.depletedAt ?? '';
 }
 
 export function eventType(event: StockEvent): StockEvent['event_type'] {

@@ -11,6 +11,7 @@
     eventCreated,
     eventDelta,
     eventType,
+    groupInventory,
     isDepleted,
     loadInventory,
     productBrand,
@@ -18,6 +19,7 @@
     productSource,
     selectBatchAfterRefresh,
     stockCreated,
+    stockDepletedAt,
     stockEditFields,
     stockExpiry,
     stockInitialQuantity,
@@ -43,6 +45,7 @@
     reminderBatchId,
     reminderExpiresOn,
     reminderFireAt,
+    reminderUrgency,
     startReminderAction,
     type ReminderState
   } from '$lib/reminders';
@@ -133,6 +136,7 @@
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
   const households = $derived(me?.households ?? []);
   const restoreAvailable = $derived(canRestoreBatch(selectedBatch, history.items));
+  const inventoryGroups = $derived(groupInventory(inventory.items));
   const addStockUnitChoices = $derived(
     selectedProduct
       ? unitChoicesForFamily(selectedProduct.family, units)
@@ -1094,7 +1098,8 @@
                     <h3>{reminder.title}</h3>
                     <p>{reminder.body}</p>
                     {#if reminderExpiresOn(reminder)}
-                      <span>Expires {formatReminderDate(reminderExpiresOn(reminder))}</span>
+                      <span>{reminderUrgency(reminder)}</span>
+                      <span>Expiry date {formatReminderDate(reminderExpiresOn(reminder))}</span>
                     {/if}
                     <span>Household time {formatReminderDateTime(reminderFireAt(reminder))}</span>
                     {#if reminders.actionKinds[reminder.id]}
@@ -1141,7 +1146,9 @@
             <h2>Batches</h2>
           </div>
           <div class="heading-actions">
-            <span>{inventory.items.length} batches</span>
+            <span
+              >{inventoryGroups.active.length} active · {inventoryGroups.depleted.length} depleted</span
+            >
             <button class="primary-action small" type="button" onclick={openAddStock}
               >Add stock</button
             >
@@ -1156,22 +1163,57 @@
           <p class="muted">No stock is currently visible for this household.</p>
         {:else}
           <div class="inventory-list">
-            {#each inventory.items as batch}
-              <button
-                class:active={selectedBatchId === batch.id}
-                class:depleted={isDepleted(batch)}
-                class:highlight={highlightBatchId === batch.id}
-                class="stock-row"
-                type="button"
-                onclick={() => selectBatch(batch)}
-              >
-                <div>
-                  <h3>{stockName(batch)}</h3>
-                  <p>{displayLocation(batch)} · Expires {stockExpiry(batch)}</p>
+            {#if inventoryGroups.active.length > 0}
+              <section class="inventory-group" aria-labelledby="active-stock-heading">
+                <div class="subsection-heading">
+                  <h3 id="active-stock-heading">In stock</h3>
+                  <span>{inventoryGroups.active.length}</span>
                 </div>
-                <strong>{batch.quantity ?? '?'} {stockUnit(batch)}</strong>
-              </button>
-            {/each}
+                {#each inventoryGroups.active as batch}
+                  <button
+                    class:active={selectedBatchId === batch.id}
+                    class:highlight={highlightBatchId === batch.id}
+                    class="stock-row"
+                    type="button"
+                    onclick={() => selectBatch(batch)}
+                  >
+                    <div>
+                      <h3>{stockName(batch)}</h3>
+                      <p>{displayLocation(batch)} · Expires {stockExpiry(batch)}</p>
+                    </div>
+                    <strong>{batch.quantity ?? '?'} {stockUnit(batch)}</strong>
+                  </button>
+                {/each}
+              </section>
+            {/if}
+
+            {#if inventoryGroups.depleted.length > 0}
+              <section class="inventory-group" aria-labelledby="depleted-stock-heading">
+                <div class="subsection-heading">
+                  <h3 id="depleted-stock-heading">Depleted history</h3>
+                  <span>{inventoryGroups.depleted.length}</span>
+                </div>
+                {#each inventoryGroups.depleted as batch}
+                  <button
+                    class:active={selectedBatchId === batch.id}
+                    class:highlight={highlightBatchId === batch.id}
+                    class="stock-row depleted"
+                    type="button"
+                    onclick={() => selectBatch(batch)}
+                  >
+                    <div>
+                      <h3>{stockName(batch)}</h3>
+                      <p>
+                        {displayLocation(batch)} · Depleted {formatDateTime(
+                          stockDepletedAt(batch)
+                        ) || 'recently'}
+                      </p>
+                    </div>
+                    <strong>{batch.quantity ?? '?'} {stockUnit(batch)}</strong>
+                  </button>
+                {/each}
+              </section>
+            {/if}
           </div>
         {/if}
       </section>
@@ -1219,6 +1261,12 @@
               <dt>Created</dt>
               <dd>{formatDateTime(stockCreated(selectedBatch)) || 'Unknown'}</dd>
             </div>
+            {#if isDepleted(selectedBatch)}
+              <div>
+                <dt>Depleted</dt>
+                <dd>{formatDateTime(stockDepletedAt(selectedBatch)) || 'Unknown'}</dd>
+              </div>
+            {/if}
             <div>
               <dt>Note</dt>
               <dd>{selectedBatch.note || 'None'}</dd>
