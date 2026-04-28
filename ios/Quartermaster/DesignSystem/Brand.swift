@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum QuartermasterBrand {
   static let ink = Color(red: 0x18 / 255, green: 0x20 / 255, blue: 0x1C / 255)
@@ -29,6 +30,21 @@ enum QuartermasterBrand {
 }
 
 extension Color {
-  static var quartermasterTint: Color { QuartermasterBrand.green800 }
-  static var quartermasterError: Color { QuartermasterBrand.beetStrong }
+  static var quartermasterTint: Color {
+    Color(
+      UIColor { traits in
+        traits.userInterfaceStyle == .dark
+          ? UIColor(red: 0x9C / 255, green: 0xD6 / 255, blue: 0xB0 / 255, alpha: 1)
+          : UIColor(red: 0x23 / 255, green: 0x4A / 255, blue: 0x35 / 255, alpha: 1)
+      })
+  }
+
+  static var quartermasterError: Color {
+    Color(
+      UIColor { traits in
+        traits.userInterfaceStyle == .dark
+          ? UIColor(red: 0xFF / 255, green: 0xB1 / 255, blue: 0xB8 / 255, alpha: 1)
+          : UIColor(red: 0x9B / 255, green: 0x2F / 255, blue: 0x2F / 255, alpha: 1)
+      })
+  }
 }

@@ -1,8 +1,10 @@
 package dev.quartermaster.android
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -67,12 +69,41 @@ private val QuartermasterColorScheme: ColorScheme = lightColorScheme(
     inversePrimary = QuartermasterColors.Sage100,
 )
 
+private val QuartermasterDarkColorScheme: ColorScheme = darkColorScheme(
+    primary = Color(0xFF9CD6B0),
+    onPrimary = Color(0xFF0E2418),
+    primaryContainer = Color(0xFF244A34),
+    onPrimaryContainer = Color(0xFFD9EADF),
+    secondary = Color(0xFF9BCBE6),
+    onSecondary = Color(0xFF0D2633),
+    secondaryContainer = Color(0xFF1B303D),
+    onSecondaryContainer = Color(0xFFD7EAF3),
+    tertiary = Color(0xFFD8A25F),
+    onTertiary = Color(0xFF2D1A06),
+    tertiaryContainer = Color(0xFF3A2A18),
+    onTertiaryContainer = Color(0xFFFFDDB0),
+    error = Color(0xFFFFB1B8),
+    onError = Color(0xFF4E070E),
+    errorContainer = Color(0xFF3A2023),
+    onErrorContainer = Color(0xFFFFDADF),
+    background = Color(0xFF111713),
+    onBackground = Color(0xFFEDF3EE),
+    surface = Color(0xFF18201C),
+    onSurface = Color(0xFFEDF3EE),
+    surfaceVariant = Color(0xFF232C26),
+    onSurfaceVariant = Color(0xFFC9D4CD),
+    outline = Color(0xFF5B6B61),
+    outlineVariant = Color(0xFF3C4A42),
+    inverseSurface = Color(0xFFEDF3EE),
+    inverseOnSurface = Color(0xFF18201C),
+    inversePrimary = Color(0xFF234A35),
+)
+
 private val QuartermasterTypography = Typography().let { base ->
     base.copy(
         headlineSmall = base.headlineSmall.copy(
             fontFamily = FontFamily.SansSerif,
             fontWeight = FontWeight.SemiBold,
-            color = QuartermasterColors.Green900,
         ),
         titleLarge = base.titleLarge.copy(fontWeight = FontWeight.SemiBold),
         titleMedium = base.titleMedium.copy(fontWeight = FontWeight.SemiBold),
@@ -83,8 +114,10 @@ private val QuartermasterTypography = Typography().let { base ->
 
 @Composable
 internal fun QuartermasterTheme(content: @Composable () -> Unit) {
+    val colorScheme = if (isSystemInDarkTheme()) QuartermasterDarkColorScheme else QuartermasterColorScheme
+
     MaterialTheme(
-        colorScheme = QuartermasterColorScheme,
+        colorScheme = colorScheme,
         typography = QuartermasterTypography,
         content = content,
     )
