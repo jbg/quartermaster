@@ -1,0 +1,1 @@
+pantry,inventory,kitchen,groceries,expiry,stock,self-hosted,barcode

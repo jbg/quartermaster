@@ -235,6 +235,13 @@ jobs:
         working-directory: ios
         run: xcodegen generate
 
+      - name: Install fastlane bundle
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: ios
+
       - name: Import App Store distribution certificate
         uses: apple-actions/import-codesign-certs@v5
         with:
@@ -283,12 +290,14 @@ jobs:
           retention-days: 7
 
       - name: Upload iOS app to TestFlight
-        uses: apple-actions/upload-testflight-build@v3
-        with:
-          app-path: ${{ steps.archive.outputs.ipa_path }}
-          issuer-id: ${{ vars.APPSTORE_ISSUER_ID }}
-          api-key-id: ${{ vars.APPSTORE_API_KEY_ID }}
-          api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+        working-directory: ios
+        env:
+          APPSTORE_API_KEY_ID: ${{ vars.APPSTORE_API_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ vars.APPSTORE_ISSUER_ID }}
+          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+          QUARTERMASTER_IOS_BUNDLE_ID: ${{ vars.QUARTERMASTER_IOS_BUNDLE_ID }}
+          PILOT_CHANGELOG: ${{ github.event.release.body || inputs.release_notes }}
+        run: bundle exec fastlane ios upload_testflight ipa_path:"${{ steps.archive.outputs.ipa_path }}"
 
   update-home-assistant-app:
     if: github.event_name == 'release' || github.event_name == 'workflow_call' || inputs.release_tag != ''

@@ -80,7 +80,7 @@ The shared build entry point is `ios/scripts/build-app.sh`. CI uses the same scr
 
 ## TestFlight release setup
 
-Merging a Release Please PR creates a GitHub release and calls the release workflow. That workflow archives the iOS app, exports an App Store Connect IPA, and uploads it to TestFlight.
+Merging a Release Please PR creates a GitHub release and calls the release workflow. That workflow archives the iOS app, exports an App Store Connect IPA, and uploads it to TestFlight with fastlane `pilot`.
 
 Apple account prerequisites:
 
@@ -125,6 +125,37 @@ QUARTERMASTER_ASSOCIATED_DOMAIN=quartermaster.example.com \
 ```
 
 `archive-app.sh` defaults to `Apple Distribution` for release archive signing and export. Set optional `QUARTERMASTER_IOS_SIGNING_CERTIFICATE` or pass `--signing-certificate` only if the imported distribution certificate needs a different identity string or SHA.
+
+### fastlane metadata and TestFlight automation
+
+App Store listing metadata lives in `ios/fastlane/metadata/`, and screenshots should be added under `ios/fastlane/screenshots/`. Keep listing text reviewable there instead of clicking around in App Store Connect.
+
+Install the pinned fastlane bundle with Ruby 3.0 or newer:
+
+```sh
+cd ios
+bundle install
+```
+
+fastlane uses the same App Store Connect API-key environment variables as CI:
+
+```text
+APPSTORE_API_KEY_ID
+APPSTORE_ISSUER_ID
+APPSTORE_API_PRIVATE_KEY
+QUARTERMASTER_IOS_BUNDLE_ID
+```
+
+Useful local commands:
+
+```sh
+cd ios
+bundle exec fastlane ios check_metadata
+bundle exec fastlane ios upload_metadata
+QM_IOS_IPA_PATH=/path/to/Quartermaster.ipa bundle exec fastlane ios upload_testflight
+```
+
+`upload_metadata` sends listing metadata only and does not submit the app for review. `upload_testflight` is also what CI calls after `archive-app.sh` exports the IPA.
 
 ## Universal-link setup
 

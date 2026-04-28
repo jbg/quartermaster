@@ -1,0 +1,52 @@
+default_platform(:ios)
+
+def appstore_private_key
+  ENV.fetch("APPSTORE_API_PRIVATE_KEY").gsub("\\n", "\n")
+end
+
+platform :ios do
+  private_lane :appstore_api_key do
+    app_store_connect_api_key(
+      key_id: ENV.fetch("APPSTORE_API_KEY_ID"),
+      issuer_id: ENV.fetch("APPSTORE_ISSUER_ID"),
+      key_content: appstore_private_key,
+      is_key_content_base64: false
+    )
+  end
+
+  desc "Run App Store metadata checks without uploading a binary"
+  lane :check_metadata do
+    precheck(
+      api_key: appstore_api_key,
+      app_identifier: ENV.fetch("QUARTERMASTER_IOS_BUNDLE_ID"),
+      default_rule_level: "warn"
+    )
+  end
+
+  desc "Upload App Store listing metadata without submitting for review"
+  lane :upload_metadata do
+    deliver(
+      api_key: appstore_api_key,
+      app_identifier: ENV.fetch("QUARTERMASTER_IOS_BUNDLE_ID"),
+      metadata_path: "fastlane/metadata",
+      screenshots_path: "fastlane/screenshots",
+      skip_binary_upload: true,
+      skip_screenshots: true,
+      submit_for_review: false,
+      run_precheck_before_submit: false,
+      force: true
+    )
+  end
+
+  desc "Upload an exported IPA to TestFlight"
+  lane :upload_testflight do |options|
+    ipa_path = options[:ipa_path] || ENV.fetch("QM_IOS_IPA_PATH")
+    pilot(
+      api_key: appstore_api_key,
+      app_identifier: ENV.fetch("QUARTERMASTER_IOS_BUNDLE_ID"),
+      ipa: ipa_path,
+      changelog: ENV["PILOT_CHANGELOG"],
+      skip_waiting_for_build_processing: true
+    )
+  end
+end

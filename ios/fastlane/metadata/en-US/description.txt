@@ -1,0 +1,5 @@
+Quartermaster is a self-hosted kitchen inventory app for households that want a clear record of food and supplies.
+
+Track products, quantities, units, batches, storage locations, expiry dates, and stock history. Add items manually or scan barcodes, organize your pantry, fridge, and freezer, and keep a durable record of adds, uses, corrections, discards, and restores.
+
+Quartermaster is built for people who want ownership of their household data. Run your own server, connect the iOS app, invite household members, and keep inventory records where you choose.
