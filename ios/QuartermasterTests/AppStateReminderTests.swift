@@ -9,6 +9,18 @@ final class AppStateReminderTests: XCTestCase {
     appState.phase = .unauthenticated
 
     appState.handleIncomingURL(
+      URL(string: "quartermaster://server?server=https%3A%2F%2Fquartermaster.example.com")!
+    )
+
+    XCTAssertEqual(appState.serverURL.absoluteString, "https://quartermaster.example.com")
+    XCTAssertNil(appState.pendingInviteContext)
+  }
+
+  func testLegacyJoinPairingWithoutInviteUpdatesUnauthenticatedServerURLWithoutInviteContext() {
+    let appState = makeAppState(api: FakeAPI())
+    appState.phase = .unauthenticated
+
+    appState.handleIncomingURL(
       URL(string: "quartermaster://join?server=https%3A%2F%2Fquartermaster.example.com")!
     )
 
@@ -46,6 +58,48 @@ final class AppStateReminderTests: XCTestCase {
       appState.pendingInviteContext?.serverURL?.absoluteString,
       "https://quartermaster.example.com"
     )
+  }
+
+  func testOnboardingCreateHouseholdStoresTokensAndRefreshesMe() async {
+    let tokenStore = FakeTokenStore(accessToken: nil, refreshToken: nil)
+    let api = FakeAPI()
+    let appState = makeAppState(tokenStore: tokenStore, api: api)
+
+    await appState.createOnboardingHousehold(
+      username: "alice",
+      password: "password123",
+      householdName: "Kitchen",
+      timezone: "UTC"
+    )
+
+    XCTAssertEqual(await tokenStore.currentAccessToken(), "access")
+    XCTAssertEqual(await api.createdHouseholdNames(), ["Kitchen"])
+    if case .authenticated(let me) = appState.phase {
+      XCTAssertEqual(me.user.username, "alice")
+    } else {
+      XCTFail("expected authenticated phase")
+    }
+  }
+
+  func testOnboardingJoinInviteStoresTokensRefreshesMeAndClearsInvite() async {
+    let tokenStore = FakeTokenStore(accessToken: nil, refreshToken: nil)
+    let api = FakeAPI()
+    let appState = makeAppState(tokenStore: tokenStore, api: api)
+    appState.pendingInviteContext = InviteContext(inviteCode: "DEEP1234", serverURL: nil)
+
+    await appState.joinOnboardingInvite(
+      username: "alice",
+      password: "password123",
+      inviteCode: "DEEP1234"
+    )
+
+    XCTAssertEqual(await tokenStore.currentAccessToken(), "access")
+    XCTAssertEqual(await api.joinedInviteCodes(), ["DEEP1234"])
+    XCTAssertNil(appState.pendingInviteContext)
+    if case .authenticated = appState.phase {
+    } else {
+      XCTFail("expected authenticated phase")
+    }
   }
 
   func testInitialLoadQueuesUnpresentedRemindersOnceAndDismissAdvancesQueue() async {
@@ -516,6 +570,8 @@ private actor FakeAPI: AppStateAPI {
   private var ackedIDs: [String] = []
   private var openedIDs: [String] = []
   private var listReminderCalls = 0
+  private var createHouseholdCalls: [String] = []
+  private var joinInviteCalls: [String] = []
 
   init(
     meResponses: [Result<Me, Error>] = [.success(defaultMe())],
@@ -539,10 +595,28 @@ private actor FakeAPI: AppStateAPI {
   func ackedReminderIDs() -> [String] { ackedIDs }
   func openedReminderIDs() -> [String] { openedIDs }
   func listReminderCallCount() -> Int { listReminderCalls }
+  func createdHouseholdNames() -> [String] { createHouseholdCalls }
+  func joinedInviteCodes() -> [String] { joinInviteCalls }
 
   func register(username: String, password: String, email: String?, inviteCode: String?)
     async throws -> TokenPair
   { tokenPair() }
+  func onboardingStatus() async throws -> OnboardingStatus { fatalError("unused") }
+  func createOnboardingHousehold(
+    username: String,
+    password: String,
+    householdName: String,
+    timezone: String
+  ) async throws -> TokenPair {
+    createHouseholdCalls.append(householdName)
+    return tokenPair()
+  }
+  func joinOnboardingInvite(username: String, password: String, inviteCode: String)
+    async throws -> TokenPair
+  {
+    joinInviteCalls.append(inviteCode)
+    return tokenPair()
+  }
   func login(username: String, password: String) async throws -> TokenPair { tokenPair() }
   func logout() async throws {}
   func me() async throws -> Me { try next(&meResponses) }

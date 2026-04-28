@@ -49,6 +49,16 @@ import UIKit
     func register(username: String, password: String, email: String?, inviteCode: String?)
       async throws -> TokenPair
     { try decodeFixture(from: tokenPairJSON) }
+    func onboardingStatus() async throws -> OnboardingStatus { throw APIError.unknown }
+    func createOnboardingHousehold(
+      username: String,
+      password: String,
+      householdName: String,
+      timezone: String
+    ) async throws -> TokenPair { try decodeFixture(from: tokenPairJSON) }
+    func joinOnboardingInvite(username: String, password: String, inviteCode: String)
+      async throws -> TokenPair
+    { try decodeFixture(from: tokenPairJSON) }
 
     func login(username: String, password: String) async throws -> TokenPair {
       try decodeFixture(from: tokenPairJSON)

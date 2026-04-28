@@ -13,6 +13,15 @@ protocol AppStateTokenStore: Actor {
 protocol AppStateAPI: Actor {
   func register(username: String, password: String, email: String?, inviteCode: String?)
     async throws -> TokenPair
+  func onboardingStatus() async throws -> OnboardingStatus
+  func createOnboardingHousehold(
+    username: String,
+    password: String,
+    householdName: String,
+    timezone: String
+  ) async throws -> TokenPair
+  func joinOnboardingInvite(username: String, password: String, inviteCode: String)
+    async throws -> TokenPair
   func login(username: String, password: String) async throws -> TokenPair
   func logout() async throws
   func me() async throws -> Me
@@ -270,6 +279,47 @@ final class AppState {
     }
   }
 
+  func onboardingStatus() async throws -> OnboardingStatus {
+    try await api.onboardingStatus()
+  }
+
+  func createOnboardingHousehold(
+    username: String,
+    password: String,
+    householdName: String,
+    timezone: String
+  ) async {
+    lastError = nil
+    do {
+      let pair = try await api.createOnboardingHousehold(
+        username: username,
+        password: password,
+        householdName: householdName,
+        timezone: timezone
+      )
+      await tokenStore.store(pair)
+      await refreshMe()
+    } catch {
+      lastError = userMessage(for: error)
+    }
+  }
+
+  func joinOnboardingInvite(username: String, password: String, inviteCode: String) async {
+    lastError = nil
+    do {
+      let pair = try await api.joinOnboardingInvite(
+        username: username,
+        password: password,
+        inviteCode: inviteCode
+      )
+      await tokenStore.store(pair)
+      pendingInviteContext = nil
+      await refreshMe()
+    } catch {
+      lastError = userMessage(for: error)
+    }
+  }
+
   func login(username: String, password: String) async {
     lastError = nil
     do {
@@ -315,10 +365,11 @@ final class AppState {
       return
     }
 
+    let isServerLink = components.scheme == "quartermaster" && components.host == "server"
     let isJoinLink =
       (components.scheme == "quartermaster" && components.host == "join")
       || components.path == "/join"
-    guard isJoinLink else { return }
+    guard isServerLink || isJoinLink else { return }
 
     let items = Dictionary(
       uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") }
@@ -330,12 +381,13 @@ final class AppState {
       return url
     }
 
-    let hasInvite = inviteCode?.isEmpty == false
-
     if case .unauthenticated = phase, let incomingServer {
       updateServerURL(incomingServer)
     }
 
+    guard isJoinLink else { return }
+
+    let hasInvite = inviteCode?.isEmpty == false
     guard hasInvite else { return }
 
     pendingInviteContext = InviteContext(
