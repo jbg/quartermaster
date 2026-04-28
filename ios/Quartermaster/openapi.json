@@ -858,6 +858,166 @@
         ]
       }
     },
+    "/api/v1/onboarding/create-household": {
+      "post": {
+        "tags": [
+          "onboarding"
+        ],
+        "operationId": "onboarding_create_household",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOnboardingHouseholdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/onboarding/join-invite": {
+      "post": {
+        "tags": [
+          "onboarding"
+        ],
+        "operationId": "onboarding_join_invite",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JoinInviteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/onboarding/status": {
+      "get": {
+        "tags": [
+          "onboarding"
+        ],
+        "operationId": "onboarding_status",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/products": {
       "get": {
         "tags": [
@@ -2495,6 +2655,35 @@
           }
         }
       },
+      "CreateOnboardingHouseholdRequest": {
+        "type": "object",
+        "required": [
+          "username",
+          "password",
+          "household_name",
+          "timezone"
+        ],
+        "properties": {
+          "device_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "household_name": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
       "CreateProductRequest": {
         "type": "object",
         "required": [
@@ -2695,6 +2884,31 @@
           }
         }
       },
+      "JoinInviteRequest": {
+        "type": "object",
+        "required": [
+          "username",
+          "password",
+          "invite_code"
+        ],
+        "properties": {
+          "device_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "invite_code": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
       "JsonPatchOperation": {
         "type": "object",
         "required": [
@@ -2819,6 +3033,52 @@
           "admin",
           "member"
         ]
+      },
+      "OnboardingAuthMethod": {
+        "type": "string",
+        "enum": [
+          "password"
+        ]
+      },
+      "OnboardingAvailability": {
+        "type": "string",
+        "enum": [
+          "enabled",
+          "disabled"
+        ]
+      },
+      "OnboardingServerState": {
+        "type": "string",
+        "enum": [
+          "needs_initial_setup",
+          "ready"
+        ]
+      },
+      "OnboardingStatusResponse": {
+        "type": "object",
+        "required": [
+          "server_state",
+          "household_signup",
+          "invite_join",
+          "auth_methods"
+        ],
+        "properties": {
+          "auth_methods": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OnboardingAuthMethod"
+            }
+          },
+          "household_signup": {
+            "$ref": "#/components/schemas/OnboardingAvailability"
+          },
+          "invite_join": {
+            "$ref": "#/components/schemas/OnboardingAvailability"
+          },
+          "server_state": {
+            "$ref": "#/components/schemas/OnboardingServerState"
+          }
+        }
       },
       "ProductDto": {
         "type": "object",
@@ -3480,6 +3740,10 @@
     {
       "name": "households",
       "description": "Household administration, invites, and members"
+    },
+    {
+      "name": "onboarding",
+      "description": "First-launch server setup and joining"
     },
     {
       "name": "locations",
