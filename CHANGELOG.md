@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.2](https://github.com/jbg/quartermaster/compare/1.6.1...1.6.2) (2026-04-28)
+
+
+### Bug Fixes
+
+* allow HTTP public base URLs ([edb6e14](https://github.com/jbg/quartermaster/commit/edb6e143a5a058642ce0768af20ced82c9ee1c87))
+* support system dark mode across clients ([d67444d](https://github.com/jbg/quartermaster/commit/d67444da765d651afb51c560ffe3ef6e122bd279))
+
 ## [1.6.1](https://github.com/jbg/quartermaster/compare/1.6.0...1.6.1) (2026-04-28)
 
 
