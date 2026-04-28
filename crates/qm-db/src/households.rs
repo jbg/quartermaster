@@ -17,6 +17,17 @@ pub async fn create(
     name: &str,
     timezone: &str,
 ) -> Result<HouseholdRow, sqlx::Error> {
+    let mut tx = db.pool.begin().await?;
+    let household = create_in_tx(&mut tx, name, timezone).await?;
+    tx.commit().await?;
+    Ok(household)
+}
+
+pub async fn create_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    name: &str,
+    timezone: &str,
+) -> Result<HouseholdRow, sqlx::Error> {
     let id = Uuid::now_v7();
     let created_at = now_utc_rfc3339();
     sqlx::query("INSERT INTO household (id, name, timezone, created_at) VALUES (?, ?, ?, ?)")
@@ -24,7 +35,7 @@ pub async fn create(
         .bind(name)
         .bind(timezone)
         .bind(&created_at)
-        .execute(&db.pool)
+        .execute(&mut **tx)
         .await?;
 
     Ok(HouseholdRow {

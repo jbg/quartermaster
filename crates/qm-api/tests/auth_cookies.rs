@@ -16,11 +16,12 @@ async fn register_login_and_refresh_set_browser_cookies() {
     let (status, headers, register_body) = app
         .send_with_request_id(
             Method::POST,
-            "/api/v1/auth/register",
+            "/api/v1/onboarding/create-household",
             Some(json!({
                 "username": "alice",
                 "password": "password123",
-                "email": "alice@example.com",
+                "household_name": "Alice's Household",
+                "timezone": "UTC",
             })),
             None,
             None,

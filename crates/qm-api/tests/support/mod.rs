@@ -186,18 +186,32 @@ impl TestApp {
 
     #[allow(dead_code)]
     pub async fn register(&self, username: &str, invite_code: Option<&str>) -> (StatusCode, Value) {
-        self.send(
-            Method::POST,
-            "/api/v1/auth/register",
-            Some(json!({
-                "username": username,
-                "password": "password123",
-                "email": format!("{username}@example.com"),
-                "invite_code": invite_code,
-            })),
-            None,
-        )
-        .await
+        if let Some(invite_code) = invite_code {
+            self.send(
+                Method::POST,
+                "/api/v1/onboarding/join-invite",
+                Some(json!({
+                    "username": username,
+                    "password": "password123",
+                    "invite_code": invite_code,
+                })),
+                None,
+            )
+            .await
+        } else {
+            self.send(
+                Method::POST,
+                "/api/v1/onboarding/create-household",
+                Some(json!({
+                    "username": username,
+                    "password": "password123",
+                    "household_name": format!("{username}'s Household"),
+                    "timezone": "UTC",
+                })),
+                None,
+            )
+            .await
+        }
     }
 
     #[allow(dead_code)]
