@@ -330,12 +330,16 @@ final class AppState {
       return url
     }
 
+    let hasInvite = inviteCode?.isEmpty == false
+
     if case .unauthenticated = phase, let incomingServer {
       updateServerURL(incomingServer)
     }
 
+    guard hasInvite else { return }
+
     pendingInviteContext = InviteContext(
-      inviteCode: inviteCode?.isEmpty == false ? inviteCode : nil,
+      inviteCode: inviteCode,
       serverURL: incomingServer
     )
   }

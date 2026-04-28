@@ -69,6 +69,17 @@ class QuartermasterAppStateTest {
     }
 
     @Test
+    fun `parseInviteContext accepts server only pairing link`() {
+        val context =
+            QuartermasterAppState.parseInviteContext(
+                "quartermaster://join?server=https%3A%2F%2Fquartermaster.example.com%2F",
+            )
+
+        assertNull(context?.inviteCode)
+        assertEquals("https://quartermaster.example.com", context?.serverUrl)
+    }
+
+    @Test
     fun `parseInviteContext ignores unrelated urls`() {
         val context =
             QuartermasterAppState.parseInviteContext(
@@ -103,6 +114,40 @@ class QuartermasterAppStateTest {
         assertEquals(1, appState.batches.size)
         assertEquals(1, appState.reminders.size)
         assertEquals(1, appState.locations.size)
+    }
+
+    @Test
+    fun `unauthenticated server only pairing updates server without invite handoff`() = runTest {
+        val store = FakeSessionStore(accessToken = null, refreshToken = null)
+        val appState =
+            QuartermasterAppState(
+                sessionStore = store,
+                backend = FakeBackend(meResponse = meResponseJson()),
+            )
+        appState.bootstrap()
+
+        appState.handleDeepLink("quartermaster://join?server=https%3A%2F%2Fquartermaster.example.com")
+
+        assertEquals("https://quartermaster.example.com", appState.serverUrl)
+        assertEquals("https://quartermaster.example.com", store.snapshot().serverUrl)
+        assertNull(appState.pendingInviteContext)
+    }
+
+    @Test
+    fun `authenticated server only pairing does not switch server`() = runTest {
+        val store = FakeSessionStore()
+        val appState =
+            QuartermasterAppState(
+                sessionStore = store,
+                backend = FakeBackend(meResponse = meResponseJson()),
+            )
+        appState.bootstrap()
+
+        appState.handleDeepLink("quartermaster://join?server=https%3A%2F%2Fquartermaster.example.com")
+
+        assertEquals("http://10.0.2.2:8080", appState.serverUrl)
+        assertEquals("http://10.0.2.2:8080", store.snapshot().serverUrl)
+        assertNull(appState.pendingInviteContext)
     }
 
     @Test

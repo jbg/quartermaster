@@ -11,10 +11,20 @@ export function readJoinDetails(searchParams: URLSearchParams): JoinDetails {
 }
 
 export function quartermasterJoinUrl(details: JoinDetails): string {
-  const invite = encodeURIComponent(details.invite);
-  const server = encodeURIComponent(details.server);
-  if (!invite && !server) {
+  return quartermasterNativeUrl(details);
+}
+
+export function quartermasterNativeUrl(details: JoinDetails): string {
+  const params: string[] = [];
+  if (details.invite) {
+    params.push(`invite=${encodeURIComponent(details.invite)}`);
+  }
+  if (details.server) {
+    params.push(`server=${encodeURIComponent(details.server)}`);
+  }
+  const query = params.join('&');
+  if (!query) {
     return 'quartermaster://join';
   }
-  return `quartermaster://join?invite=${invite}&server=${server}`;
+  return `quartermaster://join?${query}`;
 }
