@@ -13,6 +13,7 @@ import dev.quartermaster.android.generated.models.HouseholdDetailDto
 import dev.quartermaster.android.generated.models.InviteDto
 import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.MeResponse
+import dev.quartermaster.android.generated.models.OnboardingStatusResponse
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
 import dev.quartermaster.android.generated.models.ReminderDto
@@ -77,6 +78,52 @@ class QuartermasterAppStateTest {
 
         assertNull(context?.inviteCode)
         assertEquals("https://quartermaster.example.com", context?.serverUrl)
+    }
+
+    @Test
+    fun `parseInviteContext accepts custom server scheme`() {
+        val context =
+            QuartermasterAppState.parseInviteContext(
+                "quartermaster://server?server=https%3A%2F%2Fquartermaster.example.com%2F",
+            )
+
+        assertNull(context?.inviteCode)
+        assertEquals("https://quartermaster.example.com", context?.serverUrl)
+    }
+
+    @Test
+    fun `onboarding create household authenticates and refreshes me`() = runTest {
+        val backend = FakeBackend(meResponse = meResponseJson())
+        val appState = QuartermasterAppState(sessionStore = FakeSessionStore(), backend = backend)
+
+        appState.createOnboardingHousehold(
+            username = "alice",
+            password = "password123",
+            householdName = "Kitchen",
+            timezone = "UTC",
+        )
+
+        assertEquals(listOf("Kitchen"), backend.createdOnboardingHouseholds)
+        assertTrue(appState.phase is AppPhase.Authenticated)
+    }
+
+    @Test
+    fun `onboarding join invite authenticates and clears pending invite`() = runTest {
+        val backend = FakeBackend(meResponse = meResponseJson())
+        val appState = QuartermasterAppState(sessionStore = FakeSessionStore(), backend = backend)
+        appState.handleDeepLink(
+            "quartermaster://join?invite=DEEP1234&server=https%3A%2F%2Fquartermaster.example.com",
+        )
+
+        appState.joinOnboardingInvite(
+            username = "alice",
+            password = "password123",
+            inviteCode = "DEEP1234",
+        )
+
+        assertEquals(listOf("DEEP1234"), backend.joinedOnboardingInvites)
+        assertNull(appState.pendingInviteContext)
+        assertTrue(appState.phase is AppPhase.Authenticated)
     }
 
     @Test
@@ -1164,6 +1211,17 @@ class QuartermasterAppStateTest {
         )
     }
 
+    private fun onboardingStatusJson(): OnboardingStatusResponse = json.decodeFromString(
+        """
+        {
+          "server_state": "ready",
+          "household_signup": "enabled",
+          "invite_join": "enabled",
+          "auth_methods": ["password"]
+        }
+        """.trimIndent(),
+    )
+
     private fun householdJson(
         id: String,
         name: String,
@@ -1392,6 +1450,7 @@ class QuartermasterAppStateTest {
         private val openReminderFailure: Throwable? = null,
         private val discardFailure: Throwable? = null,
         private val logoutFailure: Throwable? = null,
+        private val onboardingStatusResponse: OnboardingStatusResponse = onboardingStatusJson(),
     ) : QuartermasterBackend {
         override var serverUrl: String = "http://10.0.2.2:8080"
 
@@ -1415,8 +1474,29 @@ class QuartermasterAppStateTest {
         val consumeStockRequests = mutableListOf<ConsumeRequest>()
         val discardedBatchIds = mutableListOf<String>()
         val restoredBatchIds = mutableListOf<String>()
+        val createdOnboardingHouseholds = mutableListOf<String>()
+        val joinedOnboardingInvites = mutableListOf<String>()
 
         override suspend fun me(): MeResponse = meResponse
+
+        override suspend fun onboardingStatus(): OnboardingStatusResponse = onboardingStatusResponse
+
+        override suspend fun createOnboardingHousehold(
+            username: String,
+            password: String,
+            householdName: String,
+            timezone: String,
+        ) {
+            createdOnboardingHouseholds.add(householdName)
+        }
+
+        override suspend fun joinOnboardingInvite(
+            username: String,
+            password: String,
+            inviteCode: String,
+        ) {
+            joinedOnboardingInvites.add(inviteCode)
+        }
 
         override suspend fun login(
             username: String,

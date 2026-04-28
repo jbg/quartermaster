@@ -5,6 +5,7 @@ import dev.quartermaster.android.generated.models.BarcodeLookupResponse
 import dev.quartermaster.android.generated.models.ConsumeRequest
 import dev.quartermaster.android.generated.models.ConsumeResponse
 import dev.quartermaster.android.generated.models.CreateHouseholdRequest
+import dev.quartermaster.android.generated.models.CreateOnboardingHouseholdRequest
 import dev.quartermaster.android.generated.models.CreateInviteRequest
 import dev.quartermaster.android.generated.models.CreateLocationRequest
 import dev.quartermaster.android.generated.models.CreateProductRequest
@@ -15,6 +16,8 @@ import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.LoginRequest
 import dev.quartermaster.android.generated.models.MeResponse
 import dev.quartermaster.android.generated.models.MemberDto
+import dev.quartermaster.android.generated.models.JoinInviteRequest
+import dev.quartermaster.android.generated.models.OnboardingStatusResponse
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.ProductSearchResponse
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
@@ -91,6 +94,51 @@ class QuartermasterApi(
         set(value) = authStore.saveServerUrl(value)
 
     suspend fun me(): MeResponse = authedJson("GET", "/auth/me")
+
+    suspend fun onboardingStatus(): OnboardingStatusResponse = jsonRequest(
+        method = "GET",
+        path = "/onboarding/status",
+        body = null,
+        requiresAuth = false,
+    )
+
+    suspend fun createOnboardingHousehold(
+        username: String,
+        password: String,
+        householdName: String,
+        timezone: String,
+        deviceLabel: String = "Android",
+    ): TokenPair = jsonRequest<TokenPair>(
+        method = "POST",
+        path = "/onboarding/create-household",
+        body =
+        CreateOnboardingHouseholdRequest(
+            username = username,
+            password = password,
+            householdName = householdName,
+            timezone = timezone,
+            deviceLabel = deviceLabel,
+        ),
+        requiresAuth = false,
+    ).also { authStore.saveTokens(it.accessToken, it.refreshToken) }
+
+    suspend fun joinOnboardingInvite(
+        username: String,
+        password: String,
+        inviteCode: String,
+        deviceLabel: String = "Android",
+    ): TokenPair = jsonRequest<TokenPair>(
+        method = "POST",
+        path = "/onboarding/join-invite",
+        body =
+        JoinInviteRequest(
+            username = username,
+            password = password,
+            inviteCode = inviteCode,
+            deviceLabel = deviceLabel,
+        ),
+        requiresAuth = false,
+    ).also { authStore.saveTokens(it.accessToken, it.refreshToken) }
 
     suspend fun login(
         username: String,

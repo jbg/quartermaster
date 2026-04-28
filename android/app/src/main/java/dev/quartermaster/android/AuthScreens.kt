@@ -1,5 +1,10 @@
 package dev.quartermaster.android
 
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,9 +27,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import dev.quartermaster.android.generated.models.OnboardingAvailability
+import dev.quartermaster.android.generated.models.OnboardingServerState
 import kotlinx.coroutines.launch
+import java.net.URI
+import java.util.TimeZone
 
 @Composable
 internal fun InviteHandoffCard(
@@ -63,18 +73,29 @@ internal fun InviteHandoffCard(
 @Composable
 internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var inviteCode by remember { mutableStateOf(appState.pendingInviteContext?.inviteCode.orEmpty()) }
+    var householdName by remember { mutableStateOf("") }
+    var timezone by remember { mutableStateOf(TimeZone.getDefault().id) }
     var serverUrl by remember { mutableStateOf(appState.serverUrl) }
+    var advancedExpanded by remember { mutableStateOf(false) }
     var signInMode by remember { mutableStateOf(true) }
+    var localError by remember { mutableStateOf<String?>(null) }
+
+    val scannerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
+        val contents = result.data?.getStringExtra("SCAN_RESULT")?.trim().orEmpty()
+        if (contents.isBlank()) return@rememberLauncherForActivityResult
+        handleSetupPayload(contents, appState, onError = { localError = it })
+        serverUrl = appState.serverUrl
+        scope.launch { appState.refreshOnboardingStatus() }
+    }
 
     LaunchedEffect(appState.pendingInviteContext) {
         appState.pendingInviteContext?.let { context ->
-            inviteCode = context.inviteCode.orEmpty()
             serverUrl = context.serverUrl ?: appState.serverUrl
-            signInMode = false
+            scope.launch { appState.refreshOnboardingStatus() }
         }
     }
 
@@ -88,99 +109,250 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
         item {
             Text("Kitchen inventory, kept in order.", style = MaterialTheme.typography.headlineSmall)
         }
-        if (appState.hasPendingInviteHandoff) {
+        appState.lastError?.let { message ->
+            item { ErrorCard("Onboarding failed", message) }
+        }
+        localError?.let { message ->
+            item { ErrorCard("Setup code failed", message) }
+        }
+        if (appState.onboardingStatus == null) {
             item {
-                InviteHandoffCard(
-                    inviteCode = appState.pendingInviteCode,
-                    onDismiss = appState::clearPendingInviteContext,
-                )
-            }
-        }
-        item {
-            Text(
-                "Connect to your Quartermaster server. On the Android emulator, 10.0.2.2 reaches the host machine.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { signInMode = true }) { Text("Sign in") }
-                TextButton(onClick = { signInMode = false }) { Text("Get started") }
-            }
-        }
-        item {
-            OutlinedTextField(
-                value = serverUrl,
-                onValueChange = {
-                    serverUrl = it
-                    appState.updateServerUrl(it)
-                },
-                label = { Text("Server URL") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(SmokeTag.ServerUrlField),
-            )
-        }
-        item {
-            OutlinedTextField(
-                value = username,
-                onValueChange = { username = it },
-                label = { Text("Username") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(SmokeTag.UsernameField),
-            )
-        }
-        item {
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                label = { Text("Password") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(SmokeTag.PasswordField),
-            )
-        }
-        if (!signInMode) {
-            item {
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
-                    label = { Text("Email (optional)") },
+                Button(
+                    onClick = {
+                        val intent = Intent("com.google.zxing.client.android.SCAN")
+                            .putExtra("SCAN_MODE", "QR_CODE_MODE")
+                        try {
+                            scannerLauncher.launch(intent)
+                        } catch (_: ActivityNotFoundException) {
+                            localError = "No QR scanner is available. Enter the server URL in Advanced."
+                            advancedExpanded = true
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
-                )
+                    enabled = !appState.authActionInFlight,
+                ) {
+                    Text("Scan setup code")
+                }
             }
             item {
-                OutlinedTextField(
-                    value = inviteCode,
-                    onValueChange = { inviteCode = it },
-                    label = { Text("Invite code (optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                TextButton(onClick = { advancedExpanded = !advancedExpanded }) {
+                    Text("Advanced")
+                }
             }
-        }
-        item {
-            Button(
-                modifier = Modifier.testTag(SmokeTag.SignInButton),
-                onClick = {
-                    scope.launch {
-                        if (signInMode) {
-                            appState.signIn(username = username, password = password)
-                        } else {
-                            appState.register(
-                                username = username,
-                                password = password,
-                                email = email.takeIf(String::isNotBlank),
-                                inviteCode = inviteCode.takeIf(String::isNotBlank),
+            if (advancedExpanded) {
+                item {
+                    OutlinedTextField(
+                        value = serverUrl,
+                        onValueChange = { serverUrl = it },
+                        label = { Text("Server URL") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(SmokeTag.ServerUrlField),
+                    )
+                }
+                item {
+                    Button(
+                        onClick = {
+                            appState.updateServerUrl(serverUrl)
+                            scope.launch { appState.refreshOnboardingStatus() }
+                        },
+                        enabled = !appState.authActionInFlight && serverUrl.isNotBlank(),
+                    ) {
+                        Text(if (appState.authActionInFlight) "Connecting..." else "Connect")
+                    }
+                }
+            }
+        } else {
+            item {
+                Text("Connected to ${appState.serverUrl}", style = MaterialTheme.typography.bodyMedium)
+                TextButton(
+                    onClick = {
+                        appState.clearPendingInviteContext()
+                        appState.clearOnboardingStatus()
+                    },
+                ) { Text("Change server") }
+            }
+            appState.pendingInviteCode?.let { inviteCode ->
+                item {
+                    InviteHandoffCard(
+                        inviteCode = inviteCode,
+                        onDismiss = appState::clearPendingInviteContext,
+                    )
+                }
+                item {
+                    AccountFields(username, password, onUsername = { username = it }, onPassword = { password = it })
+                }
+                item {
+                    Button(
+                        modifier = Modifier.testTag(SmokeTag.SignInButton),
+                        onClick = {
+                            scope.launch {
+                                appState.joinOnboardingInvite(
+                                    username = username.trim(),
+                                    password = password,
+                                    inviteCode = inviteCode,
+                                )
+                            }
+                        },
+                        enabled = !appState.authActionInFlight && username.isNotBlank() && password.length >= 8,
+                    ) {
+                        Text(if (appState.authActionInFlight) "Joining..." else "Join household")
+                    }
+                }
+            } ?: run {
+                val status = appState.onboardingStatus
+                if (status?.serverState == OnboardingServerState.NEEDS_INITIAL_SETUP) {
+                    item {
+                        AccountFields(username, password, onUsername = { username = it }, onPassword = { password = it })
+                    }
+                    item {
+                        OutlinedTextField(
+                            value = householdName,
+                            onValueChange = { householdName = it },
+                            label = { Text("Household name") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    item {
+                        OutlinedTextField(
+                            value = timezone,
+                            onValueChange = { timezone = it },
+                            label = { Text("Timezone") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    item {
+                        Button(
+                            modifier = Modifier.testTag(SmokeTag.SignInButton),
+                            onClick = {
+                                scope.launch {
+                                    appState.createOnboardingHousehold(
+                                        username = username.trim(),
+                                        password = password,
+                                        householdName = householdName.trim(),
+                                        timezone = timezone.trim(),
+                                    )
+                                }
+                            },
+                            enabled = !appState.authActionInFlight &&
+                                username.isNotBlank() &&
+                                password.length >= 8 &&
+                                householdName.isNotBlank() &&
+                                timezone.isNotBlank(),
+                        ) {
+                            Text(if (appState.authActionInFlight) "Setting up..." else "Set up server")
+                        }
+                    }
+                } else {
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { signInMode = true }) { Text("Sign in") }
+                            if (status?.householdSignup == OnboardingAvailability.ENABLED) {
+                                TextButton(onClick = { signInMode = false }) { Text("Create household") }
+                            }
+                        }
+                    }
+                    item {
+                        AccountFields(username, password, onUsername = { username = it }, onPassword = { password = it })
+                    }
+                    if (!signInMode && status?.householdSignup == OnboardingAvailability.ENABLED) {
+                        item {
+                            OutlinedTextField(
+                                value = householdName,
+                                onValueChange = { householdName = it },
+                                label = { Text("Household name") },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        item {
+                            OutlinedTextField(
+                                value = timezone,
+                                onValueChange = { timezone = it },
+                                label = { Text("Timezone") },
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
                     }
-                },
-                enabled = !appState.authActionInFlight && username.isNotBlank() && password.length >= 8,
-            ) {
-                Text(if (signInMode) "Sign in" else "Create account")
+                    item {
+                        Button(
+                            modifier = Modifier.testTag(SmokeTag.SignInButton),
+                            onClick = {
+                                scope.launch {
+                                    if (signInMode) {
+                                        appState.signIn(username = username.trim(), password = password)
+                                    } else {
+                                        appState.createOnboardingHousehold(
+                                            username = username.trim(),
+                                            password = password,
+                                            householdName = householdName.trim(),
+                                            timezone = timezone.trim(),
+                                        )
+                                    }
+                                }
+                            },
+                            enabled = !appState.authActionInFlight &&
+                                username.isNotBlank() &&
+                                password.length >= 8 &&
+                                (signInMode || (householdName.isNotBlank() && timezone.isNotBlank())),
+                        ) {
+                            Text(
+                                when {
+                                    appState.authActionInFlight -> "Working..."
+                                    signInMode -> "Sign in"
+                                    else -> "Create household"
+                                },
+                            )
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun AccountFields(
+    username: String,
+    password: String,
+    onUsername: (String) -> Unit,
+    onPassword: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        OutlinedTextField(
+            value = username,
+            onValueChange = onUsername,
+            label = { Text("Username") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(SmokeTag.UsernameField),
+        )
+        OutlinedTextField(
+            value = password,
+            onValueChange = onPassword,
+            label = { Text("Password") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(SmokeTag.PasswordField),
+        )
+    }
+}
+
+private fun handleSetupPayload(
+    payload: String,
+    appState: QuartermasterAppState,
+    onError: (String) -> Unit,
+) {
+    val context = QuartermasterAppState.parseInviteContext(payload)
+    if (context != null) {
+        appState.handleDeepLink(payload)
+        return
+    }
+    val uri = runCatching { URI(payload) }.getOrNull()
+    val raw = uri?.toString()?.trim().orEmpty()
+    if (raw.startsWith("http://") || raw.startsWith("https://")) {
+        appState.updateServerUrl(raw)
+    } else {
+        onError("That setup code is not a Quartermaster link.")
     }
 }
 
