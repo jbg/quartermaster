@@ -78,6 +78,14 @@ export type CreateLocationRequest = {
     sort_order?: number | null;
 };
 
+export type CreateOnboardingHouseholdRequest = {
+    device_label?: string | null;
+    household_name: string;
+    password: string;
+    timezone: string;
+    username: string;
+};
+
 export type CreateProductRequest = {
     barcode?: string | null;
     brand?: string | null;
@@ -135,6 +143,13 @@ export type InviteDto = {
     use_count: number;
 };
 
+export type JoinInviteRequest = {
+    device_label?: string | null;
+    invite_code: string;
+    password: string;
+    username: string;
+};
+
 export type JsonPatchOperation = {
     /**
      * JSON Patch operation. Quartermaster supports `replace` and `remove`
@@ -178,6 +193,19 @@ export type MemberDto = {
 };
 
 export type MembershipRole = 'admin' | 'member';
+
+export type OnboardingAuthMethod = 'password';
+
+export type OnboardingAvailability = 'enabled' | 'disabled';
+
+export type OnboardingServerState = 'needs_initial_setup' | 'ready';
+
+export type OnboardingStatusResponse = {
+    auth_methods: Array<OnboardingAuthMethod>;
+    household_signup: OnboardingAvailability;
+    invite_join: OnboardingAvailability;
+    server_state: OnboardingServerState;
+};
 
 export type ProductDto = {
     barcode?: string | null;
@@ -763,6 +791,63 @@ export type LocationsUpdateResponses = {
 };
 
 export type LocationsUpdateResponse = LocationsUpdateResponses[keyof LocationsUpdateResponses];
+
+export type OnboardingCreateHouseholdData = {
+    body: CreateOnboardingHouseholdRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/onboarding/create-household';
+};
+
+export type OnboardingCreateHouseholdErrors = {
+    400: ApiErrorBody;
+    403: ApiErrorBody;
+    409: ApiErrorBody;
+    429: ApiErrorBody;
+};
+
+export type OnboardingCreateHouseholdError = OnboardingCreateHouseholdErrors[keyof OnboardingCreateHouseholdErrors];
+
+export type OnboardingCreateHouseholdResponses = {
+    201: TokenPair;
+};
+
+export type OnboardingCreateHouseholdResponse = OnboardingCreateHouseholdResponses[keyof OnboardingCreateHouseholdResponses];
+
+export type OnboardingJoinInviteData = {
+    body: JoinInviteRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/onboarding/join-invite';
+};
+
+export type OnboardingJoinInviteErrors = {
+    400: ApiErrorBody;
+    403: ApiErrorBody;
+    409: ApiErrorBody;
+    429: ApiErrorBody;
+};
+
+export type OnboardingJoinInviteError = OnboardingJoinInviteErrors[keyof OnboardingJoinInviteErrors];
+
+export type OnboardingJoinInviteResponses = {
+    201: TokenPair;
+};
+
+export type OnboardingJoinInviteResponse = OnboardingJoinInviteResponses[keyof OnboardingJoinInviteResponses];
+
+export type OnboardingStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/onboarding/status';
+};
+
+export type OnboardingStatusResponses = {
+    200: OnboardingStatusResponse;
+};
+
+export type OnboardingStatusResponse2 = OnboardingStatusResponses[keyof OnboardingStatusResponses];
 
 export type ProductListData = {
     body?: never;
