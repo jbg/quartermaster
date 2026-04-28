@@ -10,6 +10,151 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/v1/auth/email": {
+      "delete": {
+        "tags": [
+          "accounts"
+        ],
+        "operationId": "auth_email_clear",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/email-verification": {
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "operationId": "auth_email_verification_request",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestEmailVerificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestEmailVerificationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/email-verification/confirm": {
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "operationId": "auth_email_verification_confirm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmEmailVerificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "tags": [
@@ -2517,6 +2662,17 @@
           }
         }
       },
+      "ConfirmEmailVerificationRequest": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        }
+      },
       "ConsumeRequest": {
         "type": "object",
         "required": [
@@ -3037,8 +3193,37 @@
       "OnboardingAuthMethod": {
         "type": "string",
         "enum": [
-          "password"
+          "password",
+          "passkey"
         ]
+      },
+      "OnboardingAuthMethodAvailability": {
+        "type": "string",
+        "enum": [
+          "enabled",
+          "unavailable"
+        ]
+      },
+      "OnboardingAuthMethodDescriptor": {
+        "type": "object",
+        "required": [
+          "method",
+          "availability"
+        ],
+        "properties": {
+          "availability": {
+            "$ref": "#/components/schemas/OnboardingAuthMethodAvailability"
+          },
+          "method": {
+            "$ref": "#/components/schemas/OnboardingAuthMethod"
+          },
+          "unavailable_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       },
       "OnboardingAvailability": {
         "type": "string",
@@ -3066,7 +3251,7 @@
           "auth_methods": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/OnboardingAuthMethod"
+              "$ref": "#/components/schemas/OnboardingAuthMethodDescriptor"
             }
           },
           "household_signup": {
@@ -3230,12 +3415,6 @@
             ],
             "description": "Optional label applied to the refresh token (shown on `/api/v1/auth/me`)."
           },
-          "email": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "invite_code": {
             "type": [
               "string",
@@ -3379,6 +3558,32 @@
           "expires_tomorrow",
           "expires_future"
         ]
+      },
+      "RequestEmailVerificationRequest": {
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          }
+        }
+      },
+      "RequestEmailVerificationResponse": {
+        "type": "object",
+        "required": [
+          "pending_email",
+          "expires_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string"
+          },
+          "pending_email": {
+            "type": "string"
+          }
+        }
       },
       "RestoreManyRequest": {
         "type": "object",
@@ -3706,9 +3911,27 @@
               "null"
             ]
           },
+          "email_verified_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "pending_email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pending_email_verification_expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "username": {
             "type": "string"

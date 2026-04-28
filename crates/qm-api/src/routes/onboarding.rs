@@ -56,6 +56,21 @@ pub enum OnboardingAvailability {
 #[serde(rename_all = "snake_case")]
 pub enum OnboardingAuthMethod {
     Password,
+    Passkey,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OnboardingAuthMethodAvailability {
+    Enabled,
+    Unavailable,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct OnboardingAuthMethodDescriptor {
+    pub method: OnboardingAuthMethod,
+    pub availability: OnboardingAuthMethodAvailability,
+    pub unavailable_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -63,7 +78,7 @@ pub struct OnboardingStatusResponse {
     pub server_state: OnboardingServerState,
     pub household_signup: OnboardingAvailability,
     pub invite_join: OnboardingAvailability,
-    pub auth_methods: Vec<OnboardingAuthMethod>,
+    pub auth_methods: Vec<OnboardingAuthMethodDescriptor>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -225,7 +240,18 @@ async fn build_status(state: &AppState) -> ApiResult<OnboardingStatusResponse> {
         } else {
             OnboardingAvailability::Enabled
         },
-        auth_methods: vec![OnboardingAuthMethod::Password],
+        auth_methods: vec![
+            OnboardingAuthMethodDescriptor {
+                method: OnboardingAuthMethod::Password,
+                availability: OnboardingAuthMethodAvailability::Enabled,
+                unavailable_reason: None,
+            },
+            OnboardingAuthMethodDescriptor {
+                method: OnboardingAuthMethod::Passkey,
+                availability: OnboardingAuthMethodAvailability::Unavailable,
+                unavailable_reason: Some("not_implemented".into()),
+            },
+        ],
     })
 }
 
