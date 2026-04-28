@@ -14,6 +14,8 @@ struct SettingsView: View {
   @State private var newInviteRole: MembershipRole = .member
   @State private var newInviteExpiry: Date =
     Calendar.current.date(byAdding: .day, value: 7, to: .now) ?? .now
+  @State private var recoveryEmailDraft: String = ""
+  @State private var recoveryCodeDraft: String = ""
 
   @State private var showLocationEditor = false
   @State private var editingLocation: Location?
@@ -21,6 +23,7 @@ struct SettingsView: View {
   @State private var isLoading = true
   @State private var isSavingHousehold = false
   @State private var isCreatingInvite = false
+  @State private var isSavingRecoveryEmail = false
   @State private var errorMessage: String?
   @State private var showRenameConfirmation = false
   @State private var invitePendingRevocation: Invite?
@@ -40,6 +43,67 @@ struct SettingsView: View {
             LabeledContent("Household", value: household.name)
           }
           LabeledContent("Role", value: currentRole?.displayName ?? "Member")
+        }
+
+        Section("Recovery email") {
+          if let email = me.user.email {
+            LabeledContent("Verified", value: email)
+          } else if let pending = me.user.pendingEmail {
+            LabeledContent("Pending", value: pending)
+            if let expiresAt = me.user.pendingEmailVerificationExpiresAt {
+              LabeledContent("Code expires", value: expiresAt)
+            }
+          } else {
+            Text("No recovery email configured.")
+              .foregroundStyle(.secondary)
+          }
+
+          TextField("Recovery email", text: $recoveryEmailDraft)
+            .textContentType(.emailAddress)
+            .textInputAutocapitalization(.never)
+            .keyboardType(.emailAddress)
+            .autocorrectionDisabled()
+          Button {
+            Task { await requestRecoveryEmail() }
+          } label: {
+            if isSavingRecoveryEmail {
+              ProgressView()
+            } else {
+              Text("Send verification code")
+            }
+          }
+          .disabled(
+            isSavingRecoveryEmail
+              || recoveryEmailDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+          if me.user.pendingEmail != nil {
+            TextField("Verification code", text: $recoveryCodeDraft)
+              .textInputAutocapitalization(.characters)
+              .autocorrectionDisabled()
+            Button {
+              Task { await confirmRecoveryEmail() }
+            } label: {
+              if isSavingRecoveryEmail {
+                ProgressView()
+              } else {
+                Text("Confirm email")
+              }
+            }
+            .disabled(
+              isSavingRecoveryEmail
+                || recoveryCodeDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          }
+
+          if me.user.email != nil || me.user.pendingEmail != nil {
+            Button("Remove recovery email", role: .destructive) {
+              Task { await clearRecoveryEmail() }
+            }
+            .disabled(isSavingRecoveryEmail)
+          }
+
+          Text("Verification codes are emitted to the server logs for now.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
         }
       }
 
@@ -288,6 +352,7 @@ struct SettingsView: View {
     .task {
       applyPendingInviteContext()
       await load()
+      recoveryEmailDraft = me?.user.pendingEmail ?? me?.user.email ?? recoveryEmailDraft
     }
     .refreshable { await load() }
     .onChange(of: appState.pendingInviteContext) { _, _ in
@@ -484,6 +549,32 @@ struct SettingsView: View {
     } catch {
       errorMessage = error.localizedDescription
     }
+  }
+
+  private func requestRecoveryEmail() async {
+    isSavingRecoveryEmail = true
+    defer { isSavingRecoveryEmail = false }
+    await appState.requestEmailVerification(email: recoveryEmailDraft)
+    await load(retryOnForbidden: false)
+    recoveryEmailDraft = me?.user.pendingEmail ?? me?.user.email ?? recoveryEmailDraft
+  }
+
+  private func confirmRecoveryEmail() async {
+    isSavingRecoveryEmail = true
+    defer { isSavingRecoveryEmail = false }
+    await appState.confirmEmailVerification(code: recoveryCodeDraft)
+    recoveryCodeDraft = ""
+    await load(retryOnForbidden: false)
+    recoveryEmailDraft = me?.user.email ?? recoveryEmailDraft
+  }
+
+  private func clearRecoveryEmail() async {
+    isSavingRecoveryEmail = true
+    defer { isSavingRecoveryEmail = false }
+    await appState.clearRecoveryEmail()
+    recoveryCodeDraft = ""
+    recoveryEmailDraft = ""
+    await load(retryOnForbidden: false)
   }
 
   private func revokeInvite(_ invite: Invite) async {

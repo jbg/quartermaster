@@ -29,6 +29,10 @@ export type BarcodeLookupResponse = {
     source: string;
 };
 
+export type ConfirmEmailVerificationRequest = {
+    code: string;
+};
+
 export type ConsumeRequest = {
     location_id?: string | null;
     product_id: string;
@@ -194,14 +198,22 @@ export type MemberDto = {
 
 export type MembershipRole = 'admin' | 'member';
 
-export type OnboardingAuthMethod = 'password';
+export type OnboardingAuthMethod = 'password' | 'passkey';
+
+export type OnboardingAuthMethodAvailability = 'enabled' | 'unavailable';
+
+export type OnboardingAuthMethodDescriptor = {
+    availability: OnboardingAuthMethodAvailability;
+    method: OnboardingAuthMethod;
+    unavailable_reason?: string | null;
+};
 
 export type OnboardingAvailability = 'enabled' | 'disabled';
 
 export type OnboardingServerState = 'needs_initial_setup' | 'ready';
 
 export type OnboardingStatusResponse = {
-    auth_methods: Array<OnboardingAuthMethod>;
+    auth_methods: Array<OnboardingAuthMethodDescriptor>;
     household_signup: OnboardingAvailability;
     invite_join: OnboardingAvailability;
     server_state: OnboardingServerState;
@@ -253,7 +265,6 @@ export type RegisterRequest = {
      * Optional label applied to the refresh token (shown on `/api/v1/auth/me`).
      */
     device_label?: string | null;
-    email?: string | null;
     /**
      * Required unless the server is in `first_run_only` mode and no users
      * exist yet, or in `open` mode.
@@ -292,6 +303,15 @@ export type ReminderListResponse = {
 };
 
 export type ReminderUrgency = 'expired' | 'expires_today' | 'expires_tomorrow' | 'expires_future';
+
+export type RequestEmailVerificationRequest = {
+    email: string;
+};
+
+export type RequestEmailVerificationResponse = {
+    expires_at: string;
+    pending_email: string;
+};
 
 export type RestoreManyRequest = {
     /**
@@ -404,9 +424,71 @@ export type UpdateLocationRequest = {
 
 export type UserDto = {
     email?: string | null;
+    email_verified_at?: string | null;
     id: string;
+    pending_email?: string | null;
+    pending_email_verification_expires_at?: string | null;
     username: string;
 };
+
+export type AuthEmailClearData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/email';
+};
+
+export type AuthEmailClearErrors = {
+    401: ApiErrorBody;
+};
+
+export type AuthEmailClearError = AuthEmailClearErrors[keyof AuthEmailClearErrors];
+
+export type AuthEmailClearResponses = {
+    200: MeResponse;
+};
+
+export type AuthEmailClearResponse = AuthEmailClearResponses[keyof AuthEmailClearResponses];
+
+export type AuthEmailVerificationRequestData = {
+    body: RequestEmailVerificationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/email-verification';
+};
+
+export type AuthEmailVerificationRequestErrors = {
+    400: ApiErrorBody;
+    401: ApiErrorBody;
+};
+
+export type AuthEmailVerificationRequestError = AuthEmailVerificationRequestErrors[keyof AuthEmailVerificationRequestErrors];
+
+export type AuthEmailVerificationRequestResponses = {
+    200: RequestEmailVerificationResponse;
+};
+
+export type AuthEmailVerificationRequestResponse = AuthEmailVerificationRequestResponses[keyof AuthEmailVerificationRequestResponses];
+
+export type AuthEmailVerificationConfirmData = {
+    body: ConfirmEmailVerificationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/email-verification/confirm';
+};
+
+export type AuthEmailVerificationConfirmErrors = {
+    400: ApiErrorBody;
+    401: ApiErrorBody;
+};
+
+export type AuthEmailVerificationConfirmError = AuthEmailVerificationConfirmErrors[keyof AuthEmailVerificationConfirmErrors];
+
+export type AuthEmailVerificationConfirmResponses = {
+    200: MeResponse;
+};
+
+export type AuthEmailVerificationConfirmResponse = AuthEmailVerificationConfirmResponses[keyof AuthEmailVerificationConfirmResponses];
 
 export type AuthLoginData = {
     body: LoginRequest;

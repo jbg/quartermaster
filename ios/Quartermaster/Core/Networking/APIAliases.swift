@@ -38,6 +38,7 @@ typealias OnboardingStatus = Components.Schemas.OnboardingStatusResponse
 typealias OnboardingServerState = Components.Schemas.OnboardingServerState
 typealias OnboardingAvailability = Components.Schemas.OnboardingAvailability
 typealias OnboardingAuthMethod = Components.Schemas.OnboardingAuthMethod
+typealias RequestEmailVerificationResponse = Components.Schemas.RequestEmailVerificationResponse
 
 extension User: Identifiable {}
 extension Household: Identifiable {}

@@ -602,7 +602,7 @@ private actor FakeAPI: AppStateAPI {
   func createdHouseholdNames() -> [String] { createHouseholdCalls }
   func joinedInviteCodes() -> [String] { joinInviteCalls }
 
-  func register(username: String, password: String, email: String?, inviteCode: String?)
+  func register(username: String, password: String, inviteCode: String?)
     async throws -> TokenPair
   { tokenPair() }
   func onboardingStatus() async throws -> OnboardingStatus { fatalError("unused") }
@@ -622,6 +622,14 @@ private actor FakeAPI: AppStateAPI {
     return tokenPair()
   }
   func login(username: String, password: String) async throws -> TokenPair { tokenPair() }
+  func requestEmailVerification(email: String) async throws -> RequestEmailVerificationResponse {
+    RequestEmailVerificationResponse(
+      expiresAt: "2026-04-28T12:30:00.000Z",
+      pendingEmail: email
+    )
+  }
+  func confirmEmailVerification(code: String) async throws -> Me { try await me() }
+  func clearRecoveryEmail() async throws -> Me { try await me() }
   func logout() async throws {}
   func me() async throws -> Me { try next(&meResponses) }
   func switchHousehold(householdID: String) async throws -> Me { try await me() }
@@ -770,7 +778,10 @@ private func me(
         "user": {
           "id": "11111111-1111-1111-1111-111111111111",
           "username": "alice",
-          "email": "alice@example.com"
+          "email": "alice@example.com",
+          "email_verified_at": "2026-04-28T12:00:00.000Z",
+          "pending_email": null,
+          "pending_email_verification_expires_at": null
         },
         "current_household": \(currentHousehold),
         "households": [\(households)],

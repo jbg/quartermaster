@@ -46,7 +46,7 @@ import UIKit
     private let activeBatchID = "33333333-3333-3333-3333-333333333333"
     private let depletedBatchID = "44444444-4444-4444-4444-444444444444"
 
-    func register(username: String, password: String, email: String?, inviteCode: String?)
+    func register(username: String, password: String, inviteCode: String?)
       async throws -> TokenPair
     { try decodeFixture(from: tokenPairJSON) }
     func onboardingStatus() async throws -> OnboardingStatus { throw APIError.unknown }
@@ -63,6 +63,15 @@ import UIKit
     func login(username: String, password: String) async throws -> TokenPair {
       try decodeFixture(from: tokenPairJSON)
     }
+
+    func requestEmailVerification(email: String) async throws -> RequestEmailVerificationResponse {
+      RequestEmailVerificationResponse(
+        expiresAt: "2026-04-28T12:30:00.000Z",
+        pendingEmail: email
+      )
+    }
+    func confirmEmailVerification(code: String) async throws -> Me { try await me() }
+    func clearRecoveryEmail() async throws -> Me { try await me() }
 
     func logout() async throws {}
     func me() async throws -> Me { try decodeFixture(from: meJSON) }
@@ -188,7 +197,10 @@ import UIKit
         "user": {
           "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
           "username": "ui-smoke",
-          "email": null
+          "email": null,
+          "email_verified_at": null,
+          "pending_email": null,
+          "pending_email_verification_expires_at": null
         },
         "current_household": {
           "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",

@@ -2,6 +2,7 @@ package dev.quartermaster.android
 
 import dev.quartermaster.android.generated.infrastructure.Serializer
 import dev.quartermaster.android.generated.models.BarcodeLookupResponse
+import dev.quartermaster.android.generated.models.ConfirmEmailVerificationRequest
 import dev.quartermaster.android.generated.models.ConsumeRequest
 import dev.quartermaster.android.generated.models.ConsumeResponse
 import dev.quartermaster.android.generated.models.CreateHouseholdRequest
@@ -27,6 +28,8 @@ import dev.quartermaster.android.generated.models.RegisterDeviceRequest
 import dev.quartermaster.android.generated.models.RegisterRequest
 import dev.quartermaster.android.generated.models.ReminderDto
 import dev.quartermaster.android.generated.models.ReminderListResponse
+import dev.quartermaster.android.generated.models.RequestEmailVerificationRequest
+import dev.quartermaster.android.generated.models.RequestEmailVerificationResponse
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventListResponse
@@ -173,6 +176,24 @@ class QuartermasterApi(
         ),
         requiresAuth = false,
     ).also { authStore.saveTokens(it.accessToken, it.refreshToken) }
+
+    suspend fun requestEmailVerification(email: String): RequestEmailVerificationResponse = authedJson(
+        method = "POST",
+        path = "/auth/email-verification",
+        body = RequestEmailVerificationRequest(email = email),
+    )
+
+    suspend fun confirmEmailVerification(code: String): MeResponse = authedJson(
+        method = "POST",
+        path = "/auth/email-verification/confirm",
+        body = ConfirmEmailVerificationRequest(code = code),
+    )
+
+    suspend fun clearRecoveryEmail(): MeResponse = authedJson(
+        method = "DELETE",
+        path = "/auth/email",
+        body = null,
+    )
 
     suspend fun logout() {
         runCatching { authedUnit("POST", "/auth/logout") }
