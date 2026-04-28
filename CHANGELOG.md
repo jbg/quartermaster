@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.3](https://github.com/jbg/quartermaster/compare/1.3.2...1.3.3) (2026-04-28)
+
+
+### Bug Fixes
+
+* make iOS app icons opaque ([382b0a4](https://github.com/jbg/quartermaster/commit/382b0a455d2dab8d8d285a4263e891cc8c8dbebe))
+
 ## [1.3.2](https://github.com/jbg/quartermaster/compare/1.3.1...1.3.2) (2026-04-27)
 
 
