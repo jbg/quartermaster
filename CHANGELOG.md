@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.0](https://github.com/jbg/quartermaster/compare/1.3.4...1.4.0) (2026-04-28)
+
+
+### Features
+
+* add server url mobile pairing ([9f0ba99](https://github.com/jbg/quartermaster/commit/9f0ba998080b7d380872e4c36077255dc4c58ad9))
+
+
+### Bug Fixes
+
+* **web:** respect ingress paths in the hosted shell ([b9247c0](https://github.com/jbg/quartermaster/commit/b9247c0a4322a2eabb092704c2cf64fc5b724f54))
+
 ## [1.3.4](https://github.com/jbg/quartermaster/compare/1.3.3...1.3.4) (2026-04-28)
 
 
