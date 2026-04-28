@@ -62,7 +62,7 @@ Compose is only convenience. The deployment contract is the same everywhere: run
 cargo run -p qm-server
 ```
 
-By default the server listens on `0.0.0.0:8080` and creates `data.db` in the current directory.
+By default the server listens on `[::]:8080` with dual-stack IPv4/IPv6 support and creates `data.db` in the current directory.
 
 ## First Setup
 
@@ -82,7 +82,7 @@ Common settings:
 
 | Variable               | Default                     | Meaning                                             |
 | ---------------------- | --------------------------- | --------------------------------------------------- |
-| `QM_BIND`              | `0.0.0.0:8080`              | Server bind address                                 |
+| `QM_BIND`              | `[::]:8080`                 | Server bind address                                 |
 | `QM_DATABASE_URL`      | `sqlite://data.db?mode=rwc` | SQLite or Postgres connection string                |
 | `QM_LOG_FORMAT`        | `text`                      | `text` or `json` logs                               |
 | `QM_REGISTRATION_MODE` | `first_run_only`            | `first_run_only`, `invite_only`, or `open`          |
