@@ -3,10 +3,7 @@ updates:
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "tuesday"
-      time: "09:00"
-      timezone: "Europe/Madrid"
+      interval: "daily"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -23,10 +20,7 @@ updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "tuesday"
-      time: "09:15"
-      timezone: "Europe/Madrid"
+      interval: "daily"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -42,10 +36,7 @@ updates:
   - package-ecosystem: "gradle"
     directory: "/android"
     schedule:
-      interval: "weekly"
-      day: "tuesday"
-      time: "09:30"
-      timezone: "Europe/Madrid"
+      interval: "daily"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -62,10 +53,7 @@ updates:
   - package-ecosystem: "swift"
     directory: "/ios"
     schedule:
-      interval: "weekly"
-      day: "tuesday"
-      time: "09:45"
-      timezone: "Europe/Madrid"
+      interval: "daily"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -82,10 +70,7 @@ updates:
   - package-ecosystem: "bundler"
     directory: "/ios"
     schedule:
-      interval: "weekly"
-      day: "tuesday"
-      time: "10:00"
-      timezone: "Europe/Madrid"
+      interval: "daily"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -101,10 +86,7 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "tuesday"
-      time: "10:15"
-      timezone: "Europe/Madrid"
+      interval: "daily"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -120,10 +102,7 @@ updates:
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "tuesday"
-      time: "10:30"
-      timezone: "Europe/Madrid"
+      interval: "daily"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -135,10 +114,7 @@ updates:
   - package-ecosystem: "docker-compose"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "tuesday"
-      time: "10:45"
-      timezone: "Europe/Madrid"
+      interval: "daily"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
