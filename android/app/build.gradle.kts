@@ -133,6 +133,7 @@ tasks.withType<KotlinCompile>().configureEach {
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.04.01")
     val firebaseBom = platform("com.google.firebase:firebase-bom:34.12.0")
+    val cameraxVersion = "1.6.0"
 
     implementation(composeBom)
     androidTestImplementation(composeBom)
@@ -149,11 +150,15 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0")
     implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.core:core-splashscreen:1.2.0")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
     implementation("com.google.firebase:firebase-messaging")
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("com.squareup.okhttp3:okhttp:5.3.2")
     implementation("com.squareup.okhttp3:logging-interceptor:5.3.2")
     implementation("com.squareup.retrofit2:retrofit:3.0.0")

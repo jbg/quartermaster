@@ -156,7 +156,7 @@ interface QuartermasterBackend {
     ): Unit
     suspend fun joinOnboardingInvite(username: String, password: String, inviteCode: String): Unit
     suspend fun login(username: String, password: String): Unit
-    suspend fun register(username: String, password: String, email: String?, inviteCode: String?): Unit
+    suspend fun register(username: String, password: String, inviteCode: String?): Unit
     suspend fun logout()
     suspend fun switchHousehold(householdId: String): MeResponse
     suspend fun createHousehold(name: String, timezone: String): MeResponse
@@ -235,13 +235,11 @@ class QuartermasterApiBackend(
     override suspend fun register(
         username: String,
         password: String,
-        email: String?,
         inviteCode: String?,
     ) {
         api.register(
             username = username,
             password = password,
-            email = email,
             inviteCode = inviteCode,
         )
     }
@@ -511,13 +509,11 @@ class QuartermasterAppState(
     suspend fun register(
         username: String,
         password: String,
-        email: String?,
         inviteCode: String?,
     ) = runAuthAction {
         backend.register(
             username = username,
             password = password,
-            email = email,
             inviteCode = inviteCode,
         )
         applyAuthenticated(backend.me())

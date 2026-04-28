@@ -1,10 +1,10 @@
 package dev.quartermaster.android
 
-import android.app.Activity
-import android.content.ActivityNotFoundException
-import android.content.Intent
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -82,14 +82,15 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
     var advancedExpanded by remember { mutableStateOf(false) }
     var signInMode by remember { mutableStateOf(true) }
     var localError by remember { mutableStateOf<String?>(null) }
+    var showSetupScanner by remember { mutableStateOf(false) }
 
-    val scannerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
-        val contents = result.data?.getStringExtra("SCAN_RESULT")?.trim().orEmpty()
-        if (contents.isBlank()) return@rememberLauncherForActivityResult
-        handleSetupPayload(contents, appState, onError = { localError = it })
-        serverUrl = appState.serverUrl
-        scope.launch { appState.refreshOnboardingStatus() }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            showSetupScanner = true
+        } else {
+            localError = "Camera access is needed to scan setup codes. Enter the server URL in Advanced."
+            advancedExpanded = true
+        }
     }
 
     LaunchedEffect(appState.pendingInviteContext) {
@@ -97,6 +98,24 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
             serverUrl = context.serverUrl ?: appState.serverUrl
             scope.launch { appState.refreshOnboardingStatus() }
         }
+    }
+
+    if (showSetupScanner) {
+        SetupQrScannerScreen(
+            onCode = { contents ->
+                showSetupScanner = false
+                handleSetupPayload(contents, appState, onError = { localError = it })
+                serverUrl = appState.serverUrl
+                scope.launch { appState.refreshOnboardingStatus() }
+            },
+            onCancel = { showSetupScanner = false },
+            onError = {
+                localError = it
+                advancedExpanded = true
+            },
+            modifier = modifier,
+        )
+        return
     }
 
     LazyColumn(
@@ -119,13 +138,13 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
             item {
                 Button(
                     onClick = {
-                        val intent = Intent("com.google.zxing.client.android.SCAN")
-                            .putExtra("SCAN_MODE", "QR_CODE_MODE")
-                        try {
-                            scannerLauncher.launch(intent)
-                        } catch (_: ActivityNotFoundException) {
-                            localError = "No QR scanner is available. Enter the server URL in Advanced."
-                            advancedExpanded = true
+                        if (
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                            PackageManager.PERMISSION_GRANTED
+                        ) {
+                            showSetupScanner = true
+                        } else {
+                            permissionLauncher.launch(Manifest.permission.CAMERA)
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -337,7 +356,7 @@ private fun AccountFields(
     }
 }
 
-private fun handleSetupPayload(
+internal fun handleSetupPayload(
     payload: String,
     appState: QuartermasterAppState,
     onError: (String) -> Unit,

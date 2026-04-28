@@ -159,7 +159,6 @@ class QuartermasterApi(
     suspend fun register(
         username: String,
         password: String,
-        email: String?,
         inviteCode: String?,
         deviceLabel: String = "Android",
     ): TokenPair = jsonRequest<TokenPair>(
@@ -169,7 +168,6 @@ class QuartermasterApi(
         RegisterRequest(
             username = username,
             password = password,
-            email = email,
             inviteCode = inviteCode,
             deviceLabel = deviceLabel,
         ),

@@ -181,6 +181,24 @@ class QuartermasterAppStateTest {
     }
 
     @Test
+    fun `setup scanner payload updates server or reports invalid links`() = runTest {
+        val store = FakeSessionStore(accessToken = null, refreshToken = null)
+        val appState =
+            QuartermasterAppState(
+                sessionStore = store,
+                backend = FakeBackend(meResponse = meResponseJson()),
+            )
+        val errors = mutableListOf<String>()
+
+        handleSetupPayload("https://quartermaster.example.com/", appState, errors::add)
+        assertEquals("https://quartermaster.example.com", appState.serverUrl)
+        assertTrue(errors.isEmpty())
+
+        handleSetupPayload("not a setup link", appState, errors::add)
+        assertEquals(listOf("That setup code is not a Quartermaster link."), errors)
+    }
+
+    @Test
     fun `authenticated server only pairing does not switch server`() = runTest {
         val store = FakeSessionStore()
         val appState =
@@ -1201,7 +1219,10 @@ class QuartermasterAppStateTest {
               "user": {
                 "id": "11111111-1111-1111-1111-111111111111",
                 "username": "alice",
-                "email": "alice@example.com"
+                "email": "alice@example.com",
+                "email_verified_at": "2026-04-28T12:00:00.000Z",
+                "pending_email": null,
+                "pending_email_verification_expires_at": null
               },
               "current_household": $currentHousehold,
               "households": $households,
@@ -1217,7 +1238,18 @@ class QuartermasterAppStateTest {
           "server_state": "ready",
           "household_signup": "enabled",
           "invite_join": "enabled",
-          "auth_methods": ["password"]
+          "auth_methods": [
+            {
+              "method": "password",
+              "availability": "enabled",
+              "unavailable_reason": null
+            },
+            {
+              "method": "passkey",
+              "availability": "unavailable",
+              "unavailable_reason": "not_implemented"
+            }
+          ]
         }
         """.trimIndent(),
     )
@@ -1506,7 +1538,6 @@ class QuartermasterAppStateTest {
         override suspend fun register(
             username: String,
             password: String,
-            email: String?,
             inviteCode: String?,
         ) = Unit
 
