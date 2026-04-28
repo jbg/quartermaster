@@ -34,6 +34,10 @@ typealias Invite = Components.Schemas.InviteDto
 typealias CreateInviteRequest = Components.Schemas.CreateInviteRequest
 typealias RedeemInviteRequest = Components.Schemas.RedeemInviteRequest
 typealias PushAuthorizationStatus = Components.Schemas.PushAuthorizationStatus
+typealias OnboardingStatus = Components.Schemas.OnboardingStatusResponse
+typealias OnboardingServerState = Components.Schemas.OnboardingServerState
+typealias OnboardingAvailability = Components.Schemas.OnboardingAvailability
+typealias OnboardingAuthMethod = Components.Schemas.OnboardingAuthMethod
 
 extension User: Identifiable {}
 extension Household: Identifiable {}

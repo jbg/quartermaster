@@ -33,6 +33,63 @@ actor APIClient: AppStateAPI {
 
   // MARK: - Accounts
 
+  func onboardingStatus() async throws -> OnboardingStatus {
+    let response = try await client.onboardingStatus(.init())
+    switch response {
+    case .ok(let ok): return try ok.body.json
+    case .undocumented(let statusCode, _):
+      throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
+  func createOnboardingHousehold(
+    username: String,
+    password: String,
+    householdName: String,
+    timezone: String
+  ) async throws -> TokenPair {
+    let body = Operations.OnboardingCreateHousehold.Input.Body.json(
+      .init(
+        deviceLabel: Self.deviceLabel,
+        householdName: householdName,
+        password: password,
+        timezone: timezone,
+        username: username,
+      ))
+    let response = try await client.onboardingCreateHousehold(.init(body: body))
+    switch response {
+    case .created(let ok): return try ok.body.json
+    case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+    case .forbidden(let err): throw APIError.server(status: 403, body: try? err.body.json)
+    case .conflict(let err): throw APIError.server(status: 409, body: try? err.body.json)
+    case .tooManyRequests(let err): throw APIError.server(status: 429, body: try? err.body.json)
+    case .undocumented(let statusCode, _):
+      throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
+  func joinOnboardingInvite(username: String, password: String, inviteCode: String)
+    async throws -> TokenPair
+  {
+    let body = Operations.OnboardingJoinInvite.Input.Body.json(
+      .init(
+        deviceLabel: Self.deviceLabel,
+        inviteCode: inviteCode,
+        password: password,
+        username: username,
+      ))
+    let response = try await client.onboardingJoinInvite(.init(body: body))
+    switch response {
+    case .created(let ok): return try ok.body.json
+    case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+    case .forbidden(let err): throw APIError.server(status: 403, body: try? err.body.json)
+    case .conflict(let err): throw APIError.server(status: 409, body: try? err.body.json)
+    case .tooManyRequests(let err): throw APIError.server(status: 429, body: try? err.body.json)
+    case .undocumented(let statusCode, _):
+      throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
   func register(username: String, password: String, email: String?, inviteCode: String? = nil)
     async throws -> TokenPair
   {
@@ -723,6 +780,9 @@ private actor AuthMiddleware: ClientMiddleware {
     "auth_login",
     "auth_register",
     "auth_refresh",
+    "onboarding_create_household",
+    "onboarding_join_invite",
+    "onboarding_status",
   ]
 }
 
