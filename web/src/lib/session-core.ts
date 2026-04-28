@@ -242,6 +242,25 @@ export interface StoredSession {
 export interface SessionTransport {
   configure(session: StoredSession): void;
   login(body: { username: string; password: string }): Promise<ApiResult<TokenPair>>;
+  onboardingStatus(): Promise<
+    ApiResult<{
+      server_state: 'needs_initial_setup' | 'ready';
+      household_signup: 'enabled' | 'disabled';
+      invite_join: 'enabled' | 'disabled';
+      auth_methods: string[];
+    }>
+  >;
+  createOnboardingHousehold(body: {
+    username: string;
+    password: string;
+    household_name: string;
+    timezone: string;
+  }): Promise<ApiResult<TokenPair>>;
+  joinOnboardingInvite(body: {
+    username: string;
+    password: string;
+    invite_code: string;
+  }): Promise<ApiResult<TokenPair>>;
   register(body: {
     username: string;
     password: string;
@@ -376,17 +395,21 @@ export class QuartermasterSession {
     await this.ensureBrowserDeviceRegistered();
   }
 
-  async register(
+  onboardingStatus() {
+    return this.transport.onboardingStatus().then(unwrap);
+  }
+
+  async createOnboardingHousehold(
     username: string,
     password: string,
-    email: string,
-    inviteCode: string
+    householdName: string,
+    timezone: string
   ): Promise<void> {
-    const result = await this.transport.register({
+    const result = await this.transport.createOnboardingHousehold({
       username,
       password,
-      email: email || null,
-      invite_code: inviteCode || null
+      household_name: householdName,
+      timezone
     });
     unwrap(result);
     await this.ensureBrowserDeviceRegistered();

@@ -97,8 +97,8 @@
   let serverUrl = $state('');
   let username = $state('');
   let password = $state('');
-  let email = $state('');
-  let inviteCode = $state('');
+  let householdName = $state('');
+  let timezone = $state(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
   let authMode = $state<'login' | 'register'>('login');
   let me = $state<MeResponse | null>(null);
   let authError = $state<string | null>(null);
@@ -357,7 +357,7 @@
       if (authMode === 'login') {
         await session.login(username, password);
       } else {
-        await session.register(username, password, email, inviteCode);
+        await session.createOnboardingHousehold(username, password, householdName, timezone);
       }
       authenticated = true;
       await refreshMe();
@@ -887,12 +887,12 @@
 
         {#if authMode === 'register'}
           <label>
-            Email
-            <input bind:value={email} type="email" autocomplete="email" />
+            Household name
+            <input bind:value={householdName} required />
           </label>
           <label>
-            Invite code
-            <input bind:value={inviteCode} autocomplete="one-time-code" />
+            Timezone
+            <input bind:value={timezone} required />
           </label>
         {/if}
 
@@ -903,7 +903,10 @@
         <button
           class="primary-action"
           type="submit"
-          disabled={authBusy || !username || password.length < 8}
+          disabled={authBusy ||
+            !username ||
+            password.length < 8 ||
+            (authMode === 'register' && (!householdName || !timezone))}
         >
           {authBusy ? 'Working...' : authMode === 'login' ? 'Log in' : 'Create account'}
         </button>

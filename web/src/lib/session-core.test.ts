@@ -94,6 +94,15 @@ describe('QuartermasterSession', () => {
       async login() {
         throw new Error('unused');
       },
+      async onboardingStatus() {
+        throw new Error('unused');
+      },
+      async createOnboardingHousehold() {
+        throw new Error('unused');
+      },
+      async joinOnboardingInvite() {
+        throw new Error('unused');
+      },
       async register() {
         throw new Error('unused');
       },
@@ -222,6 +231,15 @@ describe('QuartermasterSession', () => {
     const transport: SessionTransport = {
       configure() {},
       async login() {
+        throw new Error('unused');
+      },
+      async onboardingStatus() {
+        throw new Error('unused');
+      },
+      async createOnboardingHousehold() {
+        throw new Error('unused');
+      },
+      async joinOnboardingInvite() {
         throw new Error('unused');
       },
       async register() {
@@ -373,6 +391,15 @@ describe('QuartermasterSession', () => {
     const transport: SessionTransport = {
       configure() {},
       async login() {
+        throw new Error('unused');
+      },
+      async onboardingStatus() {
+        throw new Error('unused');
+      },
+      async createOnboardingHousehold() {
+        throw new Error('unused');
+      },
+      async joinOnboardingInvite() {
         throw new Error('unused');
       },
       async register() {

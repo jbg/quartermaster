@@ -10,6 +10,9 @@ import {
   locationsDelete,
   locationsList,
   locationsUpdate,
+  onboardingCreateHousehold as onboardingCreateHouseholdRequest,
+  onboardingJoinInvite as onboardingJoinInviteRequest,
+  onboardingStatus as onboardingStatusRequest,
   productByBarcode,
   productCreate,
   productSearch,
@@ -59,6 +62,15 @@ export function generatedTransport(): SessionTransport {
     },
     register(body) {
       return authRegister({ body });
+    },
+    onboardingStatus() {
+      return onboardingStatusRequest();
+    },
+    createOnboardingHousehold(body) {
+      return onboardingCreateHouseholdRequest({ body });
+    },
+    joinOnboardingInvite(body) {
+      return onboardingJoinInviteRequest({ body });
     },
     refresh(body) {
       return authRefresh({ body: body ?? {} });
