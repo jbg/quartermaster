@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.1](https://github.com/jbg/quartermaster/compare/1.4.0...1.4.1) (2026-04-28)
+
+
+### Bug Fixes
+
+* repair TestFlight release deploy ([19d6e49](https://github.com/jbg/quartermaster/commit/19d6e490b62ceca76dc68242c7568847b8114f2f))
+* select jsonwebtoken crypto provider ([1fd9030](https://github.com/jbg/quartermaster/commit/1fd90303ff852b2d249c72833b0f359de26cfb63))
+* **web:** update generated client for dependency bump ([fe1c1ee](https://github.com/jbg/quartermaster/commit/fe1c1eefe883182c14e2d8b1c2eeec0bb5feb3a0))
+
 ## [1.4.0](https://github.com/jbg/quartermaster/compare/1.3.4...1.4.0) (2026-04-28)
 
 
