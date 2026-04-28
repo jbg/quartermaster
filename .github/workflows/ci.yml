@@ -19,6 +19,12 @@ jobs:
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
 
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked --version 0.19.4
+
+      - name: Check Rust dependencies
+        run: cargo deny check advisories bans licenses sources
+
       - name: Run workspace tests
         run: cargo test --workspace
 
