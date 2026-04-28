@@ -316,6 +316,8 @@ impl Modify for SecurityAddon {
         routes::onboarding::OnboardingServerState,
         routes::onboarding::OnboardingAvailability,
         routes::onboarding::OnboardingAuthMethod,
+        routes::onboarding::OnboardingAuthMethodAvailability,
+        routes::onboarding::OnboardingAuthMethodDescriptor,
         routes::onboarding::CreateOnboardingHouseholdRequest,
         routes::onboarding::JoinInviteRequest,
         routes::locations::LocationDto,

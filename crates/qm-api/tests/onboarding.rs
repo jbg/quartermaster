@@ -37,7 +37,21 @@ async fn status_reports_initial_setup_until_first_household_exists() {
     assert_eq!(body["server_state"], "needs_initial_setup");
     assert_eq!(body["household_signup"], "enabled");
     assert_eq!(body["invite_join"], "disabled");
-    assert_eq!(body["auth_methods"], json!(["password"]));
+    assert_eq!(
+        body["auth_methods"],
+        json!([
+            {
+                "method": "password",
+                "availability": "enabled",
+                "unavailable_reason": null,
+            },
+            {
+                "method": "passkey",
+                "availability": "unavailable",
+                "unavailable_reason": "not_implemented",
+            },
+        ])
+    );
 
     assert_eq!(
         app.send(
