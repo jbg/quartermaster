@@ -11,7 +11,7 @@ protocol AppStateTokenStore: Actor {
 }
 
 protocol AppStateAPI: Actor {
-  func register(username: String, password: String, email: String?, inviteCode: String?)
+  func register(username: String, password: String, inviteCode: String?)
     async throws -> TokenPair
   func onboardingStatus() async throws -> OnboardingStatus
   func createOnboardingHousehold(
@@ -23,6 +23,9 @@ protocol AppStateAPI: Actor {
   func joinOnboardingInvite(username: String, password: String, inviteCode: String)
     async throws -> TokenPair
   func login(username: String, password: String) async throws -> TokenPair
+  func requestEmailVerification(email: String) async throws -> RequestEmailVerificationResponse
+  func confirmEmailVerification(code: String) async throws -> Me
+  func clearRecoveryEmail() async throws -> Me
   func logout() async throws
   func me() async throws -> Me
   func switchHousehold(householdID: String) async throws -> Me
@@ -262,14 +265,12 @@ final class AppState {
     return nil
   }
 
-  func register(username: String, password: String, email: String?, inviteCode: String? = nil) async
-  {
+  func register(username: String, password: String, inviteCode: String? = nil) async {
     lastError = nil
     do {
       let pair = try await api.register(
         username: username,
         password: password,
-        email: email,
         inviteCode: inviteCode,
       )
       await tokenStore.store(pair)
@@ -326,6 +327,37 @@ final class AppState {
       let pair = try await api.login(username: username, password: password)
       await tokenStore.store(pair)
       await refreshMe()
+    } catch {
+      lastError = userMessage(for: error)
+    }
+  }
+
+  func requestEmailVerification(email: String) async {
+    lastError = nil
+    do {
+      _ = try await api.requestEmailVerification(
+        email: email.trimmingCharacters(in: .whitespacesAndNewlines))
+      applyAuthenticated(try await api.me())
+    } catch {
+      lastError = userMessage(for: error)
+    }
+  }
+
+  func confirmEmailVerification(code: String) async {
+    lastError = nil
+    do {
+      applyAuthenticated(
+        try await api.confirmEmailVerification(
+          code: code.trimmingCharacters(in: .whitespacesAndNewlines)))
+    } catch {
+      lastError = userMessage(for: error)
+    }
+  }
+
+  func clearRecoveryEmail() async {
+    lastError = nil
+    do {
+      applyAuthenticated(try await api.clearRecoveryEmail())
     } catch {
       lastError = userMessage(for: error)
     }

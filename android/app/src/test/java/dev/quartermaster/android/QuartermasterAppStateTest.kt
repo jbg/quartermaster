@@ -17,6 +17,7 @@ import dev.quartermaster.android.generated.models.OnboardingStatusResponse
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
 import dev.quartermaster.android.generated.models.ReminderDto
+import dev.quartermaster.android.generated.models.RequestEmailVerificationResponse
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventType
@@ -196,6 +197,23 @@ class QuartermasterAppStateTest {
 
         handleSetupPayload("not a setup link", appState, errors::add)
         assertEquals(listOf("That setup code is not a Quartermaster link."), errors)
+    }
+
+    @Test
+    fun `recovery email actions use settings state and refresh me`() = runTest {
+        val backend = FakeBackend(meResponse = meResponseJson())
+        val appState = QuartermasterAppState(sessionStore = FakeSessionStore(), backend = backend)
+        appState.bootstrap()
+
+        appState.requestEmailVerification(" alice@example.com ")
+        appState.confirmEmailVerification(" ABC1234567 ")
+        appState.clearRecoveryEmail()
+
+        assertEquals(listOf("alice@example.com"), backend.requestedRecoveryEmails)
+        assertEquals(listOf("ABC1234567"), backend.confirmedRecoveryCodes)
+        assertEquals(1, backend.clearRecoveryEmailCount)
+        assertEquals(LoadState.Idle, appState.settingsLoadState)
+        assertTrue(appState.phase is AppPhase.Authenticated)
     }
 
     @Test
@@ -1508,6 +1526,9 @@ class QuartermasterAppStateTest {
         val restoredBatchIds = mutableListOf<String>()
         val createdOnboardingHouseholds = mutableListOf<String>()
         val joinedOnboardingInvites = mutableListOf<String>()
+        val requestedRecoveryEmails = mutableListOf<String>()
+        val confirmedRecoveryCodes = mutableListOf<String>()
+        var clearRecoveryEmailCount = 0
 
         override suspend fun me(): MeResponse = meResponse
 
@@ -1540,6 +1561,24 @@ class QuartermasterAppStateTest {
             password: String,
             inviteCode: String?,
         ) = Unit
+
+        override suspend fun requestEmailVerification(email: String): RequestEmailVerificationResponse {
+            requestedRecoveryEmails.add(email)
+            return RequestEmailVerificationResponse(
+                pendingEmail = email,
+                expiresAt = "2026-04-28T12:30:00.000Z",
+            )
+        }
+
+        override suspend fun confirmEmailVerification(code: String): MeResponse {
+            confirmedRecoveryCodes.add(code)
+            return meResponse
+        }
+
+        override suspend fun clearRecoveryEmail(): MeResponse {
+            clearRecoveryEmailCount += 1
+            return meResponse
+        }
 
         override suspend fun logout() {
             logoutFailure?.let { throw it }

@@ -24,6 +24,7 @@ import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.ProductSource
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
 import dev.quartermaster.android.generated.models.ReminderDto
+import dev.quartermaster.android.generated.models.RequestEmailVerificationResponse
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventType
@@ -157,6 +158,9 @@ interface QuartermasterBackend {
     suspend fun joinOnboardingInvite(username: String, password: String, inviteCode: String): Unit
     suspend fun login(username: String, password: String): Unit
     suspend fun register(username: String, password: String, inviteCode: String?): Unit
+    suspend fun requestEmailVerification(email: String): RequestEmailVerificationResponse
+    suspend fun confirmEmailVerification(code: String): MeResponse
+    suspend fun clearRecoveryEmail(): MeResponse
     suspend fun logout()
     suspend fun switchHousehold(householdId: String): MeResponse
     suspend fun createHousehold(name: String, timezone: String): MeResponse
@@ -243,6 +247,12 @@ class QuartermasterApiBackend(
             inviteCode = inviteCode,
         )
     }
+
+    override suspend fun requestEmailVerification(email: String): RequestEmailVerificationResponse = api.requestEmailVerification(email)
+
+    override suspend fun confirmEmailVerification(code: String): MeResponse = api.confirmEmailVerification(code)
+
+    override suspend fun clearRecoveryEmail(): MeResponse = api.clearRecoveryEmail()
 
     override suspend fun logout() {
         api.logout()
@@ -551,6 +561,19 @@ class QuartermasterAppState(
     suspend fun redeemInvite(code: String) = runSettingsAction {
         backend.redeemInvite(code)
         applyAuthenticated(backend.me())
+    }
+
+    suspend fun requestEmailVerification(email: String) = runSettingsAction {
+        backend.requestEmailVerification(email.trim())
+        applyAuthenticated(backend.me())
+    }
+
+    suspend fun confirmEmailVerification(code: String) = runSettingsAction {
+        applyAuthenticated(backend.confirmEmailVerification(code.trim()))
+    }
+
+    suspend fun clearRecoveryEmail() = runSettingsAction {
+        applyAuthenticated(backend.clearRecoveryEmail())
     }
 
     suspend fun createInvite(expiresAt: String, maxUses: Long) = runSettingsAction {

@@ -41,6 +41,8 @@ internal fun SettingsScreen(
     var inviteExpiry by remember { mutableStateOf("2999-01-01T00:00:00.000Z") }
     var inviteMaxUses by remember { mutableStateOf("1") }
     var redeemInviteCode by remember { mutableStateOf(appState.pendingInviteContext?.inviteCode.orEmpty()) }
+    var recoveryEmail by remember { mutableStateOf(appState.meOrNull?.user?.pendingEmail ?: appState.meOrNull?.user?.email.orEmpty()) }
+    var recoveryCode by remember { mutableStateOf("") }
 
     LaunchedEffect(appState.currentHouseholdId) { appState.loadSettings() }
     LaunchedEffect(appState.pendingInviteContext) {
@@ -99,6 +101,67 @@ internal fun SettingsScreen(
                     MetadataRow("Household", appState.meOrNull?.currentHousehold?.name ?: "None")
                     MetadataRow("Timezone", appState.meOrNull?.currentHousehold?.timezone ?: "UTC")
                     MetadataRow("Server", appState.serverUrl)
+                }
+            }
+        }
+        item {
+            SectionHeader(
+                title = "Recovery email",
+                body = "Set a verified email for future account recovery. Verification codes are emitted to the server logs for now.",
+            )
+        }
+        item {
+            Card {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    val user = appState.meOrNull?.user
+                    when {
+                        user?.email != null -> MetadataRow("Verified", user.email)
+                        user?.pendingEmail != null -> MetadataRow("Pending", user.pendingEmail)
+                        else -> Text("No recovery email configured.", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    user?.pendingEmailVerificationExpiresAt?.let { MetadataRow("Code expires", it) }
+                    OutlinedTextField(
+                        value = recoveryEmail,
+                        onValueChange = { recoveryEmail = it },
+                        label = { Text("Recovery email") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(
+                        onClick = { scope.launch { appState.requestEmailVerification(recoveryEmail) } },
+                        enabled = appState.settingsLoadState != LoadState.Loading && recoveryEmail.isNotBlank(),
+                    ) {
+                        Text(if (appState.settingsLoadState == LoadState.Loading) "Working..." else "Send verification code")
+                    }
+                    if (user?.pendingEmail != null) {
+                        OutlinedTextField(
+                            value = recoveryCode,
+                            onValueChange = { recoveryCode = it },
+                            label = { Text("Verification code") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Button(
+                            onClick = { scope.launch { appState.confirmEmailVerification(recoveryCode) } },
+                            enabled = appState.settingsLoadState != LoadState.Loading && recoveryCode.isNotBlank(),
+                        ) {
+                            Text(if (appState.settingsLoadState == LoadState.Loading) "Working..." else "Confirm email")
+                        }
+                    }
+                    if (user?.email != null || user?.pendingEmail != null) {
+                        TextButton(
+                            onClick = {
+                                recoveryCode = ""
+                                scope.launch { appState.clearRecoveryEmail() }
+                            },
+                            enabled = appState.settingsLoadState != LoadState.Loading,
+                        ) {
+                            Text("Remove recovery email")
+                        }
+                    }
                 }
             }
         }

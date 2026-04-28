@@ -90,13 +90,12 @@ actor APIClient: AppStateAPI {
     }
   }
 
-  func register(username: String, password: String, email: String?, inviteCode: String? = nil)
+  func register(username: String, password: String, inviteCode: String? = nil)
     async throws -> TokenPair
   {
     let body = Operations.AuthRegister.Input.Body.json(
       .init(
         deviceLabel: Self.deviceLabel,
-        email: email,
         inviteCode: inviteCode,
         password: password,
         username: username,
@@ -130,6 +129,37 @@ actor APIClient: AppStateAPI {
     case .ok(let ok): return try ok.body.json
     case .unauthorized(let err): throw APIError.server(status: 401, body: try? err.body.json)
     case .tooManyRequests(let err): throw APIError.server(status: 429, body: try? err.body.json)
+    case .undocumented(let statusCode, _): throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
+  func requestEmailVerification(email: String) async throws -> RequestEmailVerificationResponse {
+    let body = Operations.AuthEmailVerificationRequest.Input.Body.json(.init(email: email))
+    let response = try await client.authEmailVerificationRequest(.init(body: body))
+    switch response {
+    case .ok(let ok): return try ok.body.json
+    case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+    case .unauthorized: throw APIError.unauthorized
+    case .undocumented(let statusCode, _): throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
+  func confirmEmailVerification(code: String) async throws -> Me {
+    let body = Operations.AuthEmailVerificationConfirm.Input.Body.json(.init(code: code))
+    let response = try await client.authEmailVerificationConfirm(.init(body: body))
+    switch response {
+    case .ok(let ok): return try ok.body.json
+    case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+    case .unauthorized: throw APIError.unauthorized
+    case .undocumented(let statusCode, _): throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
+  func clearRecoveryEmail() async throws -> Me {
+    let response = try await client.authEmailClear(.init())
+    switch response {
+    case .ok(let ok): return try ok.body.json
+    case .unauthorized: throw APIError.unauthorized
     case .undocumented(let statusCode, _): throw APIError.server(status: statusCode, body: nil)
     }
   }
