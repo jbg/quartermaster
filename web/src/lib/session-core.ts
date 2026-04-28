@@ -16,6 +16,8 @@ export interface MeResponse {
   current_household?: HouseholdSummary | null;
   currentHousehold?: HouseholdSummary | null;
   households?: HouseholdSummary[];
+  public_base_url?: string | null;
+  publicBaseUrl?: string | null;
   user?: {
     username?: string;
   };

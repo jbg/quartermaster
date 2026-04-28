@@ -149,15 +149,13 @@ An invalid or unregistered token does not remove the reminder from the durable i
 
 Quartermaster supports one explicit v1 identity story:
 
-- one production `QM_PUBLIC_BASE_URL`
 - one associated-domain host
 - one iOS app identity pairing checked by `cargo xtask verify-release-config`
 
 Keep these aligned:
 
-- `QM_PUBLIC_BASE_URL=https://quartermaster.example.com`
-- backend AASA route serves that host
 - iOS release config resolves `QUARTERMASTER_ASSOCIATED_DOMAIN=quartermaster.example.com`
+- backend AASA route serves `https://quartermaster.example.com/.well-known/apple-app-site-association`
 - `QM_IOS_TEAM_ID` + `QM_IOS_BUNDLE_ID` match `QUARTERMASTER_IOS_DEVELOPMENT_TEAM` + `QUARTERMASTER_IOS_BUNDLE_ID`
 
 After touching any of those values, run:
