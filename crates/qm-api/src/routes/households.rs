@@ -195,7 +195,13 @@ pub async fn list_members(
                 user: UserDto {
                     id: row.membership.user_id,
                     username: row.username,
-                    email: row.email,
+                    email: row
+                        .email_verified_at
+                        .as_ref()
+                        .and_then(|_| row.email.clone()),
+                    email_verified_at: row.email_verified_at,
+                    pending_email: None,
+                    pending_email_verification_expires_at: None,
                 },
                 role: MembershipRole::from_str(&row.membership.role)?,
                 joined_at: row.membership.joined_at,
