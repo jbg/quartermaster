@@ -264,11 +264,67 @@ fn assert_cookie_names(headers: &HeaderMap) {
     assert!(cookies
         .iter()
         .filter(|value| value.starts_with("qm_access=") || value.starts_with("qm_refresh="))
-        .all(|value| value.contains("HttpOnly") && value.contains("Path=/api/v1")));
+        .all(|value| value.contains("HttpOnly") && value.contains("Path=/")));
     assert!(cookies
         .iter()
         .find(|value| value.starts_with("qm_csrf="))
         .is_some_and(|value| !value.contains("HttpOnly") && value.contains("Path=/")));
+}
+
+#[tokio::test]
+async fn public_base_url_does_not_force_secure_browser_cookies() {
+    let app = TestApp::start(ApiConfig {
+        public_base_url: Some("https://quartermaster.example.com".into()),
+        ..ApiConfig::default()
+    })
+    .await;
+    app.seed_household_admin("alice").await;
+
+    let (status, headers, _) = app
+        .send_with_request_id(
+            Method::POST,
+            "/api/v1/auth/login",
+            Some(json!({
+                "username": "alice",
+                "password": "password123",
+            })),
+            None,
+            None,
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(set_cookies(&headers)
+        .iter()
+        .all(|value| !value.contains("Secure")));
+}
+
+#[tokio::test]
+async fn cross_origin_web_auth_uses_secure_browser_cookies() {
+    let app = TestApp::start(ApiConfig {
+        web_auth_allowed_origins: vec!["https://web.example.com".into()],
+        ..ApiConfig::default()
+    })
+    .await;
+    app.seed_household_admin("alice").await;
+
+    let (status, headers, _) = app
+        .send_with_request_id(
+            Method::POST,
+            "/api/v1/auth/login",
+            Some(json!({
+                "username": "alice",
+                "password": "password123",
+            })),
+            None,
+            None,
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(set_cookies(&headers)
+        .iter()
+        .all(|value| value.contains("Secure")));
 }
 
 fn cookie_header(headers: &HeaderMap) -> String {
