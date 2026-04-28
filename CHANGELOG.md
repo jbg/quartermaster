@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.5.0](https://github.com/jbg/quartermaster/compare/1.4.1...1.5.0) (2026-04-28)
+
+
+### Features
+
+* add onboarding setup endpoints ([fed2eac](https://github.com/jbg/quartermaster/commit/fed2eac6434bb8b6ed6ab4ff22cf5627740daaae))
+* streamline Android onboarding ([a2c89b0](https://github.com/jbg/quartermaster/commit/a2c89b030756c553adbaab901839c7fe49238d51))
+* streamline iOS onboarding ([a3cca5e](https://github.com/jbg/quartermaster/commit/a3cca5e7199d3a93a533b3618026fe3cc578e5d6))
+* update web onboarding links ([47cb152](https://github.com/jbg/quartermaster/commit/47cb152eef534cce572d1fd44877aeeb29bb8fe6))
+
 ## [1.4.1](https://github.com/jbg/quartermaster/compare/1.4.0...1.4.1) (2026-04-28)
 
 
