@@ -1,0 +1,148 @@
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "09:00"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "rust"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      rust-dependencies:
+        patterns:
+          - "*"
+
+  # Covers the pnpm workspace rooted at /, including web/package.json.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "09:15"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "web"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      web-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "gradle"
+    directory: "/android"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "09:30"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "android"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      android-dependencies:
+        patterns:
+          - "*"
+
+  # Covers SwiftPM package references in ios/Quartermaster.xcodeproj.
+  - package-ecosystem: "swift"
+    directory: "/ios"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "09:45"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "ios"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      ios-swift-dependencies:
+        patterns:
+          - "*"
+
+  # Covers Fastlane and other Ruby tooling under ios/Gemfile.
+  - package-ecosystem: "bundler"
+    directory: "/ios"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "10:00"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "ios"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      ios-ruby-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "10:15"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "10:30"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "10:45"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
