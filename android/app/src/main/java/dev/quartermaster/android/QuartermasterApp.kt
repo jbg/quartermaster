@@ -77,7 +77,7 @@ fun QuartermasterApp(appState: QuartermasterAppState) {
                     title = { Text("Quartermaster") },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background,
-                        titleContentColor = QuartermasterColors.Green900,
+                        titleContentColor = MaterialTheme.colorScheme.onBackground,
                     ),
                 )
             },

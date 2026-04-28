@@ -1,4 +1,6 @@
 :root {
+  color-scheme: light;
+
   --qm-ink: #18201c;
   --qm-green-900: #173326;
   --qm-green-800: #234a35;
@@ -57,6 +59,47 @@
   text-rendering: optimizeLegibility;
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --qm-ink: #edf3ee;
+    --qm-green-900: #d9eadf;
+    --qm-green-800: #a8d7b8;
+    --qm-green-700: #8fc6a4;
+    --qm-green-600: #74b88f;
+    --qm-sage-100: #203129;
+    --qm-paper: #111713;
+    --qm-white: #18201c;
+    --qm-slate-700: #c9d4cd;
+    --qm-slate-500: #a4b2aa;
+    --qm-steel: #8c9a92;
+    --qm-line: #2b362f;
+    --qm-line-strong: #3c4a42;
+    --qm-label: #232923;
+    --qm-brass: #d8a25f;
+    --qm-blueprint: #8fbfe0;
+    --qm-beet: #f09aa4;
+    --qm-beet-strong: #ffb1b8;
+    --qm-carrot: #eca56b;
+    --qm-leaf: #7fd59d;
+    --qm-success-bg: #183326;
+    --qm-warning-bg: #3a2a18;
+    --qm-danger-bg: #3a2023;
+    --qm-info-bg: #1b303d;
+    --qm-neutral-bg: #232c26;
+    --qm-low-bg: #3a2d18;
+    --qm-frozen-bg: #18333d;
+    --qm-success-fg: #9fe0b7;
+    --qm-warning-fg: #f0b56f;
+    --qm-info-fg: #9bcce7;
+    --qm-neutral-fg: #b8c5be;
+    --qm-low-fg: #e6b66e;
+    --qm-frozen-fg: #9ed3e8;
+    --qm-shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.42), 0 18px 36px rgba(0, 0, 0, 0.28);
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -70,7 +113,11 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background:
-    linear-gradient(180deg, rgba(232, 238, 232, 0.72), rgba(247, 248, 244, 0) 280px),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--qm-sage-100) 72%, transparent),
+      transparent 280px
+    ),
     var(--qm-paper);
 }
 
@@ -104,7 +151,7 @@ a {
 
 .topbar {
   padding-bottom: var(--qm-space-2);
-  border-bottom: 1px solid rgba(217, 222, 214, 0.86);
+  border-bottom: 1px solid color-mix(in srgb, var(--qm-line) 86%, transparent);
 }
 
 .topbar h1,
@@ -153,7 +200,7 @@ a {
 .join-panel {
   border: 1px solid var(--qm-line);
   border-radius: var(--qm-radius-md);
-  background: rgba(255, 255, 255, 0.92);
+  background: color-mix(in srgb, var(--qm-white) 92%, transparent);
   box-shadow: var(--qm-shadow-panel);
 }
 
@@ -918,7 +965,11 @@ a:focus-visible {
   place-items: center;
   padding: 28px 16px;
   background:
-    linear-gradient(180deg, rgba(232, 238, 232, 0.72), rgba(247, 248, 244, 0) 280px),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--qm-sage-100) 72%, transparent),
+      transparent 280px
+    ),
     var(--qm-paper);
 }
 
