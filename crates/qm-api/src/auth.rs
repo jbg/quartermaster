@@ -52,6 +52,18 @@ pub fn generate_token() -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
+pub fn generate_human_code(len: usize) -> String {
+    use argon2::password_hash::rand_core::RngCore;
+    const ALPHABET: &[u8] = b"23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+    let mut out = String::with_capacity(len);
+    let mut bytes = vec![0u8; len];
+    ArgonOsRng.fill_bytes(&mut bytes);
+    for byte in bytes {
+        out.push(ALPHABET[usize::from(byte) % ALPHABET.len()] as char);
+    }
+    out
+}
+
 pub fn sha256_hex(s: &str) -> String {
     let digest = Sha256::digest(s.as_bytes());
     let mut out = String::with_capacity(digest.len() * 2);

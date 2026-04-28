@@ -4,7 +4,7 @@ use axum::{
     extract::State,
     http::{header, HeaderMap, HeaderValue, StatusCode},
     middleware,
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use jiff::{SignedDuration, Timestamp};
@@ -50,6 +50,12 @@ pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
         )
         .route("/auth/logout", post(logout))
         .route("/auth/switch-household", post(switch_household))
+        .route("/auth/email-verification", post(request_email_verification))
+        .route(
+            "/auth/email-verification/confirm",
+            post(confirm_email_verification),
+        )
+        .route("/auth/email", delete(clear_recovery_email))
         .route("/auth/me", get(me))
 }
 
@@ -57,7 +63,6 @@ pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
 pub struct RegisterRequest {
     pub username: String,
     pub password: String,
-    pub email: Option<String>,
     /// Required unless the server is in `first_run_only` mode and no users
     /// exist yet, or in `open` mode.
     pub invite_code: Option<String>,
@@ -90,6 +95,9 @@ pub struct UserDto {
     pub id: Uuid,
     pub username: String,
     pub email: Option<String>,
+    pub email_verified_at: Option<String>,
+    pub pending_email: Option<String>,
+    pub pending_email_verification_expires_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -158,6 +166,22 @@ pub struct SwitchHouseholdRequest {
     pub household_id: Uuid,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct RequestEmailVerificationRequest {
+    pub email: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RequestEmailVerificationResponse {
+    pub pending_email: String,
+    pub expires_at: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ConfirmEmailVerificationRequest {
+    pub code: String,
+}
+
 #[utoipa::path(
     post,
     path = "/auth/register",
@@ -189,13 +213,7 @@ pub async fn register(
             {
                 return Err(ApiError::Conflict("username already taken".into()));
             }
-            let user = qm_db::users::create(
-                &state.db,
-                &req.username,
-                req.email.as_deref(),
-                &password_hash,
-            )
-            .await?;
+            let user = qm_db::users::create(&state.db, &req.username, None, &password_hash).await?;
             user
         }
         (RegistrationMode::FirstRunOnly, _) => {
@@ -208,13 +226,7 @@ pub async fn register(
             {
                 return Err(ApiError::Conflict("username already taken".into()));
             }
-            let user = qm_db::users::create(
-                &state.db,
-                &req.username,
-                req.email.as_deref(),
-                &password_hash,
-            )
-            .await?;
+            let user = qm_db::users::create(&state.db, &req.username, None, &password_hash).await?;
             user
         }
         (RegistrationMode::InviteOnly, _) => {
@@ -229,7 +241,7 @@ pub async fn register(
                 &state.db,
                 &code,
                 &req.username,
-                req.email.as_deref(),
+                None,
                 &password_hash,
             )
             .await
@@ -417,6 +429,124 @@ pub async fn me(
 
 #[utoipa::path(
     post,
+    path = "/auth/email-verification",
+    operation_id = "auth_email_verification_request",
+    tag = "accounts",
+    request_body = RequestEmailVerificationRequest,
+    responses(
+        (status = 200, body = RequestEmailVerificationResponse),
+        (status = 400, body = crate::error::ApiErrorBody),
+        (status = 401, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn request_email_verification(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Json(req): Json<RequestEmailVerificationRequest>,
+) -> ApiResult<Json<RequestEmailVerificationResponse>> {
+    let email = validate_recovery_email(&req.email)?;
+    let code = auth::generate_human_code(10);
+    let code_hash = auth::sha256_hex(&code);
+    let expires_at = Timestamp::now()
+        .checked_add(SignedDuration::from_mins(30))
+        .map_err(|e| {
+            ApiError::Internal(anyhow::anyhow!("email verification expiry overflow: {e}"))
+        })?;
+    let expires_at = qm_db::time::format_timestamp(expires_at);
+    let pending = qm_db::users::create_email_verification(
+        &state.db,
+        current.user_id,
+        &email,
+        &code_hash,
+        &expires_at,
+    )
+    .await?;
+
+    tracing::info!(
+        user_id = %current.user_id,
+        target_email = %email,
+        expires_at = %expires_at,
+        verification_code = %code,
+        "recovery email verification code generated"
+    );
+
+    Ok(Json(RequestEmailVerificationResponse {
+        pending_email: pending.email,
+        expires_at: pending.expires_at,
+    }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth/email-verification/confirm",
+    operation_id = "auth_email_verification_confirm",
+    tag = "accounts",
+    request_body = ConfirmEmailVerificationRequest,
+    responses(
+        (status = 200, body = MeResponse),
+        (status = 400, body = crate::error::ApiErrorBody),
+        (status = 401, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn confirm_email_verification(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Json(req): Json<ConfirmEmailVerificationRequest>,
+) -> ApiResult<Json<MeResponse>> {
+    let code = req
+        .code
+        .trim()
+        .chars()
+        .filter(|ch| !ch.is_whitespace() && *ch != '-')
+        .collect::<String>()
+        .to_ascii_uppercase();
+    if code.is_empty() || code.len() > 32 {
+        return Err(ApiError::BadRequest("verification code is invalid".into()));
+    }
+    let now = qm_db::now_utc_rfc3339();
+    let Some(_) = qm_db::users::confirm_email_verification(
+        &state.db,
+        current.user_id,
+        &auth::sha256_hex(&code),
+        &now,
+    )
+    .await?
+    else {
+        return Err(ApiError::BadRequest(
+            "verification code is invalid or expired".into(),
+        ));
+    };
+
+    Ok(Json(
+        build_me_response(&state, current.user_id, current.household_id).await?,
+    ))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/auth/email",
+    operation_id = "auth_email_clear",
+    tag = "accounts",
+    responses(
+        (status = 200, body = MeResponse),
+        (status = 401, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn clear_recovery_email(
+    State(state): State<AppState>,
+    current: CurrentUser,
+) -> ApiResult<Json<MeResponse>> {
+    qm_db::users::clear_recovery_email(&state.db, current.user_id).await?;
+    Ok(Json(
+        build_me_response(&state, current.user_id, current.household_id).await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
     path = "/auth/switch-household",
     operation_id = "auth_switch_household",
     tag = "accounts",
@@ -466,6 +596,20 @@ pub(crate) fn validate_credentials(username: &str, password: &str) -> ApiResult<
         return Err(ApiError::BadRequest("password too long".into()));
     }
     Ok(())
+}
+
+fn validate_recovery_email(value: &str) -> ApiResult<String> {
+    let email = value.trim().to_ascii_lowercase();
+    if email.is_empty() || email.len() > 254 {
+        return Err(ApiError::BadRequest("email must be 1..=254 chars".into()));
+    }
+    let mut parts = email.split('@');
+    let local = parts.next().unwrap_or_default();
+    let domain = parts.next().unwrap_or_default();
+    if local.is_empty() || domain.is_empty() || parts.next().is_some() {
+        return Err(ApiError::BadRequest("email is invalid".into()));
+    }
+    Ok(email)
 }
 
 pub(crate) async fn issue_token_pair(
@@ -622,6 +766,12 @@ pub(crate) async fn build_me_response(
     let user = qm_db::users::find_by_id(&state.db, user_id)
         .await?
         .ok_or(ApiError::Unauthorized)?;
+    let pending_email = qm_db::users::latest_pending_email_verification(
+        &state.db,
+        user_id,
+        &qm_db::now_utc_rfc3339(),
+    )
+    .await?;
     let memberships = qm_db::memberships::list_for_user(&state.db, user_id).await?;
     let households = memberships
         .iter()
@@ -644,7 +794,13 @@ pub(crate) async fn build_me_response(
         user: UserDto {
             id: user.id,
             username: user.username,
-            email: user.email,
+            email: user
+                .email_verified_at
+                .as_ref()
+                .and_then(|_| user.email.clone()),
+            email_verified_at: user.email_verified_at,
+            pending_email: pending_email.as_ref().map(|pending| pending.email.clone()),
+            pending_email_verification_expires_at: pending_email.map(|pending| pending.expires_at),
         },
         current_household,
         households,

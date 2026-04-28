@@ -17,6 +17,7 @@ pub struct MembershipWithUserRow {
     pub membership: MembershipRow,
     pub username: String,
     pub email: Option<String>,
+    pub email_verified_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -96,7 +97,8 @@ pub async fn list_members(
     household_id: Uuid,
 ) -> Result<Vec<MembershipWithUserRow>, sqlx::Error> {
     let rows = sqlx::query(
-        "SELECT m.household_id, m.user_id, m.role, m.joined_at, u.username, u.email \
+        "SELECT m.household_id, m.user_id, m.role, m.joined_at, \
+                u.username, u.email, u.email_verified_at \
          FROM membership m \
          INNER JOIN users u ON u.id = m.user_id \
          WHERE m.household_id = ? \
@@ -111,6 +113,7 @@ pub async fn list_members(
                 membership: row_to_membership_ref(&row)?,
                 username: row.try_get("username")?,
                 email: row.try_get("email")?,
+                email_verified_at: row.try_get("email_verified_at")?,
             })
         })
         .collect()
