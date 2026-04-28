@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { quartermasterJoinUrl, readJoinDetails } from './join';
+import { quartermasterJoinUrl, quartermasterNativeUrl, readJoinDetails } from './join';
 
 describe('join links', () => {
   it('reads invite and server query parameters', () => {
@@ -15,11 +15,20 @@ describe('join links', () => {
 
   it('builds the native custom-scheme fallback link', () => {
     expect(
-      quartermasterJoinUrl({
+      quartermasterNativeUrl({
         invite: 'AB CD',
         server: 'https://quartermaster.example.com'
       })
     ).toBe('quartermaster://join?invite=AB%20CD&server=https%3A%2F%2Fquartermaster.example.com');
+  });
+
+  it('builds server-only pairing links', () => {
+    expect(
+      quartermasterNativeUrl({
+        invite: '',
+        server: 'https://quartermaster.example.com'
+      })
+    ).toBe('quartermaster://join?server=https%3A%2F%2Fquartermaster.example.com');
   });
 
   it('omits the query string when no details are present', () => {

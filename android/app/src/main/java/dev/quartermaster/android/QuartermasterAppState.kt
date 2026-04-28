@@ -428,9 +428,13 @@ class QuartermasterAppState(
 
     fun handleDeepLink(rawUrl: String) {
         parseInviteContext(rawUrl)?.let { context ->
-            context.serverUrl?.let(::updateServerUrl)
-            pendingInviteContext = context
-            selectedTab = MainTab.Settings
+            if (phase is AppPhase.Unauthenticated) {
+                context.serverUrl?.let(::updateServerUrl)
+            }
+            if (!context.inviteCode.isNullOrBlank()) {
+                pendingInviteContext = context
+                selectedTab = MainTab.Settings
+            }
         }
     }
 

@@ -4,6 +4,50 @@ import XCTest
 
 @MainActor
 final class AppStateReminderTests: XCTestCase {
+  func testServerOnlyPairingUpdatesUnauthenticatedServerURLWithoutInviteContext() {
+    let appState = makeAppState(api: FakeAPI())
+    appState.phase = .unauthenticated
+
+    appState.handleIncomingURL(
+      URL(string: "quartermaster://join?server=https%3A%2F%2Fquartermaster.example.com")!
+    )
+
+    XCTAssertEqual(appState.serverURL.absoluteString, "https://quartermaster.example.com")
+    XCTAssertNil(appState.pendingInviteContext)
+  }
+
+  func testServerOnlyPairingDoesNotChangeAuthenticatedServerURL() {
+    let appState = makeAppState(api: FakeAPI())
+    appState.phase = .authenticated(me())
+    let originalURL = appState.serverURL
+
+    appState.handleIncomingURL(
+      URL(string: "quartermaster://join?server=https%3A%2F%2Fquartermaster.example.com")!
+    )
+
+    XCTAssertEqual(appState.serverURL, originalURL)
+    XCTAssertNil(appState.pendingInviteContext)
+  }
+
+  func testInvitePairingKeepsInviteContextAndUpdatesUnauthenticatedServerURL() {
+    let appState = makeAppState(api: FakeAPI())
+    appState.phase = .unauthenticated
+
+    appState.handleIncomingURL(
+      URL(
+        string:
+          "quartermaster://join?invite=DEEP1234&server=https%3A%2F%2Fquartermaster.example.com"
+      )!
+    )
+
+    XCTAssertEqual(appState.serverURL.absoluteString, "https://quartermaster.example.com")
+    XCTAssertEqual(appState.pendingInviteContext?.inviteCode, "DEEP1234")
+    XCTAssertEqual(
+      appState.pendingInviteContext?.serverURL?.absoluteString,
+      "https://quartermaster.example.com"
+    )
+  }
+
   func testInitialLoadQueuesUnpresentedRemindersOnceAndDismissAdvancesQueue() async {
     let api = FakeAPI(
       reminderResponses: [

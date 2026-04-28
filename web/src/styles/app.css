@@ -357,10 +357,34 @@ a:focus-visible {
 }
 
 .location-list,
-.location-form {
+.location-form,
+.pairing-panel {
   display: grid;
   gap: var(--qm-space-3);
   margin-top: 18px;
+}
+
+.pairing-panel {
+  margin-top: 0;
+  margin-bottom: 26px;
+  padding-bottom: 26px;
+  border-bottom: 1px solid var(--qm-line);
+}
+
+.pairing-qr {
+  display: grid;
+  place-items: center;
+  width: min(100%, 240px);
+  padding: var(--qm-space-3);
+  border: 1px solid var(--qm-line);
+  border-radius: var(--qm-radius-md);
+  background: var(--qm-white);
+}
+
+.pairing-qr svg {
+  width: 100%;
+  max-width: 208px;
+  height: auto;
 }
 
 .location-row {
@@ -907,7 +931,8 @@ a:focus-visible {
   color: var(--qm-slate-700);
 }
 
-.detail-grid h2 {
+.detail-grid h2,
+.detail-grid h3 {
   margin: 0 0 7px;
   font-size: 14px;
 }

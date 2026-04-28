@@ -4,6 +4,7 @@
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { generatedTransport } from '$lib/api';
+  import { quartermasterNativeUrl } from '$lib/join';
   import { appPath } from '$lib/paths';
   import {
     buildCreateLocationRequest,
@@ -37,12 +38,45 @@
   let pendingDelete = $state<Location | null>(null);
   let locationName = $state('');
   let locationKind = $state<LocationKind>('pantry');
+  let pairingServerUrl = $state('');
+  let pairingQrSvg = $state('');
 
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
   const sortedLocations = $derived(sortLocations(locations));
   const inventoryHref = $derived(appPath('/', page.url));
   const productsHref = $derived(appPath('/products', page.url));
   const brandMarkSrc = $derived(appPath('/brand/quartermaster-mark.svg', page.url));
+  const pairingDeepLink = $derived(
+    quartermasterNativeUrl({
+      invite: '',
+      server: pairingServerUrl
+    })
+  );
+
+  $effect(() => {
+    if (!browser || !pairingServerUrl) {
+      pairingQrSvg = '';
+      return;
+    }
+    const currentLink = pairingDeepLink;
+    void import('qrcode')
+      .then(({ toString: qrToString }) =>
+        qrToString(currentLink, {
+          type: 'svg',
+          margin: 1,
+          width: 208,
+          color: {
+            dark: '#173d32',
+            light: '#ffffff'
+          }
+        })
+      )
+      .then((svg) => {
+        if (pairingDeepLink === currentLink) {
+          pairingQrSvg = svg;
+        }
+      });
+  });
 
   onMount(() => {
     if (!browser) {
@@ -53,6 +87,7 @@
       generatedTransport()
     );
     session = created;
+    pairingServerUrl = created.snapshot().serverUrl;
     authenticated = true;
     void loadSettings();
   });
@@ -320,6 +355,33 @@
       </section>
 
       <aside class="panel settings-panel">
+        <section class="pairing-panel" aria-labelledby="pairing-heading">
+          <div class="section-heading compact">
+            <div>
+              <p class="eyebrow">Mobile</p>
+              <h2 id="pairing-heading">Pair this server</h2>
+            </div>
+          </div>
+          <p class="muted">
+            Scan this from Quartermaster on a phone to set the server URL for sign-in.
+          </p>
+          {#if pairingQrSvg}
+            <div class="pairing-qr" aria-label="Server pairing QR code">
+              {@html pairingQrSvg}
+            </div>
+          {/if}
+          <div class="detail-grid compact">
+            <div>
+              <h3>Server URL</h3>
+              <code>{pairingServerUrl}</code>
+            </div>
+            <div>
+              <h3>App link</h3>
+              <code>{pairingDeepLink}</code>
+            </div>
+          </div>
+        </section>
+
         <form
           class="location-form"
           data-testid="location-form"
