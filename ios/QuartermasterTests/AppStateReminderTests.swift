@@ -72,8 +72,10 @@ final class AppStateReminderTests: XCTestCase {
       timezone: "UTC"
     )
 
-    XCTAssertEqual(await tokenStore.currentAccessToken(), "access")
-    XCTAssertEqual(await api.createdHouseholdNames(), ["Kitchen"])
+    let accessToken = await tokenStore.currentAccessToken()
+    let createdHouseholds = await api.createdHouseholdNames()
+    XCTAssertEqual(accessToken, "access")
+    XCTAssertEqual(createdHouseholds, ["Kitchen"])
     if case .authenticated(let me) = appState.phase {
       XCTAssertEqual(me.user.username, "alice")
     } else {
@@ -93,8 +95,10 @@ final class AppStateReminderTests: XCTestCase {
       inviteCode: "DEEP1234"
     )
 
-    XCTAssertEqual(await tokenStore.currentAccessToken(), "access")
-    XCTAssertEqual(await api.joinedInviteCodes(), ["DEEP1234"])
+    let accessToken = await tokenStore.currentAccessToken()
+    let joinedInvites = await api.joinedInviteCodes()
+    XCTAssertEqual(accessToken, "access")
+    XCTAssertEqual(joinedInvites, ["DEEP1234"])
     XCTAssertNil(appState.pendingInviteContext)
     if case .authenticated = appState.phase {
     } else {
