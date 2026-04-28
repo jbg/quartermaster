@@ -245,17 +245,17 @@ export interface OnboardingAuthMethodDescriptor {
   unavailable_reason?: string | null;
 }
 
+export interface OnboardingStatus {
+  server_state: 'needs_initial_setup' | 'ready';
+  household_signup: 'enabled' | 'disabled';
+  invite_join: 'enabled' | 'disabled';
+  auth_methods: OnboardingAuthMethodDescriptor[];
+}
+
 export interface SessionTransport {
   configure(session: StoredSession): void;
   login(body: { username: string; password: string }): Promise<ApiResult<TokenPair>>;
-  onboardingStatus(): Promise<
-    ApiResult<{
-      server_state: 'needs_initial_setup' | 'ready';
-      household_signup: 'enabled' | 'disabled';
-      invite_join: 'enabled' | 'disabled';
-      auth_methods: OnboardingAuthMethodDescriptor[];
-    }>
-  >;
+  onboardingStatus(): Promise<ApiResult<OnboardingStatus>>;
   createOnboardingHousehold(body: {
     username: string;
     password: string;
@@ -354,9 +354,10 @@ export function createBrowserSessionStorage(
 ): SessionStorage {
   return {
     read() {
+      const currentServerUrl = defaultServerUrl(location);
+      const storedServerUrl = localStorage.getItem('quartermaster.serverUrl')?.trim() ?? '';
       return {
-        serverUrl:
-          localStorage.getItem('quartermaster.serverUrl')?.trim() || defaultServerUrl(location),
+        serverUrl: resolveBrowserServerUrl(storedServerUrl, currentServerUrl),
         browserDeviceId: localStorage.getItem('quartermaster.browserDeviceId')
       };
     },
@@ -368,6 +369,31 @@ export function createBrowserSessionStorage(
     },
     clear() {}
   };
+}
+
+function resolveBrowserServerUrl(storedServerUrl: string, currentServerUrl: string): string {
+  if (!storedServerUrl) {
+    return currentServerUrl;
+  }
+  if (!currentServerUrl) {
+    return trimTrailingSlashes(storedServerUrl);
+  }
+
+  try {
+    const stored = new URL(storedServerUrl);
+    const current = new URL(currentServerUrl);
+    if (
+      current.pathname !== '/' &&
+      stored.origin === current.origin &&
+      trimTrailingSlashes(stored.pathname) !== trimTrailingSlashes(current.pathname)
+    ) {
+      return trimTrailingSlashes(currentServerUrl);
+    }
+  } catch {
+    return trimTrailingSlashes(storedServerUrl);
+  }
+
+  return trimTrailingSlashes(storedServerUrl);
 }
 
 export class QuartermasterSession {
