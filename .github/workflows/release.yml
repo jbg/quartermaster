@@ -52,15 +52,15 @@ jobs:
             hass_arch: aarch64
             runner: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.release_tag || github.ref }}
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Login to GHCR
         if: github.event_name == 'release' || github.event_name == 'workflow_call' || inputs.release_tag != ''
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -88,7 +88,7 @@ jobs:
 
       - name: Build validation image
         if: github.event_name == 'workflow_dispatch' && inputs.release_tag == ''
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: ${{ matrix.platform }}
@@ -103,7 +103,7 @@ jobs:
       - name: Build and push image by digest
         if: github.event_name == 'release' || github.event_name == 'workflow_call' || inputs.release_tag != ''
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: ${{ matrix.platform }}
@@ -124,7 +124,7 @@ jobs:
 
       - name: Upload digest
         if: github.event_name == 'release' || github.event_name == 'workflow_call' || inputs.release_tag != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digests-${{ matrix.platform_slug }}
           path: /tmp/digests/*
@@ -152,16 +152,16 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       tag: ${{ steps.meta.outputs.tag }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: /tmp/digests
           pattern: digests-*
           merge-multiple: true
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -205,7 +205,7 @@ jobs:
     if: github.event_name == 'release' || github.event_name == 'workflow_call' || inputs.release_tag != ''
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.release_tag || github.ref }}
 
@@ -243,14 +243,14 @@ jobs:
           working-directory: ios
 
       - name: Import App Store distribution certificate
-        uses: apple-actions/import-codesign-certs@v5
+        uses: apple-actions/import-codesign-certs@v7
         with:
           p12-file-base64: ${{ secrets.APPSTORE_CERTIFICATES_FILE_BASE64 }}
           p12-password: ${{ secrets.APPSTORE_CERTIFICATES_PASSWORD }}
 
       - name: Download App Store provisioning profile
         id: provisioning
-        uses: apple-actions/download-provisioning-profiles@v4
+        uses: apple-actions/download-provisioning-profiles@v6
         with:
           bundle-id: ${{ vars.QUARTERMASTER_IOS_BUNDLE_ID }}
           profile-type: IOS_APP_STORE
@@ -279,7 +279,7 @@ jobs:
 
       - name: Upload iOS archive diagnostics
         if: failure() && steps.archive.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ios-archive-diagnostics
           path: |
@@ -306,11 +306,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.release_tag || github.ref }}
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           repository: jbg/quartermaster-home-assistant-apps
           token: ${{ secrets.HA_APPS_REPO_TOKEN }}
