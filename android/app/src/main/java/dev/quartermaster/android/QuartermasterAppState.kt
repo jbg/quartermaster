@@ -19,6 +19,7 @@ import dev.quartermaster.android.generated.models.InviteDto
 import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.MeResponse
 import dev.quartermaster.android.generated.models.MembershipRole
+import dev.quartermaster.android.generated.models.OnboardingStatusResponse
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.ProductSource
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
@@ -146,6 +147,14 @@ interface QuartermasterBackend {
     var serverUrl: String
 
     suspend fun me(): MeResponse
+    suspend fun onboardingStatus(): OnboardingStatusResponse
+    suspend fun createOnboardingHousehold(
+        username: String,
+        password: String,
+        householdName: String,
+        timezone: String,
+    ): Unit
+    suspend fun joinOnboardingInvite(username: String, password: String, inviteCode: String): Unit
     suspend fun login(username: String, password: String): Unit
     suspend fun register(username: String, password: String, email: String?, inviteCode: String?): Unit
     suspend fun logout()
@@ -200,6 +209,25 @@ class QuartermasterApiBackend(
         }
 
     override suspend fun me(): MeResponse = api.me()
+    override suspend fun onboardingStatus(): OnboardingStatusResponse = api.onboardingStatus()
+    override suspend fun createOnboardingHousehold(
+        username: String,
+        password: String,
+        householdName: String,
+        timezone: String,
+    ) {
+        api.createOnboardingHousehold(
+            username = username,
+            password = password,
+            householdName = householdName,
+            timezone = timezone,
+        )
+    }
+
+    override suspend fun joinOnboardingInvite(username: String, password: String, inviteCode: String) {
+        api.joinOnboardingInvite(username = username, password = password, inviteCode = inviteCode)
+    }
+
     override suspend fun login(username: String, password: String) {
         api.login(username = username, password = password)
     }
@@ -355,6 +383,8 @@ class QuartermasterAppState(
 
     var pendingInviteContext by mutableStateOf<InviteContext?>(null)
         private set
+    var onboardingStatus by mutableStateOf<OnboardingStatusResponse?>(null)
+        private set
     var pendingInventoryTarget by mutableStateOf<InventoryTarget?>(null)
         private set
     var shouldRequestNotificationPermission by mutableStateOf(false)
@@ -438,14 +468,43 @@ class QuartermasterAppState(
         }
     }
 
+    suspend fun refreshOnboardingStatus() = runAuthAction {
+        onboardingStatus = backend.onboardingStatus()
+    }
+
     fun updateServerUrl(url: String) {
         serverUrl = url.trim().removeSuffix("/")
         sessionStore.saveServerUrl(serverUrl)
         backend.serverUrl = serverUrl
     }
 
+    fun clearOnboardingStatus() {
+        onboardingStatus = null
+    }
+
     suspend fun signIn(username: String, password: String) = runAuthAction {
         backend.login(username = username, password = password)
+        applyAuthenticated(backend.me())
+    }
+
+    suspend fun createOnboardingHousehold(
+        username: String,
+        password: String,
+        householdName: String,
+        timezone: String,
+    ) = runAuthAction {
+        backend.createOnboardingHousehold(
+            username = username,
+            password = password,
+            householdName = householdName,
+            timezone = timezone,
+        )
+        applyAuthenticated(backend.me())
+    }
+
+    suspend fun joinOnboardingInvite(username: String, password: String, inviteCode: String) = runAuthAction {
+        backend.joinOnboardingInvite(username = username, password = password, inviteCode = inviteCode)
+        pendingInviteContext = null
         applyAuthenticated(backend.me())
     }
 
@@ -1552,10 +1611,11 @@ class QuartermasterAppState(
 
         fun parseInviteContext(rawUrl: String): InviteContext? {
             val uri = runCatching { URI(rawUrl) }.getOrNull() ?: return null
+            val isServerLink = uri.scheme == "quartermaster" && uri.host == "server"
             val isJoinLink =
                 (uri.scheme == "quartermaster" && uri.host == "join") ||
                     ((uri.scheme == "https" || uri.scheme == "http") && uri.path?.startsWith("/join") == true)
-            if (!isJoinLink) return null
+            if (!isServerLink && !isJoinLink) return null
 
             val query = uri.rawQuery.orEmpty()
                 .split("&")
@@ -1574,7 +1634,7 @@ class QuartermasterAppState(
                 ?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
                 ?.removeSuffix("/")
 
-            return InviteContext(inviteCode = invite, serverUrl = server)
+            return InviteContext(inviteCode = if (isJoinLink) invite else null, serverUrl = server)
         }
     }
 }
