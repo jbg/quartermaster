@@ -40,6 +40,7 @@ These are enforced in code, but the _why_ lives here. Respect them.
 - **`xcodegen generate`** (in `ios/`) regenerates the `.xcodeproj` from `project.yml`. Re-run after any `project.yml` edit, and also after adding new Swift source files or source-group structure that Xcode needs to see.
 - **Use Conventional Commits for every commit message.** Release Please derives versions from commit subjects: `fix:` for patch, `feat:` for minor, and `type!:` or a `BREAKING CHANGE:` footer for major. Use non-release types like `chore:`, `docs:`, `test:`, or `refactor:` when the change should not bump the product version.
 - **Don't edit `CHANGELOG.md` by hand.** Release Please owns changelog updates; leave formatting and release-note edits to the generated release PR.
+- **Keep App Store listing automation in fastlane.** iOS App Store/TestFlight metadata lives under `ios/fastlane/metadata`, screenshots under `ios/fastlane/screenshots`, and TestFlight uploads go through the checked-in fastlane `pilot` lane. Don't drift listing copy or upload behavior into App Store Connect UI-only changes when it can be represented in the repo.
 - **Format before committing.** Run the relevant formatter for your change, or `pnpm format` at the repo root when in doubt. CI enforces Rust (`cargo fmt`), Swift (`swift-format`), Kotlin (`spotless`/`ktlint`), shell (`shfmt`), and web (`prettier`) formatting.
 
 ## Verification
