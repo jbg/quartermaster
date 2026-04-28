@@ -4,11 +4,25 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+publish.workspace = true
 
 [dependencies]
-jiff.workspace = true
-rust_decimal.workspace = true
-serde.workspace = true
-thiserror.workspace = true
-utoipa.workspace = true
-uuid.workspace = true
+jiff = { workspace = true, default-features = false, features = [
+    "std",
+    "tz-system",
+    "tz-fat",
+    "tzdb-bundle-platform",
+    "tzdb-zoneinfo",
+    "tzdb-concatenated",
+    "perf-inline",
+    "serde",
+] }
+rust_decimal = { workspace = true, default-features = false, features = ["serde", "std"] }
+serde = { workspace = true, default-features = false, features = ["std", "derive"] }
+thiserror = { workspace = true, default-features = false, features = ["std"] }
+utoipa = { workspace = true, default-features = false, features = [
+    "macros",
+    "axum_extras",
+    "uuid",
+] }
+uuid = { workspace = true, default-features = false, features = ["std", "v7", "serde"] }

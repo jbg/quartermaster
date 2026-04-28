@@ -11,15 +11,44 @@ name = "xtask"
 path = "src/main.rs"
 
 [dependencies]
-qm-api = { path = "../crates/qm-api" }
-qm-db = { path = "../crates/qm-db" }
+qm-api = { path = "../crates/qm-api", default-features = false, features = [] }
+qm-db = { path = "../crates/qm-db", default-features = false, features = [] }
 
-anyhow.workspace = true
-reqwest.workspace = true
-rust_decimal.workspace = true
-serde_json.workspace = true
-sqlx.workspace = true
-tokio.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
-utoipa.workspace = true
+anyhow = { workspace = true, default-features = false, features = ["std"] }
+reqwest = { workspace = true, default-features = false, features = [
+    "default-tls",
+    "charset",
+    "http2",
+    "system-proxy",
+    "json",
+    "rustls-tls",
+] }
+rust_decimal = { workspace = true, default-features = false, features = ["serde", "std"] }
+serde_json = { workspace = true, default-features = false, features = ["std"] }
+sqlx = { workspace = true, default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "macros",
+    "migrate",
+    "any",
+    "sqlite",
+    "postgres",
+    "uuid",
+    "json",
+] }
+tokio = { workspace = true, default-features = false, features = ["full"] }
+tracing = { workspace = true, default-features = false, features = ["std", "attributes"] }
+tracing-subscriber = { workspace = true, default-features = false, features = [
+    "smallvec",
+    "fmt",
+    "ansi",
+    "tracing-log",
+    "std",
+    "env-filter",
+    "json",
+] }
+utoipa = { workspace = true, default-features = false, features = [
+    "macros",
+    "axum_extras",
+    "uuid",
+] }
