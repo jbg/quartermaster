@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.4](https://github.com/jbg/quartermaster/compare/1.3.3...1.3.4) (2026-04-28)
+
+
+### Bug Fixes
+
+* require iOS 26 SDK for TestFlight uploads ([fafddb6](https://github.com/jbg/quartermaster/commit/fafddb67db274b8e9780b19c2841dcf7da1d0251))
+
 ## [1.3.3](https://github.com/jbg/quartermaster/compare/1.3.2...1.3.3) (2026-04-28)
 
 
