@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.6.0](https://github.com/jbg/quartermaster/compare/1.5.0...1.6.0) (2026-04-28)
+
+
+### Features
+
+* **android:** add in-app setup QR scanning ([ab507c0](https://github.com/jbg/quartermaster/commit/ab507c04e11c69ffa228ebcdcdf92e4ca81fa67f))
+* **api:** add recovery email verification ([bdfcc17](https://github.com/jbg/quartermaster/commit/bdfcc1751deca97166ab334d7de83dc094cbff31))
+* **api:** expose auth capability descriptors ([ecc1455](https://github.com/jbg/quartermaster/commit/ecc14550de9b3216c632e14c51055f3af0bb1d75))
+* **native:** add recovery email settings ([c7d0def](https://github.com/jbg/quartermaster/commit/c7d0defe399538bdc98d4b55296c27b118d7f1a3))
+
+
+### Bug Fixes
+
+* **web:** align onboarding auth method type ([4f60d34](https://github.com/jbg/quartermaster/commit/4f60d34ade71a6e4ebdfc12358f76041f4a774e2))
+* **web:** recover auth under Home Assistant ingress ([24bcaed](https://github.com/jbg/quartermaster/commit/24bcaedacd56146b2ffd59559d29e2bdf00bf709))
+
 ## [1.5.0](https://github.com/jbg/quartermaster/compare/1.4.1...1.5.0) (2026-04-28)
 
 
