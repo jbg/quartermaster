@@ -65,9 +65,10 @@ These are enforced in code, but the _why_ lives here. Respect them.
 ## Web client rules
 
 - **Web route bootstraps should be one-shot browser mounts.** Inventory and Settings initialize from browser state in `onMount` because reactive `$effect` route initialization caused repeated `/auth/me` and stock-history calls that hit rate limits. New web routes that initialize from `localStorage` or configure the generated API client should follow that pattern.
+- **Web frontend paths must be ingress-safe.** The web shell can be served under Home Assistant ingress or another non-root base path. Don't hardcode root-absolute frontend links or static asset paths in Svelte routes; build them through the shared path helper so navigation and branding assets keep the current ingress prefix.
 - **Web product routes are first-class SPA routes.** `/products`, `/products/new`, `/products/{id}`, `/products/{id}/edit`, and `/products/{id}/delete` are refresh-safe frontend routes. Because adapter-static cannot prerender arbitrary product IDs, `svelte.config.js` ignores unseen routes and the Rust web fallback serves `200.html`; keep future dynamic web routes on that model unless they need server ownership.
 - **Web inventory date filters are browser-local today.** Expiring-soon/expired filtering uses the browser's local date, not the household timezone. Preserve that behavior unless the feature is intentionally changed end-to-end.
-- **Backend static serving is deliberately conservative.** Rust serves `/_app`, `/`, `/join`, and non-API GET fallbacks from `QM_WEB_DIST_DIR`; API paths under `/api/v1`, docs, health, well-known, and internal hooks remain owned by Axum routes. New frontend routes should use SPA fallback unless they truly need server-rendered HTML.
+- **Backend static serving is deliberately conservative.** Rust serves `/_app`, `/brand`, `/`, `/join`, and non-API GET fallbacks from `QM_WEB_DIST_DIR`; API paths under `/api/v1`, docs, health, well-known, and internal hooks remain owned by Axum routes. New frontend routes should use SPA fallback unless they truly need server-rendered HTML.
 
 ## Hosted and release rules
 

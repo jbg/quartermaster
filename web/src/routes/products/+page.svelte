@@ -1,8 +1,10 @@
 <script lang="ts">
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { generatedTransport } from '$lib/api';
+  import { appPath } from '$lib/paths';
   import {
     currentHousehold,
     createBrowserSessionStorage,
@@ -39,6 +41,10 @@
 
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
   const visibleProducts = $derived(filterDeletedProducts(products, includeFilter));
+  const inventoryHref = $derived(appPath('/', page.url));
+  const settingsHref = $derived(appPath('/settings', page.url));
+  const newProductHref = $derived(appPath('/products/new', page.url));
+  const brandMarkSrc = $derived(appPath('/brand/quartermaster-mark.svg', page.url));
 
   onMount(() => {
     if (!browser) {
@@ -85,7 +91,7 @@
   }
 
   async function applyFilters() {
-    const href = productListHref(searchQuery, includeFilter);
+    const href = appPath(productListHref(searchQuery, includeFilter), page.url);
     await goto(href);
     await loadProducts();
   }
@@ -102,7 +108,7 @@
     barcodeLookupError = null;
     try {
       const response = await session.productByBarcode(barcode);
-      await goto(`/products/${response.product.id}`);
+      await goto(appPath(`/products/${response.product.id}`, page.url));
     } catch (err) {
       barcodeLookupError = barcodeLookupErrorMessage(err);
     } finally {
@@ -118,7 +124,7 @@
     authenticated = false;
     me = null;
     products = [];
-    await goto('/');
+    await goto(inventoryHref);
   }
 </script>
 
@@ -129,15 +135,15 @@
 <main class="app-shell">
   <header class="topbar">
     <div class="brand-heading">
-      <img class="brand-mark" src="/brand/quartermaster-mark.svg" alt="" />
+      <img class="brand-mark" src={brandMarkSrc} alt="" />
       <div>
         <p class="eyebrow">Quartermaster</p>
         <h1>Products</h1>
       </div>
     </div>
     <div class="heading-actions">
-      <a class="secondary-action" href="/">Inventory</a>
-      <a class="secondary-action" href="/settings">Settings</a>
+      <a class="secondary-action" href={inventoryHref}>Inventory</a>
+      <a class="secondary-action" href={settingsHref}>Settings</a>
       {#if authenticated}
         <button class="ghost-button" type="button" onclick={logout}>Log out</button>
       {/if}
@@ -152,7 +158,7 @@
     <section class="panel empty-state">
       <h2>Sign in required</h2>
       <p class="muted">Open the inventory screen and sign in before managing products.</p>
-      <a class="primary-action" href="/">Go to inventory</a>
+      <a class="primary-action" href={inventoryHref}>Go to inventory</a>
       {#if error}
         <p class="error-text">{error}</p>
       {/if}
@@ -161,7 +167,7 @@
     <section class="panel empty-state">
       <h2>No household selected</h2>
       <p class="muted">Switch to a household from the inventory screen before managing products.</p>
-      <a class="primary-action" href="/">Go to inventory</a>
+      <a class="primary-action" href={inventoryHref}>Go to inventory</a>
     </section>
   {:else}
     <section class="catalogue-layout">
@@ -171,7 +177,7 @@
             <p class="eyebrow">Catalogue</p>
             <h2 id="product-list-heading">Product list</h2>
           </div>
-          <a class="primary-action small" href="/products/new">New product</a>
+          <a class="primary-action small" href={newProductHref}>New product</a>
         </div>
 
         <form
@@ -252,7 +258,7 @@
                 {/if}
                 <div>
                   <h3>
-                    <a href={`/products/${product.id}`}>{product.name}</a>
+                    <a href={appPath(`/products/${product.id}`, page.url)}>{product.name}</a>
                   </h3>
                   <p>
                     {productBrand(product) || 'No brand'} - {product.family} - {productPreferredUnit(
@@ -269,7 +275,10 @@
                     {/if}
                   </p>
                 </div>
-                <a class="secondary-action small" href={`/products/${product.id}`}>Open</a>
+                <a
+                  class="secondary-action small"
+                  href={appPath(`/products/${product.id}`, page.url)}>Open</a
+                >
               </article>
             {/each}
           </div>

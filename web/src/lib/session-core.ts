@@ -1,3 +1,5 @@
+import { trimTrailingSlashes, webBasePath, type BrowserLocationLike } from '$lib/paths';
+
 export interface TokenPair {
   access_token?: string;
   refresh_token?: string;
@@ -310,32 +312,11 @@ export class ApiFailure extends Error {
   }
 }
 
-export interface BrowserLocationLike {
-  origin: string;
-  pathname?: string;
-}
-
-const WEB_ROUTE_ROOTS = new Set(['join', 'products', 'settings']);
-
-function trimTrailingSlashes(value: string): string {
-  return value.replace(/\/+$/, '');
-}
-
-function ingressBasePath(pathname = ''): string {
-  const normalized = `/${pathname}`.replace(/\/+/g, '/');
-  const segments = normalized.split('/').filter(Boolean);
-  const routeIndex = segments.findIndex((segment) => WEB_ROUTE_ROOTS.has(segment));
-  if (routeIndex >= 0) {
-    segments.splice(routeIndex);
-  }
-  return segments.length > 0 ? `/${segments.join('/')}` : '';
-}
-
 export function defaultServerUrl(location: BrowserLocationLike | string = ''): string {
   if (typeof location === 'string') {
     return trimTrailingSlashes(location);
   }
-  return trimTrailingSlashes(`${location.origin}${ingressBasePath(location.pathname)}`);
+  return trimTrailingSlashes(`${location.origin ?? ''}${webBasePath(location.pathname)}`);
 }
 
 export function currentHousehold(me: MeResponse): HouseholdSummary | null {

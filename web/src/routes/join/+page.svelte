@@ -1,9 +1,11 @@
 <script lang="ts">
   import { page } from '$app/state';
+  import { appPath } from '$lib/paths';
   import { quartermasterJoinUrl, readJoinDetails } from '$lib/join';
 
   const details = $derived(readJoinDetails(page.url.searchParams));
   const deepLink = $derived(quartermasterJoinUrl(details));
+  const brandMarkSrc = $derived(appPath('/brand/quartermaster-mark.svg', page.url));
 </script>
 
 <svelte:head>
@@ -13,7 +15,7 @@
 <main class="join-shell">
   <section class="join-panel">
     <div class="brand-heading">
-      <img class="brand-mark" src="/brand/quartermaster-mark.svg" alt="" />
+      <img class="brand-mark" src={brandMarkSrc} alt="" />
       <div>
         <p class="eyebrow">Household invite</p>
         <h1>Join Quartermaster</h1>

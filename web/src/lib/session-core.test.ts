@@ -6,6 +6,7 @@ import {
   type SessionTransport,
   type StoredSession
 } from './session-core';
+import { appPath } from './paths';
 
 function memoryStorage(initial: StoredSession): SessionStorage & { value: StoredSession } {
   return {
@@ -61,6 +62,24 @@ describe('QuartermasterSession', () => {
         pathname: '/api/hassio_ingress/quartermaster-token/products/product-1/edit'
       })
     ).toBe('http://homeassistant.local:8123/api/hassio_ingress/quartermaster-token');
+  });
+
+  it('builds root deployment paths', () => {
+    const location = { pathname: '/' };
+    expect(appPath('/products', location)).toBe('/products');
+    expect(appPath('/settings', location)).toBe('/settings');
+    expect(appPath('/brand/quartermaster-mark.svg', location)).toBe(
+      '/brand/quartermaster-mark.svg'
+    );
+  });
+
+  it('builds Home Assistant ingress paths', () => {
+    const location = { pathname: '/api/hassio_ingress/quartermaster-token/products/product-1' };
+    expect(appPath('/products', location)).toBe('/api/hassio_ingress/quartermaster-token/products');
+    expect(appPath('/settings', location)).toBe('/api/hassio_ingress/quartermaster-token/settings');
+    expect(appPath('/brand/quartermaster-mark.svg', location)).toBe(
+      '/api/hassio_ingress/quartermaster-token/brand/quartermaster-mark.svg'
+    );
   });
 
   it('refreshes once and retries an authenticated request after a 401', async () => {

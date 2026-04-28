@@ -1,9 +1,11 @@
 <script lang="ts">
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { generatedTransport } from '$lib/api';
   import { unitChoicesForFamily } from '$lib/inventory';
+  import { appPath } from '$lib/paths';
   import {
     currentHousehold,
     createBrowserSessionStorage,
@@ -31,6 +33,9 @@
 
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
   const unitChoices = $derived(unitChoicesForFamily(form.family, units));
+  const inventoryHref = $derived(appPath('/', page.url));
+  const productsHref = $derived(appPath('/products', page.url));
+  const brandMarkSrc = $derived(appPath('/brand/quartermaster-mark.svg', page.url));
 
   onMount(() => {
     if (!browser) {
@@ -83,7 +88,7 @@
     error = null;
     try {
       const product = await session.productCreate(buildProductCreateRequest(form));
-      await goto(`/products/${product.id}`);
+      await goto(appPath(`/products/${product.id}`, page.url));
     } catch (err) {
       error = productMutationErrorMessage(err, 'Product could not be created.');
     } finally {
@@ -99,15 +104,15 @@
 <main class="app-shell">
   <header class="topbar">
     <div class="brand-heading">
-      <img class="brand-mark" src="/brand/quartermaster-mark.svg" alt="" />
+      <img class="brand-mark" src={brandMarkSrc} alt="" />
       <div>
         <p class="eyebrow">Products</p>
         <h1>New Product</h1>
       </div>
     </div>
     <div class="heading-actions">
-      <a class="secondary-action" href="/products">Products</a>
-      <a class="secondary-action" href="/">Inventory</a>
+      <a class="secondary-action" href={productsHref}>Products</a>
+      <a class="secondary-action" href={inventoryHref}>Inventory</a>
     </div>
   </header>
 
@@ -119,7 +124,7 @@
     <section class="panel empty-state">
       <h2>Sign in required</h2>
       <p class="muted">Open the inventory screen and sign in before creating products.</p>
-      <a class="primary-action" href="/">Go to inventory</a>
+      <a class="primary-action" href={inventoryHref}>Go to inventory</a>
       {#if error}
         <p class="error-text">{error}</p>
       {/if}
@@ -128,7 +133,7 @@
     <section class="panel empty-state">
       <h2>No household selected</h2>
       <p class="muted">Switch to a household from the inventory screen before creating products.</p>
-      <a class="primary-action" href="/">Go to inventory</a>
+      <a class="primary-action" href={inventoryHref}>Go to inventory</a>
     </section>
   {:else}
     <section class="panel product-form-panel">
@@ -178,7 +183,7 @@
           <button class="primary-action" type="submit" disabled={busy} data-testid="product-create">
             {busy ? 'Creating...' : 'Create product'}
           </button>
-          <a class="secondary-action" href="/products">Cancel</a>
+          <a class="secondary-action" href={productsHref}>Cancel</a>
         </div>
       </form>
     </section>
