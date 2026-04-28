@@ -139,15 +139,14 @@ The development server can talk to a local backend by entering `http://localhost
 
 ## Release Identity And Universal Links
 
-HTTPS invite links are built from `QM_PUBLIC_BASE_URL` when it is set. For direct app-opening on iOS, that public HTTPS origin must serve `/.well-known/apple-app-site-association`, and the app build must include a matching `applinks:` associated domain.
+Invite links and app setup codes are built from `QM_PUBLIC_BASE_URL` when it is set. `QM_PUBLIC_BASE_URL` may be an HTTP origin for LAN/self-hosted app setup. For direct app-opening on iOS, use a real HTTPS host: that host must serve `/.well-known/apple-app-site-association`, and the app build must include a matching `applinks:` associated domain.
 
 Quartermaster supports one explicit v1 release identity story:
 
-- one production `QM_PUBLIC_BASE_URL`
 - one associated-domain host
 - one env-driven iOS team ID and bundle ID pairing
 
-Keep those aligned and use `cargo xtask verify-release-config` as the drift check instead of checking Apple release identity into the repo.
+Keep the associated-domain host aligned with the iOS release identity and use `cargo xtask verify-release-config` as the drift check instead of checking Apple release identity into the repo.
 
 ## End-To-End Smoke Test
 

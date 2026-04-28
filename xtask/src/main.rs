@@ -77,23 +77,6 @@ fn verify_release_config() -> anyhow::Result<()> {
         );
     }
 
-    if let Some(public_base_url) = env::var_os("QM_PUBLIC_BASE_URL") {
-        let url = reqwest::Url::parse(
-            &public_base_url
-                .into_string()
-                .map_err(|_| anyhow::anyhow!("QM_PUBLIC_BASE_URL must be valid UTF-8"))?,
-        )
-        .context("parsing QM_PUBLIC_BASE_URL")?;
-        let public_host = url
-            .host_str()
-            .context("QM_PUBLIC_BASE_URL must be an origin URL")?;
-        if public_host != associated_domain {
-            bail!(
-                "QM_PUBLIC_BASE_URL host {public_host} does not match QUARTERMASTER_ASSOCIATED_DOMAIN {associated_domain}"
-            );
-        }
-    }
-
     println!(
         "verified release config: app_id={} domain={associated_domain}",
         backend_identity.app_id()

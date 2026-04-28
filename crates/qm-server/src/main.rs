@@ -466,8 +466,8 @@ fn normalize_public_base_url(raw: Option<String>) -> anyhow::Result<Option<Strin
     };
 
     let url = reqwest::Url::parse(&raw).context("parsing QM_PUBLIC_BASE_URL")?;
-    if url.scheme() != "https" {
-        anyhow::bail!("QM_PUBLIC_BASE_URL must use https");
+    if !matches!(url.scheme(), "http" | "https") {
+        anyhow::bail!("QM_PUBLIC_BASE_URL must use http or https");
     }
     if !url.username().is_empty() || url.password().is_some() {
         anyhow::bail!("QM_PUBLIC_BASE_URL must not include user info");
@@ -839,7 +839,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn normalizes_https_public_base_url_to_origin() {
+    fn normalizes_public_base_url_to_origin() {
+        let normalized =
+            normalize_public_base_url(Some("http://quartermaster.local:8080/".into())).unwrap();
+        assert_eq!(
+            normalized.as_deref(),
+            Some("http://quartermaster.local:8080")
+        );
+
         let normalized =
             normalize_public_base_url(Some("https://quartermaster.example.com/".into())).unwrap();
         assert_eq!(

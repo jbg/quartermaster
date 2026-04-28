@@ -46,10 +46,13 @@
   const inventoryHref = $derived(appPath('/', page.url));
   const productsHref = $derived(appPath('/products', page.url));
   const brandMarkSrc = $derived(appPath('/brand/quartermaster-mark.svg', page.url));
-  const pairingDeepLink = $derived(quartermasterServerUrl(pairingServerUrl));
+  const mobilePairingServerUrl = $derived(
+    me?.public_base_url?.trim() || me?.publicBaseUrl?.trim() || pairingServerUrl
+  );
+  const pairingDeepLink = $derived(quartermasterServerUrl(mobilePairingServerUrl));
 
   $effect(() => {
-    if (!browser || !pairingServerUrl) {
+    if (!browser || !mobilePairingServerUrl) {
       pairingQrSvg = '';
       return;
     }
@@ -368,7 +371,7 @@
           <div class="detail-grid compact">
             <div>
               <h3>Server URL</h3>
-              <code>{pairingServerUrl}</code>
+              <code>{mobilePairingServerUrl}</code>
             </div>
             <div>
               <h3>App link</h3>

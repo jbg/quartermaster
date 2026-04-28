@@ -86,7 +86,7 @@ Common settings:
 | `QM_DATABASE_URL`      | `sqlite://data.db?mode=rwc` | SQLite or Postgres connection string                |
 | `QM_LOG_FORMAT`        | `text`                      | `text` or `json` logs                               |
 | `QM_REGISTRATION_MODE` | `first_run_only`            | `first_run_only`, `invite_only`, or `open`          |
-| `QM_PUBLIC_BASE_URL`   | unset                       | Public HTTPS origin for invite/share links          |
+| `QM_PUBLIC_BASE_URL`   | unset                       | Public HTTP(S) origin for invite/share links and app setup |
 | `QM_WEB_DIST_DIR`      | `web/build`                 | Built web shell directory served by the API process |
 | `QM_WEB_AUTH_ALLOWED_ORIGINS` | unset                | Comma-separated HTTPS browser origins allowed to use credentialed cookie auth |
 | `RUST_LOG`             | `info`                      | Tracing filter                                      |
@@ -184,7 +184,7 @@ When metrics are enabled, callers must supply `X-QM-Maintenance-Token`.
 
 ## Invite Links And iOS Universal Links
 
-If `QM_PUBLIC_BASE_URL` is set, it must be an `https://` origin with no path, query, or fragment. Quartermaster uses it for browser-friendly invite links.
+If `QM_PUBLIC_BASE_URL` is set, it must be an `http://` or `https://` origin with no path, query, or fragment. Quartermaster uses it for browser-friendly invite links and mobile app setup codes. iOS Universal Links still require HTTPS and a matching associated-domain setup.
 
 For iOS Universal Links, configure:
 
