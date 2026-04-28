@@ -4,41 +4,108 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+publish.workspace = true
 
 [[bin]]
 name = "qm-server"
 path = "src/main.rs"
 
 [dependencies]
-qm-api = { path = "../qm-api" }
-qm-core = { path = "../qm-core" }
-qm-db = { path = "../qm-db" }
+qm-api = { path = "../qm-api", default-features = false, features = [] }
+qm-core = { path = "../qm-core", default-features = false, features = [] }
+qm-db = { path = "../qm-db", default-features = false, features = [] }
 
-anyhow.workspace = true
-axum.workspace = true
-base64.workspace = true
-backoff.workspace = true
-figment.workspace = true
-jiff.workspace = true
-jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
-metrics.workspace = true
-metrics-exporter-prometheus.workspace = true
-reqwest.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-sha2.workspace = true
-sqlx.workspace = true
-tokio.workspace = true
-tower.workspace = true
-tower-http.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
-utoipa.workspace = true
-uuid.workspace = true
+anyhow = { workspace = true, default-features = false, features = ["std"] }
+axum = { workspace = true, default-features = false, features = [
+    "form",
+    "http1",
+    "json",
+    "matched-path",
+    "original-uri",
+    "query",
+    "tokio",
+    "tower-log",
+    "tracing",
+    "macros",
+] }
+base64 = { workspace = true, default-features = false, features = ["std"] }
+figment = { workspace = true, default-features = false, features = ["env", "toml"] }
+jiff = { workspace = true, default-features = false, features = [
+    "std",
+    "tz-system",
+    "tz-fat",
+    "tzdb-bundle-platform",
+    "tzdb-zoneinfo",
+    "tzdb-concatenated",
+    "perf-inline",
+    "serde",
+] }
+jsonwebtoken = { version = "10", default-features = false, features = ["use_pem", "aws_lc_rs"] }
+metrics = { workspace = true, default-features = false, features = [] }
+metrics-exporter-prometheus = { workspace = true, default-features = false, features = [
+    "http-listener",
+    "push-gateway",
+] }
+reqwest = { workspace = true, default-features = false, features = [
+    "default-tls",
+    "charset",
+    "http2",
+    "system-proxy",
+    "json",
+    "rustls-tls",
+] }
+serde = { workspace = true, default-features = false, features = ["std", "derive"] }
+serde_json = { workspace = true, default-features = false, features = ["std"] }
+sha2 = { workspace = true, default-features = false, features = ["alloc", "oid"] }
+sqlx = { workspace = true, default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "macros",
+    "migrate",
+    "any",
+    "sqlite",
+    "postgres",
+    "uuid",
+    "json",
+] }
+tokio = { workspace = true, default-features = false, features = ["full"] }
+tower = { workspace = true, default-features = false, features = [] }
+tower-http = { workspace = true, default-features = false, features = [
+    "fs",
+    "trace",
+    "cors",
+    "request-id",
+] }
+tracing = { workspace = true, default-features = false, features = ["std", "attributes"] }
+tracing-subscriber = { workspace = true, default-features = false, features = [
+    "smallvec",
+    "fmt",
+    "ansi",
+    "tracing-log",
+    "std",
+    "env-filter",
+    "json",
+] }
+utoipa = { workspace = true, default-features = false, features = [
+    "macros",
+    "axum_extras",
+    "uuid",
+] }
+uuid = { workspace = true, default-features = false, features = ["std", "v7", "serde"] }
 
 [dev-dependencies]
-qm-db = { path = "../qm-db", features = ["test-support"] }
-serde_json.workspace = true
-sqlx.workspace = true
-tower.workspace = true
-uuid.workspace = true
+qm-db = { path = "../qm-db", default-features = false, features = ["test-support"] }
+serde_json = { workspace = true, default-features = false, features = ["std"] }
+sqlx = { workspace = true, default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "macros",
+    "migrate",
+    "any",
+    "sqlite",
+    "postgres",
+    "uuid",
+    "json",
+] }
+tower = { workspace = true, default-features = false, features = [] }
+uuid = { workspace = true, default-features = false, features = ["std", "v7", "serde"] }

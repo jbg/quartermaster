@@ -4,29 +4,63 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+publish.workspace = true
 
 [features]
-default = []
 test-support = ["dep:anyhow", "dep:testcontainers", "dep:testcontainers-modules"]
 
 [dependencies]
-qm-core = { path = "../qm-core" }
+qm-core = { path = "../qm-core", default-features = false, features = [] }
 
-anyhow = { workspace = true, optional = true }
-jiff.workspace = true
-rust_decimal.workspace = true
-serde.workspace = true
-sqlx.workspace = true
-thiserror.workspace = true
-tokio.workspace = true
-testcontainers = { version = "0.27", optional = true }
-testcontainers-modules = { version = "0.15", features = ["postgres"], optional = true }
-tracing.workspace = true
-uuid.workspace = true
+anyhow = { workspace = true, default-features = false, features = ["std"], optional = true }
+jiff = { workspace = true, default-features = false, features = [
+    "std",
+    "tz-system",
+    "tz-fat",
+    "tzdb-bundle-platform",
+    "tzdb-zoneinfo",
+    "tzdb-concatenated",
+    "perf-inline",
+    "serde",
+] }
+rust_decimal = { workspace = true, default-features = false, features = ["serde", "std"] }
+serde = { workspace = true, default-features = false, features = ["std", "derive"] }
+sqlx = { workspace = true, default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "macros",
+    "migrate",
+    "any",
+    "sqlite",
+    "postgres",
+    "uuid",
+    "json",
+] }
+thiserror = { workspace = true, default-features = false, features = ["std"] }
+tokio = { workspace = true, default-features = false, features = ["full"] }
+testcontainers = { version = "0.27", default-features = false, features = ["ring"], optional = true }
+testcontainers-modules = { version = "0.15", default-features = false, features = [
+    "ring",
+    "postgres",
+], optional = true }
+tracing = { workspace = true, default-features = false, features = ["std", "attributes"] }
+uuid = { workspace = true, default-features = false, features = ["std", "v7", "serde"] }
 
 [dev-dependencies]
-anyhow.workspace = true
-jiff.workspace = true
-tokio = { workspace = true, features = ["macros", "rt"] }
-testcontainers = "0.27"
-testcontainers-modules = { version = "0.15", features = ["postgres"] }
+anyhow = { workspace = true, default-features = false, features = ["std"] }
+jiff = { workspace = true, default-features = false, features = [
+    "std",
+    "tz-system",
+    "tz-fat",
+    "tzdb-bundle-platform",
+    "tzdb-zoneinfo",
+    "tzdb-concatenated",
+    "perf-inline",
+    "serde",
+] }
+tokio = { workspace = true, default-features = false, features = ["full", "macros", "rt"] }
+testcontainers = { version = "0.27", default-features = false, features = ["ring"] }
+testcontainers-modules = { version = "0.15", default-features = false, features = [
+    "ring",
+    "postgres",
+] }

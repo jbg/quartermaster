@@ -15,21 +15,38 @@ license = "AGPL-3.0-only"
 repository = "https://github.com/jbg/quartermaster"
 authors = ["Quartermaster contributors"]
 rust-version = "1.90"
+publish = false
 
 [workspace.dependencies]
 # async
-tokio = { version = "1", features = ["full"] }
-tokio-util = "0.7"
+tokio = { version = "1", default-features = false, features = ["full"] }
+tokio-util = { version = "0.7", default-features = false, features = [] }
 
 # web
-axum = { version = "0.8", features = ["macros"] }
-tower = "0.5"
-tower-http = { version = "0.6", features = ["fs", "trace", "cors", "request-id"] }
+axum = { version = "0.8", default-features = false, features = [
+    "form",
+    "http1",
+    "json",
+    "matched-path",
+    "original-uri",
+    "query",
+    "tokio",
+    "tower-log",
+    "tracing",
+    "macros",
+] }
+tower = { version = "0.5", default-features = false, features = [] }
+tower-http = { version = "0.6", default-features = false, features = [
+    "fs",
+    "trace",
+    "cors",
+    "request-id",
+] }
 
 # serialization
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-percent-encoding = "2"
+serde = { version = "1", default-features = false, features = ["std", "derive"] }
+serde_json = { version = "1", default-features = false, features = ["std"] }
+percent-encoding = { version = "2", default-features = false, features = ["std"] }
 
 # data
 sqlx = { version = "0.8", default-features = false, features = [
@@ -43,36 +60,82 @@ sqlx = { version = "0.8", default-features = false, features = [
     "uuid",
     "json",
 ] }
-uuid = { version = "1", features = ["v7", "serde"] }
-jiff = { version = "0.2", features = ["serde"] }
-rust_decimal = { version = "1", features = ["serde"] }
+uuid = { version = "1", default-features = false, features = ["std", "v7", "serde"] }
+jiff = { version = "0.2", default-features = false, features = [
+    "std",
+    "tz-system",
+    "tz-fat",
+    "tzdb-bundle-platform",
+    "tzdb-zoneinfo",
+    "tzdb-concatenated",
+    "perf-inline",
+    "serde",
+] }
+rust_decimal = { version = "1", default-features = false, features = ["serde", "std"] }
 
 # auth / crypto
-argon2 = "0.5"
-rand = "0.9"
-sha2 = "0.11"
-base64 = "0.22"
+argon2 = { version = "0.5", default-features = false, features = [
+    "alloc",
+    "password-hash",
+    "rand",
+] }
+rand = { version = "0.9", default-features = false, features = [
+    "std",
+    "std_rng",
+    "os_rng",
+    "small_rng",
+    "thread_rng",
+] }
+sha2 = { version = "0.11", default-features = false, features = ["alloc", "oid"] }
+base64 = { version = "0.22", default-features = false, features = ["std"] }
 
 # http client (OpenFoodFacts)
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-backoff = { version = "0.4", features = ["tokio"] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "default-tls",
+    "charset",
+    "http2",
+    "system-proxy",
+    "json",
+    "rustls-tls",
+] }
+backon = { version = "1.6", default-features = false, features = [
+    "std",
+    "std-blocking-sleep",
+    "tokio-sleep",
+    "gloo-timers-sleep",
+] }
 
 # openapi
-utoipa = { version = "5", features = ["axum_extras", "uuid"] }
-utoipa-swagger-ui = { version = "8", features = ["axum"] }
+utoipa = { version = "5", default-features = false, features = [
+    "macros",
+    "axum_extras",
+    "uuid",
+] }
+utoipa-swagger-ui = { version = "8", default-features = false, features = ["url", "axum"] }
 
 # observability
-metrics = "0.24"
-metrics-exporter-prometheus = "0.18"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+metrics = { version = "0.24", default-features = false, features = [] }
+metrics-exporter-prometheus = { version = "0.18", default-features = false, features = [
+    "http-listener",
+    "push-gateway",
+] }
+tracing = { version = "0.1", default-features = false, features = ["std", "attributes"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "smallvec",
+    "fmt",
+    "ansi",
+    "tracing-log",
+    "std",
+    "env-filter",
+    "json",
+] }
 
 # errors
-thiserror = "2"
-anyhow = "1"
+thiserror = { version = "2", default-features = false, features = ["std"] }
+anyhow = { version = "1", default-features = false, features = ["std"] }
 
 # config
-figment = { version = "0.10", features = ["env", "toml"] }
+figment = { version = "0.10", default-features = false, features = ["env", "toml"] }
 
 [profile.release]
 lto = "thin"

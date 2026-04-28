@@ -11,7 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use backoff::{backoff::Backoff, ExponentialBackoffBuilder};
+use backon::{BackoffBuilder, ExponentialBuilder};
 use metrics::counter;
 use qm_core::units::UnitFamily;
 use reqwest::{Client, StatusCode};
@@ -77,14 +77,13 @@ impl OpenFoodFactsClient {
             .config
             .off_timeout
             .mul_f64((self.config.off_max_retries + 1) as f64 + 1.0);
-        let policy = ExponentialBackoffBuilder::new()
-            .with_initial_interval(self.config.off_retry_base_delay)
-            .with_randomization_factor(0.5)
-            .with_multiplier(2.0)
-            .with_max_elapsed_time(Some(retry_budget))
+        let mut backoff = ExponentialBuilder::new()
+            .with_min_delay(self.config.off_retry_base_delay)
+            .with_factor(2.0)
+            .with_jitter()
+            .with_total_delay(Some(retry_budget))
+            .with_max_times(self.config.off_max_retries as usize)
             .build();
-
-        let mut backoff = policy;
         let result = loop {
             attempts += 1;
             debug!(%barcode, attempt = attempts, "OFF lookup attempt");
@@ -100,7 +99,7 @@ impl OpenFoodFactsClient {
                 FetchOutcome::TransientUpstream(message) => {
                     let should_retry = attempts <= self.config.off_max_retries as usize;
                     if should_retry {
-                        if let Some(delay) = backoff.next_backoff() {
+                        if let Some(delay) = backoff.next() {
                             tokio::time::sleep(delay).await;
                             continue;
                         }

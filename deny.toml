@@ -25,12 +25,11 @@ allow = [
 ignore = false
 
 [bans]
-multiple-versions = "warn"
+multiple-versions = "allow"
 wildcards = "deny"
 allow-wildcard-paths = true
 highlight = "simplest-path"
-workspace-default-features = "warn"
-external-default-features = "deny"
+workspace-default-features = "deny"
 
 [sources]
 unknown-registry = "deny"

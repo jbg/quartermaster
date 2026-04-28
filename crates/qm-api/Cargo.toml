@@ -4,37 +4,114 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+publish.workspace = true
 
 [dependencies]
-qm-core = { path = "../qm-core" }
-qm-db = { path = "../qm-db" }
+qm-core = { path = "../qm-core", default-features = false, features = [] }
+qm-db = { path = "../qm-db", default-features = false, features = [] }
 
-anyhow.workspace = true
-argon2.workspace = true
-axum.workspace = true
-backoff.workspace = true
-base64.workspace = true
-jiff.workspace = true
-metrics.workspace = true
-percent-encoding.workspace = true
-reqwest.workspace = true
-rust_decimal.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-sha2.workspace = true
-sqlx.workspace = true
-thiserror.workspace = true
-tokio.workspace = true
-tower.workspace = true
-tower-http.workspace = true
-tracing.workspace = true
-utoipa.workspace = true
-uuid.workspace = true
+anyhow = { workspace = true, default-features = false, features = ["std"] }
+argon2 = { workspace = true, default-features = false, features = [
+    "alloc",
+    "password-hash",
+    "rand",
+] }
+axum = { workspace = true, default-features = false, features = [
+    "form",
+    "http1",
+    "json",
+    "matched-path",
+    "original-uri",
+    "query",
+    "tokio",
+    "tower-log",
+    "tracing",
+    "macros",
+] }
+backon = { workspace = true, default-features = false, features = [
+    "std",
+    "std-blocking-sleep",
+    "tokio-sleep",
+    "gloo-timers-sleep",
+] }
+base64 = { workspace = true, default-features = false, features = ["std"] }
+jiff = { workspace = true, default-features = false, features = [
+    "std",
+    "tz-system",
+    "tz-fat",
+    "tzdb-bundle-platform",
+    "tzdb-zoneinfo",
+    "tzdb-concatenated",
+    "perf-inline",
+    "serde",
+] }
+metrics = { workspace = true, default-features = false, features = [] }
+percent-encoding = { workspace = true, default-features = false, features = ["std"] }
+reqwest = { workspace = true, default-features = false, features = [
+    "default-tls",
+    "charset",
+    "http2",
+    "system-proxy",
+    "json",
+    "rustls-tls",
+] }
+rust_decimal = { workspace = true, default-features = false, features = ["serde", "std"] }
+serde = { workspace = true, default-features = false, features = ["std", "derive"] }
+serde_json = { workspace = true, default-features = false, features = ["std"] }
+sha2 = { workspace = true, default-features = false, features = ["alloc", "oid"] }
+sqlx = { workspace = true, default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "macros",
+    "migrate",
+    "any",
+    "sqlite",
+    "postgres",
+    "uuid",
+    "json",
+] }
+thiserror = { workspace = true, default-features = false, features = ["std"] }
+tokio = { workspace = true, default-features = false, features = ["full"] }
+tower = { workspace = true, default-features = false, features = [] }
+tower-http = { workspace = true, default-features = false, features = [
+    "fs",
+    "trace",
+    "cors",
+    "request-id",
+] }
+tracing = { workspace = true, default-features = false, features = ["std", "attributes"] }
+utoipa = { workspace = true, default-features = false, features = [
+    "macros",
+    "axum_extras",
+    "uuid",
+] }
+uuid = { workspace = true, default-features = false, features = ["std", "v7", "serde"] }
 
 [dev-dependencies]
-qm-db = { path = "../qm-db", features = ["test-support"] }
-reqwest.workspace = true
-serde_json.workspace = true
-sqlx.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-uuid.workspace = true
+qm-db = { path = "../qm-db", default-features = false, features = ["test-support"] }
+reqwest = { workspace = true, default-features = false, features = [
+    "default-tls",
+    "charset",
+    "http2",
+    "system-proxy",
+    "json",
+    "rustls-tls",
+] }
+serde_json = { workspace = true, default-features = false, features = ["std"] }
+sqlx = { workspace = true, default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "macros",
+    "migrate",
+    "any",
+    "sqlite",
+    "postgres",
+    "uuid",
+    "json",
+] }
+tokio = { workspace = true, default-features = false, features = [
+    "full",
+    "macros",
+    "rt-multi-thread",
+] }
+uuid = { workspace = true, default-features = false, features = ["std", "v7", "serde"] }
