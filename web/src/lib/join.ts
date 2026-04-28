@@ -14,6 +14,13 @@ export function quartermasterJoinUrl(details: JoinDetails): string {
   return quartermasterNativeUrl(details);
 }
 
+export function quartermasterServerUrl(server: string): string {
+  if (!server) {
+    return 'quartermaster://server';
+  }
+  return `quartermaster://server?server=${encodeURIComponent(server)}`;
+}
+
 export function quartermasterNativeUrl(details: JoinDetails): string {
   const params: string[] = [];
   if (details.invite) {

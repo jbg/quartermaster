@@ -4,7 +4,7 @@
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { generatedTransport } from '$lib/api';
-  import { quartermasterNativeUrl } from '$lib/join';
+  import { quartermasterServerUrl } from '$lib/join';
   import { appPath } from '$lib/paths';
   import {
     buildCreateLocationRequest,
@@ -46,12 +46,7 @@
   const inventoryHref = $derived(appPath('/', page.url));
   const productsHref = $derived(appPath('/products', page.url));
   const brandMarkSrc = $derived(appPath('/brand/quartermaster-mark.svg', page.url));
-  const pairingDeepLink = $derived(
-    quartermasterNativeUrl({
-      invite: '',
-      server: pairingServerUrl
-    })
-  );
+  const pairingDeepLink = $derived(quartermasterServerUrl(pairingServerUrl));
 
   $effect(() => {
     if (!browser || !pairingServerUrl) {
