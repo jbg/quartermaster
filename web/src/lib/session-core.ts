@@ -239,6 +239,12 @@ export interface StoredSession {
   browserDeviceId?: string | null;
 }
 
+export interface OnboardingAuthMethodDescriptor {
+  method: 'password' | 'passkey';
+  availability: 'enabled' | 'unavailable';
+  unavailable_reason?: string | null;
+}
+
 export interface SessionTransport {
   configure(session: StoredSession): void;
   login(body: { username: string; password: string }): Promise<ApiResult<TokenPair>>;
@@ -247,7 +253,7 @@ export interface SessionTransport {
       server_state: 'needs_initial_setup' | 'ready';
       household_signup: 'enabled' | 'disabled';
       invite_join: 'enabled' | 'disabled';
-      auth_methods: string[];
+      auth_methods: OnboardingAuthMethodDescriptor[];
     }>
   >;
   createOnboardingHousehold(body: {
