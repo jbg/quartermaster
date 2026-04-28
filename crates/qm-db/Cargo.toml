@@ -19,8 +19,8 @@ serde.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-testcontainers = { version = "0.23", optional = true }
-testcontainers-modules = { version = "0.11", features = ["postgres"], optional = true }
+testcontainers = { version = "0.24", optional = true }
+testcontainers-modules = { version = "0.12", features = ["postgres"], optional = true }
 tracing.workspace = true
 uuid.workspace = true
 
@@ -28,5 +28,5 @@ uuid.workspace = true
 anyhow.workspace = true
 jiff.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
-testcontainers = "0.23"
-testcontainers-modules = { version = "0.11", features = ["postgres"] }
+testcontainers = "0.24"
+testcontainers-modules = { version = "0.12", features = ["postgres"] }
