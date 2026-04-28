@@ -3,3 +3,5 @@ source "https://rubygems.org"
 ruby ">= 3.0.0"
 
 gem "fastlane", "2.230.0"
+# 3.0.9 declares Ruby < 3.2, which breaks the macOS release runner on Ruby 3.3.
+gem "CFPropertyList", "3.0.8"
