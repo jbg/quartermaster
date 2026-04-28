@@ -69,6 +69,7 @@
     QuartermasterSession,
     type Location,
     type MeResponse,
+    type OnboardingStatus,
     type Product,
     type Reminder,
     type StockBatch,
@@ -100,6 +101,7 @@
   let householdName = $state('');
   let timezone = $state(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
   let authMode = $state<'login' | 'register'>('login');
+  let onboarding = $state<OnboardingStatus | null>(null);
   let me = $state<MeResponse | null>(null);
   let authError = $state<string | null>(null);
   let authBusy = $state(false);
@@ -182,6 +184,7 @@
   const productsHref = $derived(appPath('/products', page.url));
   const settingsHref = $derived(appPath('/settings', page.url));
   const brandMarkSrc = $derived(appPath('/brand/quartermaster-mark.svg', page.url));
+  const householdSignupEnabled = $derived(onboarding?.household_signup === 'enabled');
 
   onMount(() => {
     if (!browser) {
@@ -194,8 +197,23 @@
     session = created;
     serverUrl = created.snapshot().serverUrl;
     authenticated = true;
+    void refreshOnboardingStatus();
     void refreshMe();
   });
+
+  async function refreshOnboardingStatus() {
+    if (!session) {
+      return;
+    }
+    try {
+      onboarding = await session.onboardingStatus();
+      if (authMode === 'register' && onboarding.household_signup !== 'enabled') {
+        authMode = 'login';
+      }
+    } catch {
+      onboarding = null;
+    }
+  }
 
   async function refreshMe() {
     if (!session) {
@@ -353,6 +371,12 @@
     authBusy = true;
     authError = null;
     session.setServerUrl(serverUrl);
+    await refreshOnboardingStatus();
+    if (authMode === 'register' && onboarding?.household_signup !== 'enabled') {
+      authError = 'This installation is already set up. Log in with an existing account.';
+      authBusy = false;
+      return;
+    }
     try {
       if (authMode === 'login') {
         await session.login(username, password);
@@ -856,11 +880,13 @@
             type="button"
             onclick={() => (authMode = 'login')}>Login</button
           >
-          <button
-            class:active={authMode === 'register'}
-            type="button"
-            onclick={() => (authMode = 'register')}>Register</button
-          >
+          {#if householdSignupEnabled}
+            <button
+              class:active={authMode === 'register'}
+              type="button"
+              onclick={() => (authMode = 'register')}>Register</button
+            >
+          {/if}
         </div>
 
         <details class="advanced-auth">

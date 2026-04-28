@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   QuartermasterSession,
+  createBrowserSessionStorage,
   defaultServerUrl,
   type SessionStorage,
   type SessionTransport,
@@ -62,6 +63,44 @@ describe('QuartermasterSession', () => {
         pathname: '/api/hassio_ingress/quartermaster-token/products/product-1/edit'
       })
     ).toBe('http://homeassistant.local:8123/api/hassio_ingress/quartermaster-token');
+  });
+
+  it('prefers the current ingress server URL over a stale same-origin stored URL', () => {
+    const storage = createBrowserSessionStorage(
+      {
+        getItem(key) {
+          return key === 'quartermaster.serverUrl' ? 'http://homeassistant.local:8123' : null;
+        },
+        setItem() {},
+        removeItem() {}
+      },
+      {
+        origin: 'http://homeassistant.local:8123',
+        pathname: '/api/hassio_ingress/quartermaster-token/'
+      }
+    );
+
+    expect(storage.read().serverUrl).toBe(
+      'http://homeassistant.local:8123/api/hassio_ingress/quartermaster-token'
+    );
+  });
+
+  it('preserves an explicitly different stored server URL', () => {
+    const storage = createBrowserSessionStorage(
+      {
+        getItem(key) {
+          return key === 'quartermaster.serverUrl' ? 'https://quartermaster.example.com' : null;
+        },
+        setItem() {},
+        removeItem() {}
+      },
+      {
+        origin: 'http://homeassistant.local:8123',
+        pathname: '/api/hassio_ingress/quartermaster-token/'
+      }
+    );
+
+    expect(storage.read().serverUrl).toBe('https://quartermaster.example.com');
   });
 
   it('builds root deployment paths', () => {
