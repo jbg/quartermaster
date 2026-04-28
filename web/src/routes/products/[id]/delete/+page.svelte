@@ -140,8 +140,8 @@
       <div class="delete-confirmation">
         <h2>Delete {product.name}?</h2>
         <p class="muted">
-          {productBrand(product) || 'Manual product'} will be hidden from new stock creation. It can
-          be restored later.
+          {productBrand(product) || 'Manual product'} will be hidden from new stock creation. It can be
+          restored later.
         </p>
         <div class="row-actions">
           <button
