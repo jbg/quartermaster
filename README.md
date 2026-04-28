@@ -209,4 +209,4 @@ Development setup, test commands, API generation, and repository conventions liv
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE).
+GNU Affero General Public License v3.0. See [LICENSE](LICENSE).
