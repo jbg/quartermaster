@@ -481,6 +481,7 @@ fn web_router(dist_dir: PathBuf) -> Router {
     };
     Router::new()
         .nest_service("/_app", ServeDir::new(dist_dir.join("_app")))
+        .nest_service("/brand", ServeDir::new(dist_dir.join("brand")))
         .route("/", get(serve_web_index))
         .route("/join", get(serve_web_join))
         .fallback(web_fallback)

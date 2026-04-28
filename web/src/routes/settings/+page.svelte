@@ -1,8 +1,10 @@
 <script lang="ts">
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { generatedTransport } from '$lib/api';
+  import { appPath } from '$lib/paths';
   import {
     buildCreateLocationRequest,
     buildUpdateLocationRequest,
@@ -38,6 +40,9 @@
 
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
   const sortedLocations = $derived(sortLocations(locations));
+  const inventoryHref = $derived(appPath('/', page.url));
+  const productsHref = $derived(appPath('/products', page.url));
+  const brandMarkSrc = $derived(appPath('/brand/quartermaster-mark.svg', page.url));
 
   onMount(() => {
     if (!browser) {
@@ -206,7 +211,7 @@
     authenticated = false;
     me = null;
     locations = [];
-    await goto('./');
+    await goto(inventoryHref);
   }
 </script>
 
@@ -217,15 +222,15 @@
 <main class="app-shell">
   <header class="topbar">
     <div class="brand-heading">
-      <img class="brand-mark" src="/brand/quartermaster-mark.svg" alt="" />
+      <img class="brand-mark" src={brandMarkSrc} alt="" />
       <div>
         <p class="eyebrow">Quartermaster</p>
         <h1>Settings</h1>
       </div>
     </div>
     <div class="heading-actions">
-      <a class="secondary-action" href="/">Inventory</a>
-      <a class="secondary-action" href="/products">Products</a>
+      <a class="secondary-action" href={inventoryHref}>Inventory</a>
+      <a class="secondary-action" href={productsHref}>Products</a>
       {#if authenticated}
         <button class="ghost-button" type="button" onclick={logout}>Log out</button>
       {/if}
@@ -240,7 +245,7 @@
     <section class="panel empty-state">
       <h2>Sign in required</h2>
       <p class="muted">Open the inventory screen and sign in before editing household settings.</p>
-      <a class="primary-action" href="./">Go to inventory</a>
+      <a class="primary-action" href={inventoryHref}>Go to inventory</a>
       {#if error}
         <p class="error-text">{error}</p>
       {/if}
@@ -249,7 +254,7 @@
     <section class="panel empty-state">
       <h2>No household selected</h2>
       <p class="muted">Switch to a household from the inventory screen before editing locations.</p>
-      <a class="primary-action" href="./">Go to inventory</a>
+      <a class="primary-action" href={inventoryHref}>Go to inventory</a>
     </section>
   {:else}
     <section class="settings-layout">

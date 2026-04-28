@@ -4,6 +4,7 @@
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { generatedTransport } from '$lib/api';
+  import { appPath } from '$lib/paths';
   import { productPreferredUnit } from '$lib/inventory';
   import {
     currentHousehold,
@@ -34,6 +35,9 @@
 
   const productId = $derived(page.params.id ?? '');
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
+  const inventoryHref = $derived(appPath('/', page.url));
+  const productsHref = $derived(appPath('/products', page.url));
+  const brandMarkSrc = $derived(appPath('/brand/quartermaster-mark.svg', page.url));
 
   onMount(() => {
     if (!browser) {
@@ -107,7 +111,7 @@
     authenticated = false;
     me = null;
     product = null;
-    await goto('/');
+    await goto(inventoryHref);
   }
 </script>
 
@@ -118,15 +122,15 @@
 <main class="app-shell">
   <header class="topbar">
     <div class="brand-heading">
-      <img class="brand-mark" src="/brand/quartermaster-mark.svg" alt="" />
+      <img class="brand-mark" src={brandMarkSrc} alt="" />
       <div>
         <p class="eyebrow">Product</p>
         <h1>{product?.name ?? 'Product'}</h1>
       </div>
     </div>
     <div class="heading-actions">
-      <a class="secondary-action" href="/products">Products</a>
-      <a class="secondary-action" href="/">Inventory</a>
+      <a class="secondary-action" href={productsHref}>Products</a>
+      <a class="secondary-action" href={inventoryHref}>Inventory</a>
       {#if authenticated}
         <button class="ghost-button" type="button" onclick={logout}>Log out</button>
       {/if}
@@ -141,19 +145,19 @@
     <section class="panel empty-state">
       <h2>Sign in required</h2>
       <p class="muted">Open the inventory screen and sign in before viewing products.</p>
-      <a class="primary-action" href="/">Go to inventory</a>
+      <a class="primary-action" href={inventoryHref}>Go to inventory</a>
     </section>
   {:else if me && !activeHousehold}
     <section class="panel empty-state">
       <h2>No household selected</h2>
       <p class="muted">Switch to a household from the inventory screen before viewing products.</p>
-      <a class="primary-action" href="/">Go to inventory</a>
+      <a class="primary-action" href={inventoryHref}>Go to inventory</a>
     </section>
   {:else if error || !product}
     <section class="panel empty-state">
       <h2>Product unavailable</h2>
       <p class="muted">{error ?? 'Product could not be found.'}</p>
-      <a class="primary-action" href="/products">Back to products</a>
+      <a class="primary-action" href={productsHref}>Back to products</a>
     </section>
   {:else}
     <section class="product-detail-layout">
@@ -198,8 +202,13 @@
 
         <div class="row-actions">
           {#if isManualProduct(product) && !isDeletedProduct(product)}
-            <a class="primary-action" href={`/products/${product.id}/edit`}>Edit product</a>
-            <a class="ghost-button danger" href={`/products/${product.id}/delete`}>Delete</a>
+            <a class="primary-action" href={appPath(`/products/${product.id}/edit`, page.url)}
+              >Edit product</a
+            >
+            <a
+              class="ghost-button danger"
+              href={appPath(`/products/${product.id}/delete`, page.url)}>Delete</a
+            >
           {:else if isManualProduct(product) && isDeletedProduct(product)}
             <button
               class="primary-action"

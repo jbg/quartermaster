@@ -170,6 +170,23 @@ a {
   padding: var(--qm-space-6);
 }
 
+.advanced-auth {
+  border-top: 1px solid var(--qm-line);
+  padding-top: var(--qm-space-1);
+}
+
+.advanced-auth summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--qm-slate-700);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.advanced-auth label {
+  margin-top: var(--qm-space-3);
+}
+
 .segmented {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -72,6 +72,24 @@ async fn root_api_like_paths_belong_to_the_web_app() {
 }
 
 #[tokio::test]
+async fn web_brand_assets_are_served_from_web_dist() {
+    let web_dist = test_web_dist();
+    let app = TestApp::start(ApiConfig {
+        web_dist_dir: Some(web_dist.clone()),
+        ..ApiConfig::default()
+    })
+    .await;
+
+    let (status, headers, raw) = app.raw(Method::GET, "/brand/quartermaster-mark.svg").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers.get("content-type").unwrap(), "image/svg+xml");
+    assert!(raw.contains("Quartermaster mark"));
+
+    let _ = std::fs::remove_dir_all(web_dist);
+}
+
+#[tokio::test]
 async fn missing_web_dist_does_not_break_api_routes() {
     let missing = std::env::temp_dir().join(format!("qm-missing-web-{}", Uuid::now_v7()));
     let app = TestApp::start(ApiConfig {
@@ -134,6 +152,12 @@ async fn apple_app_site_association_is_not_served_without_ios_identity() {
 fn test_web_dist() -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("qm-web-{}", Uuid::now_v7()));
     std::fs::create_dir_all(dir.join("_app")).unwrap();
+    std::fs::create_dir_all(dir.join("brand")).unwrap();
+    std::fs::write(
+        dir.join("brand").join("quartermaster-mark.svg"),
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><title>Quartermaster mark</title></svg>"#,
+    )
+    .unwrap();
     std::fs::write(
         dir.join("index.html"),
         "<!doctype html><title>Quartermaster</title><main>quartermaster-web-shell</main>",

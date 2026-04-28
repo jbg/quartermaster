@@ -4,6 +4,7 @@
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { generatedTransport } from '$lib/api';
+  import { appPath } from '$lib/paths';
   import { unitChoicesForFamily } from '$lib/inventory';
   import {
     currentHousehold,
@@ -38,6 +39,12 @@
   const productId = $derived(page.params.id ?? '');
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
   const unitChoices = $derived(form ? unitChoicesForFamily(form.family, units) : []);
+  const inventoryHref = $derived(appPath('/', page.url));
+  const productsHref = $derived(appPath('/products', page.url));
+  const productHref = $derived(
+    product ? appPath(`/products/${product.id}`, page.url) : productsHref
+  );
+  const brandMarkSrc = $derived(appPath('/brand/quartermaster-mark.svg', page.url));
 
   onMount(() => {
     if (!browser) {
@@ -98,7 +105,7 @@
         product.id,
         buildProductUpdateRequest(product, form)
       );
-      await goto(`/products/${updated.id}`);
+      await goto(appPath(`/products/${updated.id}`, page.url));
     } catch (err) {
       error = productMutationErrorMessage(err, 'Product could not be saved.');
     } finally {
@@ -114,17 +121,15 @@
 <main class="app-shell">
   <header class="topbar">
     <div class="brand-heading">
-      <img class="brand-mark" src="/brand/quartermaster-mark.svg" alt="" />
+      <img class="brand-mark" src={brandMarkSrc} alt="" />
       <div>
         <p class="eyebrow">Products</p>
         <h1>Edit Product</h1>
       </div>
     </div>
     <div class="heading-actions">
-      <a class="secondary-action" href={product ? `/products/${product.id}` : '/products'}
-        >Product</a
-      >
-      <a class="secondary-action" href="/products">Products</a>
+      <a class="secondary-action" href={productHref}>Product</a>
+      <a class="secondary-action" href={productsHref}>Products</a>
     </div>
   </header>
 
@@ -136,25 +141,25 @@
     <section class="panel empty-state">
       <h2>Sign in required</h2>
       <p class="muted">Open the inventory screen and sign in before editing products.</p>
-      <a class="primary-action" href="/">Go to inventory</a>
+      <a class="primary-action" href={inventoryHref}>Go to inventory</a>
     </section>
   {:else if me && !activeHousehold}
     <section class="panel empty-state">
       <h2>No household selected</h2>
       <p class="muted">Switch to a household from the inventory screen before editing products.</p>
-      <a class="primary-action" href="/">Go to inventory</a>
+      <a class="primary-action" href={inventoryHref}>Go to inventory</a>
     </section>
   {:else if error && (!product || !form)}
     <section class="panel empty-state">
       <h2>Product unavailable</h2>
       <p class="muted">{error}</p>
-      <a class="primary-action" href="/products">Back to products</a>
+      <a class="primary-action" href={productsHref}>Back to products</a>
     </section>
   {:else if product && form && (!isManualProduct(product) || isDeletedProduct(product))}
     <section class="panel empty-state">
       <h2>Product is read-only</h2>
       <p class="muted">Only active manual products can be edited.</p>
-      <a class="primary-action" href={`/products/${product.id}`}>Back to product</a>
+      <a class="primary-action" href={productHref}>Back to product</a>
     </section>
   {:else if product && form}
     <section class="panel product-form-panel">
@@ -204,7 +209,7 @@
           <button class="primary-action" type="submit" disabled={busy} data-testid="product-save">
             {busy ? 'Saving...' : 'Save product'}
           </button>
-          <a class="secondary-action" href={`/products/${product.id}`}>Cancel</a>
+          <a class="secondary-action" href={productHref}>Cancel</a>
         </div>
       </form>
     </section>

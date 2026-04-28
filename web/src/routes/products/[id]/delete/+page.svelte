@@ -4,6 +4,7 @@
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { generatedTransport } from '$lib/api';
+  import { appPath } from '$lib/paths';
   import {
     currentHousehold,
     createBrowserSessionStorage,
@@ -28,6 +29,12 @@
 
   const productId = $derived(page.params.id ?? '');
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
+  const inventoryHref = $derived(appPath('/', page.url));
+  const productsHref = $derived(appPath('/products', page.url));
+  const productHref = $derived(
+    product ? appPath(`/products/${product.id}`, page.url) : productsHref
+  );
+  const brandMarkSrc = $derived(appPath('/brand/quartermaster-mark.svg', page.url));
 
   onMount(() => {
     if (!browser) {
@@ -70,7 +77,7 @@
     error = null;
     try {
       await session.productDelete(product.id);
-      await goto('/products?include=deleted');
+      await goto(appPath('/products?include=deleted', page.url));
     } catch (err) {
       error = productMutationErrorMessage(err, 'Product could not be deleted.');
     } finally {
@@ -88,17 +95,15 @@
 <main class="app-shell">
   <header class="topbar">
     <div class="brand-heading">
-      <img class="brand-mark" src="/brand/quartermaster-mark.svg" alt="" />
+      <img class="brand-mark" src={brandMarkSrc} alt="" />
       <div>
         <p class="eyebrow">Products</p>
         <h1>Delete Product</h1>
       </div>
     </div>
     <div class="heading-actions">
-      <a class="secondary-action" href={product ? `/products/${product.id}` : '/products'}
-        >Product</a
-      >
-      <a class="secondary-action" href="/products">Products</a>
+      <a class="secondary-action" href={productHref}>Product</a>
+      <a class="secondary-action" href={productsHref}>Products</a>
     </div>
   </header>
 
@@ -110,25 +115,25 @@
     <section class="panel empty-state">
       <h2>Sign in required</h2>
       <p class="muted">Open the inventory screen and sign in before deleting products.</p>
-      <a class="primary-action" href="/">Go to inventory</a>
+      <a class="primary-action" href={inventoryHref}>Go to inventory</a>
     </section>
   {:else if me && !activeHousehold}
     <section class="panel empty-state">
       <h2>No household selected</h2>
       <p class="muted">Switch to a household from the inventory screen before deleting products.</p>
-      <a class="primary-action" href="/">Go to inventory</a>
+      <a class="primary-action" href={inventoryHref}>Go to inventory</a>
     </section>
   {:else if error && !product}
     <section class="panel empty-state">
       <h2>Product unavailable</h2>
       <p class="muted">{error}</p>
-      <a class="primary-action" href="/products">Back to products</a>
+      <a class="primary-action" href={productsHref}>Back to products</a>
     </section>
   {:else if product && (!isManualProduct(product) || isDeletedProduct(product))}
     <section class="panel empty-state">
       <h2>Product cannot be deleted</h2>
       <p class="muted">Only active manual products can be deleted.</p>
-      <a class="primary-action" href={`/products/${product.id}`}>Back to product</a>
+      <a class="primary-action" href={productHref}>Back to product</a>
     </section>
   {:else if product}
     <section class="panel product-form-panel">
@@ -148,7 +153,7 @@
           >
             {busy ? 'Deleting...' : 'Delete product'}
           </button>
-          <a class="secondary-action" href={`/products/${product.id}`}>Cancel</a>
+          <a class="secondary-action" href={productHref}>Cancel</a>
         </div>
         {#if error}
           <p class="error-text">{error}</p>

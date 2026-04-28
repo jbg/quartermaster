@@ -1,7 +1,9 @@
 <script lang="ts">
   import { browser } from '$app/environment';
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { generatedTransport } from '$lib/api';
+  import { appPath } from '$lib/paths';
   import {
     batchProductId,
     buildStockUpdateRequest,
@@ -176,6 +178,10 @@
       : unitChoicesForFamily(manualProductFamily, units)
   );
   const manualProductUnitChoices = $derived(unitChoicesForFamily(manualProductFamily, units));
+  const inventoryHref = $derived(appPath('/', page.url));
+  const productsHref = $derived(appPath('/products', page.url));
+  const settingsHref = $derived(appPath('/settings', page.url));
+  const brandMarkSrc = $derived(appPath('/brand/quartermaster-mark.svg', page.url));
 
   onMount(() => {
     if (!browser) {
@@ -820,7 +826,7 @@
 <main class="app-shell">
   <header class="topbar">
     <div class="brand-heading">
-      <img class="brand-mark" src="/brand/quartermaster-mark.svg" alt="" />
+      <img class="brand-mark" src={brandMarkSrc} alt="" />
       <div>
         <p class="eyebrow">Quartermaster</p>
         <h1>Kitchen inventory</h1>
@@ -828,8 +834,8 @@
     </div>
     {#if authenticated}
       <div class="heading-actions">
-        <a class="secondary-action" href="/products">Products</a>
-        <a class="secondary-action" href="/settings">Settings</a>
+        <a class="secondary-action" href={productsHref}>Products</a>
+        <a class="secondary-action" href={settingsHref}>Settings</a>
         <button class="ghost-button" type="button" onclick={logout}>Log out</button>
       </div>
     {/if}
@@ -857,10 +863,13 @@
           >
         </div>
 
-        <label>
-          Server URL
-          <input bind:value={serverUrl} placeholder="http://localhost:8080" autocomplete="url" />
-        </label>
+        <details class="advanced-auth">
+          <summary>Change server</summary>
+          <label>
+            Server URL
+            <input bind:value={serverUrl} placeholder="http://localhost:8080" autocomplete="url" />
+          </label>
+        </details>
         <label>
           Username
           <input bind:value={username} autocomplete="username" required />
