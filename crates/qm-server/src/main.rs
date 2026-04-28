@@ -89,7 +89,7 @@ struct RawConfig {
 impl Default for RawConfig {
     fn default() -> Self {
         Self {
-            bind: "0.0.0.0:8080".into(),
+            bind: "[::]:8080".into(),
             database_url: "sqlite://data.db?mode=rwc".into(),
             log_format: "text".into(),
             registration_mode: "first_run_only".into(),
@@ -639,7 +639,7 @@ async fn main() -> anyhow::Result<()> {
                 false,
             ));
         }
-        let listener = tokio::net::TcpListener::bind(loaded.bind)
+        let listener = bind_tcp_listener(loaded.bind)
             .await
             .with_context(|| format!("binding {}", loaded.bind))?;
         tracing::info!(addr = %loaded.bind, "listening");
@@ -823,6 +823,37 @@ async fn shutdown_signal() {
     tracing::info!("shutdown signal received");
 }
 
+async fn bind_tcp_listener(bind: SocketAddr) -> anyhow::Result<tokio::net::TcpListener> {
+    if let SocketAddr::V6(addr) = bind {
+        if addr.ip().is_unspecified() {
+            let socket = socket2::Socket::new(
+                socket2::Domain::IPV6,
+                socket2::Type::STREAM,
+                Some(socket2::Protocol::TCP),
+            )
+            .context("creating IPv6 socket")?;
+            socket
+                .set_only_v6(false)
+                .context("enabling dual-stack IPv4/IPv6 listening")?;
+            socket
+                .set_nonblocking(true)
+                .context("setting listener nonblocking")?;
+            socket
+                .bind(&bind.into())
+                .context("binding dual-stack socket")?;
+            socket
+                .listen(1024)
+                .context("listening on dual-stack socket")?;
+            return tokio::net::TcpListener::from_std(socket.into())
+                .context("converting dual-stack listener");
+        }
+    }
+
+    tokio::net::TcpListener::bind(bind)
+        .await
+        .context("binding socket")
+}
+
 async fn wait_for_shutdown(mut shutdown: tokio::sync::watch::Receiver<bool>) {
     loop {
         if *shutdown.borrow() {
@@ -837,6 +868,11 @@ async fn wait_for_shutdown(mut shutdown: tokio::sync::watch::Receiver<bool>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_bind_is_dual_stack_wildcard() {
+        assert_eq!(RawConfig::default().bind, "[::]:8080");
+    }
 
     #[test]
     fn normalizes_public_base_url_to_origin() {

@@ -46,6 +46,7 @@ metrics-exporter-prometheus = { workspace = true, default-features = false, feat
     "http-listener",
     "push-gateway",
 ] }
+socket2 = { workspace = true }
 reqwest = { workspace = true, default-features = false, features = [
     "default-tls",
     "charset",
