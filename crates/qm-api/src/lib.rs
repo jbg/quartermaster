@@ -253,6 +253,9 @@ impl Modify for SecurityAddon {
         routes::households::list_invites,
         routes::households::revoke_invite,
         routes::households::redeem_invite,
+        routes::onboarding::status,
+        routes::onboarding::create_household,
+        routes::onboarding::join_invite,
         routes::products::list,
         routes::products::search,
         routes::products::by_barcode,
@@ -303,6 +306,12 @@ impl Modify for SecurityAddon {
         routes::households::InviteDto,
         routes::households::CreateInviteRequest,
         routes::households::RedeemInviteRequest,
+        routes::onboarding::OnboardingStatusResponse,
+        routes::onboarding::OnboardingServerState,
+        routes::onboarding::OnboardingAvailability,
+        routes::onboarding::OnboardingAuthMethod,
+        routes::onboarding::CreateOnboardingHouseholdRequest,
+        routes::onboarding::JoinInviteRequest,
         routes::locations::LocationDto,
         routes::locations::CreateLocationRequest,
         routes::locations::UpdateLocationRequest,
@@ -331,6 +340,7 @@ impl Modify for SecurityAddon {
         (name = "accounts", description = "Authentication and session"),
         (name = "devices", description = "Notification-capable client registrations"),
         (name = "households", description = "Household administration, invites, and members"),
+        (name = "onboarding", description = "First-launch server setup and joining"),
         (name = "locations", description = "Pantry / fridge / freezer"),
         (name = "units", description = "Units of measure"),
         (name = "products", description = "Product catalogue and barcode lookup"),
@@ -351,6 +361,10 @@ pub fn router(state: AppState) -> Router {
     let api_routes = Router::new()
         .merge(routes::health::router())
         .merge(routes::accounts::router(RateLimitLayerState::new(
+            state.clone(),
+            RateLimitTarget::Auth,
+        )))
+        .merge(routes::onboarding::router(RateLimitLayerState::new(
             state.clone(),
             RateLimitTarget::Auth,
         )))

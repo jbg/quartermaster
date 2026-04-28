@@ -363,7 +363,7 @@ fn require_admin(current: &CurrentUser) -> ApiResult<()> {
     }
 }
 
-fn validate_household_name(name: &str) -> ApiResult<&str> {
+pub(crate) fn validate_household_name(name: &str) -> ApiResult<&str> {
     let name = name.trim();
     if name.is_empty() || name.len() > 128 {
         return Err(ApiError::BadRequest(
@@ -373,7 +373,7 @@ fn validate_household_name(name: &str) -> ApiResult<&str> {
     Ok(name)
 }
 
-fn validate_household_timezone(timezone: &str) -> ApiResult<&str> {
+pub(crate) fn validate_household_timezone(timezone: &str) -> ApiResult<&str> {
     let timezone = timezone.trim();
     if timezone.is_empty() {
         return Err(ApiError::BadRequest("timezone is required".into()));

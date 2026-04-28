@@ -55,6 +55,19 @@ pub async fn create(
     kind: &str,
     sort_order: i64,
 ) -> Result<LocationRow, sqlx::Error> {
+    let mut tx = db.pool.begin().await?;
+    let location = create_in_tx(&mut tx, household_id, name, kind, sort_order).await?;
+    tx.commit().await?;
+    Ok(location)
+}
+
+pub async fn create_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    household_id: Uuid,
+    name: &str,
+    kind: &str,
+    sort_order: i64,
+) -> Result<LocationRow, sqlx::Error> {
     let id = Uuid::now_v7();
     let created_at = now_utc_rfc3339();
     sqlx::query(
@@ -67,7 +80,7 @@ pub async fn create(
     .bind(kind)
     .bind(sort_order)
     .bind(&created_at)
-    .execute(&db.pool)
+    .execute(&mut **tx)
     .await?;
 
     Ok(LocationRow {
@@ -143,9 +156,19 @@ pub async fn delete(db: &Database, household_id: Uuid, id: Uuid) -> Result<bool,
 
 /// Creates pantry/fridge/freezer on a new household.
 pub async fn seed_defaults(db: &Database, household_id: Uuid) -> Result<(), sqlx::Error> {
-    create(db, household_id, "Pantry", "pantry", 0).await?;
-    create(db, household_id, "Fridge", "fridge", 1).await?;
-    create(db, household_id, "Freezer", "freezer", 2).await?;
+    let mut tx = db.pool.begin().await?;
+    seed_defaults_in_tx(&mut tx, household_id).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn seed_defaults_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    household_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    create_in_tx(tx, household_id, "Pantry", "pantry", 0).await?;
+    create_in_tx(tx, household_id, "Fridge", "fridge", 1).await?;
+    create_in_tx(tx, household_id, "Freezer", "freezer", 2).await?;
     Ok(())
 }
 

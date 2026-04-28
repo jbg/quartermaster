@@ -25,8 +25,6 @@ use crate::{
     AppState, RegistrationMode,
 };
 
-const ROLE_ADMIN: &str = "admin";
-
 pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
     Router::new()
         .route(
@@ -185,8 +183,6 @@ pub async fn register(
 
     let user = match (state.config.registration_mode, existing_count) {
         (RegistrationMode::FirstRunOnly, 0) => {
-            let h = qm_db::households::create(&state.db, "My Household", "UTC").await?;
-            qm_db::locations::seed_defaults(&state.db, h.id).await?;
             if qm_db::users::find_by_username(&state.db, &req.username)
                 .await?
                 .is_some()
@@ -200,20 +196,12 @@ pub async fn register(
                 &password_hash,
             )
             .await?;
-            qm_db::memberships::insert(&state.db, h.id, user.id, ROLE_ADMIN).await?;
             user
         }
         (RegistrationMode::FirstRunOnly, _) => {
             return Err(ApiError::RegistrationDisabled);
         }
         (RegistrationMode::Open, _) => {
-            let h = qm_db::households::create(
-                &state.db,
-                &format!("{}'s Household", req.username),
-                "UTC",
-            )
-            .await?;
-            qm_db::locations::seed_defaults(&state.db, h.id).await?;
             if qm_db::users::find_by_username(&state.db, &req.username)
                 .await?
                 .is_some()
@@ -227,7 +215,6 @@ pub async fn register(
                 &password_hash,
             )
             .await?;
-            qm_db::memberships::insert(&state.db, h.id, user.id, ROLE_ADMIN).await?;
             user
         }
         (RegistrationMode::InviteOnly, _) => {
@@ -466,7 +453,7 @@ pub async fn switch_household(
     ))
 }
 
-fn validate_credentials(username: &str, password: &str) -> ApiResult<()> {
+pub(crate) fn validate_credentials(username: &str, password: &str) -> ApiResult<()> {
     if username.trim().is_empty() || username.len() > 64 {
         return Err(ApiError::BadRequest("username must be 1..=64 chars".into()));
     }
@@ -481,7 +468,7 @@ fn validate_credentials(username: &str, password: &str) -> ApiResult<()> {
     Ok(())
 }
 
-async fn issue_token_pair(
+pub(crate) async fn issue_token_pair(
     state: &AppState,
     user_id: Uuid,
     session_id: Uuid,
@@ -533,7 +520,7 @@ async fn issue_token_pair(
     })
 }
 
-fn session_cookie_headers(state: &AppState, pair: &TokenPair) -> HeaderMap {
+pub(crate) fn session_cookie_headers(state: &AppState, pair: &TokenPair) -> HeaderMap {
     let csrf = auth::generate_token();
     let mut headers = HeaderMap::new();
     append_cookie(
