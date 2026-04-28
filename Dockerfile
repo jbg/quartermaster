@@ -56,7 +56,7 @@ LABEL io.hass.version="${BUILD_VERSION}" \
       org.opencontainers.image.version="${BUILD_VERSION}" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
-      org.opencontainers.image.licenses="Apache-2.0"
+      org.opencontainers.image.licenses="AGPL-3.0-only"
 
 EXPOSE 8080
 VOLUME ["/data"]
