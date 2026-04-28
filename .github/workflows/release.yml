@@ -203,11 +203,16 @@ jobs:
 
   publish-testflight:
     if: github.event_name == 'release' || github.event_name == 'workflow_call' || inputs.release_tag != ''
-    runs-on: macos-latest
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.release_tag || github.ref }}
+
+      - name: Show Xcode version
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
 
       - name: Compute iOS release metadata
         id: meta
@@ -219,8 +224,9 @@ jobs:
             release_tag="${{ inputs.release_tag }}"
           fi
           version="${release_tag#v}"
+          build_number="$((${{ github.run_number }} * 100 + ${{ github.run_attempt }}))"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "build_number=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
 
       - name: Install XcodeGen
         run: brew install xcodegen

@@ -169,6 +169,14 @@ if [ -z "$signing_certificate" ]; then
 	exit 2
 fi
 
+iphoneos_sdk_version="$(xcrun --sdk iphoneos --show-sdk-version)"
+iphoneos_sdk_major="${iphoneos_sdk_version%%.*}"
+if [ "$iphoneos_sdk_major" -lt 26 ]; then
+	echo "error: App Store uploads now require the iOS 26 SDK or later; selected SDK is iOS $iphoneos_sdk_version" >&2
+	echo "error: select Xcode 26 or later before archiving" >&2
+	exit 1
+fi
+
 QUARTERMASTER_IOS_DEVELOPMENT_TEAM="$team" \
 	QUARTERMASTER_IOS_BUNDLE_ID="$bundle_id" \
 	QUARTERMASTER_IOS_PROFILE="$profile" \
