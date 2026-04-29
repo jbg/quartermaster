@@ -299,6 +299,9 @@ impl Bitmap {
 fn brother_raster_bytes(bitmap: &Bitmap, spec: BrotherMediaSpec) -> Vec<u8> {
     let bytes_per_row = (bitmap.width + 7) / 8;
     let mut out = Vec::with_capacity(bitmap.height * (bytes_per_row + 3) + 64);
+    // Keep media checks enabled, but do not set Brother's "printer recovery always on" bit:
+    // a fatal media mismatch should stop instead of being replayed after the panel error is cleared.
+    const PRINT_INFO_VALID_FLAGS: u8 = 0x67;
     out.extend_from_slice(&[0x00; 10]);
     out.extend_from_slice(b"\x1B\x40");
     out.extend_from_slice(b"\x1B\x69\x61\x01");
@@ -306,7 +309,7 @@ fn brother_raster_bytes(bitmap: &Bitmap, spec: BrotherMediaSpec) -> Vec<u8> {
         0x1b,
         0x69,
         0x7a,
-        0xe7,
+        PRINT_INFO_VALID_FLAGS,
         spec.media_type,
         spec.media_width_mm,
         spec.media_length_mm,
@@ -440,5 +443,36 @@ mod tests {
         assert!(rendered.bytes.starts_with(&[0x00; 10]));
         assert_eq!(rendered.bytes.last(), Some(&0x1a));
         assert_eq!(rendered.bytes.len(), 32439);
+    }
+
+    #[test]
+    fn brother_renderer_does_not_enable_printer_recovery() {
+        let job = LabelJob {
+            batch_id: Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap(),
+            batch_url:
+                "https://quartermaster.example.com/batches/33333333-3333-3333-3333-333333333333"
+                    .into(),
+            product_name: "Flour".into(),
+            brand: None,
+            location_name: "Pantry".into(),
+            quantity: "500".into(),
+            unit: "g".into(),
+            expires_on: None,
+            opened_on: None,
+            note: None,
+        };
+
+        let rendered = BrotherQlRenderer
+            .render(&job, LabelPrinterMedia::Dk62Continuous)
+            .unwrap();
+        let print_info_offset = rendered
+            .bytes
+            .windows(3)
+            .position(|window| window == b"\x1B\x69\x7A")
+            .unwrap();
+        let valid_flags = rendered.bytes[print_info_offset + 3];
+
+        assert_eq!(valid_flags & 0x86, 0x06);
+        assert_eq!(valid_flags & 0x80, 0);
     }
 }
