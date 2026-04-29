@@ -2,6 +2,7 @@
   import { browser } from '$app/environment';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
+  import AppFrame from '$lib/components/AppFrame.svelte';
   import { generatedTransport } from '$lib/api';
   import { appPath } from '$lib/paths';
   import {
@@ -40,28 +41,6 @@
     type InventoryState
   } from '$lib/inventory';
   import { sortLocations } from '$lib/locations';
-  import {
-    actionDone,
-    emptyReminderState,
-    formatReminderDate,
-    formatReminderDateTime,
-    loadReminders,
-    optimisticAckRollback,
-    optimisticAckStart,
-    reminderBatchId,
-    reminderBody,
-    reminderExpiresOn,
-    reminderFireAt,
-    reminderTitle,
-    reminderUrgency,
-    startReminderAction,
-    type ReminderState
-  } from '$lib/reminders';
-  import {
-    reminderActionLabel,
-    reminderActionStatus,
-    reminderMessages
-  } from '$lib/reminder-messages';
   import { barcodeLookupErrorMessage } from '$lib/products';
   import {
     currentHousehold,
@@ -71,7 +50,6 @@
     type MeResponse,
     type OnboardingStatus,
     type Product,
-    type Reminder,
     type StockBatch,
     type StockEvent,
     type Unit,
@@ -109,7 +87,6 @@
   let inventory = $state<InventoryState>(emptyInventoryState);
   let inventoryFilter = $state<InventoryFilterMode>('active');
   let inventorySearch = $state('');
-  let reminders = $state<ReminderState>(emptyReminderState);
   let locations = $state<Location[]>([]);
   let units = $state<Unit[]>([]);
   let selectedBatchId = $state<string | null>(null);
@@ -184,9 +161,7 @@
   );
   const manualProductUnitChoices = $derived(unitChoicesForFamily(manualProductFamily, units));
   const inventoryHref = $derived(appPath('/', page.url));
-  const productsHref = $derived(appPath('/products', page.url));
   const settingsHref = $derived(appPath('/settings', page.url));
-  const brandMarkSrc = $derived(appPath('/brand/quartermaster-mark.svg', page.url));
   const householdSignupEnabled = $derived(onboarding?.household_signup === 'enabled');
 
   onMount(() => {
@@ -248,7 +223,6 @@
     await refreshUnits();
     await refreshLocations();
     await refreshInventory(preferredBatchId);
-    await refreshReminders();
   }
 
   async function refreshUnits() {
@@ -354,25 +328,6 @@
     }
   }
 
-  async function refreshReminders({ preserveItems = false } = {}) {
-    if (!session) {
-      return;
-    }
-    const previousItems = reminders.items;
-    reminders = {
-      ...reminders,
-      status: 'loading',
-      error: null,
-      items: preserveItems ? reminders.items : []
-    };
-    reminders = await loadReminders(
-      session,
-      reminders.actionIds,
-      reminders.actionKinds,
-      preserveItems ? previousItems : []
-    );
-  }
-
   async function submitAuth() {
     if (!session) {
       return;
@@ -434,41 +389,6 @@
 
   async function selectProductGroup(group: InventoryProductGroup) {
     await selectBatch(group.bestBatch);
-  }
-
-  async function openReminder(reminder: Reminder) {
-    if (!session) {
-      return;
-    }
-    const id = reminder.id;
-    reminders = startReminderAction(reminders, id, 'open');
-    try {
-      await session.remindersOpen(id);
-      const batchId = reminderBatchId(reminder);
-      highlightBatchId = batchId;
-      inventoryFilter = 'all';
-      inventorySearch = '';
-      await refreshInventory(batchId);
-      await refreshReminders({ preserveItems: true });
-    } catch {
-      reminders = { ...reminders, error: reminderMessages.openError };
-    } finally {
-      reminders = actionDone(reminders, id);
-    }
-  }
-
-  async function ackReminder(reminder: Reminder) {
-    if (!session) {
-      return;
-    }
-    reminders = optimisticAckStart(reminders, reminder.id);
-    try {
-      await session.remindersAck(reminder.id);
-      reminders = actionDone(reminders, reminder.id);
-      await refreshReminders({ preserveItems: true });
-    } catch {
-      reminders = optimisticAckRollback(reminders, reminder, reminderMessages.ackError);
-    }
   }
 
   async function consumeSelected() {
@@ -790,7 +710,6 @@
 
   function clearHouseholdState() {
     inventory = emptyInventoryState;
-    reminders = emptyReminderState;
     locations = [];
     units = [];
     selectedBatch = null;
@@ -892,24 +811,7 @@
   <title>Quartermaster</title>
 </svelte:head>
 
-<main class="app-shell">
-  <header class="topbar">
-    <div class="brand-heading">
-      <img class="brand-mark" src={brandMarkSrc} alt="" />
-      <div>
-        <p class="eyebrow">Quartermaster</p>
-        <h1>Kitchen inventory</h1>
-      </div>
-    </div>
-    {#if authenticated}
-      <div class="heading-actions">
-        <a class="secondary-action" href={productsHref}>Products</a>
-        <a class="secondary-action" href={settingsHref}>Settings</a>
-        <button class="ghost-button" type="button" onclick={logout}>Log out</button>
-      </div>
-    {/if}
-  </header>
-
+<AppFrame title="Kitchen inventory" {authenticated} active="inventory" onlogout={logout}>
   {#if !authenticated}
     <section class="auth-layout">
       <form
@@ -1251,74 +1153,6 @@
           type="button"
           onclick={() => refreshWorkspace(selectedBatchId)}>Refresh</button
         >
-
-        <section class="inbox-region" aria-labelledby="reminder-heading">
-          <div class="section-heading compact">
-            <div>
-              <p class="eyebrow">{reminderMessages.headingEyebrow}</p>
-              <h2 id="reminder-heading">{reminderMessages.headingTitle}</h2>
-            </div>
-            <span>{reminders.items.length}</span>
-          </div>
-
-          {#if reminders.status === 'loading' && reminders.items.length === 0}
-            <p class="muted">{reminderMessages.loading}</p>
-          {:else if reminders.status === 'error' && reminders.items.length === 0}
-            <p class="error-text">{reminders.error}</p>
-          {:else if reminders.items.length === 0}
-            <p class="muted">{reminderMessages.empty}</p>
-          {:else}
-            {#if reminders.status === 'loading'}
-              <p class="muted">{reminderMessages.refreshing}</p>
-            {:else if reminders.status === 'error'}
-              <p class="error-text">{reminders.error}</p>
-            {/if}
-            <div class="reminder-list">
-              {#each reminders.items as reminder}
-                <article class="reminder-row" data-testid={`reminder-row-${reminder.id}`}>
-                  <div>
-                    <h3>{reminderTitle(reminder)}</h3>
-                    <p>{reminderBody(reminder)}</p>
-                    {#if reminderExpiresOn(reminder)}
-                      <span>{reminderUrgency(reminder)}</span>
-                      <span>
-                        {reminderMessages.expiryDateLabel}
-                        {formatReminderDate(reminderExpiresOn(reminder))}
-                      </span>
-                    {/if}
-                    <span>
-                      {reminderMessages.householdTimeLabel}
-                      {formatReminderDateTime(reminderFireAt(reminder))}
-                    </span>
-                    {#if reminderActionStatus(reminders.actionKinds[reminder.id])}
-                      <span class="inline-status">
-                        {reminderActionStatus(reminders.actionKinds[reminder.id])}
-                      </span>
-                    {/if}
-                  </div>
-                  <div class="row-actions">
-                    <button
-                      class="secondary-action small"
-                      type="button"
-                      data-testid={`reminder-open-${reminder.id}`}
-                      disabled={reminders.actionIds.has(reminder.id)}
-                      onclick={() => openReminder(reminder)}
-                      >{reminderActionLabel(reminders.actionKinds[reminder.id], 'open')}</button
-                    >
-                    <button
-                      class="ghost-button small"
-                      type="button"
-                      data-testid={`reminder-ack-${reminder.id}`}
-                      disabled={reminders.actionIds.has(reminder.id)}
-                      onclick={() => ackReminder(reminder)}
-                      >{reminderActionLabel(reminders.actionKinds[reminder.id], 'ack')}</button
-                    >
-                  </div>
-                </article>
-              {/each}
-            </div>
-          {/if}
-        </section>
       </aside>
 
       <section class="inventory-region">
@@ -1659,4 +1493,4 @@
       <p class="muted">Loading account...</p>
     </section>
   {/if}
-</main>
+</AppFrame>

@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
+  import AppFrame from '$lib/components/AppFrame.svelte';
   import { generatedTransport } from '$lib/api';
   import { unitChoicesForFamily } from '$lib/inventory';
   import { appPath } from '$lib/paths';
@@ -35,7 +36,6 @@
   const unitChoices = $derived(unitChoicesForFamily(form.family, units));
   const inventoryHref = $derived(appPath('/', page.url));
   const productsHref = $derived(appPath('/products', page.url));
-  const brandMarkSrc = $derived(appPath('/brand/quartermaster-mark.svg', page.url));
 
   onMount(() => {
     if (!browser) {
@@ -95,27 +95,29 @@
       busy = false;
     }
   }
+
+  async function logout() {
+    if (!session) {
+      return;
+    }
+    await session.logout();
+    authenticated = false;
+    me = null;
+    await goto(inventoryHref);
+  }
 </script>
 
 <svelte:head>
   <title>New Product · Quartermaster</title>
 </svelte:head>
 
-<main class="app-shell">
-  <header class="topbar">
-    <div class="brand-heading">
-      <img class="brand-mark" src={brandMarkSrc} alt="" />
-      <div>
-        <p class="eyebrow">Products</p>
-        <h1>New Product</h1>
-      </div>
-    </div>
-    <div class="heading-actions">
-      <a class="secondary-action" href={productsHref}>Products</a>
-      <a class="secondary-action" href={inventoryHref}>Inventory</a>
-    </div>
-  </header>
-
+<AppFrame
+  title="New Product"
+  eyebrow="Products"
+  {authenticated}
+  active="products"
+  onlogout={logout}
+>
   {#if loading}
     <section class="panel empty-state">
       <p class="muted">Loading...</p>
@@ -188,4 +190,4 @@
       </form>
     </section>
   {/if}
-</main>
+</AppFrame>
