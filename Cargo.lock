@@ -2374,7 +2374,7 @@ dependencies = [
 
 [[package]]
 name = "qm-api"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "anyhow",
  "argon2",
@@ -2403,7 +2403,7 @@ dependencies = [
 
 [[package]]
 name = "qm-core"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "jiff",
  "rust_decimal",
@@ -2415,7 +2415,7 @@ dependencies = [
 
 [[package]]
 name = "qm-db"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "anyhow",
  "jiff",
@@ -2433,7 +2433,7 @@ dependencies = [
 
 [[package]]
 name = "qm-server"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "anyhow",
  "axum",

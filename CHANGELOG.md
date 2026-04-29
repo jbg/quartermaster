@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.3](https://github.com/jbg/quartermaster/compare/1.6.2...1.6.3) (2026-04-29)
+
+
+### Bug Fixes
+
+* bind server dual-stack by default ([c008e01](https://github.com/jbg/quartermaster/commit/c008e011278aac09f2c56947496cc4d7b8d491c6))
+
 ## [1.6.2](https://github.com/jbg/quartermaster/compare/1.6.1...1.6.2) (2026-04-28)
 
 
