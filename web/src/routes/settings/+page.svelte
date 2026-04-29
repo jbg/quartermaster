@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
+  import AppFrame from '$lib/components/AppFrame.svelte';
   import { generatedTransport } from '$lib/api';
   import { quartermasterServerUrl } from '$lib/join';
   import { appPath } from '$lib/paths';
@@ -54,8 +55,6 @@
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
   const sortedLocations = $derived(sortLocations(locations));
   const inventoryHref = $derived(appPath('/', page.url));
-  const productsHref = $derived(appPath('/products', page.url));
-  const brandMarkSrc = $derived(appPath('/brand/quartermaster-mark.svg', page.url));
   const mobilePairingServerUrl = $derived(
     me?.public_base_url?.trim() || me?.publicBaseUrl?.trim() || pairingServerUrl
   );
@@ -380,24 +379,7 @@
   <title>Settings · Quartermaster</title>
 </svelte:head>
 
-<main class="app-shell">
-  <header class="topbar">
-    <div class="brand-heading">
-      <img class="brand-mark" src={brandMarkSrc} alt="" />
-      <div>
-        <p class="eyebrow">Quartermaster</p>
-        <h1>Settings</h1>
-      </div>
-    </div>
-    <div class="heading-actions">
-      <a class="secondary-action" href={inventoryHref}>Inventory</a>
-      <a class="secondary-action" href={productsHref}>Products</a>
-      {#if authenticated}
-        <button class="ghost-button" type="button" onclick={logout}>Log out</button>
-      {/if}
-    </div>
-  </header>
-
+<AppFrame title="Settings" {authenticated} active="settings" onlogout={logout}>
   {#if loading}
     <section class="panel empty-state">
       <p class="muted">Loading settings...</p>
@@ -683,4 +665,4 @@
       </aside>
     </section>
   {/if}
-</main>
+</AppFrame>
