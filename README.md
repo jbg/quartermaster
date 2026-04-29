@@ -193,7 +193,7 @@ For iOS Universal Links, configure:
 | `QM_IOS_TEAM_ID`   | Apple Team ID used in the AASA payload         |
 | `QM_IOS_BUNDLE_ID` | iOS bundle identifier used in the AASA payload |
 
-The iOS app build also needs a matching associated-domain entitlement. Without that setup, invite links still work through the browser fallback and manual invite entry.
+The iOS app build also needs a matching associated-domain entitlement. The native app persists the server URL from setup/manual entry and reuses it on later launches. Without associated-domain setup, invite links still work through the browser fallback and manual invite entry.
 
 ## Clients
 

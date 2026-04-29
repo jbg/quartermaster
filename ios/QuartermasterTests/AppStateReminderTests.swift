@@ -4,6 +4,38 @@ import XCTest
 
 @MainActor
 final class AppStateReminderTests: XCTestCase {
+  override func setUp() {
+    super.setUp()
+    UserDefaults.standard.removeObject(forKey: ServerConfig.storedURLKey)
+  }
+
+  override func tearDown() {
+    UserDefaults.standard.removeObject(forKey: ServerConfig.storedURLKey)
+    super.tearDown()
+  }
+
+  func testStoredServerURLSeedsNewAppState() {
+    UserDefaults.standard.set(
+      "https://quartermaster.example.com",
+      forKey: ServerConfig.storedURLKey
+    )
+
+    let appState = makeAppState(api: FakeAPI())
+
+    XCTAssertEqual(appState.serverURL.absoluteString, "https://quartermaster.example.com")
+  }
+
+  func testUpdateServerURLPersistsForNextLaunch() {
+    let appState = makeAppState(api: FakeAPI())
+
+    appState.updateServerURL(URL(string: "https://quartermaster.example.com")!)
+
+    XCTAssertEqual(
+      UserDefaults.standard.string(forKey: ServerConfig.storedURLKey),
+      "https://quartermaster.example.com"
+    )
+  }
+
   func testServerOnlyPairingUpdatesUnauthenticatedServerURLWithoutInviteContext() {
     let appState = makeAppState(api: FakeAPI())
     appState.phase = .unauthenticated

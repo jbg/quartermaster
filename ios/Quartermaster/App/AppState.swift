@@ -373,6 +373,7 @@ final class AppState {
 
   func updateServerURL(_ url: URL) {
     serverURL = url
+    UserDefaults.standard.set(url.absoluteString, forKey: ServerConfig.storedURLKey)
     if let apiFactory {
       api = apiFactory(url)
     }

@@ -139,7 +139,7 @@ The development server can talk to a local backend by entering `http://localhost
 
 ## Release Identity And Universal Links
 
-Invite links and app setup codes are built from `QM_PUBLIC_BASE_URL` when it is set. `QM_PUBLIC_BASE_URL` may be an HTTP origin for LAN/self-hosted app setup. For direct app-opening on iOS, use a real HTTPS host: that host must serve `/.well-known/apple-app-site-association`, and the app build must include a matching `applinks:` associated domain.
+Invite links and app setup codes are built from `QM_PUBLIC_BASE_URL` when it is set. `QM_PUBLIC_BASE_URL` may be an HTTP origin for LAN/self-hosted app setup. For direct app-opening on iOS, use a real HTTPS host: that host must serve `/.well-known/apple-app-site-association`, and the app build must include a matching `applinks:` associated domain. The native app persists the server URL from setup/manual entry and reuses it on later launches.
 
 Quartermaster supports one explicit v1 release identity story:
 
