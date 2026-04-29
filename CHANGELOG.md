@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/jbg/quartermaster/compare/1.7.0...1.7.1) (2026-04-29)
+
+
+### Bug Fixes
+
+* **ios:** persist server URL across launches ([c001d78](https://github.com/jbg/quartermaster/commit/c001d7839f6b3119e3dd32e0f9d090e41463372d))
+
 ## [1.7.0](https://github.com/jbg/quartermaster/compare/1.6.3...1.7.0) (2026-04-29)
 
 
