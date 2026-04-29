@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.2](https://github.com/jbg/quartermaster/compare/1.7.1...1.7.2) (2026-04-29)
+
+
+### Bug Fixes
+
+* stop Brother label media mismatch replay ([a7d17bd](https://github.com/jbg/quartermaster/commit/a7d17bdcc348e15b1e3ed3fbf700614b9c9aa748))
+
 ## [1.7.1](https://github.com/jbg/quartermaster/compare/1.7.0...1.7.1) (2026-04-29)
 
 
