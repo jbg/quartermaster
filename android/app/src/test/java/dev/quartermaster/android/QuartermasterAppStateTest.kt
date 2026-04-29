@@ -71,6 +71,16 @@ class QuartermasterAppStateTest {
     }
 
     @Test
+    fun `parseBatchDeepLink accepts browser batch link`() {
+        assertEquals(
+            "33333333-3333-3333-3333-333333333333",
+            QuartermasterAppState.parseBatchDeepLink(
+                "https://quartermaster.example.com/batches/33333333-3333-3333-3333-333333333333",
+            ),
+        )
+    }
+
+    @Test
     fun `parseInviteContext accepts server only pairing link`() {
         val context =
             QuartermasterAppState.parseInviteContext(
@@ -457,6 +467,28 @@ class QuartermasterAppStateTest {
 
         assertEquals(MainTab.Settings, appState.selectedTab)
         assertEquals("DEEP1234", appState.pendingInviteContext?.inviteCode)
+    }
+
+    @Test
+    fun `authenticated batch deep link opens inventory target`() = runTest {
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    stock = listOf(stockBatchJson()),
+                    locations = listOf(locationJson()),
+                ),
+            )
+
+        appState.bootstrap()
+        appState.handleIncomingDeepLink("https://quartermaster.example.com/batches/33333333-3333-3333-3333-333333333333")
+
+        assertEquals(MainTab.Inventory, appState.selectedTab)
+        assertEquals("44444444-4444-4444-4444-444444444444", appState.pendingInventoryTarget?.productId)
+        assertEquals("22222222-2222-2222-2222-222222222222", appState.pendingInventoryTarget?.locationId)
+        assertEquals("33333333-3333-3333-3333-333333333333", appState.pendingInventoryTarget?.batchId)
     }
 
     @Test
@@ -1645,6 +1677,8 @@ class QuartermasterAppStateTest {
         } else {
             stockState.filterNot { it.quantity.toBigDecimalOrNull()?.compareTo(java.math.BigDecimal.ZERO) == 0 }
         }
+
+        override suspend fun getStock(id: String): StockBatchDto = stockState.first { it.id.toString() == id }
 
         override suspend fun listEvents(limit: Int): List<StockEventDto> = emptyList()
 

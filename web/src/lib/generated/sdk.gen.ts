@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AuthEmailClearData, AuthEmailClearErrors, AuthEmailClearResponses, AuthEmailVerificationConfirmData, AuthEmailVerificationConfirmErrors, AuthEmailVerificationConfirmResponses, AuthEmailVerificationRequestData, AuthEmailVerificationRequestErrors, AuthEmailVerificationRequestResponses, AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthMeData, AuthMeErrors, AuthMeResponses, AuthRefreshData, AuthRefreshErrors, AuthRefreshResponses, AuthRegisterData, AuthRegisterErrors, AuthRegisterResponses, AuthSwitchHouseholdData, AuthSwitchHouseholdErrors, AuthSwitchHouseholdResponses, DeviceRegisterData, DeviceRegisterErrors, DeviceRegisterResponses, HealthzData, HealthzResponses, HouseholdCreateData, HouseholdCreateErrors, HouseholdCreateResponses, HouseholdCurrentGetData, HouseholdCurrentGetErrors, HouseholdCurrentGetResponses, HouseholdCurrentUpdateData, HouseholdCurrentUpdateErrors, HouseholdCurrentUpdateResponses, HouseholdInviteCreateData, HouseholdInviteCreateErrors, HouseholdInviteCreateResponses, HouseholdInvitesListData, HouseholdInvitesListResponses, HouseholdMemberRemoveData, HouseholdMemberRemoveErrors, HouseholdMemberRemoveResponses, HouseholdMembersListData, HouseholdMembersListResponses, InviteRedeemData, InviteRedeemErrors, InviteRedeemResponses, InviteRevokeData, InviteRevokeErrors, InviteRevokeResponses, LocationsCreateData, LocationsCreateResponses, LocationsDeleteData, LocationsDeleteErrors, LocationsDeleteResponses, LocationsListData, LocationsListErrors, LocationsListResponses, LocationsUpdateData, LocationsUpdateResponses, OnboardingCreateHouseholdData, OnboardingCreateHouseholdErrors, OnboardingCreateHouseholdResponses, OnboardingJoinInviteData, OnboardingJoinInviteErrors, OnboardingJoinInviteResponses, OnboardingStatusData, OnboardingStatusResponses, ProductByBarcodeData, ProductByBarcodeErrors, ProductByBarcodeResponses, ProductCreateData, ProductCreateErrors, ProductCreateResponses, ProductDeleteData, ProductDeleteErrors, ProductDeleteResponses, ProductGetData, ProductGetErrors, ProductGetResponses, ProductListData, ProductListErrors, ProductListResponses, ProductRefreshData, ProductRefreshErrors, ProductRefreshResponses, ProductRestoreData, ProductRestoreErrors, ProductRestoreResponses, ProductSearchData, ProductSearchErrors, ProductSearchResponses, ProductUpdateData, ProductUpdateErrors, ProductUpdateResponses, RemindersAckData, RemindersAckErrors, RemindersAckResponses, RemindersListData, RemindersListErrors, RemindersListResponses, RemindersOpenData, RemindersOpenErrors, RemindersOpenResponses, RemindersPresentData, RemindersPresentErrors, RemindersPresentResponses, StockConsumeData, StockConsumeErrors, StockConsumeResponses, StockCreateData, StockCreateErrors, StockCreateResponses, StockDeleteData, StockDeleteErrors, StockDeleteResponses, StockGetData, StockGetErrors, StockGetResponses, StockListBatchEventsData, StockListBatchEventsErrors, StockListBatchEventsResponses, StockListData, StockListErrors, StockListEventsData, StockListEventsErrors, StockListEventsResponses, StockListResponses, StockRestoreData, StockRestoreErrors, StockRestoreManyData, StockRestoreManyErrors, StockRestoreManyResponses, StockRestoreResponses, StockUpdateData, StockUpdateErrors, StockUpdateResponses, UnitsListData, UnitsListResponses } from './types.gen';
+import type { AuthEmailClearData, AuthEmailClearErrors, AuthEmailClearResponses, AuthEmailVerificationConfirmData, AuthEmailVerificationConfirmErrors, AuthEmailVerificationConfirmResponses, AuthEmailVerificationRequestData, AuthEmailVerificationRequestErrors, AuthEmailVerificationRequestResponses, AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthMeData, AuthMeErrors, AuthMeResponses, AuthRefreshData, AuthRefreshErrors, AuthRefreshResponses, AuthRegisterData, AuthRegisterErrors, AuthRegisterResponses, AuthSwitchHouseholdData, AuthSwitchHouseholdErrors, AuthSwitchHouseholdResponses, DeviceRegisterData, DeviceRegisterErrors, DeviceRegisterResponses, HealthzData, HealthzResponses, HouseholdCreateData, HouseholdCreateErrors, HouseholdCreateResponses, HouseholdCurrentGetData, HouseholdCurrentGetErrors, HouseholdCurrentGetResponses, HouseholdCurrentUpdateData, HouseholdCurrentUpdateErrors, HouseholdCurrentUpdateResponses, HouseholdInviteCreateData, HouseholdInviteCreateErrors, HouseholdInviteCreateResponses, HouseholdInvitesListData, HouseholdInvitesListResponses, HouseholdMemberRemoveData, HouseholdMemberRemoveErrors, HouseholdMemberRemoveResponses, HouseholdMembersListData, HouseholdMembersListResponses, InviteRedeemData, InviteRedeemErrors, InviteRedeemResponses, InviteRevokeData, InviteRevokeErrors, InviteRevokeResponses, LabelPrintersCreateData, LabelPrintersCreateResponses, LabelPrintersDeleteData, LabelPrintersDeleteResponses, LabelPrintersListData, LabelPrintersListResponses, LabelPrintersTestData, LabelPrintersTestResponses, LabelPrintersUpdateData, LabelPrintersUpdateResponses, LocationsCreateData, LocationsCreateResponses, LocationsDeleteData, LocationsDeleteErrors, LocationsDeleteResponses, LocationsListData, LocationsListErrors, LocationsListResponses, LocationsUpdateData, LocationsUpdateResponses, OnboardingCreateHouseholdData, OnboardingCreateHouseholdErrors, OnboardingCreateHouseholdResponses, OnboardingJoinInviteData, OnboardingJoinInviteErrors, OnboardingJoinInviteResponses, OnboardingStatusData, OnboardingStatusResponses, ProductByBarcodeData, ProductByBarcodeErrors, ProductByBarcodeResponses, ProductCreateData, ProductCreateErrors, ProductCreateResponses, ProductDeleteData, ProductDeleteErrors, ProductDeleteResponses, ProductGetData, ProductGetErrors, ProductGetResponses, ProductListData, ProductListErrors, ProductListResponses, ProductRefreshData, ProductRefreshErrors, ProductRefreshResponses, ProductRestoreData, ProductRestoreErrors, ProductRestoreResponses, ProductSearchData, ProductSearchErrors, ProductSearchResponses, ProductUpdateData, ProductUpdateErrors, ProductUpdateResponses, RemindersAckData, RemindersAckErrors, RemindersAckResponses, RemindersListData, RemindersListErrors, RemindersListResponses, RemindersOpenData, RemindersOpenErrors, RemindersOpenResponses, RemindersPresentData, RemindersPresentErrors, RemindersPresentResponses, StockConsumeData, StockConsumeErrors, StockConsumeResponses, StockCreateData, StockCreateErrors, StockCreateResponses, StockDeleteData, StockDeleteErrors, StockDeleteResponses, StockGetData, StockGetErrors, StockGetResponses, StockLabelPrintData, StockLabelPrintErrors, StockLabelPrintResponses, StockListBatchEventsData, StockListBatchEventsErrors, StockListBatchEventsResponses, StockListData, StockListErrors, StockListEventsData, StockListEventsErrors, StockListEventsResponses, StockListResponses, StockRestoreData, StockRestoreErrors, StockRestoreManyData, StockRestoreManyErrors, StockRestoreManyResponses, StockRestoreResponses, StockUpdateData, StockUpdateErrors, StockUpdateResponses, UnitsListData, UnitsListResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -172,6 +172,44 @@ export const inviteRedeem = <ThrowOnError extends boolean = false>(options: Opti
 export const inviteRevoke = <ThrowOnError extends boolean = false>(options: Options<InviteRevokeData, ThrowOnError>) => (options.client ?? client).delete<InviteRevokeResponses, InviteRevokeErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/invites/{id}',
+    ...options
+});
+
+export const labelPrintersList = <ThrowOnError extends boolean = false>(options?: Options<LabelPrintersListData, ThrowOnError>) => (options?.client ?? client).get<LabelPrintersListResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/label-printers',
+    ...options
+});
+
+export const labelPrintersCreate = <ThrowOnError extends boolean = false>(options: Options<LabelPrintersCreateData, ThrowOnError>) => (options.client ?? client).post<LabelPrintersCreateResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/label-printers',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const labelPrintersDelete = <ThrowOnError extends boolean = false>(options: Options<LabelPrintersDeleteData, ThrowOnError>) => (options.client ?? client).delete<LabelPrintersDeleteResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/label-printers/{id}',
+    ...options
+});
+
+export const labelPrintersUpdate = <ThrowOnError extends boolean = false>(options: Options<LabelPrintersUpdateData, ThrowOnError>) => (options.client ?? client).patch<LabelPrintersUpdateResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/label-printers/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const labelPrintersTest = <ThrowOnError extends boolean = false>(options: Options<LabelPrintersTestData, ThrowOnError>) => (options.client ?? client).post<LabelPrintersTestResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/label-printers/{id}/test',
     ...options
 });
 
@@ -381,6 +419,16 @@ export const stockListBatchEvents = <ThrowOnError extends boolean = false>(optio
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/stock/{id}/events',
     ...options
+});
+
+export const stockLabelPrint = <ThrowOnError extends boolean = false>(options: Options<StockLabelPrintData, ThrowOnError>) => (options.client ?? client).post<StockLabelPrintResponses, StockLabelPrintErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/stock/{id}/labels/print',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 export const stockRestore = <ThrowOnError extends boolean = false>(options: Options<StockRestoreData, ThrowOnError>) => (options.client ?? client).post<StockRestoreResponses, StockRestoreErrors, ThrowOnError>({

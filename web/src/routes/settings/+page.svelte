@@ -21,6 +21,8 @@
     currentHousehold,
     createBrowserSessionStorage,
     QuartermasterSession,
+    type LabelPrinter,
+    type LabelPrinterMedia,
     type Location,
     type MeResponse
   } from '$lib/session-core';
@@ -31,8 +33,11 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let locations = $state<Location[]>([]);
+  let printers = $state<LabelPrinter[]>([]);
   let actionBusy = $state<string | null>(null);
   let formError = $state<string | null>(null);
+  let printerError = $state<string | null>(null);
+  let printerMessage = $state<string | null>(null);
   let deleteError = $state<string | null>(null);
   let editingLocation = $state<Location | null>(null);
   let pendingDelete = $state<Location | null>(null);
@@ -40,6 +45,11 @@
   let locationKind = $state<LocationKind>('pantry');
   let pairingServerUrl = $state('');
   let pairingQrSvg = $state('');
+  let printerName = $state('');
+  let printerAddress = $state('');
+  let printerPort = $state('9100');
+  let printerMedia = $state<LabelPrinterMedia>('dk_62_continuous');
+  let printerDefault = $state(false);
 
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
   const sortedLocations = $derived(sortLocations(locations));
@@ -99,13 +109,15 @@
     try {
       me = await session.me();
       if (currentHousehold(me)) {
-        await refreshLocations();
+        await Promise.all([refreshLocations(), refreshPrinters()]);
       } else {
         locations = [];
+        printers = [];
       }
     } catch {
       me = null;
       locations = [];
+      printers = [];
       authenticated = false;
       error = 'Sign in again to continue.';
     } finally {
@@ -118,6 +130,14 @@
       return;
     }
     locations = sortLocations(await session.locationsList());
+  }
+
+  async function refreshPrinters() {
+    if (!session) {
+      return;
+    }
+    const response = await session.labelPrintersList();
+    printers = response.items ?? [];
   }
 
   function startCreate() {
@@ -231,6 +251,114 @@
       await refreshLocations();
     } catch (err) {
       deleteError = locationDeleteErrorMessage(err);
+    } finally {
+      actionBusy = null;
+    }
+  }
+
+  async function savePrinter() {
+    if (!session) {
+      return;
+    }
+    const name = printerName.trim();
+    const address = printerAddress.trim();
+    const port = Number(printerPort);
+    if (!name || !address || !Number.isInteger(port) || port < 1 || port > 65535) {
+      printerError = 'Enter a printer name, host, and valid port.';
+      return;
+    }
+    actionBusy = 'printer:create';
+    printerError = null;
+    printerMessage = null;
+    try {
+      await session.labelPrintersCreate({
+        name,
+        driver: 'brother_ql_raster',
+        address,
+        port,
+        media: printerMedia,
+        enabled: true,
+        is_default: printerDefault || printers.length === 0
+      });
+      printerName = '';
+      printerAddress = '';
+      printerPort = '9100';
+      printerMedia = 'dk_62_continuous';
+      printerDefault = false;
+      await refreshPrinters();
+      printerMessage = 'Printer saved.';
+    } catch {
+      printerError = 'Printer could not be saved.';
+    } finally {
+      actionBusy = null;
+    }
+  }
+
+  async function setDefaultPrinter(printer: LabelPrinter) {
+    if (!session) {
+      return;
+    }
+    actionBusy = `printer:default:${printer.id}`;
+    printerError = null;
+    printerMessage = null;
+    try {
+      await session.labelPrintersUpdate(printer.id, { is_default: true, enabled: true });
+      await refreshPrinters();
+      printerMessage = 'Default printer updated.';
+    } catch {
+      printerError = 'Default printer could not be changed.';
+    } finally {
+      actionBusy = null;
+    }
+  }
+
+  async function togglePrinter(printer: LabelPrinter) {
+    if (!session) {
+      return;
+    }
+    actionBusy = `printer:toggle:${printer.id}`;
+    printerError = null;
+    printerMessage = null;
+    try {
+      await session.labelPrintersUpdate(printer.id, { enabled: !printer.enabled });
+      await refreshPrinters();
+    } catch {
+      printerError = 'Printer could not be updated.';
+    } finally {
+      actionBusy = null;
+    }
+  }
+
+  async function testPrinter(printer: LabelPrinter) {
+    if (!session) {
+      return;
+    }
+    actionBusy = `printer:test:${printer.id}`;
+    printerError = null;
+    printerMessage = null;
+    try {
+      await session.labelPrintersTest(printer.id);
+      printerMessage = 'Test label sent.';
+    } catch {
+      printerError = 'Test label could not be sent.';
+    } finally {
+      actionBusy = null;
+    }
+  }
+
+  async function deletePrinter(printer: LabelPrinter) {
+    if (!session) {
+      return;
+    }
+    actionBusy = `printer:delete:${printer.id}`;
+    printerError = null;
+    printerMessage = null;
+    try {
+      await session.labelPrintersDelete(printer.id);
+      await refreshPrinters();
+      printerMessage = 'Printer deleted.';
+    } catch {
+      printerError = 'Printer could not be deleted.';
     } finally {
       actionBusy = null;
     }
@@ -350,6 +478,108 @@
             {/each}
           </div>
         {/if}
+      </section>
+
+      <section class="panel settings-panel" aria-labelledby="printers-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Labels</p>
+            <h2 id="printers-heading">Label printers</h2>
+          </div>
+          <button class="secondary-action small" type="button" onclick={() => refreshPrinters()}
+            >Refresh</button
+          >
+        </div>
+
+        {#if printerError}
+          <p class="error-text">{printerError}</p>
+        {/if}
+        {#if printerMessage}
+          <p class="muted">{printerMessage}</p>
+        {/if}
+
+        {#if printers.length === 0}
+          <p class="muted">No label printers linked yet.</p>
+        {:else}
+          <div class="location-list">
+            {#each printers as printer}
+              <article class="location-row">
+                <div>
+                  <h3>{printer.name}</h3>
+                  <p>
+                    {printer.address}:{printer.port} - {printer.media}
+                    {#if printer.is_default || printer.isDefault}
+                      - default{/if}
+                    {#if !printer.enabled}
+                      - disabled{/if}
+                  </p>
+                </div>
+                <div class="row-actions">
+                  <button
+                    class="secondary-action small"
+                    type="button"
+                    disabled={actionBusy !== null}
+                    onclick={() => testPrinter(printer)}>Test</button
+                  >
+                  <button
+                    class="ghost-button small"
+                    type="button"
+                    disabled={actionBusy !== null || printer.is_default || printer.isDefault}
+                    onclick={() => setDefaultPrinter(printer)}>Default</button
+                  >
+                  <button
+                    class="ghost-button small"
+                    type="button"
+                    disabled={actionBusy !== null}
+                    onclick={() => togglePrinter(printer)}
+                    >{printer.enabled ? 'Disable' : 'Enable'}</button
+                  >
+                  <button
+                    class="ghost-button small danger"
+                    type="button"
+                    disabled={actionBusy !== null}
+                    onclick={() => deletePrinter(printer)}>Delete</button
+                  >
+                </div>
+              </article>
+            {/each}
+          </div>
+        {/if}
+
+        <form
+          class="settings-form"
+          onsubmit={(event) => {
+            event.preventDefault();
+            void savePrinter();
+          }}
+        >
+          <label>
+            Name
+            <input bind:value={printerName} placeholder="Kitchen Brother" />
+          </label>
+          <label>
+            Host or IP
+            <input bind:value={printerAddress} placeholder="192.168.1.42" />
+          </label>
+          <label>
+            Port
+            <input bind:value={printerPort} inputmode="numeric" />
+          </label>
+          <label>
+            Media
+            <select bind:value={printerMedia}>
+              <option value="dk_62_continuous">DK 62 continuous</option>
+              <option value="dk_29x90">DK 29 x 90</option>
+            </select>
+          </label>
+          <label class="checkbox-row">
+            <input bind:checked={printerDefault} type="checkbox" />
+            Use as default printer
+          </label>
+          <button class="primary-action" type="submit" disabled={actionBusy !== null}
+            >Add printer</button
+          >
+        </form>
       </section>
 
       <aside class="panel settings-panel">

@@ -384,12 +384,35 @@ final class AppState {
   }
 
   func handleIncomingURL(_ url: URL) {
+    if handleIncomingBatchURL(url) {
+      return
+    }
     handleIncomingJoinURL(url)
   }
 
   func handleIncomingUserActivity(_ userActivity: NSUserActivity) {
     guard let url = userActivity.webpageURL else { return }
-    handleIncomingJoinURL(url)
+    handleIncomingURL(url)
+  }
+
+  @discardableResult
+  private func handleIncomingBatchURL(_ url: URL) -> Bool {
+    guard let batchID = Self.batchID(from: url) else { return false }
+    Task { await openBatchDeepLink(batchID: batchID) }
+    return true
+  }
+
+  private func openBatchDeepLink(batchID: String) async {
+    do {
+      let batch = try await api.getStock(id: batchID)
+      pendingInventoryTarget = InventoryTarget(
+        productID: batch.product.id,
+        locationID: batch.locationID,
+        highlightBatchID: batch.id
+      )
+    } catch {
+      lastError = userMessage(for: error)
+    }
   }
 
   private func handleIncomingJoinURL(_ url: URL) {
@@ -426,6 +449,18 @@ final class AppState {
       inviteCode: inviteCode,
       serverURL: incomingServer
     )
+  }
+
+  static func batchID(from url: URL) -> String? {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+      return nil
+    }
+    let parts = components.path.split(separator: "/").map(String.init)
+    guard let index = parts.firstIndex(of: "batches"), parts.indices.contains(index + 1) else {
+      return nil
+    }
+    let raw = parts[index + 1].trimmingCharacters(in: .whitespacesAndNewlines)
+    return UUID(uuidString: raw)?.uuidString.lowercased()
   }
 
   func unitsFor(family: ProductFamily) -> [Unit] {

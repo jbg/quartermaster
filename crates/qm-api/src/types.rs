@@ -146,6 +146,76 @@ pub enum ReminderUrgency {
     ExpiresFuture,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LabelPrinterDriver {
+    #[serde(rename = "brother_ql_raster")]
+    BrotherQlRaster,
+}
+
+impl LabelPrinterDriver {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::BrotherQlRaster => "brother_ql_raster",
+        }
+    }
+}
+
+impl fmt::Display for LabelPrinterDriver {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for LabelPrinterDriver {
+    type Err = ApiError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "brother_ql_raster" => Ok(Self::BrotherQlRaster),
+            other => Err(ApiError::Internal(anyhow::anyhow!(
+                "unknown label printer driver in DB row: {other}",
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LabelPrinterMedia {
+    #[serde(rename = "dk_62_continuous")]
+    Dk62Continuous,
+    #[serde(rename = "dk_29x90")]
+    Dk29x90,
+}
+
+impl LabelPrinterMedia {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Dk62Continuous => "dk_62_continuous",
+            Self::Dk29x90 => "dk_29x90",
+        }
+    }
+}
+
+impl fmt::Display for LabelPrinterMedia {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for LabelPrinterMedia {
+    type Err = ApiError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "dk_62_continuous" => Ok(Self::Dk62Continuous),
+            "dk_29x90" => Ok(Self::Dk29x90),
+            other => Err(ApiError::Internal(anyhow::anyhow!(
+                "unknown label printer media in DB row: {other}",
+            ))),
+        }
+    }
+}
+
 impl fmt::Display for StockEventType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())

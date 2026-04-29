@@ -76,6 +76,16 @@ export type CreateInviteRequest = {
     role_granted: MembershipRole;
 };
 
+export type CreateLabelPrinterRequest = {
+    address: string;
+    driver: LabelPrinterDriver;
+    enabled?: boolean | null;
+    is_default?: boolean | null;
+    media: LabelPrinterMedia;
+    name: string;
+    port?: number | null;
+};
+
 export type CreateLocationRequest = {
     kind: string;
     name: string;
@@ -170,6 +180,29 @@ export type JsonPatchOperation = {
     value?: unknown;
 };
 
+export type LabelPrintStatus = 'sent' | 'rendered';
+
+export type LabelPrinterDriver = 'brother_ql_raster';
+
+export type LabelPrinterDto = {
+    address: string;
+    created_at: string;
+    driver: LabelPrinterDriver;
+    enabled: boolean;
+    id: string;
+    is_default: boolean;
+    media: LabelPrinterMedia;
+    name: string;
+    port: number;
+    updated_at: string;
+};
+
+export type LabelPrinterListResponse = {
+    items: Array<LabelPrinterDto>;
+};
+
+export type LabelPrinterMedia = 'dk_62_continuous' | 'dk_29x90';
+
 export type LocationDto = {
     id: string;
     kind: string;
@@ -217,6 +250,20 @@ export type OnboardingStatusResponse = {
     household_signup: OnboardingAvailability;
     invite_join: OnboardingAvailability;
     server_state: OnboardingServerState;
+};
+
+export type PrintStockLabelRequest = {
+    copies?: number | null;
+    dry_run?: boolean | null;
+    printer_id?: string | null;
+};
+
+export type PrintStockLabelResponse = {
+    batch_id: string;
+    batch_url: string;
+    copies: number;
+    printer_id: string;
+    status: LabelPrintStatus;
 };
 
 export type ProductDto = {
@@ -414,6 +461,15 @@ export type UnitFamily = 'mass' | 'volume' | 'count';
 export type UpdateHouseholdRequest = {
     name: string;
     timezone: string;
+};
+
+export type UpdateLabelPrinterRequest = {
+    address?: string | null;
+    enabled?: boolean | null;
+    is_default?: boolean | null;
+    media?: null | LabelPrinterMedia;
+    name?: string | null;
+    port?: number | null;
 };
 
 export type UpdateLocationRequest = {
@@ -805,6 +861,77 @@ export type InviteRevokeResponses = {
 };
 
 export type InviteRevokeResponse = InviteRevokeResponses[keyof InviteRevokeResponses];
+
+export type LabelPrintersListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/label-printers';
+};
+
+export type LabelPrintersListResponses = {
+    200: LabelPrinterListResponse;
+};
+
+export type LabelPrintersListResponse = LabelPrintersListResponses[keyof LabelPrintersListResponses];
+
+export type LabelPrintersCreateData = {
+    body: CreateLabelPrinterRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/label-printers';
+};
+
+export type LabelPrintersCreateResponses = {
+    201: LabelPrinterDto;
+};
+
+export type LabelPrintersCreateResponse = LabelPrintersCreateResponses[keyof LabelPrintersCreateResponses];
+
+export type LabelPrintersDeleteData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/label-printers/{id}';
+};
+
+export type LabelPrintersDeleteResponses = {
+    204: void;
+};
+
+export type LabelPrintersDeleteResponse = LabelPrintersDeleteResponses[keyof LabelPrintersDeleteResponses];
+
+export type LabelPrintersUpdateData = {
+    body: UpdateLabelPrinterRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/label-printers/{id}';
+};
+
+export type LabelPrintersUpdateResponses = {
+    200: LabelPrinterDto;
+};
+
+export type LabelPrintersUpdateResponse = LabelPrintersUpdateResponses[keyof LabelPrintersUpdateResponses];
+
+export type LabelPrintersTestData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/label-printers/{id}/test';
+};
+
+export type LabelPrintersTestResponses = {
+    200: PrintStockLabelResponse;
+};
+
+export type LabelPrintersTestResponse = LabelPrintersTestResponses[keyof LabelPrintersTestResponses];
 
 export type LocationsListData = {
     body?: never;
@@ -1442,6 +1569,28 @@ export type StockListBatchEventsResponses = {
 };
 
 export type StockListBatchEventsResponse = StockListBatchEventsResponses[keyof StockListBatchEventsResponses];
+
+export type StockLabelPrintData = {
+    body: PrintStockLabelRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/stock/{id}/labels/print';
+};
+
+export type StockLabelPrintErrors = {
+    400: ApiErrorBody;
+    404: ApiErrorBody;
+};
+
+export type StockLabelPrintError = StockLabelPrintErrors[keyof StockLabelPrintErrors];
+
+export type StockLabelPrintResponses = {
+    200: PrintStockLabelResponse;
+};
+
+export type StockLabelPrintResponse = StockLabelPrintResponses[keyof StockLabelPrintResponses];
 
 export type StockRestoreData = {
     body?: never;

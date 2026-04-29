@@ -169,6 +169,62 @@ export interface ReminderListResponse {
   nextAfterId?: string | null;
 }
 
+export type LabelPrinterDriver = 'brother_ql_raster';
+export type LabelPrinterMedia = 'dk_62_continuous' | 'dk_29x90';
+
+export interface LabelPrinter {
+  id: string;
+  name: string;
+  driver: LabelPrinterDriver;
+  address: string;
+  port: number;
+  media: LabelPrinterMedia;
+  enabled: boolean;
+  is_default?: boolean;
+  isDefault?: boolean;
+  created_at?: string;
+  createdAt?: string;
+  updated_at?: string;
+  updatedAt?: string;
+}
+
+export interface LabelPrinterListResponse {
+  items?: LabelPrinter[];
+}
+
+export interface CreateLabelPrinterRequest {
+  name: string;
+  driver: LabelPrinterDriver;
+  address: string;
+  port?: number | null;
+  media: LabelPrinterMedia;
+  enabled?: boolean | null;
+  is_default?: boolean | null;
+}
+
+export interface UpdateLabelPrinterRequest {
+  name?: string | null;
+  address?: string | null;
+  port?: number | null;
+  media?: LabelPrinterMedia | null;
+  enabled?: boolean | null;
+  is_default?: boolean | null;
+}
+
+export interface PrintStockLabelRequest {
+  printer_id?: string | null;
+  copies?: number | null;
+  dry_run?: boolean | null;
+}
+
+export interface PrintStockLabelResponse {
+  printer_id: string;
+  batch_id: string;
+  batch_url: string;
+  copies: number;
+  status: 'sent' | 'rendered';
+}
+
 export interface ConsumeRequest {
   product_id: string;
   location_id?: string | null;
@@ -290,6 +346,14 @@ export interface SessionTransport {
   locationsCreate(body: CreateLocationRequest): Promise<ApiResult<Location>>;
   locationsUpdate(id: string, body: UpdateLocationRequest): Promise<ApiResult<Location>>;
   locationsDelete(id: string): Promise<ApiResult<void>>;
+  labelPrintersList?(): Promise<ApiResult<LabelPrinterListResponse>>;
+  labelPrintersCreate?(body: CreateLabelPrinterRequest): Promise<ApiResult<LabelPrinter>>;
+  labelPrintersUpdate?(
+    id: string,
+    body: UpdateLabelPrinterRequest
+  ): Promise<ApiResult<LabelPrinter>>;
+  labelPrintersDelete?(id: string): Promise<ApiResult<void>>;
+  labelPrintersTest?(id: string): Promise<ApiResult<PrintStockLabelResponse>>;
   productSearch(query: {
     q: string;
     limit?: number | null;
@@ -318,6 +382,10 @@ export interface SessionTransport {
   stockConsume(body: ConsumeRequest): Promise<ApiResult<ConsumeResponse>>;
   stockDelete(id: string): Promise<ApiResult<void>>;
   stockRestore(id: string): Promise<ApiResult<StockBatch>>;
+  stockLabelPrint?(
+    id: string,
+    body: PrintStockLabelRequest
+  ): Promise<ApiResult<PrintStockLabelResponse>>;
   unitsList(): Promise<ApiResult<Unit[]>>;
   remindersList(query?: {
     after_fire_at?: string | null;
@@ -478,6 +546,32 @@ export class QuartermasterSession {
     return this.authed(() => this.transport.locationsDelete(id));
   }
 
+  labelPrintersList(): Promise<LabelPrinterListResponse> {
+    return this.authed(() => required(this.transport.labelPrintersList, 'labelPrintersList')());
+  }
+
+  labelPrintersCreate(body: CreateLabelPrinterRequest): Promise<LabelPrinter> {
+    return this.authed(() =>
+      required(this.transport.labelPrintersCreate, 'labelPrintersCreate')(body)
+    );
+  }
+
+  labelPrintersUpdate(id: string, body: UpdateLabelPrinterRequest): Promise<LabelPrinter> {
+    return this.authed(() =>
+      required(this.transport.labelPrintersUpdate, 'labelPrintersUpdate')(id, body)
+    );
+  }
+
+  labelPrintersDelete(id: string): Promise<void> {
+    return this.authed(() =>
+      required(this.transport.labelPrintersDelete, 'labelPrintersDelete')(id)
+    );
+  }
+
+  labelPrintersTest(id: string): Promise<PrintStockLabelResponse> {
+    return this.authed(() => required(this.transport.labelPrintersTest, 'labelPrintersTest')(id));
+  }
+
   productSearch(query: {
     q: string;
     limit?: number | null;
@@ -555,6 +649,10 @@ export class QuartermasterSession {
 
   stockRestore(id: string): Promise<StockBatch> {
     return this.authed(() => this.transport.stockRestore(id));
+  }
+
+  stockLabelPrint(id: string, body: PrintStockLabelRequest): Promise<PrintStockLabelResponse> {
+    return this.authed(() => required(this.transport.stockLabelPrint, 'stockLabelPrint')(id, body));
   }
 
   unitsList(): Promise<Unit[]> {
@@ -681,4 +779,11 @@ export function unwrap<T>(result: ApiResult<T>): T {
   }
   const body = result.error as { code?: string; message?: string } | undefined;
   throw new ApiFailure(result.response?.status ?? 0, body?.message, body?.code ?? null);
+}
+
+function required<T>(fn: T | undefined, name: string): T {
+  if (!fn) {
+    throw new Error(`${name} transport is not configured`);
+  }
+  return fn;
 }

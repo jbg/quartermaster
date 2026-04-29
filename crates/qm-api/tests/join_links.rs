@@ -133,7 +133,7 @@ async fn apple_app_site_association_is_served_from_well_known_path_when_ios_iden
             .iter()
             .map(|value| value.as_str().unwrap())
             .collect::<Vec<_>>(),
-        vec!["/join", "/join*"]
+        vec!["/join", "/join*", "/batches/*"]
     );
 }
 
