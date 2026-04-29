@@ -47,6 +47,7 @@ jiff = { workspace = true, default-features = false, features = [
 ] }
 metrics = { workspace = true, default-features = false, features = [] }
 percent-encoding = { workspace = true, default-features = false, features = ["std"] }
+qrcode = { workspace = true, default-features = false, features = [] }
 reqwest = { workspace = true, default-features = false, features = [
     "default-tls",
     "charset",

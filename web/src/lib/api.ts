@@ -6,6 +6,11 @@ import {
   authRegister,
   authSwitchHousehold,
   deviceRegister,
+  labelPrintersCreate,
+  labelPrintersDelete,
+  labelPrintersList,
+  labelPrintersTest,
+  labelPrintersUpdate,
   locationsCreate,
   locationsDelete,
   locationsList,
@@ -30,6 +35,7 @@ import {
   stockCreate,
   stockDelete,
   stockGet,
+  stockLabelPrint,
   stockList,
   stockListBatchEvents,
   stockRestore,
@@ -99,6 +105,21 @@ export function generatedTransport(): SessionTransport {
     locationsDelete(id) {
       return locationsDelete({ path: { id } });
     },
+    labelPrintersList() {
+      return labelPrintersList();
+    },
+    labelPrintersCreate(body) {
+      return labelPrintersCreate({ body });
+    },
+    labelPrintersUpdate(id, body) {
+      return labelPrintersUpdate({ path: { id }, body });
+    },
+    labelPrintersDelete(id) {
+      return labelPrintersDelete({ path: { id } });
+    },
+    labelPrintersTest(id) {
+      return labelPrintersTest({ path: { id } });
+    },
     productSearch(query) {
       return productSearch({ query });
     },
@@ -149,6 +170,9 @@ export function generatedTransport(): SessionTransport {
     },
     stockRestore(id) {
       return stockRestore({ path: { id } });
+    },
+    stockLabelPrint(id, body) {
+      return stockLabelPrint({ path: { id }, body });
     },
     unitsList() {
       return unitsList();

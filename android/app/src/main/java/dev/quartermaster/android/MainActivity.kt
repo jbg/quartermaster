@@ -14,7 +14,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
 internal class ReminderIntentRouter(
-    private val handleDeepLink: (Uri) -> Unit,
+    private val handleDeepLink: suspend (Uri) -> Unit,
     private val handleIntent: suspend (android.content.Intent) -> Unit,
 ) {
     private var lastHandledSignature: String? = null
@@ -26,7 +26,7 @@ internal class ReminderIntentRouter(
             return
         }
         signature?.let { lastHandledSignature = it }
-        intent.data?.let(handleDeepLink)
+        intent.data?.let { handleDeepLink(it) }
         handleIntent(intent)
     }
 
@@ -69,7 +69,7 @@ class MainActivity : ComponentActivity() {
                 }
             intentRouter =
                 ReminderIntentRouter(
-                    handleDeepLink = appState::handleDeepLink,
+                    handleDeepLink = appState::handleIncomingDeepLink,
                     handleIntent = appState::handleIntent,
                 )
             LaunchedEffect(appState) {

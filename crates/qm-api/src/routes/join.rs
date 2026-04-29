@@ -50,7 +50,7 @@ pub fn apple_app_site_association_body(
             "details": [
                 {
                     "appID": app_id,
-                    "paths": ["/join", "/join*"]
+                    "paths": ["/join", "/join*", "/batches/*"]
                 }
             ]
         }

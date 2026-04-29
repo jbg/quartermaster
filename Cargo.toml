@@ -72,6 +72,7 @@ jiff = { version = "0.2", default-features = false, features = [
     "serde",
 ] }
 rust_decimal = { version = "1", default-features = false, features = ["serde", "std"] }
+qrcode = { version = "0.14", default-features = false }
 
 # auth / crypto
 argon2 = { version = "0.5", default-features = false, features = [

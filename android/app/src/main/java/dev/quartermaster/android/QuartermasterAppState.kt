@@ -174,6 +174,7 @@ interface QuartermasterBackend {
     suspend fun deleteLocation(id: String)
     suspend fun units(): List<UnitDto>
     suspend fun listStock(includeDepleted: Boolean = false): List<StockBatchDto>
+    suspend fun getStock(id: String): StockBatchDto
     suspend fun listEvents(limit: Int = 30): List<StockEventDto>
     suspend fun listBatchEvents(batchId: String, limit: Int = 30): List<StockEventDto>
     suspend fun listReminders(limit: Int = 50): List<ReminderDto>
@@ -275,6 +276,7 @@ class QuartermasterApiBackend(
     override suspend fun deleteLocation(id: String) = api.deleteLocation(id)
     override suspend fun units(): List<UnitDto> = api.units()
     override suspend fun listStock(includeDepleted: Boolean): List<StockBatchDto> = api.listStock(includeDepleted)
+    override suspend fun getStock(id: String): StockBatchDto = api.getStock(id)
     override suspend fun listEvents(limit: Int): List<StockEventDto> = api.listEvents(limit)
     override suspend fun listBatchEvents(batchId: String, limit: Int): List<StockEventDto> = api.listBatchEvents(batchId, limit)
     override suspend fun listReminders(limit: Int): List<ReminderDto> = api.listReminders(limit)
@@ -443,8 +445,11 @@ class QuartermasterAppState(
         handleDeepLink(uri.toString())
     }
 
+    suspend fun handleIncomingDeepLink(uri: Uri) {
+        handleIncomingDeepLink(uri.toString())
+    }
+
     suspend fun handleIntent(intent: Intent?) {
-        intent?.data?.let(::handleDeepLink)
         val payload = PushSupport.payloadFromIntent(intent) ?: return
         handleReminderPayload(payload)
     }
@@ -465,6 +470,11 @@ class QuartermasterAppState(
     }
 
     fun handleDeepLink(rawUrl: String) {
+        parseBatchDeepLink(rawUrl)?.let { batchId ->
+            selectedTab = MainTab.Inventory
+            setInventoryTargetForBatch(batchId)
+            return
+        }
         parseInviteContext(rawUrl)?.let { context ->
             if (phase is AppPhase.Unauthenticated) {
                 context.serverUrl?.let(::updateServerUrl)
@@ -474,6 +484,39 @@ class QuartermasterAppState(
                 selectedTab = MainTab.Settings
             }
         }
+    }
+
+    suspend fun handleIncomingDeepLink(rawUrl: String) {
+        parseBatchDeepLink(rawUrl)?.let { batchId ->
+            selectedTab = MainTab.Inventory
+            openBatchDeepLink(batchId)
+            return
+        }
+        handleDeepLink(rawUrl)
+    }
+
+    private suspend fun openBatchDeepLink(batchId: String) {
+        if (phase is AppPhase.Authenticated && currentHouseholdId != null) {
+            runCatching { backend.getStock(batchId) }
+                .onSuccess(::setInventoryTargetForBatch)
+                .onFailure { lastError = it.userFacingMessage() }
+            return
+        }
+        setInventoryTargetForBatch(batchId)
+    }
+
+    private fun setInventoryTargetForBatch(batchId: String) {
+        val batch = batches.firstOrNull { it.id.toString() == batchId } ?: return
+        setInventoryTargetForBatch(batch)
+    }
+
+    private fun setInventoryTargetForBatch(batch: StockBatchDto) {
+        pendingInventoryTarget = InventoryTarget(
+            productId = batch.product.id.toString(),
+            locationId = batch.locationId.toString(),
+            batchId = batch.id.toString(),
+        )
+        selectedBatchId = batch.id.toString()
     }
 
     suspend fun refreshOnboardingStatus() = runAuthAction {
@@ -1654,6 +1697,16 @@ class QuartermasterAppState(
                 ?.removeSuffix("/")
 
             return InviteContext(inviteCode = if (isJoinLink) invite else null, serverUrl = server)
+        }
+
+        fun parseBatchDeepLink(rawUrl: String): String? {
+            val uri = runCatching { URI(rawUrl) }.getOrNull() ?: return null
+            if (uri.scheme != "http" && uri.scheme != "https") return null
+            val segments = uri.path.orEmpty().split("/").filter { it.isNotBlank() }
+            if (segments.firstOrNull() != "batches") return null
+            val id = segments.getOrNull(1)?.trim().orEmpty()
+            if (id.isEmpty()) return null
+            return runCatching { UUID.fromString(id).toString() }.getOrNull()
         }
     }
 }

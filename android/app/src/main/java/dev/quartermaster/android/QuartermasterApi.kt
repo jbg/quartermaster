@@ -263,6 +263,11 @@ class QuartermasterApi(
         return authedJson<StockListResponse>("GET", "/stock$query").items
     }
 
+    suspend fun getStock(id: String): StockBatchDto = authedJson(
+        method = "GET",
+        path = "/stock/${id.urlEncode()}",
+    )
+
     suspend fun listEvents(limit: Int = 30): List<StockEventDto> = authedJson<StockEventListResponse>("GET", "/stock/events?limit=$limit").items
 
     suspend fun listBatchEvents(

@@ -60,6 +60,25 @@ final class AppStateReminderTests: XCTestCase {
     )
   }
 
+  func testBatchUniversalLinkQueuesInventoryTarget() async {
+    let api = FakeAPI(stockResponses: [.success(stockBatch())])
+    let appState = makeAppState(api: api)
+    appState.phase = .authenticated(me())
+
+    appState.handleIncomingURL(
+      URL(string: "https://quartermaster.example.com/batches/33333333-3333-3333-3333-333333333333")!
+    )
+
+    await eventually {
+      appState.pendingInventoryTarget?.highlightBatchID
+        == "33333333-3333-3333-3333-333333333333"
+    }
+    XCTAssertEqual(
+      appState.pendingInventoryTarget?.productID, "44444444-4444-4444-4444-444444444444")
+    XCTAssertEqual(
+      appState.pendingInventoryTarget?.locationID, "22222222-2222-2222-2222-222222222222")
+  }
+
   func testOnboardingCreateHouseholdStoresTokensAndRefreshesMe() async {
     let tokenStore = FakeTokenStore(accessToken: nil, refreshToken: nil)
     let api = FakeAPI()
@@ -564,6 +583,7 @@ private actor FakeTokenStore: AppStateTokenStore {
 
 private actor FakeAPI: AppStateAPI {
   private var meResponses: [Result<Me, Error>]
+  private var stockResponses: [Result<StockBatch, Error>]
   private var reminderResponses: [Result<ReminderListResponse, Error>]
   private var ackResponses: [Result<Void, Error>]
   private var openResponses: [Result<Void, Error>]
@@ -579,6 +599,7 @@ private actor FakeAPI: AppStateAPI {
 
   init(
     meResponses: [Result<Me, Error>] = [.success(defaultMe())],
+    stockResponses: [Result<StockBatch, Error>] = [],
     reminderResponses: [Result<ReminderListResponse, Error>] = [.success(reminderListResponse([]))],
     ackResponses: [Result<Void, Error>] = [.success(())],
     openResponses: [Result<Void, Error>] = [.success(())],
@@ -587,6 +608,7 @@ private actor FakeAPI: AppStateAPI {
     openGate: AsyncGate? = nil
   ) {
     self.meResponses = meResponses
+    self.stockResponses = stockResponses
     self.reminderResponses = reminderResponses
     self.ackResponses = ackResponses
     self.openResponses = openResponses
@@ -674,7 +696,7 @@ private actor FakeAPI: AppStateAPI {
   func listStock(
     locationID: String?, productID: String?, expiringBefore: String?, includeDepleted: Bool
   ) async throws -> [StockBatch] { [] }
-  func getStock(id: String) async throws -> StockBatch { fatalError("unused") }
+  func getStock(id: String) async throws -> StockBatch { try next(&stockResponses) }
   func createStock(_ request: CreateStockRequest) async throws -> StockBatch {
     fatalError("unused")
   }
@@ -804,6 +826,38 @@ private func householdJSON() -> String {
     "joined_at": "2026-04-22T12:00:00Z"
   }
   """
+}
+
+private func stockBatch() -> StockBatch {
+  decode(
+    from: """
+      {
+        "id": "33333333-3333-3333-3333-333333333333",
+        "product": {
+          "id": "44444444-4444-4444-4444-444444444444",
+          "source": "manual",
+          "barcode": null,
+          "name": "Flour",
+          "brand": "Acme",
+          "family": "mass",
+          "preferred_unit": "g",
+          "image_url": null,
+          "fetched_at": null,
+          "created_at": "2026-04-22T12:00:00Z",
+          "deleted_at": null
+        },
+        "location_id": "22222222-2222-2222-2222-222222222222",
+        "location_name": "Pantry",
+        "initial_quantity": "500",
+        "quantity": "500",
+        "unit": "g",
+        "expires_on": "2026-06-01",
+        "opened_on": null,
+        "note": "bag",
+        "created_at": "2026-04-22T12:00:00Z",
+        "depleted_at": null
+      }
+      """)
 }
 
 private func reminder(

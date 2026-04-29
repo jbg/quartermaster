@@ -27,6 +27,7 @@ use utoipa::{
 pub mod auth;
 pub mod barcode;
 pub mod error;
+pub mod labels;
 pub mod openfoodfacts;
 pub mod rate_limit;
 pub mod routes;
@@ -247,6 +248,11 @@ impl Modify for SecurityAddon {
         routes::locations::create_location,
         routes::locations::update_location,
         routes::locations::delete_location,
+        routes::label_printers::list_label_printers,
+        routes::label_printers::create_label_printer,
+        routes::label_printers::update_label_printer,
+        routes::label_printers::delete_label_printer,
+        routes::label_printers::test_label_printer,
         routes::units::list_units,
         routes::households::get_current_household,
         routes::households::update_current_household,
@@ -282,6 +288,7 @@ impl Modify for SecurityAddon {
         routes::stock::list_events_for_batch,
         routes::stock::restore_one,
         routes::stock::restore_many,
+        routes::label_printers::print_stock_label,
     ),
     components(schemas(
         qm_core::units::UnitFamily,
@@ -290,6 +297,8 @@ impl Modify for SecurityAddon {
         types::MembershipRole,
         types::ReminderKind,
         types::ReminderUrgency,
+        types::LabelPrinterDriver,
+        types::LabelPrinterMedia,
         routes::health::HealthResponse,
         routes::accounts::RegisterRequest,
         routes::accounts::LoginRequest,
@@ -323,6 +332,13 @@ impl Modify for SecurityAddon {
         routes::locations::LocationDto,
         routes::locations::CreateLocationRequest,
         routes::locations::UpdateLocationRequest,
+        routes::label_printers::LabelPrinterDto,
+        routes::label_printers::LabelPrinterListResponse,
+        routes::label_printers::CreateLabelPrinterRequest,
+        routes::label_printers::UpdateLabelPrinterRequest,
+        routes::label_printers::PrintStockLabelRequest,
+        routes::label_printers::PrintStockLabelResponse,
+        routes::label_printers::LabelPrintStatus,
         routes::units::UnitDto,
         routes::products::ProductDto,
         routes::products::CreateProductRequest,
@@ -350,6 +366,7 @@ impl Modify for SecurityAddon {
         (name = "households", description = "Household administration, invites, and members"),
         (name = "onboarding", description = "First-launch server setup and joining"),
         (name = "locations", description = "Pantry / fridge / freezer"),
+        (name = "label-printers", description = "Household label printer configuration and print jobs"),
         (name = "units", description = "Units of measure"),
         (name = "products", description = "Product catalogue and barcode lookup"),
         (name = "reminders", description = "Backend-owned household reminders"),
@@ -379,6 +396,7 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::devices::router())
         .merge(routes::households::router())
         .merge(routes::locations::router())
+        .merge(routes::label_printers::router())
         .merge(routes::units::router())
         .merge(routes::products::router(RateLimitLayerState::new(
             state.clone(),

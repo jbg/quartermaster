@@ -16,6 +16,7 @@ pub mod barcode_cache;
 pub mod devices;
 pub mod households;
 pub mod invites;
+pub mod label_printers;
 pub mod locations;
 pub mod memberships;
 pub mod products;

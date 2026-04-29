@@ -33,6 +33,8 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="http" android:pathPrefix="/join" />
                 <data android:scheme="https" android:pathPrefix="/join" />
+                <data android:scheme="http" android:pathPrefix="/batches" />
+                <data android:scheme="https" android:pathPrefix="/batches" />
             </intent-filter>
         </activity>
 

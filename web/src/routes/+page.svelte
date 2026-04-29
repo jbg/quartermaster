@@ -118,6 +118,9 @@
   let consumeQuantity = $state('');
   let stockActionBusy = $state<string | null>(null);
   let stockActionError = $state<string | null>(null);
+  let labelPrintBusy = $state(false);
+  let labelPrintMessage = $state<string | null>(null);
+  let labelPrintError = $state<string | null>(null);
   let stockEditOpen = $state(false);
   let stockEditQuantity = $state('');
   let stockEditLocationId = $state('');
@@ -196,6 +199,12 @@
     );
     session = created;
     serverUrl = created.snapshot().serverUrl;
+    const batchParam = page.url.searchParams.get('batch');
+    if (batchParam) {
+      selectedBatchId = batchParam;
+      highlightBatchId = batchParam;
+      inventoryFilter = 'all';
+    }
     authenticated = true;
     void refreshOnboardingStatus();
     void refreshMe();
@@ -579,6 +588,26 @@
     }
   }
 
+  async function printSelectedLabel() {
+    if (!session || !selectedBatch) {
+      return;
+    }
+    labelPrintBusy = true;
+    labelPrintError = null;
+    labelPrintMessage = null;
+    try {
+      const printed = await session.stockLabelPrint(selectedBatch.id, { copies: 1 });
+      labelPrintMessage =
+        printed.status === 'sent'
+          ? `Label sent: ${printed.batch_url}`
+          : `Label rendered: ${printed.batch_url}`;
+    } catch (err) {
+      labelPrintError = labelPrintErrorMessage(err);
+    } finally {
+      labelPrintBusy = false;
+    }
+  }
+
   function openAddStock() {
     addStockOpen = true;
     addStockError = null;
@@ -787,6 +816,22 @@
 
   function displayLocation(batch: StockBatch): string {
     return stockLocation(batch);
+  }
+
+  function labelPrintErrorMessage(err: unknown): string {
+    if (err && typeof err === 'object' && 'code' in err) {
+      const code = String((err as { code?: string | null }).code ?? '');
+      if (code === 'bad_request') {
+        const message = (err as { message?: string }).message ?? '';
+        if (message.includes('QM_PUBLIC_BASE_URL')) {
+          return 'Set QM_PUBLIC_BASE_URL before printing QR labels.';
+        }
+        if (message.includes('no enabled label printer')) {
+          return 'Add an enabled label printer in Settings first.';
+        }
+      }
+    }
+    return 'Label could not be printed.';
   }
 
   function preferredAddStockLocationId(): string {
@@ -1429,6 +1474,31 @@
               <dd>{selectedBatch.note || 'None'}</dd>
             </div>
           </dl>
+
+          <section class="action-panel" aria-labelledby="label-heading">
+            <div class="section-heading compact">
+              <div>
+                <p class="eyebrow">Label</p>
+                <h2 id="label-heading">Batch QR label</h2>
+              </div>
+              <a class="secondary-action small" href={settingsHref}>Printers</a>
+            </div>
+            <div class="stock-actions">
+              <button
+                class="primary-action"
+                type="button"
+                disabled={labelPrintBusy || stockEditBusy}
+                onclick={printSelectedLabel}
+                >{labelPrintBusy ? 'Printing...' : 'Print label'}</button
+              >
+            </div>
+            {#if labelPrintMessage}
+              <p class="muted">{labelPrintMessage}</p>
+            {/if}
+            {#if labelPrintError}
+              <p class="error-text">{labelPrintError}</p>
+            {/if}
+          </section>
 
           {#if stockEditOpen && !isDepleted(selectedBatch)}
             <form
