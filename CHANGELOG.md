@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/jbg/quartermaster/compare/1.6.3...1.7.0) (2026-04-29)
+
+
+### Features
+
+* add batch QR label printing ([1b0c9df](https://github.com/jbg/quartermaster/commit/1b0c9df91dec919f482b6777acf08357f03a83d6))
+
 ## [1.6.3](https://github.com/jbg/quartermaster/compare/1.6.2...1.6.3) (2026-04-29)
 
 
