@@ -162,6 +162,27 @@ a {
   gap: 10px;
 }
 
+.household-switcher {
+  display: inline-grid;
+  gap: 3px;
+  min-width: 180px;
+}
+
+.household-switcher .eyebrow {
+  margin: 0;
+}
+
+.household-switcher strong {
+  color: var(--qm-green-900);
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.household-switcher select {
+  min-height: 36px;
+  min-width: 0;
+}
+
 .app-nav {
   display: flex;
   align-items: center;
@@ -1089,7 +1110,8 @@ code {
   }
 
   .app-nav-region,
-  .app-nav {
+  .app-nav,
+  .household-switcher {
     width: 100%;
   }
 

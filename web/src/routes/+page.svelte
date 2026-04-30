@@ -811,7 +811,15 @@
   <title>Quartermaster</title>
 </svelte:head>
 
-<AppFrame title="Kitchen inventory" {authenticated} active="inventory" onlogout={logout}>
+<AppFrame
+  title="Kitchen inventory"
+  {authenticated}
+  active="inventory"
+  {activeHousehold}
+  {households}
+  onhouseholdchange={switchHousehold}
+  onlogout={logout}
+>
   {#if !authenticated}
     <section class="auth-layout">
       <form
@@ -1131,23 +1139,6 @@
 
     <section class="workspace">
       <aside class="sidebar">
-        <div>
-          <p class="eyebrow">Current household</p>
-          <h2>{activeHousehold.name}</h2>
-        </div>
-        {#if households.length > 1}
-          <label>
-            Switch household
-            <select
-              onchange={(event) => switchHousehold(event.currentTarget.value)}
-              value={activeHousehold.id}
-            >
-              {#each households as household}
-                <option value={household.id}>{household.name}</option>
-              {/each}
-            </select>
-          </label>
-        {/if}
         <button
           class="secondary-action"
           type="button"

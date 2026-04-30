@@ -53,6 +53,7 @@
   let printerDefault = $state(false);
 
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
+  const households = $derived(me?.households ?? []);
   const sortedLocations = $derived(sortLocations(locations));
   const inventoryHref = $derived(appPath('/', page.url));
   const mobilePairingServerUrl = $derived(
@@ -129,6 +130,18 @@
       return;
     }
     locations = sortLocations(await session.locationsList());
+  }
+
+  async function switchHousehold(id: string) {
+    if (!session) {
+      return;
+    }
+    try {
+      me = await session.switchHousehold(id);
+      await loadSettings();
+    } catch {
+      error = 'Household could not be switched.';
+    }
   }
 
   async function refreshPrinters() {
@@ -379,7 +392,15 @@
   <title>Settings · Quartermaster</title>
 </svelte:head>
 
-<AppFrame title="Settings" {authenticated} active="settings" onlogout={logout}>
+<AppFrame
+  title="Settings"
+  {authenticated}
+  active="settings"
+  {activeHousehold}
+  {households}
+  onhouseholdchange={switchHousehold}
+  onlogout={logout}
+>
   {#if loading}
     <section class="panel empty-state">
       <p class="muted">Loading settings...</p>

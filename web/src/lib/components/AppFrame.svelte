@@ -2,6 +2,7 @@
   import { page } from '$app/state';
   import type { Snippet } from 'svelte';
   import { appPath } from '$lib/paths';
+  import type { HouseholdSummary } from '$lib/session-core';
 
   type ActiveSection = 'inventory' | 'products' | 'reminders' | 'settings';
 
@@ -16,6 +17,9 @@
     eyebrow = 'Quartermaster',
     authenticated = false,
     active,
+    activeHousehold = null,
+    households = [],
+    onhouseholdchange,
     onlogout,
     children
   }: {
@@ -23,6 +27,9 @@
     eyebrow?: string;
     authenticated?: boolean;
     active?: ActiveSection;
+    activeHousehold?: HouseholdSummary | null;
+    households?: HouseholdSummary[];
+    onhouseholdchange?: (householdId: string) => void | Promise<void>;
     onlogout?: () => void | Promise<void>;
     children?: Snippet;
   } = $props();
@@ -47,6 +54,24 @@
     </div>
     {#if authenticated}
       <div class="app-nav-region">
+        {#if activeHousehold}
+          <div class="household-switcher">
+            <span class="eyebrow">Household</span>
+            {#if households.length > 1 && onhouseholdchange}
+              <select
+                aria-label="Current household"
+                onchange={(event) => onhouseholdchange(event.currentTarget.value)}
+                value={activeHousehold.id}
+              >
+                {#each households as household}
+                  <option value={household.id}>{household.name}</option>
+                {/each}
+              </select>
+            {:else}
+              <strong>{activeHousehold.name}</strong>
+            {/if}
+          </div>
+        {/if}
         <nav class="app-nav" aria-label="Primary">
           {#each navItems as item}
             <a

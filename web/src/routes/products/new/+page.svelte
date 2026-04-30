@@ -33,6 +33,7 @@
   let units = $state<Unit[]>([]);
 
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
+  const households = $derived(me?.households ?? []);
   const unitChoices = $derived(unitChoicesForFamily(form.family, units));
   const inventoryHref = $derived(appPath('/', page.url));
   const productsHref = $derived(appPath('/products', page.url));
@@ -68,6 +69,18 @@
       error = 'Sign in again to continue.';
     } finally {
       loading = false;
+    }
+  }
+
+  async function switchHousehold(id: string) {
+    if (!session) {
+      return;
+    }
+    try {
+      me = await session.switchHousehold(id);
+      await loadSession();
+    } catch {
+      error = 'Household could not be switched.';
     }
   }
 
@@ -116,6 +129,9 @@
   eyebrow="Products"
   {authenticated}
   active="products"
+  {activeHousehold}
+  {households}
+  onhouseholdchange={switchHousehold}
   onlogout={logout}
 >
   {#if loading}
