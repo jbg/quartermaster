@@ -39,6 +39,7 @@
 
   const productId = $derived(page.params.id ?? '');
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
+  const households = $derived(me?.households ?? []);
   const unitChoices = $derived(form ? unitChoicesForFamily(form.family, units) : []);
   const inventoryHref = $derived(appPath('/', page.url));
   const productsHref = $derived(appPath('/products', page.url));
@@ -79,6 +80,18 @@
       error = 'Product could not be loaded.';
     } finally {
       loading = false;
+    }
+  }
+
+  async function switchHousehold(id: string) {
+    if (!session) {
+      return;
+    }
+    try {
+      me = await session.switchHousehold(id);
+      await loadProduct();
+    } catch {
+      error = 'Household could not be switched.';
     }
   }
 
@@ -135,6 +148,9 @@
   eyebrow="Products"
   {authenticated}
   active="products"
+  {activeHousehold}
+  {households}
+  onhouseholdchange={switchHousehold}
   onlogout={logout}
 >
   {#if loading}

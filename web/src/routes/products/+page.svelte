@@ -41,6 +41,7 @@
   let barcodeLookupError = $state<string | null>(null);
 
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
+  const households = $derived(me?.households ?? []);
   const visibleProducts = $derived(filterDeletedProducts(products, includeFilter));
   const inventoryHref = $derived(appPath('/', page.url));
   const newProductHref = $derived(appPath('/products/new', page.url));
@@ -89,6 +90,18 @@
     }
   }
 
+  async function switchHousehold(id: string) {
+    if (!session) {
+      return;
+    }
+    try {
+      me = await session.switchHousehold(id);
+      await loadProducts();
+    } catch {
+      error = 'Household could not be switched.';
+    }
+  }
+
   async function applyFilters() {
     const href = appPath(productListHref(searchQuery, includeFilter), page.url);
     await goto(href);
@@ -131,7 +144,15 @@
   <title>Products · Quartermaster</title>
 </svelte:head>
 
-<AppFrame title="Products" {authenticated} active="products" onlogout={logout}>
+<AppFrame
+  title="Products"
+  {authenticated}
+  active="products"
+  {activeHousehold}
+  {households}
+  onhouseholdchange={switchHousehold}
+  onlogout={logout}
+>
   {#if loading}
     <section class="panel empty-state">
       <p class="muted">Loading products...</p>

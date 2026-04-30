@@ -44,6 +44,7 @@
   let error = $state<string | null>(null);
 
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
+  const households = $derived(me?.households ?? []);
   const inventoryHref = $derived(appPath('/', page.url));
 
   onMount(() => {
@@ -101,6 +102,18 @@
     );
   }
 
+  async function switchHousehold(id: string) {
+    if (!session) {
+      return;
+    }
+    try {
+      me = await session.switchHousehold(id);
+      await loadPage();
+    } catch {
+      error = 'Household could not be switched.';
+    }
+  }
+
   async function openReminder(reminder: Reminder) {
     if (!session) {
       return;
@@ -146,7 +159,15 @@
   <title>Reminders · Quartermaster</title>
 </svelte:head>
 
-<AppFrame title="Reminders" {authenticated} active="reminders" onlogout={logout}>
+<AppFrame
+  title="Reminders"
+  {authenticated}
+  active="reminders"
+  {activeHousehold}
+  {households}
+  onhouseholdchange={switchHousehold}
+  onlogout={logout}
+>
   {#if loading}
     <section class="panel empty-state">
       <p class="muted">Loading reminders...</p>
