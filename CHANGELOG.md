@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/jbg/quartermaster/compare/1.7.2...1.8.0) (2026-04-30)
+
+
+### Features
+
+* **web:** restructure app navigation ([48c2027](https://github.com/jbg/quartermaster/commit/48c2027ac3a028f0fb0241602fd01ff5111791d7))
+
 ## [1.7.2](https://github.com/jbg/quartermaster/compare/1.7.1...1.7.2) (2026-04-29)
 
 
