@@ -3441,6 +3441,7 @@
         "type": "string",
         "enum": [
           "dk_62_continuous",
+          "dk_62_red_black_continuous",
           "dk_29x90"
         ]
       },

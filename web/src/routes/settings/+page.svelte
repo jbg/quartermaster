@@ -572,6 +572,7 @@
             Media
             <select bind:value={printerMedia}>
               <option value="dk_62_continuous">DK 62 continuous</option>
+              <option value="dk_62_red_black_continuous">DK 62 red/black continuous</option>
               <option value="dk_29x90">DK 29 x 90</option>
             </select>
           </label>
