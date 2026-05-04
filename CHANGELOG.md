@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.1](https://github.com/jbg/quartermaster/compare/1.14.0...1.14.1) (2026-05-04)
+
+
+### Bug Fixes
+
+* move iOS label printing to batch rows ([eded710](https://github.com/jbg/quartermaster/commit/eded710934293aaf5883adfc1e5e14ca4ceef7f0))
+
 ## [1.14.0](https://github.com/jbg/quartermaster/compare/1.13.0...1.14.0) (2026-05-04)
 
 
