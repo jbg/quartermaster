@@ -882,6 +882,11 @@ a:focus-visible {
   background: var(--qm-success-bg);
 }
 
+.product-group-block {
+  display: grid;
+  gap: var(--qm-space-2);
+}
+
 .product-group-summary {
   display: grid;
   justify-items: end;
@@ -905,6 +910,68 @@ a:focus-visible {
   line-height: 1;
   padding: 0 9px;
   text-transform: uppercase;
+}
+
+.batch-choice-list {
+  display: grid;
+  gap: var(--qm-space-2);
+  padding-left: var(--qm-space-4);
+}
+
+.batch-choice-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--qm-space-3);
+  width: 100%;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid var(--qm-line);
+  border-radius: 7px;
+  background: var(--qm-paper);
+  color: inherit;
+  text-align: left;
+}
+
+.batch-choice-row:hover {
+  border-color: var(--qm-line-strong);
+  background: var(--qm-label);
+}
+
+.batch-choice-row.active {
+  border-color: var(--qm-green-800);
+  background: var(--qm-success-bg);
+  box-shadow: inset 0 0 0 1px var(--qm-green-800);
+}
+
+.batch-choice-row.highlight {
+  background: var(--qm-success-bg);
+}
+
+.batch-choice-row.depleted {
+  color: var(--qm-neutral-fg);
+}
+
+.batch-choice-row strong,
+.batch-choice-row p {
+  margin: 0;
+}
+
+.batch-choice-row strong {
+  color: var(--qm-green-900);
+  font-variant-numeric: tabular-nums;
+}
+
+.batch-choice-row p {
+  margin-top: 3px;
+  color: var(--qm-slate-500);
+  font-size: 13px;
+}
+
+.batch-choice-row span {
+  color: var(--qm-slate-700);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .reminder-list,
@@ -1127,6 +1194,15 @@ code {
 
   .product-group-summary {
     justify-items: start;
+  }
+
+  .batch-choice-list {
+    padding-left: 0;
+  }
+
+  .batch-choice-row {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .detail-grid {

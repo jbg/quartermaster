@@ -16,6 +16,8 @@ struct ProductBatchesSheet: View {
   @State private var showProductDetails = false
   @State private var showBatchHistory: StockBatch?
   @State private var errorMessage: String?
+  @State private var labelPrintingBatchID: String?
+  @State private var labelPrintNotice: LabelPrintNotice?
   /// Batch currently showing the "you came from here" flash. Cleared by a
   /// background task after ~1.5 s so the pulse feels transient.
   @State private var flashingBatchID: String?
@@ -25,41 +27,7 @@ struct ProductBatchesSheet: View {
       ScrollViewReader { proxy in
         List {
           ForEach(batches) { batch in
-            BatchRow(batch: batch)
-              .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                if !isDepleted(batch) {
-                  Button(role: .destructive) {
-                    Task { await delete(batch) }
-                  } label: {
-                    Label("Delete", systemImage: "trash")
-                  }
-                }
-              }
-              .swipeActions(edge: .leading) {
-                if !isDepleted(batch) {
-                  Button {
-                    editing = batch
-                  } label: {
-                    Label("Edit", systemImage: "pencil")
-                  }
-                  .tint(QuartermasterBrand.blueprint)
-                }
-              }
-              .contentShape(Rectangle())
-              .onTapGesture {
-                if isDepleted(batch) {
-                  showBatchHistory = batch
-                } else {
-                  editing = batch
-                }
-              }
-              .listRowBackground(
-                flashingBatchID == batch.id
-                  ? QuartermasterBrand.sage100
-                  : Color.clear,
-              )
-              .animation(.easeOut(duration: 0.4), value: flashingBatchID)
-              .id(batch.id)
+            batchListRow(batch)
           }
           Section {
             Button {
@@ -83,6 +51,14 @@ struct ProductBatchesSheet: View {
               showProductDetails = true
             } label: {
               Label("Product details", systemImage: "info.circle")
+            }
+            if let printBatch = preferredPrintBatch {
+              Button {
+                Task { await printLabel(for: printBatch) }
+              } label: {
+                Label("Print label", systemImage: "qrcode")
+              }
+              .disabled(labelPrintingBatchID != nil)
             }
             if let first = batches.first {
               Button {
@@ -156,7 +132,69 @@ struct ProductBatchesSheet: View {
       } message: {
         Text(errorMessage ?? "")
       }
+      .alert(item: $labelPrintNotice) { notice in
+        Alert(
+          title: Text(notice.title),
+          message: Text(notice.message),
+          dismissButton: .default(Text("OK")),
+        )
+      }
     }
+  }
+
+  private func batchListRow(_ batch: StockBatch) -> some View {
+    BatchRow(batch: batch)
+      .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+        if !isDepleted(batch) {
+          Button(role: .destructive) {
+            Task { await delete(batch) }
+          } label: {
+            Label("Delete", systemImage: "trash")
+          }
+        }
+      }
+      .swipeActions(edge: .leading) {
+        Button {
+          Task { await printLabel(for: batch) }
+        } label: {
+          Label("Print Label", systemImage: "qrcode")
+        }
+        .tint(QuartermasterBrand.green600)
+        .disabled(labelPrintingBatchID != nil)
+
+        if !isDepleted(batch) {
+          Button {
+            editing = batch
+          } label: {
+            Label("Edit", systemImage: "pencil")
+          }
+          .tint(QuartermasterBrand.blueprint)
+        }
+      }
+      .contentShape(Rectangle())
+      .onTapGesture {
+        if isDepleted(batch) {
+          showBatchHistory = batch
+        } else {
+          editing = batch
+        }
+      }
+      .listRowBackground(
+        flashingBatchID == batch.id
+          ? QuartermasterBrand.sage100
+          : Color.clear,
+      )
+      .animation(.easeOut(duration: 0.4), value: flashingBatchID)
+      .id(batch.id)
+  }
+
+  private var preferredPrintBatch: StockBatch? {
+    if let highlightBatchID,
+      let highlighted = batches.first(where: { $0.id == highlightBatchID })
+    {
+      return highlighted
+    }
+    return batches.first(where: { !isDepleted($0) }) ?? batches.first
   }
 
   private func flashHighlight(proxy: ScrollViewProxy) async {
@@ -184,6 +222,50 @@ struct ProductBatchesSheet: View {
       errorMessage = error.localizedDescription
     }
   }
+
+  private func printLabel(for batch: StockBatch) async {
+    guard labelPrintingBatchID == nil else { return }
+    labelPrintingBatchID = batch.id
+    defer { labelPrintingBatchID = nil }
+    do {
+      let response = try await appState.api.printStockLabel(id: batch.id, copies: 1)
+      let action = response.status == .sent ? "sent" : "rendered"
+      labelPrintNotice = LabelPrintNotice(
+        title: "Label \(action)",
+        message: response.batchUrl,
+      )
+    } catch let err as APIError {
+      labelPrintNotice = LabelPrintNotice(
+        title: "Couldn't print label",
+        message: labelPrintErrorMessage(err),
+      )
+    } catch {
+      labelPrintNotice = LabelPrintNotice(
+        title: "Couldn't print label",
+        message: error.localizedDescription,
+      )
+    }
+  }
+
+  private func labelPrintErrorMessage(_ error: APIError) -> String {
+    if case .server(_, let body?) = error {
+      if body.code == "bad_request" {
+        if body.message.contains("QM_PUBLIC_BASE_URL") {
+          return "Set QM_PUBLIC_BASE_URL before printing QR labels."
+        }
+        if body.message.contains("no enabled label printer") {
+          return "Add an enabled label printer from the web Settings screen first."
+        }
+      }
+    }
+    return error.userFacingMessage
+  }
+}
+
+private struct LabelPrintNotice: Identifiable {
+  let id = UUID()
+  let title: String
+  let message: String
 }
 
 struct BatchRow: View {

@@ -155,6 +155,12 @@ import UIKit
     func consumeStock(_ request: ConsumeRequest) async throws -> ConsumeResponse {
       throw APIError.unknown
     }
+    func printStockLabel(id: String, copies: Int) async throws -> PrintStockLabelResponse {
+      try decodeFixture(
+        from:
+          #"{"printer_id":"77777777-7777-7777-7777-777777777777","batch_id":"\#(id)","batch_url":"https://quartermaster.example.com/batches/\#(id)","copies":1,"status":"sent"}"#
+      )
+    }
     func listStockEvents(beforeCreatedAt: String?, beforeID: String?, limit: Int) async throws
       -> StockEventListResponse
     { try decodeFixture(from: stockEventListJSON) }
