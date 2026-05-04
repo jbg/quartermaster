@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/jbg/quartermaster/compare/1.13.0...1.14.0) (2026-05-04)
+
+
+### Features
+
+* add batch label printing in iOS and web ([1740406](https://github.com/jbg/quartermaster/commit/1740406e57bf2ddcab0200b65815ae139b0f03a8))
+
 ## [1.13.0](https://github.com/jbg/quartermaster/compare/1.12.0...1.13.0) (2026-05-04)
 
 
