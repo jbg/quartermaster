@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.10.0](https://github.com/jbg/quartermaster/compare/1.9.0...1.10.0) (2026-05-04)
+
+
+### Features
+
+* **web:** edit label printer settings ([2c29ad1](https://github.com/jbg/quartermaster/commit/2c29ad1105c5794d1048d8a9a0f4b7dda1f47774))
+
+
+### Bug Fixes
+
+* remove redundant web refresh buttons ([2fb0fd4](https://github.com/jbg/quartermaster/commit/2fb0fd43f79e8c11f1b18b1a0189d16e123f222f))
+
 ## [1.9.0](https://github.com/jbg/quartermaster/compare/1.8.1...1.9.0) (2026-05-04)
 
 
