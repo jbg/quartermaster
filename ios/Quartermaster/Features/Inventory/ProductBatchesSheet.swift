@@ -52,14 +52,6 @@ struct ProductBatchesSheet: View {
             } label: {
               Label("Product details", systemImage: "info.circle")
             }
-            if let printBatch = preferredPrintBatch {
-              Button {
-                Task { await printLabel(for: printBatch) }
-              } label: {
-                Label("Print label", systemImage: "qrcode")
-              }
-              .disabled(labelPrintingBatchID != nil)
-            }
             if let first = batches.first {
               Button {
                 showBatchHistory = first
@@ -143,58 +135,46 @@ struct ProductBatchesSheet: View {
   }
 
   private func batchListRow(_ batch: StockBatch) -> some View {
-    BatchRow(batch: batch)
-      .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-        if !isDepleted(batch) {
-          Button(role: .destructive) {
-            Task { await delete(batch) }
-          } label: {
-            Label("Delete", systemImage: "trash")
-          }
-        }
-      }
-      .swipeActions(edge: .leading) {
-        Button {
-          Task { await printLabel(for: batch) }
-        } label: {
-          Label("Print Label", systemImage: "qrcode")
-        }
-        .tint(QuartermasterBrand.green600)
-        .disabled(labelPrintingBatchID != nil)
-
-        if !isDepleted(batch) {
-          Button {
-            editing = batch
-          } label: {
-            Label("Edit", systemImage: "pencil")
-          }
-          .tint(QuartermasterBrand.blueprint)
-        }
-      }
-      .contentShape(Rectangle())
-      .onTapGesture {
-        if isDepleted(batch) {
-          showBatchHistory = batch
-        } else {
-          editing = batch
-        }
-      }
-      .listRowBackground(
-        flashingBatchID == batch.id
-          ? QuartermasterBrand.sage100
-          : Color.clear,
-      )
-      .animation(.easeOut(duration: 0.4), value: flashingBatchID)
-      .id(batch.id)
-  }
-
-  private var preferredPrintBatch: StockBatch? {
-    if let highlightBatchID,
-      let highlighted = batches.first(where: { $0.id == highlightBatchID })
-    {
-      return highlighted
+    BatchRow(
+      batch: batch,
+      isPrintingLabel: labelPrintingBatchID == batch.id
+    ) {
+      Task { await printLabel(for: batch) }
     }
-    return batches.first(where: { !isDepleted($0) }) ?? batches.first
+    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+      if !isDepleted(batch) {
+        Button(role: .destructive) {
+          Task { await delete(batch) }
+        } label: {
+          Label("Delete", systemImage: "trash")
+        }
+      }
+    }
+    .swipeActions(edge: .leading) {
+      if !isDepleted(batch) {
+        Button {
+          editing = batch
+        } label: {
+          Label("Edit", systemImage: "pencil")
+        }
+        .tint(QuartermasterBrand.blueprint)
+      }
+    }
+    .contentShape(Rectangle())
+    .onTapGesture {
+      if isDepleted(batch) {
+        showBatchHistory = batch
+      } else {
+        editing = batch
+      }
+    }
+    .listRowBackground(
+      flashingBatchID == batch.id
+        ? QuartermasterBrand.sage100
+        : Color.clear,
+    )
+    .animation(.easeOut(duration: 0.4), value: flashingBatchID)
+    .id(batch.id)
   }
 
   private func flashHighlight(proxy: ScrollViewProxy) async {
@@ -270,6 +250,8 @@ private struct LabelPrintNotice: Identifiable {
 
 struct BatchRow: View {
   let batch: StockBatch
+  var isPrintingLabel = false
+  var onPrintLabel: (() -> Void)?
 
   var body: some View {
     HStack {
@@ -297,8 +279,24 @@ struct BatchRow: View {
       }
       Spacer()
       ExpiryBadge(expiresOn: batch.expiresOn)
+      if let onPrintLabel {
+        Button {
+          onPrintLabel()
+        } label: {
+          if isPrintingLabel {
+            ProgressView()
+          } else {
+            Image(systemName: "qrcode")
+          }
+        }
+        .buttonStyle(.borderless)
+        .disabled(isPrintingLabel)
+        .foregroundStyle(QuartermasterBrand.green600)
+        .accessibilityLabel("Print label for this batch")
+        .accessibilityIdentifier("batch.print-label.\(batch.id)")
+      }
     }
-    .accessibilityElement(children: .combine)
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier(
       isDepleted(batch) ? "batch.row.depleted.\(batch.id)" : "batch.row.active.\(batch.id)"
     )
