@@ -1149,14 +1149,6 @@
     {/if}
 
     <section class="workspace">
-      <aside class="sidebar">
-        <button
-          class="secondary-action"
-          type="button"
-          onclick={() => refreshWorkspace(selectedBatchId)}>Refresh</button
-        >
-      </aside>
-
       <section class="inventory-region">
         <div class="section-heading">
           <div>

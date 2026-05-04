@@ -223,7 +223,6 @@ a {
 .topbar h1,
 .section-heading h2,
 .section-heading h3,
-.sidebar h2,
 .empty-state h2,
 .join-panel h1 {
   margin: 0;
@@ -260,7 +259,6 @@ a {
 }
 
 .panel,
-.sidebar,
 .inventory-region,
 .detail-region,
 .join-panel {
@@ -434,7 +432,7 @@ a:focus-visible {
 
 .workspace {
   display: grid;
-  grid-template-columns: 280px minmax(280px, 1fr) minmax(320px, 420px);
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 420px);
   gap: var(--qm-space-4);
   margin-top: 22px;
 }
@@ -757,17 +755,10 @@ a:focus-visible {
   line-height: 1;
 }
 
-.sidebar,
 .inventory-region,
 .detail-region,
 .empty-state {
   padding: var(--qm-space-5);
-}
-
-.sidebar {
-  align-self: start;
-  display: grid;
-  gap: 18px;
 }
 
 .inbox-region {
@@ -1082,10 +1073,6 @@ code {
   .settings-layout {
     grid-template-columns: 1fr;
   }
-
-  .sidebar {
-    align-self: stretch;
-  }
 }
 
 @media (max-width: 640px) {
@@ -1147,7 +1134,6 @@ code {
   }
 
   .auth-panel,
-  .sidebar,
   .inventory-region,
   .detail-region,
   .empty-state,
