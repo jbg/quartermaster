@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/jbg/quartermaster/compare/1.8.0...1.8.1) (2026-05-04)
+
+
+### Bug Fixes
+
+* promote household switcher in web nav ([db9c676](https://github.com/jbg/quartermaster/commit/db9c6766275250c4f7d106fa33e94098af1e2c50))
+
 ## [1.8.0](https://github.com/jbg/quartermaster/compare/1.7.2...1.8.0) (2026-04-30)
 
 
