@@ -2,7 +2,7 @@
 
 Quartermaster is a self-hosted kitchen inventory app for households.
 
-It helps you keep track of what is in your pantry, fridge, and freezer; what is about to expire; and what needs to be used up. You can add stock manually, search existing products, scan barcodes on supported mobile devices, group stock by location, review inventory history, and receive expiry reminders.
+It helps you keep track of what is in your pantry, fridge, and freezer; what is about to expire; and what needs to be used up. You can add stock manually, search existing products, scan barcodes on supported mobile devices, group stock by location, review inventory history, print QR stock labels, and receive expiry reminders.
 
 There is no hosted Quartermaster service today. To use it, you run your own Quartermaster server and connect the mobile or web clients to it.
 
@@ -10,10 +10,10 @@ There is no hosted Quartermaster service today. To use it, you run your own Quar
 
 Quartermaster is usable today for adventurous self-hosters and is still evolving quickly. Expect occasional breaking changes between releases and read [CHANGELOG.md](CHANGELOG.md) before upgrading a running household.
 
-- **Server:** Rust API, SQLite by default, optional Postgres, Docker image support, local accounts, invite-based household sharing, barcode lookup, stock history, reminders, push-worker support, and optional Prometheus metrics.
-- **iOS:** Native SwiftUI client is the primary client. It supports onboarding, sign-in, household switching, inventory, stock creation/editing/consumption, barcode scanning on physical devices, history, settings, invite links, and reminders.
-- **Android:** Native Jetpack Compose client exists and can connect to self-hosted servers. It supports the core account, inventory, reminder, and invite flows, with push configuration available for self-hosters who provide Firebase details.
-- **Web:** A SvelteKit web client is included and can be served by the API process. It supports core inventory, location, product, barcode, history, invite, settings, and reminder flows. The native mobile apps remain the most complete experience.
+- **Server:** Rust API, SQLite by default, optional Postgres, Docker image support, local accounts, verified recovery-email state, invite-based household sharing, barcode lookup, stock history, reminders, push-worker support, Brother QL label printing, and optional Prometheus metrics.
+- **iOS:** Native SwiftUI client is the primary client. It supports onboarding, sign-in, household switching, inventory, stock creation/editing/consumption, product editing, barcode scanning on physical devices, history, recovery-email setup, settings, invite links, reminder push/inbox flows, and printing stock labels through configured server-side printers.
+- **Android:** Native Jetpack Compose client exists and can connect to self-hosted servers. It supports the core account, inventory, product, location, reminder, recovery-email, barcode, scan/add-stock, and invite flows, with push configuration available for self-hosters who provide Firebase details.
+- **Web:** A SvelteKit web client is included and can be served by the API process. It supports core inventory, location, product, barcode, history, invite, settings, label-printer administration, mobile setup QR, and reminder flows. The native mobile apps remain the most complete experience.
 
 Quartermaster is intentionally narrow: it is inventory software, not recipe planning, grocery automation, or a general household task app.
 
@@ -45,7 +45,7 @@ docker run --rm \
 Then open:
 
 - `http://localhost:8080/healthz` for a health check
-- `http://localhost:8080/docs` for the API explorer
+- `http://localhost:8080/api/v1/openapi.json` for the generated API spec
 - `http://localhost:8080/` for the built web shell, when present in the image
 
 An example Compose file is included for small local setups:
@@ -80,16 +80,17 @@ Users can belong to multiple households. Each signed-in session keeps its own se
 
 Common settings:
 
-| Variable               | Default                     | Meaning                                             |
-| ---------------------- | --------------------------- | --------------------------------------------------- |
-| `QM_BIND`              | `[::]:8080`                 | Server bind address                                 |
-| `QM_DATABASE_URL`      | `sqlite://data.db?mode=rwc` | SQLite or Postgres connection string                |
-| `QM_LOG_FORMAT`        | `text`                      | `text` or `json` logs                               |
-| `QM_REGISTRATION_MODE` | `first_run_only`            | `first_run_only`, `invite_only`, or `open`          |
-| `QM_PUBLIC_BASE_URL`   | unset                       | Public HTTP(S) origin for invite/share links and app setup |
-| `QM_WEB_DIST_DIR`      | `web/build`                 | Built web shell directory served by the API process |
-| `QM_WEB_AUTH_ALLOWED_ORIGINS` | unset                | Comma-separated HTTPS browser origins allowed to use credentialed cookie auth |
-| `RUST_LOG`             | `info`                      | Tracing filter                                      |
+| Variable                      | Default                     | Meaning                                                                       |
+| ----------------------------- | --------------------------- | ----------------------------------------------------------------------------- |
+| `QM_BIND`                     | `[::]:8080`                 | Server bind address                                                           |
+| `QM_DATABASE_URL`             | `sqlite://data.db?mode=rwc` | SQLite or Postgres connection string                                          |
+| `QM_LOG_FORMAT`               | `text`                      | `text` or `json` logs                                                         |
+| `QM_REGISTRATION_MODE`        | `first_run_only`            | `first_run_only`, `invite_only`, or `open`                                    |
+| `QM_INVITE_TTL_SECONDS`       | `604800`                    | Invite-code lifetime in seconds                                               |
+| `QM_PUBLIC_BASE_URL`          | unset                       | Public HTTP(S) origin for invite/share links and app setup                    |
+| `QM_WEB_DIST_DIR`             | `web/build`                 | Built web shell directory served by the API process                           |
+| `QM_WEB_AUTH_ALLOWED_ORIGINS` | unset                       | Comma-separated HTTPS browser origins allowed to use credentialed cookie auth |
+| `RUST_LOG`                    | `info`                      | Tracing filter                                                                |
 
 Rate limiting and reverse proxies:
 
@@ -106,14 +107,16 @@ Rate limiting and reverse proxies:
 
 Barcode lookup tuning:
 
-| Variable                                   | Default                                          | Meaning                                              |
-| ------------------------------------------ | ------------------------------------------------ | ---------------------------------------------------- |
-| `QM_OFF_API_BASE_URL`                      | `https://world.openfoodfacts.org/api/v2/product` | Barcode product API base URL                         |
-| `QM_OFF_TIMEOUT_SECONDS`                   | `5`                                              | Timeout for one barcode lookup request               |
-| `QM_OFF_MAX_RETRIES`                       | `2`                                              | Retry count for transient lookup failures            |
-| `QM_OFF_RETRY_BASE_DELAY_MS`               | `200`                                            | Base retry backoff                                   |
-| `QM_OFF_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `5`                                              | Consecutive transient failures before fail-fast mode |
-| `QM_OFF_CIRCUIT_BREAKER_OPEN_SECONDS`      | `60`                                             | Fail-fast duration                                   |
+| Variable                                   | Default                                          | Meaning                                               |
+| ------------------------------------------ | ------------------------------------------------ | ----------------------------------------------------- |
+| `QM_OFF_API_BASE_URL`                      | `https://world.openfoodfacts.org/api/v2/product` | Barcode product API base URL                          |
+| `QM_OFF_POSITIVE_TTL_DAYS`                 | `30`                                             | Freshness window for successful barcode cache entries |
+| `QM_OFF_NEGATIVE_TTL_DAYS`                 | `7`                                              | Freshness window for barcode miss cache entries       |
+| `QM_OFF_TIMEOUT_SECONDS`                   | `5`                                              | Timeout for one barcode lookup request                |
+| `QM_OFF_MAX_RETRIES`                       | `2`                                              | Retry count for transient lookup failures             |
+| `QM_OFF_RETRY_BASE_DELAY_MS`               | `200`                                            | Base retry backoff                                    |
+| `QM_OFF_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `5`                                              | Consecutive transient failures before fail-fast mode  |
+| `QM_OFF_CIRCUIT_BREAKER_OPEN_SECONDS`      | `60`                                             | Fail-fast duration                                    |
 
 Reminder settings:
 
@@ -146,27 +149,33 @@ cargo run -p qm-server -- push-worker
 
 Push-related settings:
 
-| Variable                               | Default   | Meaning                                    |
-| -------------------------------------- | --------- | ------------------------------------------ |
-| `QM_PUSH_WORKER_ENABLED`               | `false`   | Run the push worker inside the API process |
-| `QM_PUSH_WORKER_POLL_INTERVAL_SECONDS` | `30`      | Worker polling interval                    |
-| `QM_PUSH_WORKER_BATCH_SIZE`            | `25`      | Max deliveries claimed per cycle           |
-| `QM_PUSH_WORKER_CLAIM_TTL_SECONDS`     | `60`      | Claim timeout before retry                 |
-| `QM_PUSH_WORKER_RETRY_BACKOFF_SECONDS` | `300`     | Retry delay after retryable failures       |
-| `QM_APNS_ENABLED`                      | `false`   | Enable iOS APNs delivery                                |
-| `QM_APNS_ENVIRONMENT`                  | `sandbox` | `sandbox` or `production`                               |
-| `QM_APNS_TOPIC`                        | unset     | APNs topic / bundle identifier                          |
-| `QM_APNS_AUTH_TOKEN`                   | unset     | APNs bearer token; takes precedence over JWT config     |
-| `QM_APNS_KEY_ID`                       | unset     | APNs signing key ID for `.p8` JWT auth                  |
-| `QM_APNS_TEAM_ID`                      | unset     | Apple developer team ID for `.p8` JWT auth              |
-| `QM_APNS_PRIVATE_KEY_PATH`             | unset     | APNs `.p8` private-key path                             |
-| `QM_APNS_PRIVATE_KEY`                  | unset     | APNs `.p8` private-key content                          |
-| `QM_FCM_ENABLED`                       | `false`   | Enable Android FCM delivery                             |
-| `QM_FCM_PROJECT_ID`                    | unset     | Firebase project ID                                     |
-| `QM_FCM_SERVICE_ACCOUNT_JSON_PATH`     | unset     | Firebase service-account JSON path                      |
+| Variable                               | Default   | Meaning                                                             |
+| -------------------------------------- | --------- | ------------------------------------------------------------------- |
+| `QM_PUSH_WORKER_ENABLED`               | `false`   | Run the push worker inside the API process                          |
+| `QM_PUSH_WORKER_POLL_INTERVAL_SECONDS` | `30`      | Worker polling interval                                             |
+| `QM_PUSH_WORKER_BATCH_SIZE`            | `25`      | Max deliveries claimed per cycle                                    |
+| `QM_PUSH_WORKER_CLAIM_TTL_SECONDS`     | `60`      | Claim timeout before retry                                          |
+| `QM_PUSH_WORKER_RETRY_BACKOFF_SECONDS` | `300`     | Retry delay after retryable failures                                |
+| `QM_APNS_ENABLED`                      | `false`   | Enable iOS APNs delivery                                            |
+| `QM_APNS_ENVIRONMENT`                  | `sandbox` | `sandbox` or `production`                                           |
+| `QM_APNS_TOPIC`                        | unset     | APNs topic / bundle identifier                                      |
+| `QM_APNS_AUTH_TOKEN`                   | unset     | APNs bearer token; takes precedence over JWT config                 |
+| `QM_APNS_KEY_ID`                       | unset     | APNs signing key ID for `.p8` JWT auth                              |
+| `QM_APNS_TEAM_ID`                      | unset     | Apple developer team ID for `.p8` JWT auth                          |
+| `QM_APNS_PRIVATE_KEY_PATH`             | unset     | APNs `.p8` private-key path                                         |
+| `QM_APNS_PRIVATE_KEY`                  | unset     | APNs `.p8` private-key content                                      |
+| `QM_FCM_ENABLED`                       | `false`   | Enable Android FCM delivery                                         |
+| `QM_FCM_PROJECT_ID`                    | unset     | Firebase project ID                                                 |
+| `QM_FCM_SERVICE_ACCOUNT_JSON_PATH`     | unset     | Firebase service-account JSON path                                  |
 | `QM_FCM_SERVICE_ACCOUNT_JSON`          | unset     | Firebase service-account JSON content; mutually exclusive with path |
 
 For a fuller reminder deployment walkthrough, see [docs/hosted-reminders.md](docs/hosted-reminders.md).
+
+## Label Printers
+
+Quartermaster can print QR stock labels through server-side Brother QL raster printers reachable from the API process. The web Settings screen manages household printer definitions, and stock batch surfaces can send labels once a default printer is configured.
+
+Label QR codes point at `/batches/{id}` under `QM_PUBLIC_BASE_URL`, so set that public origin before printing labels. The current printer driver is `brother_ql_raster` over TCP port `9100`, with DK 62 mm continuous, DK 62 mm red/black continuous, and DK 29x90 media options.
 
 ## Metrics And Maintenance
 
