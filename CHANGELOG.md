@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.0](https://github.com/jbg/quartermaster/compare/1.8.1...1.9.0) (2026-05-04)
+
+
+### Features
+
+* support red black label rolls ([a729812](https://github.com/jbg/quartermaster/commit/a729812706704d3338fa103980ab3ba9dbaef0bf))
+
 ## [1.8.1](https://github.com/jbg/quartermaster/compare/1.8.0...1.8.1) (2026-05-04)
 
 
