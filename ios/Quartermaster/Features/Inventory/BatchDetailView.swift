@@ -95,6 +95,9 @@ struct BatchDetailView: View {
         LabeledContent("Expires") {
           ExpiryBadge(expiresOn: batch.expiresOn)
         }
+        if let produced = batch.producedOnDate {
+          LabeledContent("Prepared", value: Self.shortDate.string(from: produced))
+        }
         if let opened = batch.openedOnDate {
           LabeledContent("Opened", value: Self.shortDate.string(from: opened))
         }

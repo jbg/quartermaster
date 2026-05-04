@@ -181,6 +181,7 @@ async fn seed_ledger_fixture() -> anyhow::Result<()> {
         pantry.id,
         "500",
         "g",
+        None,
         Some("2026-12-31"),
         None,
         Some("fixture batch"),

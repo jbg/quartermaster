@@ -3182,6 +3182,12 @@
               "null"
             ]
           },
+          "produced_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "product_id": {
             "type": "string",
             "format": "uuid"
@@ -4076,6 +4082,12 @@
             ]
           },
           "opened_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "produced_on": {
             "type": [
               "string",
               "null"

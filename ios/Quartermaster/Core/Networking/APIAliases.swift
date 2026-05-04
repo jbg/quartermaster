@@ -179,6 +179,10 @@ extension StockBatch: Identifiable {
     guard let openedOn else { return nil }
     return Self.yyyymmdd.date(from: openedOn)
   }
+  var producedOnDate: Date? {
+    guard let producedOn else { return nil }
+    return Self.yyyymmdd.date(from: producedOn)
+  }
   static let yyyymmdd: DateFormatter = {
     let f = DateFormatter()
     f.dateFormat = "yyyy-MM-dd"

@@ -49,6 +49,7 @@ async fn product_stock_history_lifecycle_flows_through_api() {
                 "location_id": pantry_id,
                 "quantity": "500",
                 "unit": "g",
+                "produced_on": "2026-05-20",
                 "expires_on": "2026-06-01",
                 "opened_on": null,
                 "note": "bag",
@@ -60,6 +61,7 @@ async fn product_stock_history_lifecycle_flows_through_api() {
     let batch_id = batch["id"].as_str().unwrap();
     assert_eq!(batch["location_id"], pantry_id.to_string());
     assert_eq!(batch["location_name"].as_str().unwrap(), pantry.name);
+    assert_eq!(batch["produced_on"], "2026-05-20");
     assert!(batch["depleted_at"].is_null());
 
     let (status, listed) = app
@@ -267,6 +269,7 @@ async fn stock_patch_uses_json_patch_replace_and_remove() {
                 "location_id": pantry,
                 "quantity": "4",
                 "unit": "piece",
+                "produced_on": "2026-04-28",
                 "expires_on": "2026-06-01",
                 "opened_on": "2026-05-01",
                 "note": "box",
@@ -282,6 +285,7 @@ async fn stock_patch_uses_json_patch_replace_and_remove() {
             &format!("/api/v1/stock/{batch_id}"),
             Some(json!([
                 { "op": "replace", "path": "/location_id", "value": fridge.to_string() },
+                { "op": "remove", "path": "/produced_on" },
                 { "op": "remove", "path": "/expires_on" },
                 { "op": "replace", "path": "/note", "value": "top shelf" },
             ])),
@@ -290,6 +294,7 @@ async fn stock_patch_uses_json_patch_replace_and_remove() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(updated["location_id"], fridge.to_string());
+    assert!(updated["produced_on"].is_null());
     assert!(updated["expires_on"].is_null());
     assert_eq!(updated["opened_on"], "2026-05-01");
     assert_eq!(updated["note"], "top shelf");

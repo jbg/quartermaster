@@ -31,6 +31,7 @@
     stockLocationId,
     stockName,
     stockOpened,
+    stockProduced,
     stockUnit,
     unitChoicesForFamily,
     validateAddStockInput,
@@ -103,6 +104,7 @@
   let stockEditQuantity = $state('');
   let stockEditLocationId = $state('');
   let stockEditExpiresOn = $state('');
+  let stockEditProducedOn = $state('');
   let stockEditOpenedOn = $state('');
   let stockEditNote = $state('');
   let stockEditBusy = $state(false);
@@ -124,6 +126,7 @@
   let addStockUnit = $state('g');
   let addStockLocationId = $state('');
   let addStockExpiresOn = $state('');
+  let addStockProducedOn = $state('');
   let addStockOpenedOn = $state('');
   let addStockNote = $state('');
   let lastAddStockLocationId = $state<string | null>(null);
@@ -433,6 +436,7 @@
     stockEditQuantity = fields.quantity;
     stockEditLocationId = fields.locationId;
     stockEditExpiresOn = fields.expiresOn;
+    stockEditProducedOn = fields.producedOn;
     stockEditOpenedOn = fields.openedOn;
     stockEditNote = fields.note;
     stockEditError = null;
@@ -460,6 +464,7 @@
       quantity: stockEditQuantity,
       locationId: stockEditLocationId,
       expiresOn: stockEditExpiresOn,
+      producedOn: stockEditProducedOn,
       openedOn: stockEditOpenedOn,
       note: stockEditNote
     };
@@ -568,6 +573,7 @@
     addStockUnit = unitChoicesForFamily('mass', units)[0];
     addStockLocationId = preferredAddStockLocationId();
     addStockExpiresOn = '';
+    addStockProducedOn = '';
     addStockOpenedOn = '';
     addStockNote = '';
     addStockBusy = false;
@@ -700,6 +706,7 @@
         location_id: createdLocationId,
         quantity: addStockQuantity.trim(),
         unit: addStockUnit,
+        produced_on: addStockProducedOn || null,
         expires_on: addStockExpiresOn || null,
         opened_on: addStockOpenedOn || null,
         note: addStockNote.trim() || null
@@ -1122,6 +1129,10 @@
               <p class="error-text">No locations are available for this household.</p>
             {/if}
             <label>
+              Prepared date
+              <input bind:value={addStockProducedOn} type="date" />
+            </label>
+            <label>
               Expiry date
               <input bind:value={addStockExpiresOn} type="date" />
             </label>
@@ -1276,6 +1287,10 @@
               <dd>{displayLocation(selectedBatch)}</dd>
             </div>
             <div>
+              <dt>Prepared</dt>
+              <dd>{stockProduced(selectedBatch)}</dd>
+            </div>
+            <div>
               <dt>Expires</dt>
               <dd>{stockExpiry(selectedBatch)}</dd>
             </div>
@@ -1357,6 +1372,10 @@
                     <option value={location.id}>{location.name}</option>
                   {/each}
                 </select>
+              </label>
+              <label>
+                Prepared date
+                <input bind:value={stockEditProducedOn} type="date" />
               </label>
               <label>
                 Expiry date
