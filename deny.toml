@@ -4,7 +4,10 @@ all-features = true
 [advisories]
 yanked = "deny"
 unmaintained = "all"
-ignore = []
+ignore = [
+    # Transitive via brother_ql -> image -> ravif -> rav1e; no fixed upgrade is available.
+    "RUSTSEC-2024-0436",
+]
 
 [licenses]
 confidence-threshold = 0.8
@@ -17,6 +20,7 @@ allow = [
     "CDLA-Permissive-2.0",
     "ISC",
     "MIT",
+    "NCSA",
     "Unicode-3.0",
     "Zlib",
 ]
