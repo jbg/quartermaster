@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/jbg/quartermaster/compare/1.11.0...1.12.0) (2026-05-04)
+
+
+### Features
+
+* organize settings and server invite expiry ([af0b796](https://github.com/jbg/quartermaster/commit/af0b7967f8a86140d9c4638f5e7a35c83104fe4c))
+
 ## [1.11.0](https://github.com/jbg/quartermaster/compare/1.10.0...1.11.0) (2026-05-04)
 
 
