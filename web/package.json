@@ -18,16 +18,16 @@
   "dependencies": {
     "qrcode": "1.5.4",
     "@sveltejs/adapter-static": "3.0.10",
-    "@sveltejs/kit": "2.58.0",
+    "@sveltejs/kit": "2.59.0",
     "@sveltejs/vite-plugin-svelte": "7.0.0",
     "svelte": "5.55.5",
     "vite": "8.0.10"
   },
   "devDependencies": {
-    "@hey-api/openapi-ts": "0.97.0",
+    "@hey-api/openapi-ts": "0.97.1",
     "@types/qrcode": "1.5.6",
     "@types/node": "25.6.0",
-    "svelte-check": "4.4.6",
+    "svelte-check": "4.4.7",
     "typescript": "6.0.3",
     "prettier": "3.8.3",
     "prettier-plugin-svelte": "3.5.1",
