@@ -41,6 +41,7 @@
   let printerMessage = $state<string | null>(null);
   let deleteError = $state<string | null>(null);
   let editingLocation = $state<Location | null>(null);
+  let editingPrinter = $state<LabelPrinter | null>(null);
   let pendingDelete = $state<Location | null>(null);
   let locationName = $state('');
   let locationKind = $state<LocationKind>('pantry');
@@ -174,6 +175,28 @@
     startCreate();
   }
 
+  function resetPrinterForm() {
+    editingPrinter = null;
+    printerName = '';
+    printerAddress = '';
+    printerPort = '9100';
+    printerMedia = 'dk_62_continuous';
+    printerDefault = false;
+    printerError = null;
+    printerMessage = null;
+  }
+
+  function startEditPrinter(printer: LabelPrinter) {
+    editingPrinter = printer;
+    printerName = printer.name;
+    printerAddress = printer.address;
+    printerPort = String(printer.port);
+    printerMedia = printer.media;
+    printerDefault = printer.is_default || printer.isDefault || false;
+    printerError = null;
+    printerMessage = null;
+  }
+
   async function saveLocation() {
     if (!session) {
       return;
@@ -279,24 +302,31 @@
       printerError = 'Enter a printer name, host, and valid port.';
       return;
     }
-    actionBusy = 'printer:create';
+    const busyId = editingPrinter ? `printer:save:${editingPrinter.id}` : 'printer:create';
+    actionBusy = busyId;
     printerError = null;
     printerMessage = null;
     try {
-      await session.labelPrintersCreate({
-        name,
-        driver: 'brother_ql_raster',
-        address,
-        port,
-        media: printerMedia,
-        enabled: true,
-        is_default: printerDefault || printers.length === 0
-      });
-      printerName = '';
-      printerAddress = '';
-      printerPort = '9100';
-      printerMedia = 'dk_62_continuous';
-      printerDefault = false;
+      if (editingPrinter) {
+        await session.labelPrintersUpdate(editingPrinter.id, {
+          name,
+          address,
+          port,
+          media: printerMedia,
+          is_default: printerDefault
+        });
+      } else {
+        await session.labelPrintersCreate({
+          name,
+          driver: 'brother_ql_raster',
+          address,
+          port,
+          media: printerMedia,
+          enabled: true,
+          is_default: printerDefault || printers.length === 0
+        });
+      }
+      resetPrinterForm();
       await refreshPrinters();
       printerMessage = 'Printer saved.';
     } catch {
@@ -367,6 +397,9 @@
     printerMessage = null;
     try {
       await session.labelPrintersDelete(printer.id);
+      if (editingPrinter?.id === printer.id) {
+        resetPrinterForm();
+      }
       await refreshPrinters();
       printerMessage = 'Printer deleted.';
     } catch {
@@ -521,6 +554,12 @@
                   <button
                     class="ghost-button small"
                     type="button"
+                    disabled={actionBusy !== null}
+                    onclick={() => startEditPrinter(printer)}>Edit</button
+                  >
+                  <button
+                    class="ghost-button small"
+                    type="button"
                     disabled={actionBusy !== null || printer.is_default || printer.isDefault}
                     onclick={() => setDefaultPrinter(printer)}>Default</button
                   >
@@ -550,6 +589,17 @@
             void savePrinter();
           }}
         >
+          <div class="section-heading compact">
+            <div>
+              <p class="eyebrow">{editingPrinter ? 'Edit' : 'New'}</p>
+              <h2>{editingPrinter ? editingPrinter.name : 'Add printer'}</h2>
+            </div>
+            {#if editingPrinter}
+              <button class="ghost-button small" type="button" onclick={resetPrinterForm}
+                >Cancel</button
+              >
+            {/if}
+          </div>
           <label>
             Name
             <input bind:value={printerName} placeholder="Kitchen Brother" />
@@ -575,7 +625,7 @@
             Use as default printer
           </label>
           <button class="primary-action" type="submit" disabled={actionBusy !== null}
-            >Add printer</button
+            >{editingPrinter ? 'Save printer' : 'Add printer'}</button
           >
         </form>
       </section>
