@@ -184,6 +184,8 @@ impl FromStr for LabelPrinterDriver {
 pub enum LabelPrinterMedia {
     #[serde(rename = "dk_62_continuous")]
     Dk62Continuous,
+    #[serde(rename = "dk_62_red_black_continuous")]
+    Dk62RedBlackContinuous,
     #[serde(rename = "dk_29x90")]
     Dk29x90,
 }
@@ -192,6 +194,7 @@ impl LabelPrinterMedia {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Dk62Continuous => "dk_62_continuous",
+            Self::Dk62RedBlackContinuous => "dk_62_red_black_continuous",
             Self::Dk29x90 => "dk_29x90",
         }
     }
@@ -208,6 +211,7 @@ impl FromStr for LabelPrinterMedia {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "dk_62_continuous" => Ok(Self::Dk62Continuous),
+            "dk_62_red_black_continuous" => Ok(Self::Dk62RedBlackContinuous),
             "dk_29x90" => Ok(Self::Dk29x90),
             other => Err(ApiError::Internal(anyhow::anyhow!(
                 "unknown label printer media in DB row: {other}",

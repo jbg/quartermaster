@@ -91,6 +91,7 @@
   let units = $state<Unit[]>([]);
   let selectedBatchId = $state<string | null>(null);
   let selectedBatch = $state<StockBatch | null>(null);
+  let batchDetailRefreshToken = 0;
   let history = $state<HistoryState>(emptyHistoryState);
   let consumeQuantity = $state('');
   let stockActionBusy = $state<string | null>(null);
@@ -259,6 +260,7 @@
     const nextInventory = await loadInventory(session);
     inventory = nextInventory;
     if (nextInventory.status !== 'loaded') {
+      batchDetailRefreshToken += 1;
       selectedBatch = null;
       selectedBatchId = null;
       history = emptyHistoryState;
@@ -278,12 +280,16 @@
     if (!session) {
       return;
     }
+    const refreshToken = ++batchDetailRefreshToken;
     history = { ...history, status: 'loading', error: null };
     try {
       const [batch, events] = await Promise.all([
         session.stockGet(id),
         session.stockListBatchEvents(id, { limit: 25 })
       ]);
+      if (refreshToken !== batchDetailRefreshToken || selectedBatchId !== id) {
+        return;
+      }
       selectedBatch = batch;
       selectedBatchId = batch.id;
       history = {
@@ -294,6 +300,9 @@
         error: null
       };
     } catch {
+      if (refreshToken !== batchDetailRefreshToken || selectedBatchId !== id) {
+        return;
+      }
       history = {
         status: 'error',
         items: [],
@@ -380,6 +389,7 @@
   }
 
   async function selectBatch(batch: StockBatch) {
+    batchDetailRefreshToken += 1;
     selectedBatch = batch;
     selectedBatchId = batch.id;
     stockActionError = null;
@@ -709,6 +719,7 @@
   }
 
   function clearHouseholdState() {
+    batchDetailRefreshToken += 1;
     inventory = emptyInventoryState;
     locations = [];
     units = [];

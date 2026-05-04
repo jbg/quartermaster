@@ -201,7 +201,7 @@ export type LabelPrinterListResponse = {
     items: Array<LabelPrinterDto>;
 };
 
-export type LabelPrinterMedia = 'dk_62_continuous' | 'dk_29x90';
+export type LabelPrinterMedia = 'dk_62_continuous' | 'dk_62_red_black_continuous' | 'dk_29x90';
 
 export type LocationDto = {
     id: string;

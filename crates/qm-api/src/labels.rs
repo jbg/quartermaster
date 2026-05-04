@@ -88,15 +88,18 @@ impl LabelRenderer for BrotherQlRenderer {
     fn render(&self, job: &LabelJob, media: LabelPrinterMedia) -> ApiResult<RenderedLabel> {
         let spec = BrotherMediaSpec::for_media(media);
         let mut bitmap = Bitmap::new(spec.width_px, spec.height_px);
-        bitmap.draw_rect(0, 0, spec.width_px, spec.height_px, false);
-        bitmap.draw_rect(0, 0, spec.width_px, spec.height_px, true);
+        bitmap.draw_rect(0, 0, spec.width_px, spec.height_px, Pixel::White);
+        bitmap.draw_rect(0, 0, spec.width_px, spec.height_px, Pixel::Black);
         bitmap.draw_rect(
             2,
             2,
             spec.width_px.saturating_sub(4),
             spec.height_px.saturating_sub(4),
-            false,
+            Pixel::White,
         );
+        if spec.supports_red {
+            bitmap.draw_rect(2, 2, spec.width_px.saturating_sub(4), 14, Pixel::Red);
+        }
 
         let qr = QrCode::new(job.batch_url.as_bytes())
             .map_err(|err| ApiError::Internal(anyhow::anyhow!("encoding batch QR: {err}")))?;
@@ -109,7 +112,7 @@ impl LabelRenderer for BrotherQlRenderer {
         bitmap.draw_qr(&qr, qr_x, qr_y, module_px);
 
         let text_x = qr_x + actual_qr_px + 14;
-        let mut y = 12;
+        let mut y = if spec.supports_red { 22 } else { 12 };
         bitmap.draw_text(text_x, y, &truncate(&job.product_name, 26), 3);
         y += 28;
         if let Some(brand) = job.brand.as_deref().filter(|s| !s.trim().is_empty()) {
@@ -196,6 +199,7 @@ struct BrotherMediaSpec {
     height_px: usize,
     media: Media,
     qr_px: usize,
+    supports_red: bool,
 }
 
 impl BrotherMediaSpec {
@@ -206,22 +210,38 @@ impl BrotherMediaSpec {
                 height_px: 360,
                 media: Media::C62,
                 qr_px: 300,
+                supports_red: false,
+            },
+            LabelPrinterMedia::Dk62RedBlackContinuous => Self {
+                width_px: Media::C62R.width_dots() as usize,
+                height_px: 360,
+                media: Media::C62R,
+                qr_px: 300,
+                supports_red: true,
             },
             LabelPrinterMedia::Dk29x90 => Self {
                 width_px: Media::D29x90.width_dots() as usize,
                 height_px: Media::D29x90.length_dots().unwrap() as usize,
                 media: Media::D29x90,
                 qr_px: 240,
+                supports_red: false,
             },
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pixel {
+    White,
+    Black,
+    Red,
 }
 
 #[derive(Debug, Clone)]
 struct Bitmap {
     width: usize,
     height: usize,
-    pixels: Vec<bool>,
+    pixels: Vec<Pixel>,
 }
 
 impl Bitmap {
@@ -229,24 +249,28 @@ impl Bitmap {
         Self {
             width,
             height,
-            pixels: vec![false; width * height],
+            pixels: vec![Pixel::White; width * height],
         }
     }
 
-    fn set(&mut self, x: usize, y: usize, black: bool) {
+    fn set(&mut self, x: usize, y: usize, pixel: Pixel) {
         if x < self.width && y < self.height {
-            self.pixels[y * self.width + x] = black;
+            self.pixels[y * self.width + x] = pixel;
         }
     }
 
-    fn get(&self, x: usize, y: usize) -> bool {
-        x < self.width && y < self.height && self.pixels[y * self.width + x]
+    fn get(&self, x: usize, y: usize) -> Pixel {
+        if x < self.width && y < self.height {
+            self.pixels[y * self.width + x]
+        } else {
+            Pixel::White
+        }
     }
 
-    fn draw_rect(&mut self, x: usize, y: usize, width: usize, height: usize, black: bool) {
+    fn draw_rect(&mut self, x: usize, y: usize, width: usize, height: usize, pixel: Pixel) {
         for yy in y..y.saturating_add(height).min(self.height) {
             for xx in x..x.saturating_add(width).min(self.width) {
-                self.set(xx, yy, black);
+                self.set(xx, yy, pixel);
             }
         }
     }
@@ -258,7 +282,7 @@ impl Bitmap {
             y,
             module_px * (modules + 8),
             module_px * (modules + 8),
-            false,
+            Pixel::White,
         );
         for my in 0..modules {
             for mx in 0..modules {
@@ -268,7 +292,7 @@ impl Bitmap {
                         y + module_px * (my + 4),
                         module_px,
                         module_px,
-                        true,
+                        Pixel::Black,
                     );
                 }
             }
@@ -289,10 +313,10 @@ impl Bitmap {
     fn into_image(self) -> DynamicImage {
         let image: RgbImage =
             ImageBuffer::from_fn(self.width as u32, self.height as u32, |x, y| {
-                if self.get(x as usize, y as usize) {
-                    image::Rgb([0, 0, 0])
-                } else {
-                    image::Rgb([255, 255, 255])
+                match self.get(x as usize, y as usize) {
+                    Pixel::White => image::Rgb([255, 255, 255]),
+                    Pixel::Black => image::Rgb([0, 0, 0]),
+                    Pixel::Red => image::Rgb([220, 0, 0]),
                 }
             });
         DynamicImage::ImageRgb8(image)
@@ -317,7 +341,7 @@ fn draw_char(bitmap: &mut Bitmap, x: usize, y: usize, ch: char, scale: usize) {
     for (row, bits) in glyph.iter().enumerate() {
         for col in 0..5 {
             if bits & (1 << (4 - col)) != 0 {
-                bitmap.draw_rect(x + col * scale, y + row * scale, scale, scale, true);
+                bitmap.draw_rect(x + col * scale, y + row * scale, scale, scale, Pixel::Black);
             }
         }
     }
@@ -415,6 +439,38 @@ mod tests {
         assert!(bytes.starts_with(&[0x00; 10]));
         assert_eq!(bytes.last(), Some(&0x1a));
         assert_eq!(bytes.len(), 33923);
+    }
+
+    #[test]
+    fn brother_renderer_uses_two_color_mode_for_red_black_continuous_media() {
+        let job = LabelJob {
+            batch_id: Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap(),
+            batch_url:
+                "https://quartermaster.example.com/batches/33333333-3333-3333-3333-333333333333"
+                    .into(),
+            product_name: "Flour".into(),
+            brand: Some("Acme".into()),
+            location_name: "Pantry".into(),
+            quantity: "500".into(),
+            unit: "g".into(),
+            expires_on: Some("2026-06-01".into()),
+            opened_on: None,
+            note: Some("bag".into()),
+        };
+
+        let rendered = BrotherQlRenderer
+            .render(&job, LabelPrinterMedia::Dk62RedBlackContinuous)
+            .unwrap();
+        let bytes = compile_brother_ql_job(&rendered, 1).unwrap();
+        let rgb = rendered.image.to_rgb8();
+
+        assert_eq!(rendered.width_px, 696);
+        assert_eq!(rendered.height_px, 360);
+        assert_eq!(*rgb.get_pixel(3, 3), image::Rgb([220, 0, 0]));
+        assert!(bytes
+            .windows(4)
+            .any(|chunk| chunk == [0x1b, 0x69, 0x4b, 0x01]));
+        assert_eq!(bytes.last(), Some(&0x1a));
     }
 
     #[test]

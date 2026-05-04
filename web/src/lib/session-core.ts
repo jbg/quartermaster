@@ -170,7 +170,7 @@ export interface ReminderListResponse {
 }
 
 export type LabelPrinterDriver = 'brother_ql_raster';
-export type LabelPrinterMedia = 'dk_62_continuous' | 'dk_29x90';
+export type LabelPrinterMedia = 'dk_62_continuous' | 'dk_62_red_black_continuous' | 'dk_29x90';
 
 export interface LabelPrinter {
   id: string;
