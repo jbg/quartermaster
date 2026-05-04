@@ -78,6 +78,7 @@ pub struct StockBatchDto {
     pub initial_quantity: String,
     pub quantity: String,
     pub unit: String,
+    pub produced_on: Option<String>,
     pub expires_on: Option<String>,
     pub opened_on: Option<String>,
     pub note: Option<String>,
@@ -97,6 +98,7 @@ impl TryFrom<StockBatchWithProduct> for StockBatchDto {
             initial_quantity: j.batch.initial_quantity,
             quantity: j.batch.quantity,
             unit: j.batch.unit,
+            produced_on: j.batch.produced_on,
             expires_on: j.batch.expires_on,
             opened_on: j.batch.opened_on,
             note: j.batch.note,
@@ -129,6 +131,7 @@ pub struct CreateStockRequest {
     pub location_id: Uuid,
     pub quantity: String,
     pub unit: String,
+    pub produced_on: Option<String>,
     pub expires_on: Option<String>,
     pub opened_on: Option<String>,
     pub note: Option<String>,
@@ -140,6 +143,7 @@ pub type UpdateStockRequest = JsonPatchDocument;
 struct StockPatch {
     quantity: Option<String>,
     location_id: Option<Uuid>,
+    produced_on: Option<Option<String>>,
     expires_on: Option<Option<String>>,
     opened_on: Option<Option<String>>,
     note: Option<Option<String>>,
@@ -172,6 +176,7 @@ impl StockPatch {
                         .map_err(|_| ApiError::BadRequest("location_id must be a UUID".into()))?,
                 );
             }
+            "/produced_on" => self.produced_on = Some(Some(string_value("produced_on", value)?)),
             "/expires_on" => self.expires_on = Some(Some(string_value("expires_on", value)?)),
             "/opened_on" => self.opened_on = Some(Some(string_value("opened_on", value)?)),
             "/note" => self.note = Some(Some(string_value("note", value)?)),
@@ -186,6 +191,10 @@ impl StockPatch {
 
     fn remove(&mut self, path: &str, value: Option<&serde_json::Value>) -> ApiResult<()> {
         match path {
+            "/produced_on" => {
+                reject_value_for_remove("produced_on", value)?;
+                self.produced_on = Some(None);
+            }
             "/expires_on" => {
                 reject_value_for_remove("expires_on", value)?;
                 self.expires_on = Some(None);
@@ -333,6 +342,9 @@ pub async fn create(
     if let Some(d) = req.expires_on.as_deref() {
         validate_iso_date(d)?;
     }
+    if let Some(d) = req.produced_on.as_deref() {
+        validate_iso_date(d)?;
+    }
     if let Some(d) = req.opened_on.as_deref() {
         validate_iso_date(d)?;
     }
@@ -344,6 +356,7 @@ pub async fn create(
         req.location_id,
         &req.quantity,
         &req.unit,
+        req.produced_on.as_deref(),
         req.expires_on.as_deref(),
         req.opened_on.as_deref(),
         req.note.as_deref(),
@@ -392,6 +405,7 @@ pub async fn update(
     let _product = load_product_for_write(&state, household_id, existing.product_id).await?;
 
     let expires_on = req.expires_on.as_ref().map(|o| o.as_deref());
+    let produced_on = req.produced_on.as_ref().map(|o| o.as_deref());
     let opened_on = req.opened_on.as_ref().map(|o| o.as_deref());
     let note = req.note.as_ref().map(|o| o.as_deref());
 
@@ -405,6 +419,9 @@ pub async fn update(
         validate_location(&state, household_id, loc).await?;
     }
     if let Some(d) = expires_on.flatten() {
+        validate_iso_date(d)?;
+    }
+    if let Some(d) = produced_on.flatten() {
         validate_iso_date(d)?;
     }
     if let Some(d) = opened_on.flatten() {
@@ -429,11 +446,13 @@ pub async fn update(
 
     let metadata = StockMetadataUpdate {
         location_id: req.location_id,
+        produced_on,
         expires_on,
         opened_on,
         note,
     };
     let has_metadata = req.location_id.is_some()
+        || req.produced_on.is_some()
         || req.expires_on.is_some()
         || req.opened_on.is_some()
         || req.note.is_some();

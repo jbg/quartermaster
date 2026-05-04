@@ -228,6 +228,7 @@ async fn switch_household_is_session_scoped_and_rejects_non_members() {
         None,
         None,
         None,
+        None,
         home_admin,
         None,
     )
@@ -705,6 +706,7 @@ async fn member_removal_and_location_deletion_guards_work() {
         None,
         None,
         None,
+        None,
         alice_id,
         None,
     )
@@ -779,6 +781,7 @@ async fn stale_tokens_follow_current_household_and_cannot_access_prior_household
         pantry_a,
         "100",
         "g",
+        None,
         None,
         None,
         None,

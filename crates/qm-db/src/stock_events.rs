@@ -275,6 +275,7 @@ mod tests {
             lid,
             "500",
             "g",
+            None,
             Some("2026-06-01"),
             None,
             None,
@@ -283,9 +284,11 @@ mod tests {
         )
         .await
         .unwrap();
-        stock::create(&db, hid, pid, lid, "200", "g", None, None, None, uid, None)
-            .await
-            .unwrap();
+        stock::create(
+            &db, hid, pid, lid, "200", "g", None, None, None, None, uid, None,
+        )
+        .await
+        .unwrap();
 
         let rows = list_timeline(&db, hid, None, None, None, 10).await.unwrap();
         // Two adds, newest first.
@@ -302,9 +305,11 @@ mod tests {
     async fn list_timeline_cursor_respects_id_tiebreak() {
         let (db, hid, uid, lid, pid) = setup().await;
         // Seed a single batch so we can hang hand-crafted events off it.
-        let b = stock::create(&db, hid, pid, lid, "1", "g", None, None, None, uid, None)
-            .await
-            .unwrap();
+        let b = stock::create(
+            &db, hid, pid, lid, "1", "g", None, None, None, None, uid, None,
+        )
+        .await
+        .unwrap();
         // Drop the create's `add` event so the fixture contains only the pair
         // we control below, keeping the test assertions simple.
         sqlx::query("DELETE FROM stock_event WHERE batch_id = ?")

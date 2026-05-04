@@ -13,6 +13,8 @@ struct AddStockView: View {
   @State private var hasExpiry: Bool = false
   @State private var expiry: Date =
     Calendar.current.date(byAdding: .day, value: 30, to: .now) ?? .now
+  @State private var hasProduced: Bool = false
+  @State private var produced: Date = .now
   @State private var hasOpened: Bool = false
   @State private var opened: Date = .now
   @State private var note: String = ""
@@ -41,6 +43,14 @@ struct AddStockView: View {
               Text(loc.name).tag(Optional(loc.id))
             }
           }
+        }
+        Section {
+          Toggle("Set prepared date", isOn: $hasProduced.animation())
+          if hasProduced {
+            DatePicker("Prepared on", selection: $produced, displayedComponents: .date)
+          }
+        } footer: {
+          Text("Useful for leftovers, meal prep, and homemade batches.")
         }
         Section {
           Toggle("Set expiry date", isOn: $hasExpiry.animation())
@@ -155,6 +165,7 @@ struct AddStockView: View {
       locationId: locationID,
       note: note.trimmingCharacters(in: .whitespaces).isEmpty ? nil : note,
       openedOn: hasOpened ? StockBatch.yyyymmdd.string(from: opened) : nil,
+      producedOn: hasProduced ? StockBatch.yyyymmdd.string(from: produced) : nil,
       productId: product.id,
       quantity: quantity,
       unit: unitCode,

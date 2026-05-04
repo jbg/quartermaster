@@ -96,6 +96,8 @@ export interface StockBatch {
   locationId?: string;
   location_name?: string | null;
   locationName?: string | null;
+  produced_on?: string | null;
+  producedOn?: string | null;
   expires_on?: string | null;
   expiresOn?: string | null;
   opened_on?: string | null;
@@ -259,6 +261,7 @@ export interface CreateStockRequest {
   location_id: string;
   quantity: string;
   unit: string;
+  produced_on?: string | null;
   expires_on?: string | null;
   opened_on?: string | null;
   note?: string | null;

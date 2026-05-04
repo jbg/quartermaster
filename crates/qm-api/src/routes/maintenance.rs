@@ -196,6 +196,7 @@ async fn build_smoke_fixture(state: &AppState) -> Result<SeedSmokeResponse, ApiE
             pantry.id,
             "500",
             "g",
+            None,
             Some("2999-01-03"),
             None,
             Some(note),

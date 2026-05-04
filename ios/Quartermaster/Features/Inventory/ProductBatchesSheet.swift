@@ -202,6 +202,11 @@ struct BatchRow: View {
             .font(.caption2)
             .foregroundStyle(.secondary)
         }
+        if let produced = batch.producedOnDate {
+          Label("Prepared \(Self.relativeDate(produced))", systemImage: "fork.knife")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
         if isDepleted(batch) {
           Label("Depleted", systemImage: "archivebox")
             .font(.caption2.weight(.semibold))
@@ -244,6 +249,9 @@ private struct EditBatchForm: View {
   @State private var hasExpiry: Bool
   @State private var expiry: Date
   @State private var hadExpiryOriginally: Bool
+  @State private var hasProduced: Bool
+  @State private var produced: Date
+  @State private var hadProducedOriginally: Bool
   @State private var hasOpened: Bool
   @State private var opened: Date
   @State private var hadOpenedOriginally: Bool
@@ -267,6 +275,10 @@ private struct EditBatchForm: View {
     _expiry = State(
       initialValue: batch.expiresOnDate ?? Calendar.current.date(
         byAdding: .day, value: 30, to: .now) ?? .now)
+    let originalProduced = batch.producedOn != nil
+    _hasProduced = State(initialValue: originalProduced)
+    _hadProducedOriginally = State(initialValue: originalProduced)
+    _produced = State(initialValue: batch.producedOnDate ?? .now)
     let originalOpened = batch.openedOn != nil
     _hasOpened = State(initialValue: originalOpened)
     _hadOpenedOriginally = State(initialValue: originalOpened)
@@ -293,6 +305,17 @@ private struct EditBatchForm: View {
             ForEach(locations) { loc in
               Text(loc.name).tag(loc.id)
             }
+          }
+        }
+        Section {
+          Toggle("Set prepared date", isOn: $hasProduced.animation())
+          if hasProduced {
+            DatePicker("Prepared on", selection: $produced, displayedComponents: .date)
+          }
+          if hadProducedOriginally && !hasProduced {
+            Text("Saving will remove the prepared date from this batch.")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
           }
         }
         Section {
@@ -346,6 +369,14 @@ private struct EditBatchForm: View {
     }
     if locationID != batch.locationID {
       request.append(jsonPatchReplace("/location_id", locationID))
+    }
+    if hasProduced {
+      let s = StockBatch.yyyymmdd.string(from: produced)
+      if s != batch.producedOn {
+        request.append(jsonPatchReplace("/produced_on", s))
+      }
+    } else if hadProducedOriginally {
+      request.append(jsonPatchRemove("/produced_on"))
     }
     if hasExpiry {
       let s = StockBatch.yyyymmdd.string(from: expiry)

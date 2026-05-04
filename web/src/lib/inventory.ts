@@ -49,6 +49,7 @@ export interface StockEditFields {
   quantity: string;
   locationId: string;
   expiresOn: string;
+  producedOn: string;
   openedOn: string;
   note: string;
 }
@@ -239,8 +240,16 @@ export function stockOpened(batch: StockBatch): string {
   return stockOpenedValue(batch) ?? 'Not marked opened';
 }
 
+export function stockProduced(batch: StockBatch): string {
+  return stockProducedValue(batch) ?? 'Not marked prepared';
+}
+
 export function stockExpiryValue(batch: StockBatch): string | null {
   return batch.expires_on ?? batch.expiresOn ?? null;
+}
+
+export function stockProducedValue(batch: StockBatch): string | null {
+  return batch.produced_on ?? batch.producedOn ?? null;
 }
 
 export function stockOpenedValue(batch: StockBatch): string | null {
@@ -366,6 +375,7 @@ export function stockEditFields(batch: StockBatch): StockEditFields {
     quantity: batch.quantity === undefined || batch.quantity === null ? '' : String(batch.quantity),
     locationId: stockLocationId(batch) ?? '',
     expiresOn: stockExpiryValue(batch) ?? '',
+    producedOn: stockProducedValue(batch) ?? '',
     openedOn: stockOpenedValue(batch) ?? '',
     note: batch.note ?? ''
   };
@@ -400,6 +410,7 @@ export function buildStockUpdateRequest(
   }
 
   applyOptionalDate(request, 'expires_on', stockExpiryValue(batch), input.expiresOn);
+  applyOptionalDate(request, 'produced_on', stockProducedValue(batch), input.producedOn);
   applyOptionalDate(request, 'opened_on', stockOpenedValue(batch), input.openedOn);
 
   const currentNote = batch.note ?? null;
@@ -417,7 +428,7 @@ export function buildStockUpdateRequest(
 
 function applyOptionalDate(
   request: UpdateStockRequest,
-  key: 'expires_on' | 'opened_on',
+  key: 'expires_on' | 'produced_on' | 'opened_on',
   currentValue: string | null,
   nextValue: string
 ) {

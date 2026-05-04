@@ -117,6 +117,7 @@ export type CreateStockRequest = {
     location_id: string;
     note?: string | null;
     opened_on?: string | null;
+    produced_on?: string | null;
     product_id: string;
     quantity: string;
     unit: string;
@@ -382,6 +383,7 @@ export type StockBatchDto = {
     location_name: string;
     note?: string | null;
     opened_on?: string | null;
+    produced_on?: string | null;
     product: ProductDto;
     quantity: string;
     unit: string;
