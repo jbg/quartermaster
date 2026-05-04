@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.2](https://github.com/jbg/quartermaster/compare/1.14.1...1.14.2) (2026-05-04)
+
+
+### Bug Fixes
+
+* improve printed QR labels ([4db36e5](https://github.com/jbg/quartermaster/commit/4db36e595e000d8782629cb08277aea95703bbc5))
+
 ## [1.14.1](https://github.com/jbg/quartermaster/compare/1.14.0...1.14.1) (2026-05-04)
 
 
