@@ -2,19 +2,18 @@ name: Quartermaster
 options:
   bundleIdPrefix: com.example
   deploymentTarget:
-    iOS: "26.0"
+    iOS: '26.0'
   defaultConfig: Debug
   groupSortPosition: top
   createIntermediateGroups: true
 settings:
   base:
-    SWIFT_VERSION: "6.0"
-    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    SWIFT_VERSION: '6.0'
+    ENABLE_USER_SCRIPT_SANDBOXING: 'YES'
     CODE_SIGN_STYLE: Automatic
-    MARKETING_VERSION: "1.10.0"
-    CURRENT_PROJECT_VERSION: "1"
-    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
-
+    MARKETING_VERSION: 1.11.0
+    CURRENT_PROJECT_VERSION: '1'
+    IPHONEOS_DEPLOYMENT_TARGET: '26.0'
 packages:
   OpenAPIGenerator:
     url: https://github.com/apple/swift-openapi-generator
@@ -25,12 +24,11 @@ packages:
   OpenAPIURLSession:
     url: https://github.com/apple/swift-openapi-urlsession
     from: 1.1.0
-
 targets:
   Quartermaster:
     type: application
     platform: iOS
-    deploymentTarget: "26.0"
+    deploymentTarget: '26.0'
     configFiles:
       Debug: Config/Debug.xcconfig
       Release: Config/Release.xcconfig
@@ -53,53 +51,60 @@ targets:
           /bin/sh "${PROJECT_DIR}/scripts/validate-release-config.sh"
     settings:
       base:
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UILaunchScreen_Generation: 'YES'
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: 'YES'
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: 'YES'
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: >-
+          UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft
+          UIInterfaceOrientationLandscapeRight
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: >-
+          UIInterfaceOrientationPortrait
+          UIInterfaceOrientationPortraitUpsideDown
+          UIInterfaceOrientationLandscapeLeft
+          UIInterfaceOrientationLandscapeRight
         INFOPLIST_KEY_CFBundleIconName: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: Quartermaster
-        INFOPLIST_KEY_CFBundleURLTypes: '[{"CFBundleURLName":"$(PRODUCT_BUNDLE_IDENTIFIER)","CFBundleURLSchemes":["quartermaster"]}]'
-        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
-        INFOPLIST_KEY_NSCameraUsageDescription: "Quartermaster scans barcodes to look up products when you add items to your inventory."
-        TARGETED_DEVICE_FAMILY: "1,2"
-        ENABLE_PREVIEWS: YES
-        GENERATE_INFOPLIST_FILE: YES
-        # Disable user-script sandbox for the target — the OpenAPIGenerator
-        # plugin needs to write into the build intermediate directory.
-        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        INFOPLIST_KEY_CFBundleURLTypes: >-
+          [{"CFBundleURLName":"$(PRODUCT_BUNDLE_IDENTIFIER)","CFBundleURLSchemes":["quartermaster"]}]
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: 'NO'
+        INFOPLIST_KEY_NSCameraUsageDescription: >-
+          Quartermaster scans barcodes to look up products when you add items to
+          your inventory.
+        TARGETED_DEVICE_FAMILY: 1,2
+        ENABLE_PREVIEWS: 'YES'
+        GENERATE_INFOPLIST_FILE: 'YES'
+        ENABLE_USER_SCRIPT_SANDBOXING: 'NO'
       configs:
         Debug:
           CODE_SIGN_ENTITLEMENTS: Quartermaster/QuartermasterDebug.entitlements
         Release:
           CODE_SIGN_ENTITLEMENTS: Quartermaster/QuartermasterRelease.entitlements
-          DEVELOPMENT_TEAM: "$(QUARTERMASTER_RELEASE_DEVELOPMENT_TEAM)"
-          PRODUCT_BUNDLE_IDENTIFIER: "$(QUARTERMASTER_RELEASE_PRODUCT_BUNDLE_IDENTIFIER)"
-          CODE_SIGN_STYLE: "$(QUARTERMASTER_RELEASE_CODE_SIGN_STYLE)"
-          CODE_SIGN_IDENTITY: "$(QUARTERMASTER_RELEASE_CODE_SIGN_IDENTITY)"
-          PROVISIONING_PROFILE_SPECIFIER: "$(QUARTERMASTER_RELEASE_PROVISIONING_PROFILE_SPECIFIER)"
+          DEVELOPMENT_TEAM: $(QUARTERMASTER_RELEASE_DEVELOPMENT_TEAM)
+          PRODUCT_BUNDLE_IDENTIFIER: $(QUARTERMASTER_RELEASE_PRODUCT_BUNDLE_IDENTIFIER)
+          CODE_SIGN_STYLE: $(QUARTERMASTER_RELEASE_CODE_SIGN_STYLE)
+          CODE_SIGN_IDENTITY: $(QUARTERMASTER_RELEASE_CODE_SIGN_IDENTITY)
+          PROVISIONING_PROFILE_SPECIFIER: $(QUARTERMASTER_RELEASE_PROVISIONING_PROFILE_SPECIFIER)
   QuartermasterTests:
     type: bundle.unit-test
     platform: iOS
-    deploymentTarget: "26.0"
+    deploymentTarget: '26.0'
     sources:
       - path: QuartermasterTests
     dependencies:
       - target: Quartermaster
     settings:
       base:
-        GENERATE_INFOPLIST_FILE: YES
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Quartermaster.app/Quartermaster"
-        BUNDLE_LOADER: "$(TEST_HOST)"
+        GENERATE_INFOPLIST_FILE: 'YES'
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Quartermaster.app/Quartermaster
+        BUNDLE_LOADER: $(TEST_HOST)
   QuartermasterUITests:
     type: bundle.ui-testing
     platform: iOS
-    deploymentTarget: "26.0"
+    deploymentTarget: '26.0'
     sources:
       - path: QuartermasterUITests
     dependencies:
       - target: Quartermaster
     settings:
       base:
-        GENERATE_INFOPLIST_FILE: YES
+        GENERATE_INFOPLIST_FILE: 'YES'

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/jbg/quartermaster/compare/1.10.0...1.11.0) (2026-05-04)
+
+
+### Features
+
+* reorganize iOS settings ([8742aa0](https://github.com/jbg/quartermaster/commit/8742aa0c5be39d8dda09aafc683aa894ab4bdf67))
+
 ## [1.10.0](https://github.com/jbg/quartermaster/compare/1.9.0...1.10.0) (2026-05-04)
 
 
