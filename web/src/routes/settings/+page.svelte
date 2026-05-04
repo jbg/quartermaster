@@ -428,9 +428,6 @@
             <p class="eyebrow">Household</p>
             <h2 id="locations-heading">Locations</h2>
           </div>
-          <button class="secondary-action small" type="button" onclick={() => refreshLocations()}
-            >Refresh</button
-          >
         </div>
 
         {#if error}
@@ -489,9 +486,6 @@
             <p class="eyebrow">Labels</p>
             <h2 id="printers-heading">Label printers</h2>
           </div>
-          <button class="secondary-action small" type="button" onclick={() => refreshPrinters()}
-            >Refresh</button
-          >
         </div>
 
         {#if printerError}

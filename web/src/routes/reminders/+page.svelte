@@ -199,12 +199,6 @@
           </div>
           <div class="heading-actions">
             <span>{reminders.items.length}</span>
-            <button
-              class="secondary-action small"
-              type="button"
-              onclick={() => refreshReminders()}
-              disabled={reminders.status === 'loading'}>Refresh</button
-            >
           </div>
         </div>
 
