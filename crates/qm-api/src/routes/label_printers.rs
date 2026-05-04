@@ -256,6 +256,7 @@ pub async fn test_label_printer(
         location_name: "Printer".into(),
         quantity: "1".into(),
         unit: "label".into(),
+        produced_on: None,
         expires_on: None,
         opened_on: None,
         note: Some("Test print".into()),

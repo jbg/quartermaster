@@ -21,6 +21,7 @@ pub struct LabelJob {
     pub location_name: String,
     pub quantity: String,
     pub unit: String,
+    pub produced_on: Option<String>,
     pub expires_on: Option<String>,
     pub opened_on: Option<String>,
     pub note: Option<String>,
@@ -68,6 +69,7 @@ pub async fn build_label_job(
         location_name: row.location_name,
         quantity: row.batch.quantity,
         unit: row.batch.unit,
+        produced_on: row.batch.produced_on,
         expires_on: row.batch.expires_on,
         opened_on: row.batch.opened_on,
         note: row.batch.note,
@@ -103,46 +105,11 @@ impl LabelRenderer for BrotherQlRenderer {
 
         let qr = QrCode::new(job.batch_url.as_bytes())
             .map_err(|err| ApiError::Internal(anyhow::anyhow!("encoding batch QR: {err}")))?;
-        let qr_modules = qr.width();
-        let qr_px = spec.qr_px.min(spec.height_px.saturating_sub(16));
-        let module_px = (qr_px / (qr_modules + 8)).max(2);
-        let actual_qr_px = module_px * (qr_modules + 8);
-        let qr_x = 10;
-        let qr_y = (spec.height_px.saturating_sub(actual_qr_px)) / 2;
-        bitmap.draw_qr(&qr, qr_x, qr_y, module_px);
-
-        let text_x = qr_x + actual_qr_px + 14;
-        let mut y = if spec.supports_red { 22 } else { 12 };
-        bitmap.draw_text(text_x, y, &truncate(&job.product_name, 26), 3);
-        y += 28;
-        if let Some(brand) = job.brand.as_deref().filter(|s| !s.trim().is_empty()) {
-            bitmap.draw_text(text_x, y, &truncate(brand, 30), 2);
-            y += 20;
+        if spec.is_portrait() {
+            render_portrait_label(&mut bitmap, &qr, job, &spec);
+        } else {
+            render_landscape_label(&mut bitmap, &qr, job, &spec);
         }
-        bitmap.draw_text(
-            text_x,
-            y,
-            &format!("{} {} - {}", job.quantity, job.unit, job.location_name),
-            2,
-        );
-        y += 20;
-        if let Some(expires_on) = &job.expires_on {
-            bitmap.draw_text(text_x, y, &format!("EXP {expires_on}"), 2);
-            y += 20;
-        }
-        if let Some(opened_on) = &job.opened_on {
-            bitmap.draw_text(text_x, y, &format!("OPEN {opened_on}"), 2);
-            y += 20;
-        }
-        if let Some(note) = job.note.as_deref().filter(|s| !s.trim().is_empty()) {
-            bitmap.draw_text(text_x, y, &truncate(note, 34), 1);
-        }
-        bitmap.draw_text(
-            text_x,
-            spec.height_px.saturating_sub(16),
-            &format!("BATCH {}", short_id(job.batch_id)),
-            1,
-        );
 
         Ok(RenderedLabel {
             driver: LabelPrinterDriver::BrotherQlRaster,
@@ -228,6 +195,167 @@ impl BrotherMediaSpec {
             },
         }
     }
+
+    fn is_portrait(&self) -> bool {
+        self.height_px > self.width_px.saturating_mul(2)
+    }
+}
+
+fn render_landscape_label(
+    bitmap: &mut Bitmap,
+    qr: &QrCode,
+    job: &LabelJob,
+    spec: &BrotherMediaSpec,
+) {
+    let (actual_qr_px, module_px) = qr_size(qr, spec.qr_px.min(spec.height_px.saturating_sub(24)));
+    let qr_x = 10;
+    let qr_y = (spec.height_px.saturating_sub(actual_qr_px)) / 2;
+    bitmap.draw_qr(qr, qr_x, qr_y, module_px);
+
+    let text_x = qr_x + actual_qr_px + 18;
+    let text_width = spec.width_px.saturating_sub(text_x + 8);
+    let mut y = if spec.supports_red { 24 } else { 16 };
+    bitmap.draw_text(
+        text_x,
+        y,
+        &truncate_for_width(&job.product_name, text_width, 4),
+        4,
+    );
+    y += 40;
+    if let Some(brand) = job.brand.as_deref().filter(|s| !s.trim().is_empty()) {
+        bitmap.draw_text(text_x, y, &truncate_for_width(brand, text_width, 3), 3);
+        y += 30;
+    }
+    bitmap.draw_text(
+        text_x,
+        y,
+        &truncate_for_width(
+            &format!("{} {} - {}", job.quantity, job.unit, job.location_name),
+            text_width,
+            3,
+        ),
+        3,
+    );
+    y += 34;
+    y += draw_primary_date(bitmap, text_x, y, text_width, job);
+    y += draw_secondary_dates(bitmap, text_x, y + 4, text_width, job, 3);
+    if let Some(note) = job.note.as_deref().filter(|s| !s.trim().is_empty()) {
+        bitmap.draw_text(text_x, y + 6, &truncate_for_width(note, text_width, 2), 2);
+    }
+    bitmap.draw_text(
+        text_x,
+        spec.height_px.saturating_sub(16),
+        &format!("BATCH {}", short_id(job.batch_id)),
+        1,
+    );
+}
+
+fn render_portrait_label(
+    bitmap: &mut Bitmap,
+    qr: &QrCode,
+    job: &LabelJob,
+    spec: &BrotherMediaSpec,
+) {
+    let (actual_qr_px, module_px) = qr_size(qr, spec.qr_px.min(spec.width_px.saturating_sub(28)));
+    let qr_x = (spec.width_px.saturating_sub(actual_qr_px)) / 2;
+    let qr_y = 18;
+    bitmap.draw_qr(qr, qr_x, qr_y, module_px);
+
+    let text_x = 14;
+    let text_width = spec.width_px.saturating_sub(text_x * 2);
+    let mut y = qr_y + actual_qr_px + 28;
+    bitmap.draw_text(
+        text_x,
+        y,
+        &truncate_for_width(&job.product_name, text_width, 3),
+        3,
+    );
+    y += 34;
+    if let Some(brand) = job.brand.as_deref().filter(|s| !s.trim().is_empty()) {
+        bitmap.draw_text(text_x, y, &truncate_for_width(brand, text_width, 2), 2);
+        y += 24;
+    }
+    bitmap.draw_text(
+        text_x,
+        y,
+        &truncate_for_width(
+            &format!("{} {} - {}", job.quantity, job.unit, job.location_name),
+            text_width,
+            2,
+        ),
+        2,
+    );
+    y += 32;
+    y += draw_primary_date(bitmap, text_x, y, text_width, job);
+    y += draw_secondary_dates(bitmap, text_x, y + 8, text_width, job, 2);
+    if let Some(note) = job.note.as_deref().filter(|s| !s.trim().is_empty()) {
+        bitmap.draw_text(text_x, y + 10, &truncate_for_width(note, text_width, 2), 2);
+    }
+    bitmap.draw_text(
+        text_x,
+        spec.height_px.saturating_sub(18),
+        &format!("BATCH {}", short_id(job.batch_id)),
+        1,
+    );
+}
+
+fn qr_size(qr: &QrCode, max_px: usize) -> (usize, usize) {
+    let modules = qr.width();
+    let module_px = (max_px / (modules + 8)).max(2);
+    (module_px * (modules + 8), module_px)
+}
+
+fn draw_primary_date(
+    bitmap: &mut Bitmap,
+    x: usize,
+    y: usize,
+    width: usize,
+    job: &LabelJob,
+) -> usize {
+    let Some((label, date)) = primary_date(job) else {
+        return 0;
+    };
+    bitmap.draw_text(x, y, label, 2);
+    let date_scale = if text_width(date, 5) <= width { 5 } else { 4 };
+    bitmap.draw_text(x, y + 20, date, date_scale);
+    20 + line_height(date_scale) + 8
+}
+
+fn draw_secondary_dates(
+    bitmap: &mut Bitmap,
+    x: usize,
+    y: usize,
+    width: usize,
+    job: &LabelJob,
+    scale: usize,
+) -> usize {
+    let mut lines = Vec::new();
+    if job.expires_on.is_some() {
+        if let Some(produced_on) = &job.produced_on {
+            lines.push(format!("MADE {produced_on}"));
+        }
+    }
+    if let Some(opened_on) = &job.opened_on {
+        lines.push(format!("OPEN {opened_on}"));
+    }
+    let mut consumed = 0;
+    for line in lines {
+        bitmap.draw_text(
+            x,
+            y + consumed,
+            &truncate_for_width(&line, width, scale),
+            scale,
+        );
+        consumed += line_height(scale) + 6;
+    }
+    consumed
+}
+
+fn primary_date(job: &LabelJob) -> Option<(&'static str, &str)> {
+    job.expires_on
+        .as_deref()
+        .map(|date| ("USE BY", date))
+        .or_else(|| job.produced_on.as_deref().map(|date| ("MADE", date)))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -398,6 +526,18 @@ fn truncate(value: &str, max_chars: usize) -> String {
     value.chars().take(max_chars).collect()
 }
 
+fn truncate_for_width(value: &str, width: usize, scale: usize) -> String {
+    truncate(value, (width / (6 * scale.max(1))).max(1))
+}
+
+fn text_width(value: &str, scale: usize) -> usize {
+    value.chars().flat_map(char::to_uppercase).count() * 6 * scale.max(1)
+}
+
+fn line_height(scale: usize) -> usize {
+    7 * scale.max(1)
+}
+
 fn short_id(id: Uuid) -> String {
     id.to_string()
         .chars()
@@ -425,6 +565,7 @@ mod tests {
             location_name: "Pantry".into(),
             quantity: "500".into(),
             unit: "g".into(),
+            produced_on: Some("2026-05-01".into()),
             expires_on: Some("2026-06-01".into()),
             opened_on: None,
             note: Some("bag".into()),
@@ -453,6 +594,7 @@ mod tests {
             location_name: "Pantry".into(),
             quantity: "500".into(),
             unit: "g".into(),
+            produced_on: Some("2026-05-01".into()),
             expires_on: Some("2026-06-01".into()),
             opened_on: None,
             note: Some("bag".into()),
@@ -485,6 +627,7 @@ mod tests {
             location_name: "Pantry".into(),
             quantity: "500".into(),
             unit: "g".into(),
+            produced_on: None,
             expires_on: None,
             opened_on: None,
             note: None,
@@ -499,5 +642,29 @@ mod tests {
         assert_eq!(rendered.height_px, 944);
         assert!(bytes.starts_with(&[0x00; 10]));
         assert_eq!(bytes.last(), Some(&0x1a));
+    }
+
+    #[test]
+    fn primary_label_date_prefers_expiry_then_production() {
+        let mut job = LabelJob {
+            batch_id: Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap(),
+            batch_url:
+                "https://quartermaster.example.com/batches/33333333-3333-3333-3333-333333333333"
+                    .into(),
+            product_name: "Sofrito".into(),
+            brand: None,
+            location_name: "Freezer".into(),
+            quantity: "2".into(),
+            unit: "portion".into(),
+            produced_on: Some("2026-05-01".into()),
+            expires_on: None,
+            opened_on: None,
+            note: None,
+        };
+
+        assert_eq!(primary_date(&job), Some(("MADE", "2026-05-01")));
+
+        job.expires_on = Some("2026-06-01".into());
+        assert_eq!(primary_date(&job), Some(("USE BY", "2026-06-01")));
     }
 }
