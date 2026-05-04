@@ -1,5 +1,7 @@
-use std::{future::Future, net::SocketAddr, pin::Pin, time::Duration};
+use std::{future::Future, num::NonZeroU8, pin::Pin, time::Duration};
 
+use brother_ql::{media::Media, printjob::PrintJobBuilder};
+use image::{DynamicImage, ImageBuffer, RgbImage};
 use qrcode::{Color, QrCode};
 use tokio::{io::AsyncWriteExt, net::TcpStream, time::timeout};
 use uuid::Uuid;
@@ -28,7 +30,7 @@ pub struct LabelJob {
 pub struct RenderedLabel {
     pub driver: LabelPrinterDriver,
     pub media: LabelPrinterMedia,
-    pub bytes: Vec<u8>,
+    image: DynamicImage,
     pub width_px: usize,
     pub height_px: usize,
 }
@@ -139,11 +141,10 @@ impl LabelRenderer for BrotherQlRenderer {
             1,
         );
 
-        let bytes = brother_raster_bytes(&bitmap, spec);
         Ok(RenderedLabel {
             driver: LabelPrinterDriver::BrotherQlRaster,
             media,
-            bytes,
+            image: bitmap.into_image(),
             width_px: spec.width_px,
             height_px: spec.height_px,
         })
@@ -163,32 +164,28 @@ impl LabelPrinter for BrotherQlRasterPrinter {
         copies: u8,
     ) -> Pin<Box<dyn Future<Output = ApiResult<PrintReceipt>> + Send + 'a>> {
         Box::pin(async move {
-            let addr: SocketAddr =
-                format!("{}:{}", self.address, self.port)
-                    .parse()
-                    .map_err(|_| {
-                        ApiError::BadRequest("printer address must be host:port compatible".into())
-                    })?;
-            let mut stream = timeout(Duration::from_secs(5), TcpStream::connect(addr))
-                .await
-                .map_err(|_| ApiError::BadGateway)?
-                .map_err(|err| {
-                    tracing::warn!(?err, "failed to connect to label printer");
-                    ApiError::BadGateway
-                })?;
-            let mut sent = 0usize;
-            for _ in 0..copies.max(1) {
-                stream.write_all(&label.bytes).await.map_err(|err| {
-                    tracing::warn!(?err, "failed to send label bytes");
-                    ApiError::BadGateway
-                })?;
-                sent += label.bytes.len();
-            }
+            let bytes = compile_brother_ql_job(label, copies)?;
+            let mut stream = timeout(
+                Duration::from_secs(5),
+                TcpStream::connect((self.address.as_str(), self.port)),
+            )
+            .await
+            .map_err(|_| ApiError::BadGateway)?
+            .map_err(|err| {
+                tracing::warn!(?err, "failed to connect to label printer");
+                ApiError::BadGateway
+            })?;
+            stream.write_all(&bytes).await.map_err(|err| {
+                tracing::warn!(?err, "failed to send label bytes");
+                ApiError::BadGateway
+            })?;
             stream.shutdown().await.map_err(|err| {
                 tracing::warn!(?err, "failed to close label printer socket");
                 ApiError::BadGateway
             })?;
-            Ok(PrintReceipt { bytes_sent: sent })
+            Ok(PrintReceipt {
+                bytes_sent: bytes.len(),
+            })
         })
     }
 }
@@ -197,9 +194,7 @@ impl LabelPrinter for BrotherQlRasterPrinter {
 struct BrotherMediaSpec {
     width_px: usize,
     height_px: usize,
-    media_type: u8,
-    media_width_mm: u8,
-    media_length_mm: u8,
+    media: Media,
     qr_px: usize,
 }
 
@@ -207,19 +202,15 @@ impl BrotherMediaSpec {
     fn for_media(media: LabelPrinterMedia) -> Self {
         match media {
             LabelPrinterMedia::Dk62Continuous => Self {
-                width_px: 696,
+                width_px: Media::C62.width_dots() as usize,
                 height_px: 360,
-                media_type: 0x0a,
-                media_width_mm: 62,
-                media_length_mm: 0,
+                media: Media::C62,
                 qr_px: 300,
             },
             LabelPrinterMedia::Dk29x90 => Self {
-                width_px: 306,
-                height_px: 991,
-                media_type: 0x0b,
-                media_width_mm: 29,
-                media_length_mm: 90,
+                width_px: Media::D29x90.width_dots() as usize,
+                height_px: Media::D29x90.length_dots().unwrap() as usize,
+                media: Media::D29x90,
                 qr_px: 240,
             },
         }
@@ -294,51 +285,31 @@ impl Bitmap {
             cursor += 6 * scale.max(1);
         }
     }
+
+    fn into_image(self) -> DynamicImage {
+        let image: RgbImage =
+            ImageBuffer::from_fn(self.width as u32, self.height as u32, |x, y| {
+                if self.get(x as usize, y as usize) {
+                    image::Rgb([0, 0, 0])
+                } else {
+                    image::Rgb([255, 255, 255])
+                }
+            });
+        DynamicImage::ImageRgb8(image)
+    }
 }
 
-fn brother_raster_bytes(bitmap: &Bitmap, spec: BrotherMediaSpec) -> Vec<u8> {
-    let bytes_per_row = (bitmap.width + 7) / 8;
-    let mut out = Vec::with_capacity(bitmap.height * (bytes_per_row + 3) + 64);
-    // Keep media checks enabled, but do not set Brother's "printer recovery always on" bit:
-    // a fatal media mismatch should stop instead of being replayed after the panel error is cleared.
-    const PRINT_INFO_VALID_FLAGS: u8 = 0x67;
-    out.extend_from_slice(&[0x00; 10]);
-    out.extend_from_slice(b"\x1B\x40");
-    out.extend_from_slice(b"\x1B\x69\x61\x01");
-    out.extend_from_slice(&[
-        0x1b,
-        0x69,
-        0x7a,
-        PRINT_INFO_VALID_FLAGS,
-        spec.media_type,
-        spec.media_width_mm,
-        spec.media_length_mm,
-        (bitmap.height & 0xff) as u8,
-        ((bitmap.height >> 8) & 0xff) as u8,
-        ((bitmap.height >> 16) & 0xff) as u8,
-        ((bitmap.height >> 24) & 0xff) as u8,
-        0,
-        0,
-    ]);
-    out.extend_from_slice(b"\x1B\x69\x4D\x40");
-    out.extend_from_slice(b"\x1B\x69\x64\x00\x00");
-    for y in 0..bitmap.height {
-        out.push(b'g');
-        out.push((bytes_per_row & 0xff) as u8);
-        out.push(((bytes_per_row >> 8) & 0xff) as u8);
-        for byte_index in 0..bytes_per_row {
-            let mut byte = 0u8;
-            for bit in 0..8 {
-                let x = byte_index * 8 + bit;
-                if bitmap.get(x, y) {
-                    byte |= 0x80 >> bit;
-                }
-            }
-            out.push(byte);
-        }
-    }
-    out.push(0x1a);
-    out
+fn compile_brother_ql_job(label: &RenderedLabel, copies: u8) -> ApiResult<Vec<u8>> {
+    let media = BrotherMediaSpec::for_media(label.media).media;
+    let copies = NonZeroU8::new(copies.max(1)).ok_or_else(|| {
+        ApiError::Internal(anyhow::anyhow!("label print copies must be non-zero"))
+    })?;
+    let job = PrintJobBuilder::new(media)
+        .copies(copies)
+        .add_label(label.image.clone())
+        .build()
+        .map_err(|err| ApiError::Internal(anyhow::anyhow!("building Brother QL job: {err}")))?;
+    Ok(job.compile())
 }
 
 fn draw_char(bitmap: &mut Bitmap, x: usize, y: usize, ch: char, scale: usize) {
@@ -438,15 +409,16 @@ mod tests {
         let rendered = BrotherQlRenderer
             .render(&job, LabelPrinterMedia::Dk62Continuous)
             .unwrap();
+        let bytes = compile_brother_ql_job(&rendered, 1).unwrap();
         assert_eq!(rendered.width_px, 696);
         assert_eq!(rendered.height_px, 360);
-        assert!(rendered.bytes.starts_with(&[0x00; 10]));
-        assert_eq!(rendered.bytes.last(), Some(&0x1a));
-        assert_eq!(rendered.bytes.len(), 32439);
+        assert!(bytes.starts_with(&[0x00; 10]));
+        assert_eq!(bytes.last(), Some(&0x1a));
+        assert_eq!(bytes.len(), 33923);
     }
 
     #[test]
-    fn brother_renderer_does_not_enable_printer_recovery() {
+    fn brother_renderer_uses_brother_ql_media_dimensions() {
         let job = LabelJob {
             batch_id: Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap(),
             batch_url:
@@ -463,16 +435,13 @@ mod tests {
         };
 
         let rendered = BrotherQlRenderer
-            .render(&job, LabelPrinterMedia::Dk62Continuous)
+            .render(&job, LabelPrinterMedia::Dk29x90)
             .unwrap();
-        let print_info_offset = rendered
-            .bytes
-            .windows(3)
-            .position(|window| window == b"\x1B\x69\x7A")
-            .unwrap();
-        let valid_flags = rendered.bytes[print_info_offset + 3];
+        let bytes = compile_brother_ql_job(&rendered, 2).unwrap();
 
-        assert_eq!(valid_flags & 0x86, 0x06);
-        assert_eq!(valid_flags & 0x80, 0);
+        assert_eq!(rendered.width_px, 306);
+        assert_eq!(rendered.height_px, 944);
+        assert!(bytes.starts_with(&[0x00; 10]));
+        assert_eq!(bytes.last(), Some(&0x1a));
     }
 }

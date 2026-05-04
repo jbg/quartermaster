@@ -16,6 +16,7 @@ argon2 = { workspace = true, default-features = false, features = [
     "password-hash",
     "rand",
 ] }
+brother_ql = { workspace = true, default-features = false, features = [] }
 axum = { workspace = true, default-features = false, features = [
     "form",
     "http1",
@@ -35,6 +36,7 @@ backon = { workspace = true, default-features = false, features = [
     "gloo-timers-sleep",
 ] }
 base64 = { workspace = true, default-features = false, features = ["std"] }
+image = { workspace = true, default-features = false, features = [] }
 jiff = { workspace = true, default-features = false, features = [
     "std",
     "tz-system",
