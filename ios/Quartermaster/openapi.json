@@ -3005,14 +3005,10 @@
       "CreateInviteRequest": {
         "type": "object",
         "required": [
-          "expires_at",
           "max_uses",
           "role_granted"
         ],
         "properties": {
-          "expires_at": {
-            "type": "string"
-          },
           "max_uses": {
             "type": "integer",
             "format": "int64"

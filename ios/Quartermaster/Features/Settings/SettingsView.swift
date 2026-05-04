@@ -11,8 +11,6 @@ struct SettingsView: View {
   @State private var householdNameDraft: String = ""
   @State private var householdTimezoneDraft: String = TimeZone.autoupdatingCurrent.identifier
   @State private var newInviteRole: MembershipRole = .member
-  @State private var newInviteExpiry: Date =
-    Calendar.current.date(byAdding: .day, value: 7, to: .now) ?? .now
   @State private var recoveryEmailDraft: String = ""
   @State private var recoveryCodeDraft: String = ""
 
@@ -33,20 +31,6 @@ struct SettingsView: View {
   var body: some View {
     Form {
       if let me {
-        if let household {
-          Section("Current Household") {
-            LabeledContent("Name", value: household.name)
-            LabeledContent("Role", value: currentRole?.displayName ?? "Member")
-            LabeledContent("Timezone", value: household.timezone)
-            LabeledContent("Device timezone", value: appState.deviceTimeZone.identifier)
-            if appState.timezonesDiffer {
-              Text("Expiry dates and reminder schedules follow household time.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            }
-          }
-        }
-
         HouseholdEntrySections(
           controller: householdEntry,
           me: me,
@@ -60,114 +44,82 @@ struct SettingsView: View {
       }
 
       if household != nil {
-        if isAdmin {
-          Section("Household Details") {
-            TextField("Household name", text: $householdNameDraft)
-            Picker("Timezone", selection: $householdTimezoneDraft) {
-              ForEach(TimeZone.knownTimeZoneIdentifiers, id: \.self) { identifier in
-                Text(identifier).tag(identifier)
-              }
-            }
-            Button {
-              showRenameConfirmation = true
-            } label: {
-              if isSavingHousehold {
-                ProgressView()
-              } else {
-                Text("Save household")
-              }
-            }
-            .disabled(!canSaveHousehold || isSavingHousehold)
+        Section("Household") {
+          NavigationLink {
+            householdDetailsView
+          } label: {
+            settingsLinkLabel(
+              "Details",
+              systemImage: "house",
+              detail: household?.name
+            )
           }
-        }
-
-        if isAdmin {
-          Section("Invites") {
-            Picker("Role", selection: $newInviteRole) {
-              Text("Member").tag(MembershipRole.member)
-              Text("Admin").tag(MembershipRole.admin)
-            }
-            DatePicker(
-              "Expires", selection: $newInviteExpiry, in: .now...,
-              displayedComponents: [.date, .hourAndMinute])
-            Button {
-              Task { await createInvite() }
+          if isAdmin {
+            NavigationLink {
+              invitesView
             } label: {
-              if isCreatingInvite {
-                ProgressView()
-              } else {
-                Text("Create single-use invite")
-              }
-            }
-            .disabled(isCreatingInvite)
-
-            if invites.isEmpty {
-              Text("No active invites.")
-                .foregroundStyle(.secondary)
-            } else {
-              ForEach(invites) { invite in
-                inviteRow(invite)
-              }
+              settingsLinkLabel(
+                "Invites",
+                systemImage: "person.2.badge.plus",
+                detail: invites.isEmpty ? "No active invites" : "\(invites.count) active"
+              )
             }
           }
-        }
-
-        Section("Members") {
-          if members.isEmpty {
-            Text("No members found.")
-              .foregroundStyle(.secondary)
-          } else {
-            ForEach(members) { member in
-              memberRow(member)
-            }
+          NavigationLink {
+            membersView
+          } label: {
+            settingsLinkLabel(
+              "Members",
+              systemImage: "person.2",
+              detail: members.isEmpty ? nil : "\(members.count)"
+            )
           }
         }
 
         Section("Inventory") {
           NavigationLink {
+            locationsView
+          } label: {
+            settingsLinkLabel(
+              "Locations",
+              systemImage: "shippingbox",
+              detail: locations.isEmpty ? "No locations" : "\(locations.count)"
+            )
+          }
+          NavigationLink {
             StockHistoryView(scope: .household)
           } label: {
             Label("Stock history", systemImage: "clock.arrow.circlepath")
-          }
-
-          if locations.isEmpty {
-            Text("No locations yet.")
-              .foregroundStyle(.secondary)
-          } else {
-            ForEach(locations) { location in
-              locationRow(location)
-            }
-            .onMove { source, destination in
-              Task { await moveLocations(from: source, to: destination) }
-            }
-          }
-
-          if isAdmin {
-            Button {
-              editingLocation = nil
-              showLocationEditor = true
-            } label: {
-              Label("Add location", systemImage: "plus")
-            }
           }
         }
       }
 
       if let me {
         Section("Account") {
-          LabeledContent("Username", value: me.user.username)
-          if let email = me.user.email {
-            LabeledContent("Email", value: email)
+          NavigationLink {
+            accountView(for: me)
+          } label: {
+            settingsLinkLabel(
+              "Profile", systemImage: "person.crop.circle", detail: me.user.username)
           }
-        }
-
-        Section("Recovery Email") {
-          recoveryEmailContent(for: me)
+          NavigationLink {
+            recoveryEmailView(for: me)
+          } label: {
+            settingsLinkLabel(
+              "Recovery Email",
+              systemImage: "envelope",
+              detail: me.user.email ?? me.user.pendingEmail ?? "Not configured"
+            )
+          }
         }
       }
 
       Section("Server") {
-        LabeledContent("URL", value: appState.serverURL.absoluteString)
+        NavigationLink {
+          serverView
+        } label: {
+          settingsLinkLabel("Server", systemImage: "server.rack", detail: appState.serverURL.host)
+        }
       }
 
       Section {
@@ -179,34 +131,14 @@ struct SettingsView: View {
       }
 
       Section {
-        VStack(alignment: .leading, spacing: 6) {
-          Text("Product data attribution")
-            .font(.footnote.weight(.semibold))
-          Text(
-            "Barcode lookups use [Open Food Facts](https://world.openfoodfacts.org), an open database available under the [Open Database Licence (ODbL)](https://opendatacommons.org/licenses/odbl/1-0/)."
-          )
-          .font(.footnote)
-          .foregroundStyle(.secondary)
+        NavigationLink {
+          aboutView
+        } label: {
+          Label("About", systemImage: "info.circle")
         }
-        .padding(.vertical, 2)
-      } header: {
-        Text("About")
-      }
-
-      Section {
-        Text(Self.versionDisplay)
-          .font(.footnote)
-          .foregroundStyle(.secondary)
       }
     }
     .navigationTitle("Settings")
-    .toolbar {
-      if isAdmin && household != nil {
-        ToolbarItem(placement: .topBarTrailing) {
-          EditButton()
-        }
-      }
-    }
     .overlay {
       if isLoading {
         ProgressView("Loading…")
@@ -356,6 +288,196 @@ struct SettingsView: View {
       """
   }
 
+  private func settingsLinkLabel(_ title: String, systemImage: String, detail: String? = nil)
+    -> some View
+  {
+    Label {
+      HStack {
+        Text(title)
+        Spacer()
+        if let detail {
+          Text(detail)
+            .foregroundStyle(.secondary)
+        }
+      }
+    } icon: {
+      Image(systemName: systemImage)
+    }
+  }
+
+  private var householdDetailsView: some View {
+    Form {
+      if let household {
+        Section("Current Household") {
+          LabeledContent("Name", value: household.name)
+          LabeledContent("Role", value: currentRole?.displayName ?? "Member")
+          LabeledContent("Timezone", value: household.timezone)
+          LabeledContent("Device timezone", value: appState.deviceTimeZone.identifier)
+          if appState.timezonesDiffer {
+            Text("Expiry dates and reminder schedules follow household time.")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+          }
+        }
+
+        if isAdmin {
+          Section("Edit Details") {
+            TextField("Household name", text: $householdNameDraft)
+            Picker("Timezone", selection: $householdTimezoneDraft) {
+              ForEach(TimeZone.knownTimeZoneIdentifiers, id: \.self) { identifier in
+                Text(identifier).tag(identifier)
+              }
+            }
+            Button {
+              showRenameConfirmation = true
+            } label: {
+              if isSavingHousehold {
+                ProgressView()
+              } else {
+                Text("Save household")
+              }
+            }
+            .disabled(!canSaveHousehold || isSavingHousehold)
+          }
+        }
+      }
+    }
+    .navigationTitle("Household")
+  }
+
+  private var invitesView: some View {
+    Form {
+      Section("New Invite") {
+        Picker("Role", selection: $newInviteRole) {
+          Text("Member").tag(MembershipRole.member)
+          Text("Admin").tag(MembershipRole.admin)
+        }
+        Button {
+          Task { await createInvite() }
+        } label: {
+          if isCreatingInvite {
+            ProgressView()
+          } else {
+            Text("Create single-use invite")
+          }
+        }
+        .disabled(isCreatingInvite)
+      }
+
+      Section("Active Invites") {
+        if invites.isEmpty {
+          Text("No active invites.")
+            .foregroundStyle(.secondary)
+        } else {
+          ForEach(invites) { invite in
+            inviteRow(invite)
+          }
+        }
+      }
+    }
+    .navigationTitle("Invites")
+  }
+
+  private var membersView: some View {
+    Form {
+      Section {
+        if members.isEmpty {
+          Text("No members found.")
+            .foregroundStyle(.secondary)
+        } else {
+          ForEach(members) { member in
+            memberRow(member)
+          }
+        }
+      }
+    }
+    .navigationTitle("Members")
+  }
+
+  private var locationsView: some View {
+    Form {
+      Section("Locations") {
+        if locations.isEmpty {
+          Text("No locations yet.")
+            .foregroundStyle(.secondary)
+        } else {
+          ForEach(locations) { location in
+            locationRow(location)
+          }
+          .onMove { source, destination in
+            Task { await moveLocations(from: source, to: destination) }
+          }
+        }
+
+        if isAdmin {
+          Button {
+            editingLocation = nil
+            showLocationEditor = true
+          } label: {
+            Label("Add location", systemImage: "plus")
+          }
+        }
+      }
+    }
+    .navigationTitle("Locations")
+    .toolbar {
+      if isAdmin {
+        ToolbarItem(placement: .topBarTrailing) {
+          EditButton()
+        }
+      }
+    }
+  }
+
+  private func accountView(for me: Me) -> some View {
+    Form {
+      Section("Account") {
+        LabeledContent("Username", value: me.user.username)
+        if let email = me.user.email {
+          LabeledContent("Email", value: email)
+        }
+      }
+    }
+    .navigationTitle("Profile")
+  }
+
+  private func recoveryEmailView(for me: Me) -> some View {
+    Form {
+      Section("Recovery Email") {
+        recoveryEmailContent(for: me)
+      }
+    }
+    .navigationTitle("Recovery Email")
+  }
+
+  private var serverView: some View {
+    Form {
+      Section("Server") {
+        LabeledContent("URL", value: appState.serverURL.absoluteString)
+      }
+    }
+    .navigationTitle("Server")
+  }
+
+  private var aboutView: some View {
+    Form {
+      Section("Product data attribution") {
+        Text(
+          "Barcode lookups use [Open Food Facts](https://world.openfoodfacts.org), an open database available under the [Open Database Licence (ODbL)](https://opendatacommons.org/licenses/odbl/1-0/)."
+        )
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+      }
+
+      Section {
+        Text(Self.versionDisplay)
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .navigationTitle("About")
+  }
+
   @ViewBuilder
   private func recoveryEmailContent(for me: Me) -> some View {
     if let email = me.user.email {
@@ -483,6 +605,9 @@ struct SettingsView: View {
       }
       Spacer()
       if isAdmin {
+        Image(systemName: "line.3.horizontal")
+          .foregroundStyle(.tertiary)
+          .accessibilityHidden(true)
         Button {
           editingLocation = location
           showLocationEditor = true
@@ -590,11 +715,7 @@ struct SettingsView: View {
     isCreatingInvite = true
     defer { isCreatingInvite = false }
     do {
-      _ = try await appState.api.createInvite(
-        expiresAt: Self.rfc3339.string(from: newInviteExpiry),
-        maxUses: 1,
-        role: newInviteRole
-      )
+      _ = try await appState.api.createInvite(maxUses: 1, role: newInviteRole)
       invites = try await appState.api.householdInvites()
     } catch let err as APIError {
       errorMessage = err.userFacingMessage
@@ -757,12 +878,6 @@ struct SettingsView: View {
       householdEntry.redeemCode = inviteCode
     }
   }
-
-  private static let rfc3339: ISO8601DateFormatter = {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter
-  }()
 
   private static let versionDisplay: String = {
     let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String

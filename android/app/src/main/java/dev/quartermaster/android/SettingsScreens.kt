@@ -38,7 +38,6 @@ internal fun SettingsScreen(
     onDeleteLocation: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
-    var inviteExpiry by remember { mutableStateOf("2999-01-01T00:00:00.000Z") }
     var inviteMaxUses by remember { mutableStateOf("1") }
     var redeemInviteCode by remember { mutableStateOf(appState.pendingInviteContext?.inviteCode.orEmpty()) }
     var recoveryEmail by remember { mutableStateOf(appState.meOrNull?.user?.pendingEmail ?: appState.meOrNull?.user?.email.orEmpty()) }
@@ -291,14 +290,6 @@ internal fun SettingsScreen(
         }
         item {
             OutlinedTextField(
-                value = inviteExpiry,
-                onValueChange = { inviteExpiry = it },
-                label = { Text("Expires at") },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        item {
-            OutlinedTextField(
                 value = inviteMaxUses,
                 onValueChange = { inviteMaxUses = it },
                 label = { Text("Max uses") },
@@ -312,7 +303,6 @@ internal fun SettingsScreen(
                 onClick = {
                     scope.launch {
                         appState.createInvite(
-                            expiresAt = inviteExpiry,
                             maxUses = inviteMaxUses.toLongOrNull() ?: 1L,
                         )
                     }

@@ -53,6 +53,7 @@ pub struct ApiConfig {
     pub registration_mode: RegistrationMode,
     pub access_token_ttl_seconds: i64,
     pub refresh_token_ttl_seconds: i64,
+    pub invite_ttl_seconds: i64,
     /// How many days a positive barcode-cache entry (`barcode → product`) is
     /// considered fresh before we re-fetch from OpenFoodFacts.
     pub off_positive_ttl_days: i64,
@@ -148,6 +149,7 @@ impl Default for ApiConfig {
             registration_mode: RegistrationMode::FirstRunOnly,
             access_token_ttl_seconds: 30 * 60,
             refresh_token_ttl_seconds: 60 * 24 * 60 * 60,
+            invite_ttl_seconds: 7 * 24 * 60 * 60,
             off_positive_ttl_days: 30,
             off_negative_ttl_days: 7,
             off_api_base_url: "https://world.openfoodfacts.org/api/v2/product".into(),

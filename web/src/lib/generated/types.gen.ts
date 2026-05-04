@@ -71,7 +71,6 @@ export type CreateHouseholdRequest = {
 };
 
 export type CreateInviteRequest = {
-    expires_at: string;
     max_uses: number;
     role_granted: MembershipRole;
 };

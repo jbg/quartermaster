@@ -6,7 +6,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
-use jiff::Timestamp;
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -80,7 +80,6 @@ pub struct InviteDto {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateInviteRequest {
-    pub expires_at: String,
     pub max_uses: i64,
     pub role_granted: MembershipRole,
 }
@@ -261,22 +260,17 @@ pub async fn create_invite(
     if req.max_uses < 1 {
         return Err(ApiError::BadRequest("max_uses must be >= 1".into()));
     }
-    let expires: Timestamp = req
-        .expires_at
-        .parse()
-        .map_err(|_| ApiError::BadRequest("expires_at must be RFC-3339".into()))?;
-    if expires <= Timestamp::now() {
-        return Err(ApiError::BadRequest(
-            "expires_at must be in the future".into(),
-        ));
-    }
+    let expires_at = Timestamp::now()
+        .checked_add(SignedDuration::from_secs(state.config.invite_ttl_seconds))
+        .map_err(|_| ApiError::BadRequest("invite expiry is out of range".into()))
+        .map(qm_db::time::format_timestamp)?;
     let code = Uuid::now_v7().simple().to_string()[..12].to_ascii_uppercase();
     let row = qm_db::invites::create(
         &state.db,
         household_id,
         &code,
         current.user_id,
-        &req.expires_at,
+        &expires_at,
         req.max_uses,
         req.role_granted.as_str(),
     )
