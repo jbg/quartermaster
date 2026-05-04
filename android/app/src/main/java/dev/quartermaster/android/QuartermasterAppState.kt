@@ -619,10 +619,9 @@ class QuartermasterAppState(
         applyAuthenticated(backend.clearRecoveryEmail())
     }
 
-    suspend fun createInvite(expiresAt: String, maxUses: Long) = runSettingsAction {
+    suspend fun createInvite(maxUses: Long) = runSettingsAction {
         val invite = backend.createInvite(
             CreateInviteRequest(
-                expiresAt = expiresAt,
                 maxUses = maxUses,
                 roleGranted = MembershipRole.MEMBER,
             ),

@@ -16,7 +16,6 @@ fn create_household_body(username: &str) -> serde_json::Value {
 
 fn invite_body(max_uses: i64) -> serde_json::Value {
     json!({
-        "expires_at": "2999-01-01T00:00:00.000Z",
         "max_uses": max_uses,
         "role_granted": "member",
     })

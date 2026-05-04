@@ -265,10 +265,10 @@ actor APIClient: AppStateAPI {
     }
   }
 
-  func createInvite(expiresAt: String, maxUses: Int, role: MembershipRole) async throws -> Invite {
+  func createInvite(maxUses: Int, role: MembershipRole) async throws -> Invite {
     let response = try await client.householdInviteCreate(
       .init(
-        body: .json(.init(expiresAt: expiresAt, maxUses: Int64(maxUses), roleGranted: role)),
+        body: .json(.init(maxUses: Int64(maxUses), roleGranted: role)),
       ))
     switch response {
     case .created(let ok): return try ok.body.json

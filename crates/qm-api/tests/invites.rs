@@ -3,6 +3,7 @@ mod support;
 use std::sync::Arc;
 
 use axum::http::{Method, StatusCode};
+use jiff::{SignedDuration, Timestamp};
 use qm_api::{ApiConfig, RegistrationMode};
 use qm_db::{test_support::InviteRaceGate, Backend};
 use serde_json::json;
@@ -11,7 +12,6 @@ use uuid::Uuid;
 
 fn invite_body(max_uses: i64) -> serde_json::Value {
     json!({
-        "expires_at": "2999-01-01T00:00:00.000Z",
         "max_uses": max_uses,
         "role_granted": "member",
     })
@@ -36,6 +36,17 @@ async fn invite_admin_flow_and_registration_work() {
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
+    let expires_at: Timestamp = invite["expires_at"].as_str().unwrap().parse().unwrap();
+    let now = Timestamp::now();
+    assert!(expires_at > now);
+    assert!(
+        expires_at
+            <= now
+                .checked_add(SignedDuration::from_secs(
+                    ApiConfig::default().invite_ttl_seconds + 5,
+                ))
+                .unwrap()
+    );
     let code = invite["code"].as_str().unwrap().to_owned();
 
     let (status, list) = app

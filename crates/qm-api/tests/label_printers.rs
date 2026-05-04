@@ -134,7 +134,6 @@ async fn label_printer_defaults_are_household_scoped_and_admin_only() {
             Method::POST,
             "/api/v1/households/current/invites",
             Some(json!({
-                "expires_at": "2999-01-01T00:00:00.000Z",
                 "max_uses": 1,
                 "role_granted": "member"
             })),

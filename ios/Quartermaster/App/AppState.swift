@@ -35,7 +35,7 @@ protocol AppStateAPI: Actor {
   func householdMembers() async throws -> [Member]
   func removeHouseholdMember(userID: String) async throws
   func householdInvites() async throws -> [Invite]
-  func createInvite(expiresAt: String, maxUses: Int, role: MembershipRole) async throws -> Invite
+  func createInvite(maxUses: Int, role: MembershipRole) async throws -> Invite
   func revokeInvite(id: String) async throws
   func redeemInvite(code: String) async throws
   func locations() async throws -> [Location]

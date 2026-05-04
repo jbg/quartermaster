@@ -695,7 +695,7 @@ private actor FakeAPI: AppStateAPI {
   func householdMembers() async throws -> [Member] { [] }
   func removeHouseholdMember(userID: String) async throws {}
   func householdInvites() async throws -> [Invite] { [] }
-  func createInvite(expiresAt: String, maxUses: Int, role: MembershipRole) async throws -> Invite {
+  func createInvite(maxUses: Int, role: MembershipRole) async throws -> Invite {
     fatalError("unused")
   }
   func revokeInvite(id: String) async throws {}

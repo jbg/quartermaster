@@ -84,9 +84,7 @@ import UIKit
     func householdMembers() async throws -> [Member] { [] }
     func removeHouseholdMember(userID: String) async throws {}
     func householdInvites() async throws -> [Invite] { [] }
-    func createInvite(expiresAt: String, maxUses: Int, role: MembershipRole) async throws
-      -> Invite
-    {
+    func createInvite(maxUses: Int, role: MembershipRole) async throws -> Invite {
       throw APIError.unknown
     }
     func revokeInvite(id: String) async throws {}

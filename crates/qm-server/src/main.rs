@@ -31,6 +31,7 @@ struct RawConfig {
     registration_mode: String,
     access_token_ttl_seconds: i64,
     refresh_token_ttl_seconds: i64,
+    invite_ttl_seconds: i64,
     off_positive_ttl_days: i64,
     off_negative_ttl_days: i64,
     off_api_base_url: String,
@@ -95,6 +96,7 @@ impl Default for RawConfig {
             registration_mode: "first_run_only".into(),
             access_token_ttl_seconds: 30 * 60,
             refresh_token_ttl_seconds: 60 * 24 * 60 * 60,
+            invite_ttl_seconds: 7 * 24 * 60 * 60,
             off_positive_ttl_days: 30,
             off_negative_ttl_days: 7,
             off_api_base_url: "https://world.openfoodfacts.org/api/v2/product".into(),
@@ -289,6 +291,9 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
     if raw.expiry_reminder_lead_days < 0 {
         anyhow::bail!("QM_EXPIRY_REMINDER_LEAD_DAYS must be >= 0");
     }
+    if raw.invite_ttl_seconds <= 0 {
+        anyhow::bail!("QM_INVITE_TTL_SECONDS must be >= 1");
+    }
     if raw.push_worker_batch_size <= 0 {
         anyhow::bail!("QM_PUSH_WORKER_BATCH_SIZE must be >= 1");
     }
@@ -354,6 +359,7 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
             .map_err(anyhow::Error::msg)?,
         access_token_ttl_seconds: raw.access_token_ttl_seconds,
         refresh_token_ttl_seconds: raw.refresh_token_ttl_seconds,
+        invite_ttl_seconds: raw.invite_ttl_seconds,
         off_positive_ttl_days: raw.off_positive_ttl_days,
         off_negative_ttl_days: raw.off_negative_ttl_days,
         off_api_base_url: raw.off_api_base_url,
