@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.0](https://github.com/jbg/quartermaster/compare/1.12.0...1.13.0) (2026-05-04)
+
+
+### Features
+
+* record prepared date for stock batches ([3492c7d](https://github.com/jbg/quartermaster/commit/3492c7d3b350d9de62dfef0fad648048cf4c3019))
+
 ## [1.12.0](https://github.com/jbg/quartermaster/compare/1.11.0...1.12.0) (2026-05-04)
 
 
