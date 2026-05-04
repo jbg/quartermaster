@@ -74,8 +74,17 @@ struct InventoryView: View {
       }
     }
     .sheet(item: $pendingProduct) { product in
-      AddStockView(product: product) { _ in
-        Task { await load() }
+      AddStockView(product: product) { created in
+        Task {
+          await load()
+          if let location = locations.first(where: { $0.id == created.locationID }) {
+            batchesSheet = BatchesSheetTarget(
+              product: created.product,
+              location: location,
+              highlightBatchID: created.id,
+            )
+          }
+        }
       }
     }
     .sheet(item: $batchesSheet) { target in

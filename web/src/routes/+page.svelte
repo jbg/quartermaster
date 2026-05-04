@@ -823,6 +823,23 @@
     }
     return parts.join(' - ');
   }
+
+  function batchChoiceMeta(batch: StockBatch): string {
+    const parts = [
+      stockExpiry(batch) === 'No expiry' ? 'No expiry date' : `Expires ${stockExpiry(batch)}`
+    ];
+    const produced = stockProduced(batch);
+    if (produced !== 'Not set') {
+      parts.push(`Prepared ${produced}`);
+    }
+    if (isDepleted(batch)) {
+      parts.push('depleted');
+    }
+    if (batch.note) {
+      parts.push(batch.note);
+    }
+    return parts.join(' - ');
+  }
 </script>
 
 <svelte:head>
@@ -1225,30 +1242,55 @@
                   <p class="muted location-empty">{locationGroup.emptyMessage}</p>
                 {:else}
                   {#each locationGroup.productGroups as productGroup}
-                    <button
-                      class:active={productGroup.visibleBatches.some(
-                        (batch) => selectedBatchId === batch.id
-                      )}
-                      class:highlight={productGroup.visibleBatches.some(
-                        (batch) => highlightBatchId === batch.id
-                      )}
-                      class="stock-row product-group-row"
-                      type="button"
-                      onclick={() => selectProductGroup(productGroup)}
-                    >
-                      <div>
-                        <h3>{productGroup.productName}</h3>
-                        <p>
-                          {productGroup.productBrand
-                            ? `${productGroup.productBrand} - `
-                            : ''}{productGroupMeta(productGroup)}
-                        </p>
-                      </div>
-                      <div class="product-group-summary">
-                        <strong>{productGroupQuantity(productGroup)}</strong>
-                        <span>Open</span>
-                      </div>
-                    </button>
+                    <div class="product-group-block">
+                      <button
+                        class:active={productGroup.visibleBatches.some(
+                          (batch) => selectedBatchId === batch.id
+                        )}
+                        class:highlight={productGroup.visibleBatches.some(
+                          (batch) => highlightBatchId === batch.id
+                        )}
+                        class="stock-row product-group-row"
+                        type="button"
+                        onclick={() => selectProductGroup(productGroup)}
+                      >
+                        <div>
+                          <h3>{productGroup.productName}</h3>
+                          <p>
+                            {productGroup.productBrand
+                              ? `${productGroup.productBrand} - `
+                              : ''}{productGroupMeta(productGroup)}
+                          </p>
+                        </div>
+                        <div class="product-group-summary">
+                          <strong>{productGroupQuantity(productGroup)}</strong>
+                          <span>Open</span>
+                        </div>
+                      </button>
+                      {#if productGroup.visibleBatches.length > 1}
+                        <div
+                          class="batch-choice-list"
+                          aria-label={`${productGroup.productName} batches`}
+                        >
+                          {#each productGroup.visibleBatches as batch}
+                            <button
+                              class:active={selectedBatchId === batch.id}
+                              class:highlight={highlightBatchId === batch.id}
+                              class:depleted={isDepleted(batch)}
+                              class="batch-choice-row"
+                              type="button"
+                              onclick={() => selectBatch(batch)}
+                            >
+                              <div>
+                                <strong>{batch.quantity ?? '?'} {stockUnit(batch)}</strong>
+                                <p>{batchChoiceMeta(batch)}</p>
+                              </div>
+                              <span>{selectedBatchId === batch.id ? 'Selected' : 'Open'}</span>
+                            </button>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
                   {/each}
                 {/if}
               </section>
