@@ -24,6 +24,11 @@
           "type": "json",
           "path": "web/package.json",
           "jsonpath": "$.version"
+        },
+        {
+          "type": "yaml",
+          "path": "ios/project.yml",
+          "jsonpath": "$.settings.base.MARKETING_VERSION"
         }
       ]
     }
