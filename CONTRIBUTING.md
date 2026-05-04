@@ -41,7 +41,7 @@ This writes both:
 
 Commit both copies. The iOS Xcode build-tool plugin reads the iOS copy, while Android and web generation use the repo-root copy.
 
-Native client DTOs are generated from OpenAPI. Do not hand-edit generated DTOs on any client. iOS extensions on generated types live in `ios/Quartermaster/Core/Networking/APIAliases.swift`; the two tri-state PATCH bodies that the Swift generator cannot express natively live in `APIOverrides.swift`.
+Native client DTOs are generated from OpenAPI. Do not hand-edit generated DTOs on any client. iOS extensions, typealiases, compatibility helpers, and JSON Patch request aliases live in `ios/Quartermaster/Core/Networking/APIAliases.swift`.
 
 ## Rust Verification
 
@@ -167,7 +167,7 @@ cargo run -p qm-server -- push-worker
 
 ## Project Conventions
 
-- SQL must run against both SQLite and Postgres through `sqlx::Any`; keep queries portable.
+- SQL must run against both SQLite and Postgres through `sqlx::Any`; keep queries portable except for deliberate backend-guarded branches such as the Postgres row lock in stock ledger paths.
 - Product unit family is fixed across a product's stock batches. Cross-family conversion belongs in recipe concerns, not inventory.
 - Stock is event-sourced. Never mutate `stock_batch.quantity` directly; use the stock repository helpers that write events and update the cached quantity in one transaction.
 - Database enums are stored as `TEXT`; API DTOs expose typed Rust enums so OpenAPI and generated clients get real enum shapes.

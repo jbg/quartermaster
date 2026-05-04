@@ -34,7 +34,7 @@ These are enforced in code, but the _why_ lives here. Respect them.
   cargo xtask verify-release-config
   ```
   Use this after editing the AASA payload, iOS team/bundle identifiers, or `ios/project.yml` settings that affect app-site association identity.
-- **Native client DTOs are generated from OpenAPI.** iOS types + `Client` come from [swift-openapi-generator](https://github.com/apple/swift-openapi-generator); Android generates its Retrofit client from the repo-root `openapi.json` during the Gradle build. Don't hand-edit generated DTOs on either client. iOS extensions on generated types live in `ios/Quartermaster/Core/Networking/APIAliases.swift`; the two tri-state PATCH bodies that the Swift generator can't express natively live in `APIOverrides.swift`.
+- **Native client DTOs are generated from OpenAPI.** iOS types + `Client` come from [swift-openapi-generator](https://github.com/apple/swift-openapi-generator); Android generates its Retrofit client from the repo-root `openapi.json` during the Gradle build. Don't hand-edit generated DTOs on either client. iOS extensions, typealiases, compatibility helpers, and JSON Patch request aliases live in `ios/Quartermaster/Core/Networking/APIAliases.swift`.
 - **After regenerating the spec, rebuild iOS** — the plugin runs during `xcodebuild` / Xcode builds, so changes flow through automatically. First build after a package change may need `-skipPackagePluginValidation`.
 - **Keep generated clients behind local helpers.** The web client under `web/src/lib/generated/`, the Android client under `android/app/build/generated/`, and iOS generated types all come from OpenAPI. Don't hand-edit generated output. If generated shapes get awkward, prefer tightening the shared OpenAPI schema over client-specific DTO forks.
 - **`xcodegen generate`** (in `ios/`) regenerates the `.xcodeproj` from `project.yml`. Re-run after any `project.yml` edit, and also after adding new Swift source files or source-group structure that Xcode needs to see.
@@ -60,8 +60,8 @@ These are enforced in code, but the _why_ lives here. Respect them.
 
 ## Portability
 
-- SQL runs against both SQLite and Postgres via `sqlx::Any`. Keep queries in the portable subset — no SQLite pragmas, no Postgres-specific types. Test against both where practical.
-- Concurrent-write safety on Postgres has a known gap documented at the top of `crates/qm-db/src/stock.rs`. Don't paper over it in a drive-by PR — the fix is either `SERIALIZABLE` isolation or `SELECT ... FOR UPDATE` inside the transactional paths.
+- SQL runs against both SQLite and Postgres via `sqlx::Any`. Keep queries in the portable subset — no SQLite pragmas, no Postgres-specific types except deliberate backend-guarded branches such as the stock row lock.
+- Quantity-changing stock paths deliberately use `SELECT ... FOR UPDATE` on Postgres and normal transactional selects on SQLite. Keep that backend split in `crates/qm-db/src/stock.rs` intact when editing ledger code, and test concurrency-sensitive changes against Postgres where practical.
 
 ## Web client rules
 
