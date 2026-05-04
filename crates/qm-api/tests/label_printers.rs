@@ -192,6 +192,7 @@ async fn seed_batch(app: &TestApp, bearer: &str) -> String {
                 "location_id": pantry.id,
                 "quantity": "500",
                 "unit": "g",
+                "produced_on": "2026-05-01",
                 "expires_on": "2026-06-01",
                 "opened_on": null,
                 "note": "bag",
