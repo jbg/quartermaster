@@ -10,7 +10,6 @@ struct SettingsView: View {
 
   @State private var householdNameDraft: String = ""
   @State private var householdTimezoneDraft: String = TimeZone.autoupdatingCurrent.identifier
-  @State private var newInviteMaxUses: Int = 1
   @State private var newInviteRole: MembershipRole = .member
   @State private var newInviteExpiry: Date =
     Calendar.current.date(byAdding: .day, value: 7, to: .now) ?? .now
@@ -34,96 +33,24 @@ struct SettingsView: View {
   var body: some View {
     Form {
       if let me {
-        Section("Signed in") {
-          LabeledContent("Username", value: me.user.username)
-          if let email = me.user.email {
-            LabeledContent("Email", value: email)
+        if let household {
+          Section("Current Household") {
+            LabeledContent("Name", value: household.name)
+            LabeledContent("Role", value: currentRole?.displayName ?? "Member")
+            LabeledContent("Timezone", value: household.timezone)
+            LabeledContent("Device timezone", value: appState.deviceTimeZone.identifier)
+            if appState.timezonesDiffer {
+              Text("Expiry dates and reminder schedules follow household time.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
           }
-          if let household {
-            LabeledContent("Household", value: household.name)
-          }
-          LabeledContent("Role", value: currentRole?.displayName ?? "Member")
         }
 
-        Section("Recovery email") {
-          if let email = me.user.email {
-            LabeledContent("Verified", value: email)
-          } else if let pending = me.user.pendingEmail {
-            LabeledContent("Pending", value: pending)
-            if let expiresAt = me.user.pendingEmailVerificationExpiresAt {
-              LabeledContent("Code expires", value: expiresAt)
-            }
-          } else {
-            Text("No recovery email configured.")
-              .foregroundStyle(.secondary)
-          }
-
-          TextField("Recovery email", text: $recoveryEmailDraft)
-            .textContentType(.emailAddress)
-            .textInputAutocapitalization(.never)
-            .keyboardType(.emailAddress)
-            .autocorrectionDisabled()
-          Button {
-            Task { await requestRecoveryEmail() }
-          } label: {
-            if isSavingRecoveryEmail {
-              ProgressView()
-            } else {
-              Text("Send verification code")
-            }
-          }
-          .disabled(
-            isSavingRecoveryEmail
-              || recoveryEmailDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-          if me.user.pendingEmail != nil {
-            TextField("Verification code", text: $recoveryCodeDraft)
-              .textInputAutocapitalization(.characters)
-              .autocorrectionDisabled()
-            Button {
-              Task { await confirmRecoveryEmail() }
-            } label: {
-              if isSavingRecoveryEmail {
-                ProgressView()
-              } else {
-                Text("Confirm email")
-              }
-            }
-            .disabled(
-              isSavingRecoveryEmail
-                || recoveryCodeDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-          }
-
-          if me.user.email != nil || me.user.pendingEmail != nil {
-            Button("Remove recovery email", role: .destructive) {
-              Task { await clearRecoveryEmail() }
-            }
-            .disabled(isSavingRecoveryEmail)
-          }
-
-          Text("Verification codes are emitted to the server logs for now.")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-        }
-      }
-
-      if let household {
-        Section("Time") {
-          LabeledContent("Household timezone", value: household.timezone)
-          LabeledContent("Device timezone", value: appState.deviceTimeZone.identifier)
-          if appState.timezonesDiffer {
-            Text("Expiry dates and reminder schedules follow household time.")
-              .font(.footnote)
-              .foregroundStyle(.secondary)
-          }
-        }
-      }
-
-      if let me {
         HouseholdEntrySections(
           controller: householdEntry,
           me: me,
-          switchSectionTitle: "Households",
+          switchSectionTitle: "Switch Household",
           redeemSectionTitle: "Join another household",
           redeemActionTitle: "Redeem invite",
           showsCreateHousehold: false,
@@ -132,17 +59,9 @@ struct SettingsView: View {
         }
       }
 
-      Section("Inventory") {
-        NavigationLink {
-          StockHistoryView(scope: .household)
-        } label: {
-          Label("Stock history", systemImage: "clock.arrow.circlepath")
-        }
-      }
-
-      if let household {
-        Section("Household") {
-          if isAdmin {
+      if household != nil {
+        if isAdmin {
+          Section("Household Details") {
             TextField("Household name", text: $householdNameDraft)
             Picker("Timezone", selection: $householdTimezoneDraft) {
               ForEach(TimeZone.knownTimeZoneIdentifiers, id: \.self) { identifier in
@@ -155,158 +74,95 @@ struct SettingsView: View {
               if isSavingHousehold {
                 ProgressView()
               } else {
-                Text("Save name")
+                Text("Save household")
               }
             }
-            .disabled(
-              householdNameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || isSavingHousehold)
-          } else {
-            LabeledContent("Name", value: household.name)
+            .disabled(!canSaveHousehold || isSavingHousehold)
           }
         }
 
-      }
+        if isAdmin {
+          Section("Invites") {
+            Picker("Role", selection: $newInviteRole) {
+              Text("Member").tag(MembershipRole.member)
+              Text("Admin").tag(MembershipRole.admin)
+            }
+            DatePicker(
+              "Expires", selection: $newInviteExpiry, in: .now...,
+              displayedComponents: [.date, .hourAndMinute])
+            Button {
+              Task { await createInvite() }
+            } label: {
+              if isCreatingInvite {
+                ProgressView()
+              } else {
+                Text("Create single-use invite")
+              }
+            }
+            .disabled(isCreatingInvite)
 
-      if isAdmin {
-        Section("Create invite") {
-          Picker("Role", selection: $newInviteRole) {
-            Text("Member").tag(MembershipRole.member)
-            Text("Admin").tag(MembershipRole.admin)
-          }
-          Stepper("Uses: \(newInviteMaxUses)", value: $newInviteMaxUses, in: 1...99)
-          DatePicker(
-            "Expires", selection: $newInviteExpiry, in: .now...,
-            displayedComponents: [.date, .hourAndMinute])
-          Button {
-            Task { await createInvite() }
-          } label: {
-            if isCreatingInvite {
-              ProgressView()
+            if invites.isEmpty {
+              Text("No active invites.")
+                .foregroundStyle(.secondary)
             } else {
-              Text("Create invite")
+              ForEach(invites) { invite in
+                inviteRow(invite)
+              }
             }
           }
-          .disabled(isCreatingInvite)
         }
 
-        Section("Invites") {
-          if invites.isEmpty {
-            Text("No active invites.")
+        Section("Members") {
+          if members.isEmpty {
+            Text("No members found.")
               .foregroundStyle(.secondary)
           } else {
-            ForEach(invites) { invite in
-              VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                  Text(invite.code)
-                    .font(.headline.monospaced())
-                  Spacer()
-                  ShareLink(
-                    item: inviteShareText(invite),
-                    preview: SharePreview(
-                      "Quartermaster Invite", image: Image(systemName: "person.2.badge.plus"))
-                  ) {
-                    Image(systemName: "square.and.arrow.up")
-                  }
-                  Button(role: .destructive) {
-                    invitePendingRevocation = invite
-                  } label: {
-                    Image(systemName: "trash")
-                  }
-                }
-                Text(
-                  "\(invite.roleGranted.displayName) • \(invite.useCount)/\(invite.maxUses) uses • expires \(invite.expiresAt)"
-                )
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-              }
+            ForEach(members) { member in
+              memberRow(member)
             }
           }
         }
-      }
 
-      Section("Members") {
-        if members.isEmpty {
-          Text("No members found.")
-            .foregroundStyle(.secondary)
-        } else {
-          ForEach(members) { member in
-            HStack {
-              VStack(alignment: .leading, spacing: 2) {
-                Text(member.user.username)
-                if let email = member.user.email {
-                  Text(email)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                }
-              }
-              Spacer()
-              Text(member.role.displayName)
-                .font(.footnote.weight(.semibold))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(.secondary.opacity(0.12), in: Capsule())
-              if isAdmin && member.user.id != me?.user.id {
-                Button(role: .destructive) {
-                  memberPendingRemoval = member
-                } label: {
-                  Image(systemName: "person.badge.minus")
-                }
-              }
-            }
-          }
-        }
-      }
-
-      Section("Locations") {
-        if locations.isEmpty {
-          Text("No locations yet.")
-            .foregroundStyle(.secondary)
-        } else {
-          ForEach(Array(locations.enumerated()), id: \.element.id) { index, location in
-            HStack {
-              VStack(alignment: .leading, spacing: 2) {
-                Text(location.name)
-                Text(location.kind.capitalized)
-                  .font(.footnote)
-                  .foregroundStyle(.secondary)
-              }
-              Spacer()
-              if isAdmin {
-                Button {
-                  Task { await moveLocation(from: index, direction: -1) }
-                } label: {
-                  Image(systemName: "arrow.up")
-                }
-                .disabled(index == 0)
-                Button {
-                  Task { await moveLocation(from: index, direction: 1) }
-                } label: {
-                  Image(systemName: "arrow.down")
-                }
-                .disabled(index == locations.count - 1)
-                Button {
-                  editingLocation = location
-                  showLocationEditor = true
-                } label: {
-                  Image(systemName: "pencil")
-                }
-                Button(role: .destructive) {
-                  locationPendingDeletion = location
-                } label: {
-                  Image(systemName: "trash")
-                }
-              }
-            }
-          }
-        }
-        if isAdmin {
-          Button {
-            editingLocation = nil
-            showLocationEditor = true
+        Section("Inventory") {
+          NavigationLink {
+            StockHistoryView(scope: .household)
           } label: {
-            Label("Add location", systemImage: "plus")
+            Label("Stock history", systemImage: "clock.arrow.circlepath")
           }
+
+          if locations.isEmpty {
+            Text("No locations yet.")
+              .foregroundStyle(.secondary)
+          } else {
+            ForEach(locations) { location in
+              locationRow(location)
+            }
+            .onMove { source, destination in
+              Task { await moveLocations(from: source, to: destination) }
+            }
+          }
+
+          if isAdmin {
+            Button {
+              editingLocation = nil
+              showLocationEditor = true
+            } label: {
+              Label("Add location", systemImage: "plus")
+            }
+          }
+        }
+      }
+
+      if let me {
+        Section("Account") {
+          LabeledContent("Username", value: me.user.username)
+          if let email = me.user.email {
+            LabeledContent("Email", value: email)
+          }
+        }
+
+        Section("Recovery Email") {
+          recoveryEmailContent(for: me)
         }
       }
 
@@ -338,12 +194,19 @@ struct SettingsView: View {
       }
 
       Section {
-        Text("Quartermaster • v0.1.0")
+        Text(Self.versionDisplay)
           .font(.footnote)
           .foregroundStyle(.secondary)
       }
     }
     .navigationTitle("Settings")
+    .toolbar {
+      if isAdmin && household != nil {
+        ToolbarItem(placement: .topBarTrailing) {
+          EditButton()
+        }
+      }
+    }
     .overlay {
       if isLoading {
         ProgressView("Loading…")
@@ -377,21 +240,16 @@ struct SettingsView: View {
       Text(errorMessage ?? "")
     }
     .confirmationDialog(
-      "Save household name?",
+      "Save household changes?",
       isPresented: $showRenameConfirmation,
       titleVisibility: .visible
     ) {
       Button("Save") {
-        Task { await saveHouseholdName() }
+        Task { await saveHousehold() }
       }
       Button("Cancel", role: .cancel) {}
     } message: {
-      Text(
-        """
-        Save the household as \(householdNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)) in \(householdTimezoneDraft)?
-        Existing stored dates stay unchanged; this corrects how household-local dates are interpreted.
-        """
-      )
+      Text(householdChangeConfirmationMessage)
     }
     .confirmationDialog(
       "Revoke invite?",
@@ -463,6 +321,200 @@ struct SettingsView: View {
     currentRole == .admin
   }
 
+  private var trimmedHouseholdNameDraft: String {
+    householdNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var hasHouseholdDraftChanges: Bool {
+    guard let household else { return false }
+    return trimmedHouseholdNameDraft != household.name
+      || householdTimezoneDraft != household.timezone
+  }
+
+  private var canSaveHousehold: Bool {
+    !trimmedHouseholdNameDraft.isEmpty && hasHouseholdDraftChanges
+  }
+
+  private var householdChangeConfirmationMessage: String {
+    guard let household else {
+      return "Save household changes?"
+    }
+
+    var changes: [String] = []
+    if trimmedHouseholdNameDraft != household.name {
+      changes.append("rename \(household.name) to \(trimmedHouseholdNameDraft)")
+    }
+    if householdTimezoneDraft != household.timezone {
+      changes.append("change timezone from \(household.timezone) to \(householdTimezoneDraft)")
+    }
+
+    let summary = changes.isEmpty ? "save these settings" : changes.joined(separator: " and ")
+    return """
+      This will \(summary).
+
+      Existing stored dates stay unchanged; timezone edits only correct how household-local dates are interpreted.
+      """
+  }
+
+  @ViewBuilder
+  private func recoveryEmailContent(for me: Me) -> some View {
+    if let email = me.user.email {
+      LabeledContent("Verified", value: email)
+    } else if let pending = me.user.pendingEmail {
+      LabeledContent("Pending", value: pending)
+      if let expiresAt = me.user.pendingEmailVerificationExpiresAt {
+        LabeledContent("Code expires", value: expiresAt)
+      }
+    } else {
+      Text("No recovery email configured.")
+        .foregroundStyle(.secondary)
+    }
+
+    TextField("Recovery email", text: $recoveryEmailDraft)
+      .textContentType(.emailAddress)
+      .textInputAutocapitalization(.never)
+      .keyboardType(.emailAddress)
+      .autocorrectionDisabled()
+    Button {
+      Task { await requestRecoveryEmail() }
+    } label: {
+      if isSavingRecoveryEmail {
+        ProgressView()
+      } else {
+        Text("Send verification code")
+      }
+    }
+    .disabled(
+      isSavingRecoveryEmail
+        || recoveryEmailDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+    if me.user.pendingEmail != nil {
+      TextField("Verification code", text: $recoveryCodeDraft)
+        .textInputAutocapitalization(.characters)
+        .autocorrectionDisabled()
+      Button {
+        Task { await confirmRecoveryEmail() }
+      } label: {
+        if isSavingRecoveryEmail {
+          ProgressView()
+        } else {
+          Text("Confirm email")
+        }
+      }
+      .disabled(
+        isSavingRecoveryEmail
+          || recoveryCodeDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    if me.user.email != nil || me.user.pendingEmail != nil {
+      Button("Remove recovery email", role: .destructive) {
+        Task { await clearRecoveryEmail() }
+      }
+      .disabled(isSavingRecoveryEmail)
+    }
+
+    Text("Verification codes are emitted to the server logs for now.")
+      .font(.footnote)
+      .foregroundStyle(.secondary)
+  }
+
+  private func inviteRow(_ invite: Invite) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack {
+        Text(invite.code)
+          .font(.headline.monospaced())
+        Spacer()
+        ShareLink(
+          item: inviteShareText(invite),
+          preview: SharePreview(
+            "Quartermaster Invite", image: Image(systemName: "person.2.badge.plus"))
+        ) {
+          Image(systemName: "square.and.arrow.up")
+        }
+        Button(role: .destructive) {
+          invitePendingRevocation = invite
+        } label: {
+          Image(systemName: "trash")
+        }
+      }
+      Text(
+        "\(invite.roleGranted.displayName) • single-use • \(invite.useCount)/\(invite.maxUses) used • expires \(invite.expiresAt)"
+      )
+      .font(.footnote)
+      .foregroundStyle(.secondary)
+    }
+    .buttonStyle(.borderless)
+  }
+
+  private func memberRow(_ member: Member) -> some View {
+    HStack {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(member.user.username)
+        if let email = member.user.email {
+          Text(email)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+      }
+      Spacer()
+      Text(member.role.displayName)
+        .font(.footnote.weight(.semibold))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.secondary.opacity(0.12), in: Capsule())
+      if isAdmin && member.user.id != me?.user.id {
+        Button(role: .destructive) {
+          memberPendingRemoval = member
+        } label: {
+          Image(systemName: "person.badge.minus")
+        }
+      }
+    }
+    .buttonStyle(.borderless)
+  }
+
+  private func locationRow(_ location: Location) -> some View {
+    HStack {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(location.name)
+        Text(location.kind.capitalized)
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+      }
+      Spacer()
+      if isAdmin {
+        Button {
+          editingLocation = location
+          showLocationEditor = true
+        } label: {
+          Image(systemName: "pencil")
+        }
+        Button(role: .destructive) {
+          locationPendingDeletion = location
+        } label: {
+          Image(systemName: "trash")
+        }
+      }
+    }
+    .buttonStyle(.borderless)
+    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+      if isAdmin {
+        Button(role: .destructive) {
+          locationPendingDeletion = location
+        } label: {
+          Label("Delete", systemImage: "trash")
+        }
+        Button {
+          editingLocation = location
+          showLocationEditor = true
+        } label: {
+          Label("Edit", systemImage: "pencil")
+        }
+        .tint(.accentColor)
+      }
+    }
+  }
+
   private func load(retryOnForbidden: Bool = true) async {
     guard let me else { return }
     guard me.currentHouseholdSummary != nil else {
@@ -517,12 +569,12 @@ struct SettingsView: View {
     }
   }
 
-  private func saveHouseholdName() async {
+  private func saveHousehold() async {
     isSavingHousehold = true
     defer { isSavingHousehold = false }
     do {
       let updated = try await appState.api.updateCurrentHousehold(
-        name: householdNameDraft.trimmingCharacters(in: .whitespacesAndNewlines),
+        name: trimmedHouseholdNameDraft,
         timezone: householdTimezoneDraft
       )
       household = updated
@@ -540,7 +592,7 @@ struct SettingsView: View {
     do {
       _ = try await appState.api.createInvite(
         expiresAt: Self.rfc3339.string(from: newInviteExpiry),
-        maxUses: newInviteMaxUses,
+        maxUses: 1,
         role: newInviteRole
       )
       invites = try await appState.api.householdInvites()
@@ -615,7 +667,7 @@ struct SettingsView: View {
       }
       showLocationEditor = false
       self.editingLocation = nil
-      locations = try await appState.api.locations()
+      locations = try await appState.api.locations().sorted { $0.sortOrder < $1.sortOrder }
     } catch let err as APIError {
       errorMessage = err.userFacingMessage
     } catch {
@@ -623,11 +675,10 @@ struct SettingsView: View {
     }
   }
 
-  private func moveLocation(from index: Int, direction: Int) async {
-    let target = index + direction
-    guard locations.indices.contains(target) else { return }
+  private func moveLocations(from source: IndexSet, to destination: Int) async {
     var reordered = locations
-    reordered.swapAt(index, target)
+    reordered.move(fromOffsets: source, toOffset: destination)
+    locations = reordered
     do {
       for (idx, location) in reordered.enumerated() {
         _ = try await appState.api.updateLocation(
@@ -637,11 +688,21 @@ struct SettingsView: View {
           sortOrder: idx
         )
       }
-      locations = try await appState.api.locations()
+      locations = try await appState.api.locations().sorted { $0.sortOrder < $1.sortOrder }
     } catch let err as APIError {
       errorMessage = err.userFacingMessage
+      await reloadLocationsAfterFailedMove()
     } catch {
       errorMessage = error.localizedDescription
+      await reloadLocationsAfterFailedMove()
+    }
+  }
+
+  private func reloadLocationsAfterFailedMove() async {
+    do {
+      locations = try await appState.api.locations().sorted { $0.sortOrder < $1.sortOrder }
+    } catch {
+      // Keep the original reorder error visible.
     }
   }
 
@@ -701,6 +762,23 @@ struct SettingsView: View {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return formatter
+  }()
+
+  private static let versionDisplay: String = {
+    let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+    let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+    let version: String
+    switch (short, build) {
+    case (let short?, let build?) where !short.isEmpty && !build.isEmpty:
+      version = "\(short) (\(build))"
+    case (let short?, _) where !short.isEmpty:
+      version = short
+    case (_, let build?) where !build.isEmpty:
+      version = build
+    default:
+      version = "Unknown version"
+    }
+    return "Quartermaster • v\(version)"
   }()
 }
 
