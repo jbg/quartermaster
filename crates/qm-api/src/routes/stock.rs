@@ -78,6 +78,10 @@ pub struct StockBatchDto {
     pub initial_quantity: String,
     pub quantity: String,
     pub unit: String,
+    /// Package size snapshot for this batch, captured when the batch was added.
+    pub package_quantity: Option<String>,
+    /// Unit for `package_quantity`; belongs to the same family as `unit`.
+    pub package_unit: Option<String>,
     pub produced_on: Option<String>,
     pub expires_on: Option<String>,
     pub opened_on: Option<String>,
@@ -98,6 +102,8 @@ impl TryFrom<StockBatchWithProduct> for StockBatchDto {
             initial_quantity: j.batch.initial_quantity,
             quantity: j.batch.quantity,
             unit: j.batch.unit,
+            package_quantity: j.batch.package_quantity,
+            package_unit: j.batch.package_unit,
             produced_on: j.batch.produced_on,
             expires_on: j.batch.expires_on,
             opened_on: j.batch.opened_on,
@@ -233,6 +239,9 @@ pub struct ConsumedBatchDto {
     /// Amount taken from this batch, in the batch's own unit.
     pub quantity: String,
     pub unit: String,
+    /// Package size snapshot for the consumed batch, when known.
+    pub package_quantity: Option<String>,
+    pub package_unit: Option<String>,
     /// Same amount, converted to the unit the caller requested in the
     /// `ConsumeRequest`. Lets the client display "200 ml consumed" even
     /// when the underlying batch stores litres.
@@ -572,6 +581,8 @@ pub async fn consume(
             batch_id: c.batch_id,
             quantity: c.quantity.to_string(),
             unit: batch.unit.clone(),
+            package_quantity: batch.package_quantity.clone(),
+            package_unit: batch.package_unit.clone(),
             quantity_in_requested_unit: in_requested.to_string(),
             requested_unit: req.unit.clone(),
             depleted: c.depletes,
@@ -593,6 +604,9 @@ pub struct StockEventDto {
     /// Signed decimal in `unit`.
     pub quantity_delta: String,
     pub unit: String,
+    /// Package size snapshot for the event/batch, when known.
+    pub package_quantity: Option<String>,
+    pub package_unit: Option<String>,
     /// The batch's current expiry date (YYYY-MM-DD), if any. Lets clients
     /// render "expiring tomorrow" context on history rows.
     pub batch_expires_on: Option<String>,
@@ -615,6 +629,8 @@ impl TryFrom<TimelineEntryRow> for StockEventDto {
             event_type,
             quantity_delta: r.event.quantity_delta,
             unit: r.batch_unit,
+            package_quantity: r.event.package_quantity.or(r.batch_package_quantity),
+            package_unit: r.event.package_unit.or(r.batch_package_unit),
             batch_expires_on: r.batch_expires_on,
             note: r.event.note,
             created_at: r.event.created_at,
