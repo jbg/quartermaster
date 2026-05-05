@@ -24,6 +24,8 @@ pub struct StockEventRow {
     pub batch_id: Uuid,
     pub event_type: String,
     pub quantity_delta: String,
+    pub package_quantity: Option<String>,
+    pub package_unit: Option<String>,
     pub note: Option<String>,
     pub created_at: String,
     pub created_by: Uuid,
@@ -37,6 +39,8 @@ pub struct TimelineEntryRow {
     /// in this unit. Included for display so the UI doesn't have to fetch
     /// the batch separately.
     pub batch_unit: String,
+    pub batch_package_quantity: Option<String>,
+    pub batch_package_unit: Option<String>,
     /// The batch's current expiry date (YYYY-MM-DD), if any. Lets the UI
     /// contextualise events with "expiring tomorrow" badges.
     pub batch_expires_on: Option<String>,
@@ -52,8 +56,8 @@ pub async fn list_for_batch(
     batch_id: Uuid,
 ) -> Result<Vec<StockEventRow>, sqlx::Error> {
     let rows = sqlx::query(
-        "SELECT id, household_id, batch_id, event_type, quantity_delta, note, \
-                created_at, created_by, consume_request_id \
+        "SELECT id, household_id, batch_id, event_type, quantity_delta, package_quantity, \
+                package_unit, note, created_at, created_by, consume_request_id \
          FROM stock_event \
          WHERE batch_id = ? \
          ORDER BY created_at ASC, id ASC",
@@ -70,8 +74,8 @@ pub async fn list_for_household(
     limit: i64,
 ) -> Result<Vec<StockEventRow>, sqlx::Error> {
     let rows = sqlx::query(
-        "SELECT id, household_id, batch_id, event_type, quantity_delta, note, \
-                created_at, created_by, consume_request_id \
+        "SELECT id, household_id, batch_id, event_type, quantity_delta, package_quantity, \
+                package_unit, note, created_at, created_by, consume_request_id \
          FROM stock_event \
          WHERE household_id = ? \
          ORDER BY created_at DESC, id DESC \
@@ -106,9 +110,11 @@ pub async fn list_timeline(
         "SELECT \
             e.id AS e_id, e.household_id AS e_household_id, e.batch_id AS e_batch_id, \
             e.event_type AS e_event_type, e.quantity_delta AS e_quantity_delta, \
+            e.package_quantity AS e_package_quantity, e.package_unit AS e_package_unit, \
             e.note AS e_note, e.created_at AS e_created_at, e.created_by AS e_created_by, \
             e.consume_request_id AS e_consume_request_id, \
-            b.unit AS b_unit, b.expires_on AS b_expires_on, \
+            b.unit AS b_unit, b.package_quantity AS b_package_quantity, \
+            b.package_unit AS b_package_unit, b.expires_on AS b_expires_on, \
             p.id AS p_id, p.source AS p_source, p.off_barcode AS p_off_barcode, \
             p.name AS p_name, p.brand AS p_brand, p.family AS p_family, \
             p.default_unit AS p_default_unit, p.image_url AS p_image_url, \
@@ -158,8 +164,8 @@ pub async fn latest_for_batch_tx(
     batch_id: Uuid,
 ) -> Result<Option<StockEventRow>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT id, household_id, batch_id, event_type, quantity_delta, note, \
-                created_at, created_by, consume_request_id \
+        "SELECT id, household_id, batch_id, event_type, quantity_delta, package_quantity, \
+                package_unit, note, created_at, created_by, consume_request_id \
          FROM stock_event \
          WHERE batch_id = ? \
          ORDER BY created_at DESC, id DESC \
@@ -184,6 +190,8 @@ fn row_to_event(row: sqlx::any::AnyRow) -> Result<StockEventRow, sqlx::Error> {
         batch_id: Uuid::parse_str(&batch_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         event_type: row.try_get("event_type")?,
         quantity_delta: row.try_get("quantity_delta")?,
+        package_quantity: row.try_get("package_quantity")?,
+        package_unit: row.try_get("package_unit")?,
         note: row.try_get("note")?,
         created_at: row.try_get("created_at")?,
         created_by: Uuid::parse_str(&created_by).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
@@ -208,6 +216,8 @@ fn row_to_timeline_entry(row: sqlx::any::AnyRow) -> Result<TimelineEntryRow, sql
         batch_id: Uuid::parse_str(&e_batch).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         event_type: row.try_get("e_event_type")?,
         quantity_delta: row.try_get("e_quantity_delta")?,
+        package_quantity: row.try_get("e_package_quantity")?,
+        package_unit: row.try_get("e_package_unit")?,
         note: row.try_get("e_note")?,
         created_at: row.try_get("e_created_at")?,
         created_by: Uuid::parse_str(&e_by).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
@@ -243,6 +253,8 @@ fn row_to_timeline_entry(row: sqlx::any::AnyRow) -> Result<TimelineEntryRow, sql
     Ok(TimelineEntryRow {
         event,
         batch_unit: row.try_get("b_unit")?,
+        batch_package_quantity: row.try_get("b_package_quantity")?,
+        batch_package_unit: row.try_get("b_package_unit")?,
         batch_expires_on: row.try_get("b_expires_on")?,
         product,
         created_by_username: row.try_get("u_username")?,

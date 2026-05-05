@@ -37,6 +37,8 @@ pub struct StockBatchRow {
     /// Cached current balance; sum of stock_event.quantity_delta for this batch.
     pub quantity: String,
     pub unit: String,
+    pub package_quantity: Option<String>,
+    pub package_unit: Option<String>,
     pub produced_on: Option<String>,
     pub expires_on: Option<String>,
     pub opened_on: Option<String>,
@@ -91,6 +93,7 @@ pub async fn list(
             s.id AS s_id, s.household_id AS s_household_id, s.product_id AS s_product_id, \
             s.location_id AS s_location_id, s.initial_quantity AS s_initial_quantity, \
             s.quantity AS s_quantity, s.unit AS s_unit, \
+            s.package_quantity AS s_package_quantity, s.package_unit AS s_package_unit, \
             s.produced_on AS s_produced_on, s.expires_on AS s_expires_on, \
             s.opened_on AS s_opened_on, s.note AS s_note, \
             s.created_at AS s_created_at, s.created_by AS s_created_by, s.depleted_at AS s_depleted_at, \
@@ -168,6 +171,7 @@ async fn get_with_product_inner(
             s.id AS s_id, s.household_id AS s_household_id, s.product_id AS s_product_id, \
             s.location_id AS s_location_id, s.initial_quantity AS s_initial_quantity, \
             s.quantity AS s_quantity, s.unit AS s_unit, \
+            s.package_quantity AS s_package_quantity, s.package_unit AS s_package_unit, \
             s.produced_on AS s_produced_on, s.expires_on AS s_expires_on, \
             s.opened_on AS s_opened_on, s.note AS s_note, \
             s.created_at AS s_created_at, s.created_by AS s_created_by, s.depleted_at AS s_depleted_at, \
@@ -201,7 +205,8 @@ pub async fn get(
 ) -> Result<Option<StockBatchRow>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT id, household_id, product_id, location_id, initial_quantity, quantity, unit, \
-                produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at \
+                package_quantity, package_unit, produced_on, expires_on, opened_on, note, \
+                created_at, created_by, depleted_at \
          FROM stock_batch WHERE id = ? AND household_id = ?",
     )
     .bind(id.to_string())
@@ -235,8 +240,8 @@ pub async fn create(
 
     sqlx::query(
         "INSERT INTO stock_batch \
-         (id, household_id, product_id, location_id, initial_quantity, quantity, unit, produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+         (id, household_id, product_id, location_id, initial_quantity, quantity, unit, package_quantity, package_unit, produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT package_quantity FROM product WHERE id = ?), (SELECT package_unit FROM product WHERE id = ?), ?, ?, ?, ?, ?, ?, NULL)",
     )
     .bind(id.to_string())
     .bind(household_id.to_string())
@@ -245,6 +250,8 @@ pub async fn create(
     .bind(quantity)
     .bind(quantity)
     .bind(unit)
+    .bind(product_id.to_string())
+    .bind(product_id.to_string())
     .bind(produced_on)
     .bind(expires_on)
     .bind(opened_on)
@@ -272,22 +279,9 @@ pub async fn create(
 
     tx.commit().await?;
 
-    Ok(StockBatchRow {
-        id,
-        household_id,
-        product_id,
-        location_id,
-        initial_quantity: quantity.to_owned(),
-        quantity: quantity.to_owned(),
-        unit: unit.to_owned(),
-        produced_on: produced_on.map(str::to_owned),
-        expires_on: expires_on.map(str::to_owned),
-        opened_on: opened_on.map(str::to_owned),
-        note: note.map(str::to_owned),
-        created_at,
-        created_by,
-        depleted_at: None,
-    })
+    get(db, household_id, id)
+        .await?
+        .ok_or(sqlx::Error::RowNotFound)
 }
 
 /// Metadata-only update (location, produced_on, expires_on, opened_on, note). Does NOT
@@ -669,7 +663,8 @@ pub async fn list_active_batches(
 ) -> Result<Vec<StockBatchRow>, sqlx::Error> {
     let mut sql = String::from(
         "SELECT id, household_id, product_id, location_id, initial_quantity, quantity, unit, \
-                produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at \
+                package_quantity, package_unit, produced_on, expires_on, opened_on, note, \
+                created_at, created_by, depleted_at \
          FROM stock_batch \
          WHERE household_id = ? AND product_id = ? AND depleted_at IS NULL ",
     );
@@ -814,14 +809,16 @@ async fn insert_event(
 ) -> Result<(), sqlx::Error> {
     let id = Uuid::now_v7();
     sqlx::query(
-        "INSERT INTO stock_event (id, household_id, batch_id, event_type, quantity_delta, note, created_at, created_by, consume_request_id) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO stock_event (id, household_id, batch_id, event_type, quantity_delta, package_quantity, package_unit, note, created_at, created_by, consume_request_id) \
+         VALUES (?, ?, ?, ?, ?, (SELECT package_quantity FROM stock_batch WHERE id = ?), (SELECT package_unit FROM stock_batch WHERE id = ?), ?, ?, ?, ?)",
     )
     .bind(id.to_string())
     .bind(household_id.to_string())
     .bind(batch_id.to_string())
     .bind(event_type)
     .bind(delta)
+    .bind(batch_id.to_string())
+    .bind(batch_id.to_string())
     .bind(note)
     .bind(now_utc_rfc3339())
     .bind(created_by.to_string())
@@ -864,6 +861,8 @@ fn row_to_batch(row: sqlx::any::AnyRow) -> Result<StockBatchRow, sqlx::Error> {
         initial_quantity: row.try_get("initial_quantity")?,
         quantity: row.try_get("quantity")?,
         unit: row.try_get("unit")?,
+        package_quantity: row.try_get("package_quantity")?,
+        package_unit: row.try_get("package_unit")?,
         produced_on: row.try_get("produced_on")?,
         expires_on: row.try_get("expires_on")?,
         opened_on: row.try_get("opened_on")?,
@@ -883,6 +882,8 @@ fn row_to_joined(row: sqlx::any::AnyRow) -> Result<StockBatchWithProduct, sqlx::
         initial_quantity: row.try_get("s_initial_quantity")?,
         quantity: row.try_get("s_quantity")?,
         unit: row.try_get("s_unit")?,
+        package_quantity: row.try_get("s_package_quantity")?,
+        package_unit: row.try_get("s_package_unit")?,
         produced_on: row.try_get("s_produced_on")?,
         expires_on: row.try_get("s_expires_on")?,
         opened_on: row.try_get("s_opened_on")?,
@@ -1019,6 +1020,61 @@ mod tests {
         assert_eq!(events[0].quantity_delta, "500");
         assert_eq!(b.initial_quantity, "500");
         assert_eq!(b.quantity, "500");
+    }
+
+    #[tokio::test]
+    async fn package_size_is_snapshotted_on_batch_and_events() {
+        let (db, hid, uid, lid, _pid) = setup().await;
+        let product = products::upsert_from_off(
+            &db,
+            "1234567890123",
+            "Beans",
+            None,
+            "mass",
+            Some("g"),
+            None,
+            Some("400"),
+            Some("g"),
+        )
+        .await
+        .unwrap();
+
+        let batch = create(
+            &db, hid, product.id, lid, "1600", "g", None, None, None, None, uid, None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(batch.package_quantity.as_deref(), Some("400"));
+        assert_eq!(batch.package_unit.as_deref(), Some("g"));
+
+        products::upsert_from_off(
+            &db,
+            "1234567890123",
+            "Beans",
+            None,
+            "mass",
+            Some("g"),
+            None,
+            Some("300"),
+            Some("g"),
+        )
+        .await
+        .unwrap();
+
+        let refreshed_batch = get(&db, hid, batch.id).await.unwrap().unwrap();
+        assert_eq!(refreshed_batch.package_quantity.as_deref(), Some("400"));
+        assert_eq!(refreshed_batch.package_unit.as_deref(), Some("g"));
+
+        let refs = vec![refreshed_batch.to_batch_ref().unwrap()];
+        let plan = qm_core::batch::plan_consumption(refs, Decimal::from(400), "g").unwrap();
+        apply_consumption(&db, hid, &plan, uid, None).await.unwrap();
+
+        let events = stock_events::list_for_batch(&db, batch.id).await.unwrap();
+        assert_eq!(events[0].package_quantity.as_deref(), Some("400"));
+        assert_eq!(events[0].package_unit.as_deref(), Some("g"));
+        assert_eq!(events[1].event_type, "consume");
+        assert_eq!(events[1].package_quantity.as_deref(), Some("400"));
+        assert_eq!(events[1].package_unit.as_deref(), Some("g"));
     }
 
     #[tokio::test]

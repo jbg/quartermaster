@@ -2971,6 +2971,19 @@
           "depleted": {
             "type": "boolean"
           },
+          "package_quantity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Package size snapshot for the consumed batch, when known."
+          },
+          "package_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "quantity": {
             "type": "string",
             "description": "Amount taken from this batch, in the batch's own unit."
@@ -4101,6 +4114,20 @@
               "null"
             ]
           },
+          "package_quantity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Package size snapshot for this batch, captured when the batch was added."
+          },
+          "package_unit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Unit for `package_quantity`; belongs to the same family as `unit`."
+          },
           "produced_on": {
             "type": [
               "string",
@@ -4166,6 +4193,19 @@
             "format": "uuid"
           },
           "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "package_quantity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Package size snapshot for the event/batch, when known."
+          },
+          "package_unit": {
             "type": [
               "string",
               "null"

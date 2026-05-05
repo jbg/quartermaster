@@ -75,8 +75,8 @@ struct ProductBatchesSheet: View {
           Task { await onMutated() }
         }
       }
-      .sheet(item: $consumeTarget) { _ in
-        ConsumeForm(product: product, location: location) {
+      .sheet(item: $consumeTarget) { batch in
+        ConsumeForm(product: product, location: location, batch: batch) {
           await onMutated()
           if let refreshed = try? await appState.api.listStock(
             locationID: location.id, productID: product.id, includeDepleted: true)
@@ -501,32 +501,69 @@ private struct ConsumeForm: View {
   @Environment(AppState.self) private var appState
   @Environment(\.dismiss) private var dismiss
 
+  private enum QuantityEntryMode: String, CaseIterable, Identifiable {
+    case package
+    case exact
+
+    var id: String { rawValue }
+  }
+
   let product: Product
   let location: Location
+  let batch: StockBatch
   var onConsumed: () async -> Void
 
+  @State private var entryMode: QuantityEntryMode = .exact
+  @State private var packageCount: String = ""
   @State private var quantity: String = ""
   @State private var unitCode: String
   @State private var isSubmitting = false
   @State private var errorMessage: String?
   @State private var successMessage: String?
 
-  init(product: Product, location: Location, onConsumed: @escaping () async -> Void) {
+  init(
+    product: Product,
+    location: Location,
+    batch: StockBatch,
+    onConsumed: @escaping () async -> Void
+  ) {
     self.product = product
     self.location = location
+    self.batch = batch
     self.onConsumed = onConsumed
     _unitCode = State(initialValue: product.preferredUnit)
+    if batch.packageQuantity != nil && batch.packageUnit != nil {
+      _entryMode = State(initialValue: .package)
+    }
   }
 
   var body: some View {
     NavigationStack {
       Form {
-        Section("How much did you use?") {
-          DecimalField(title: "Amount", text: $quantity)
-          Picker("Unit", selection: $unitCode) {
-            ForEach(appState.unitsFor(family: product.family), id: \.code) { u in
-              Text(u.code).tag(u.code)
+        Section {
+          if packageSize != nil {
+            Picker("Entry", selection: $entryMode) {
+              Text("Packages").tag(QuantityEntryMode.package)
+              Text("Exact amount").tag(QuantityEntryMode.exact)
             }
+            .pickerStyle(.segmented)
+          }
+          if entryMode == .package, let packageSize {
+            DecimalField(title: "Packages", text: $packageCount)
+            LabeledContent("Each", value: "\(packageSize.quantity) \(packageSize.unit)")
+          } else {
+            DecimalField(title: "Amount", text: $quantity)
+            Picker("Unit", selection: $unitCode) {
+              ForEach(appState.unitsFor(family: product.family), id: \.code) { u in
+                Text(u.code).tag(u.code)
+              }
+            }
+          }
+        } header: {
+          Text("How much did you use?")
+        } footer: {
+          if entryMode == .package, packageSize != nil {
+            Text("Quartermaster will use the saved package size for this batch.")
           }
         }
         Section {
@@ -573,18 +610,36 @@ private struct ConsumeForm: View {
   }
 
   private var canSubmit: Bool {
-    guard !quantity.isEmpty, let value = Decimal(string: quantity), value > 0 else { return false }
-    return true
+    if entryMode == .package {
+      guard packageSize != nil else { return false }
+      guard let value = Decimal(string: packageCount), value > 0 else { return false }
+      return true
+    } else {
+      guard !quantity.isEmpty, let value = Decimal(string: quantity), value > 0 else {
+        return false
+      }
+      return true
+    }
+  }
+
+  private var packageSize: (quantity: String, unit: String)? {
+    guard
+      let quantity = batch.packageQuantity,
+      let unit = batch.packageUnit,
+      Decimal(string: quantity).map({ $0 > 0 }) == true
+    else { return nil }
+    return (quantity, unit)
   }
 
   private func submit() async {
+    guard let stockAmount = stockQuantityAndUnit() else { return }
     isSubmitting = true
     errorMessage = nil
     let request = ConsumeRequest(
       locationId: location.id,
       productId: product.id,
-      quantity: quantity,
-      unit: unitCode,
+      quantity: stockAmount.quantity,
+      unit: stockAmount.unit,
     )
     do {
       let response = try await appState.api.consumeStock(request)
@@ -602,12 +657,32 @@ private struct ConsumeForm: View {
     let total = response.consumed.reduce(Decimal.zero) { partial, c in
       partial + (Decimal(string: c.quantityInRequestedUnit) ?? .zero)
     }
-    let totalLabel = "\(Self.format(total)) \(unitCode)"
+    let totalLabel: String
+    if entryMode == .package, let packageSize, let count = Decimal(string: packageCount) {
+      let packageLabel = "package\(count == 1 ? "" : "s")"
+      totalLabel =
+        "\(Self.format(count)) \(packageLabel) (\(Self.format(total)) \(packageSize.unit))"
+    } else {
+      totalLabel = "\(Self.format(total)) \(unitCode)"
+    }
     let count = response.consumed.count
     if count <= 1 {
       return "Used \(totalLabel)."
     }
     return "Used \(totalLabel) across \(count) batches."
+  }
+
+  private func stockQuantityAndUnit() -> (quantity: String, unit: String)? {
+    if entryMode == .package {
+      guard
+        let packageSize,
+        let count = Decimal(string: packageCount),
+        let quantityPerPackage = Decimal(string: packageSize.quantity)
+      else { return nil }
+      return (Self.format(count * quantityPerPackage), packageSize.unit)
+    }
+    guard !unitCode.isEmpty else { return nil }
+    return (quantity, unitCode)
   }
 
   private static func format(_ d: Decimal) -> String {
