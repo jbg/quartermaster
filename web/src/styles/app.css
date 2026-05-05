@@ -601,7 +601,6 @@ a:focus-visible {
 
 .product-result span,
 .selected-product span,
-.product-group-summary span,
 .subsection-heading span,
 .reminder-row span {
   font-variant-numeric: tabular-nums;
@@ -898,20 +897,6 @@ a:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-.product-group-summary span {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  border-radius: 999px;
-  background: var(--qm-neutral-bg);
-  color: var(--qm-slate-700);
-  font-size: 12px;
-  font-weight: 850;
-  line-height: 1;
-  padding: 0 9px;
-  text-transform: uppercase;
-}
-
 .batch-choice-list {
   display: grid;
   gap: var(--qm-space-2);
@@ -966,12 +951,6 @@ a:focus-visible {
   margin-top: 3px;
   color: var(--qm-slate-500);
   font-size: 13px;
-}
-
-.batch-choice-row span {
-  color: var(--qm-slate-700);
-  font-size: 12px;
-  font-weight: 800;
 }
 
 .reminder-list,

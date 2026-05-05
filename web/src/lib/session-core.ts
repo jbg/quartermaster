@@ -89,6 +89,10 @@ export interface StockBatch {
   createdAt?: string;
   initial_quantity?: string | number;
   initialQuantity?: string | number;
+  package_quantity?: string | number | null;
+  packageQuantity?: string | number | null;
+  package_unit?: string | null;
+  packageUnit?: string | null;
   location?: {
     name?: string;
   } | null;
