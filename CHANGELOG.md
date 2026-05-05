@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.1](https://github.com/jbg/quartermaster/compare/1.15.0...1.15.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* split iOS package stock batches ([0c70b92](https://github.com/jbg/quartermaster/commit/0c70b92d27ecfd3c153177c34d520cae6de5060b))
+
 ## [1.15.0](https://github.com/jbg/quartermaster/compare/1.14.2...1.15.0) (2026-05-05)
 
 
