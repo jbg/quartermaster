@@ -10,7 +10,8 @@ pub const SOURCE_MANUAL: &str = "manual";
 /// Standard column list for reads. Embedded in every SELECT so new columns
 /// only need adding in one place.
 const COLS: &str = "id, source, off_barcode, name, brand, family, default_unit, \
-                    image_url, fetched_at, created_by_household_id, created_at, deleted_at";
+                    image_url, package_quantity, package_unit, fetched_at, \
+                    created_by_household_id, created_at, deleted_at";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProductRow {
@@ -22,6 +23,8 @@ pub struct ProductRow {
     pub family: String,
     pub preferred_unit: String,
     pub image_url: Option<String>,
+    pub package_quantity: Option<String>,
+    pub package_unit: Option<String>,
     pub fetched_at: Option<String>,
     pub created_by_household_id: Option<Uuid>,
     pub created_at: String,
@@ -77,6 +80,8 @@ pub async fn create_manual(
         family: family.to_owned(),
         preferred_unit: unit.to_owned(),
         image_url: image_url.map(str::to_owned),
+        package_quantity: None,
+        package_unit: None,
         fetched_at: None,
         created_by_household_id: Some(household_id),
         created_at,
@@ -93,6 +98,8 @@ pub async fn upsert_from_off(
     family: &str,
     preferred_unit: Option<&str>,
     image_url: Option<&str>,
+    package_quantity: Option<&str>,
+    package_unit: Option<&str>,
 ) -> Result<ProductRow, sqlx::Error> {
     let now = now_utc_rfc3339();
     let unit = preferred_unit.unwrap_or(base_unit_for_family(family));
@@ -100,7 +107,8 @@ pub async fn upsert_from_off(
     if let Some(existing) = find_by_off_barcode(db, barcode).await? {
         sqlx::query(
             "UPDATE product \
-             SET name = ?, brand = ?, family = ?, default_unit = ?, image_url = ?, fetched_at = ? \
+             SET name = ?, brand = ?, family = ?, default_unit = ?, image_url = ?, \
+                 package_quantity = ?, package_unit = ?, fetched_at = ? \
              WHERE id = ?",
         )
         .bind(name)
@@ -108,6 +116,8 @@ pub async fn upsert_from_off(
         .bind(family)
         .bind(unit)
         .bind(image_url)
+        .bind(package_quantity)
+        .bind(package_unit)
         .bind(&now)
         .bind(existing.id.to_string())
         .execute(&db.pool)
@@ -120,8 +130,8 @@ pub async fn upsert_from_off(
     let id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO product \
-         (id, source, off_barcode, name, brand, default_unit, family, image_url, fetched_at, created_by_household_id, created_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)",
+         (id, source, off_barcode, name, brand, default_unit, family, image_url, package_quantity, package_unit, fetched_at, created_by_household_id, created_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)",
     )
     .bind(id.to_string())
     .bind(SOURCE_OFF)
@@ -131,6 +141,8 @@ pub async fn upsert_from_off(
     .bind(unit)
     .bind(family)
     .bind(image_url)
+    .bind(package_quantity)
+    .bind(package_unit)
     .bind(&now)
     .bind(&now)
     .execute(&db.pool)
@@ -355,6 +367,8 @@ fn row_to_product(row: sqlx::any::AnyRow) -> Result<ProductRow, sqlx::Error> {
         family: row.try_get("family")?,
         preferred_unit: row.try_get("default_unit")?,
         image_url: row.try_get("image_url")?,
+        package_quantity: row.try_get("package_quantity")?,
+        package_unit: row.try_get("package_unit")?,
         fetched_at: row.try_get("fetched_at")?,
         created_by_household_id: household_id_str
             .map(|s| Uuid::parse_str(&s))
@@ -465,6 +479,8 @@ mod tests {
             "volume",
             Some("ml"),
             None,
+            Some("330"),
+            Some("ml"),
         )
         .await
         .unwrap();
@@ -483,6 +499,8 @@ mod tests {
             "mass",
             Some("g"),
             None,
+            Some("500"),
+            Some("g"),
         )
         .await
         .unwrap();
@@ -494,12 +512,16 @@ mod tests {
             "mass",
             Some("g"),
             None,
+            Some("500"),
+            Some("g"),
         )
         .await
         .unwrap();
         assert_eq!(first.id, second.id);
         assert_eq!(second.name, "Spaghetti No. 5");
         assert_eq!(second.brand.as_deref(), Some("Barilla"));
+        assert_eq!(second.package_quantity.as_deref(), Some("500"));
+        assert_eq!(second.package_unit.as_deref(), Some("g"));
     }
 
     #[tokio::test]
@@ -563,6 +585,8 @@ mod tests {
             "volume",
             Some("ml"),
             None,
+            Some("330"),
+            Some("ml"),
         )
         .await
         .unwrap();

@@ -462,6 +462,8 @@ async fn ensure_smoke_barcode_product(
         "mass",
         Some("g"),
         None,
+        Some("400"),
+        Some("g"),
     )
     .await?;
     qm_db::barcode_cache::put_hit(db, SMOKE_BARCODE, product.id).await?;

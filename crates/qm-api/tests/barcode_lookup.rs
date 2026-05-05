@@ -32,6 +32,8 @@ async fn barcode_lookup_retries_transient_off_failures_then_succeeds() {
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["source"], "openfoodfacts");
+    assert_eq!(body["product"]["package_quantity"], "400");
+    assert_eq!(body["product"]["package_unit"], "g");
     assert_eq!(mock.hit_count("1111111111111").await, 3);
 }
 

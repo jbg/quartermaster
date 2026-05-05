@@ -175,6 +175,8 @@ async fn product_catalogue_lists_visible_products_and_deleted_when_requested() {
         "volume",
         Some("ml"),
         None,
+        Some("330"),
+        Some("ml"),
     )
     .await
     .unwrap();

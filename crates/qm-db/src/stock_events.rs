@@ -112,6 +112,7 @@ pub async fn list_timeline(
             p.id AS p_id, p.source AS p_source, p.off_barcode AS p_off_barcode, \
             p.name AS p_name, p.brand AS p_brand, p.family AS p_family, \
             p.default_unit AS p_default_unit, p.image_url AS p_image_url, \
+            p.package_quantity AS p_package_quantity, p.package_unit AS p_package_unit, \
             p.fetched_at AS p_fetched_at, p.created_by_household_id AS p_created_by_household_id, \
             p.created_at AS p_created_at, p.deleted_at AS p_deleted_at, \
             u.username AS u_username \
@@ -228,6 +229,8 @@ fn row_to_timeline_entry(row: sqlx::any::AnyRow) -> Result<TimelineEntryRow, sql
         family: row.try_get("p_family")?,
         preferred_unit: row.try_get("p_default_unit")?,
         image_url: row.try_get("p_image_url")?,
+        package_quantity: row.try_get("p_package_quantity")?,
+        package_unit: row.try_get("p_package_unit")?,
         fetched_at: row.try_get("p_fetched_at")?,
         created_by_household_id: p_household
             .map(|s| Uuid::parse_str(&s))

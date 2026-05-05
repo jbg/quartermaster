@@ -51,6 +51,10 @@ pub struct ProductDto {
     pub family: UnitFamily,
     pub preferred_unit: String,
     pub image_url: Option<String>,
+    /// Amount in `package_unit` for one retail package when known from the catalogue.
+    pub package_quantity: Option<String>,
+    /// Unit for `package_quantity`; belongs to the same family as the product.
+    pub package_unit: Option<String>,
     pub barcode: Option<String>,
     pub source: ProductSource,
     /// RFC-3339 timestamp when the product was soft-deleted. Present only
@@ -78,6 +82,8 @@ impl TryFrom<ProductRow> for ProductDto {
             family,
             preferred_unit: p.preferred_unit,
             image_url: p.image_url,
+            package_quantity: p.package_quantity,
+            package_unit: p.package_unit,
             barcode: p.off_barcode,
             source,
             deleted_at: p.deleted_at,
@@ -612,6 +618,10 @@ pub async fn refresh(
         OffResult::Upstream(_) => return Err(ApiError::BadGateway),
     };
     let family = openfoodfacts::infer_family(off_product.quantity_unit.as_deref());
+    let package = openfoodfacts::normalize_package(
+        off_product.quantity.as_deref(),
+        off_product.quantity_unit.as_deref(),
+    );
 
     // Guard: if OFF's inference changes the family, don't silently adopt it
     // when active batches would become cross-family. Same check the PATCH
@@ -641,6 +651,8 @@ pub async fn refresh(
         family.as_str(),
         Some(preferred),
         off_product.image_url.as_deref(),
+        package.as_ref().map(|(quantity, _)| quantity.as_str()),
+        package.as_ref().map(|(_, unit)| unit.as_str()),
     )
     .await?;
     qm_db::barcode_cache::put_hit(&state.db, &barcode, row.id).await?;
@@ -702,6 +714,8 @@ async fn fetch_and_cache(
         OffResult::Found(p) => {
             let family = openfoodfacts::infer_family(p.quantity_unit.as_deref());
             let preferred = qm_db::products::base_unit_for_family(family.as_str());
+            let package =
+                openfoodfacts::normalize_package(p.quantity.as_deref(), p.quantity_unit.as_deref());
             let row = qm_db::products::upsert_from_off(
                 &state.db,
                 &p.barcode,
@@ -710,6 +724,8 @@ async fn fetch_and_cache(
                 family.as_str(),
                 Some(preferred),
                 p.image_url.as_deref(),
+                package.as_ref().map(|(quantity, _)| quantity.as_str()),
+                package.as_ref().map(|(_, unit)| unit.as_str()),
             )
             .await?;
             qm_db::barcode_cache::put_hit(&state.db, barcode, row.id).await?;

@@ -3728,6 +3728,20 @@
           "name": {
             "type": "string"
           },
+          "package_quantity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Amount in `package_unit` for one retail package when known from the catalogue."
+          },
+          "package_unit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Unit for `package_quantity`; belongs to the same family as the product."
+          },
           "preferred_unit": {
             "type": "string"
           },
