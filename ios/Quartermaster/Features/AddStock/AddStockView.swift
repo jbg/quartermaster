@@ -22,6 +22,7 @@ struct AddStockView: View {
   @State private var hasExpiry: Bool = false
   @State private var expiry: Date =
     Calendar.current.date(byAdding: .day, value: 30, to: .now) ?? .now
+  @State private var showExpiryScanner = false
   @State private var hasProduced: Bool = false
   @State private var produced: Date = .now
   @State private var hasOpened: Bool = false
@@ -84,6 +85,11 @@ struct AddStockView: View {
           if hasExpiry {
             DatePicker("Expires", selection: $expiry, displayedComponents: .date)
           }
+          Button {
+            showExpiryScanner = true
+          } label: {
+            Label("Scan expiry date", systemImage: "text.viewfinder")
+          }
         }
         Section {
           Toggle("Mark as opened", isOn: $hasOpened.animation())
@@ -100,6 +106,12 @@ struct AddStockView: View {
           Section {
             Text(msg).foregroundStyle(Color.quartermasterError)
           }
+        }
+      }
+      .sheet(isPresented: $showExpiryScanner) {
+        ExpiryDateScannerView { candidate in
+          expiry = candidate.date
+          hasExpiry = true
         }
       }
       .navigationTitle("Add to inventory")
