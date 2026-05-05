@@ -13,7 +13,7 @@ struct ExpiryDateScannerView: View {
     NavigationStack {
       ZStack(alignment: .bottom) {
         if DataScannerViewController.isSupported && DataScannerViewController.isAvailable {
-          ExpiryTextScannerView(onText: updateCandidates)
+          ScannerView(mode: .expiryText, onText: updateCandidates)
             .ignoresSafeArea(edges: [.bottom, .horizontal])
         } else {
           ContentUnavailableView {
@@ -82,73 +82,5 @@ struct ExpiryDateScannerView: View {
     guard text != scannedText else { return }
     scannedText = text
     candidates = ExpiryDateParser.candidates(in: text)
-  }
-}
-
-private struct ExpiryTextScannerView: UIViewControllerRepresentable {
-  var onText: (String) -> Void
-
-  func makeUIViewController(context: Context) -> DataScannerViewController {
-    let controller = DataScannerViewController(
-      recognizedDataTypes: [.text()],
-      qualityLevel: .balanced,
-      recognizesMultipleItems: true,
-      isHighFrameRateTrackingEnabled: false,
-      isPinchToZoomEnabled: true,
-      isGuidanceEnabled: true,
-      isHighlightingEnabled: true,
-    )
-    controller.delegate = context.coordinator
-    return controller
-  }
-
-  func updateUIViewController(_ uiViewController: DataScannerViewController, context: Context) {
-    context.coordinator.onText = onText
-    try? uiViewController.startScanning()
-  }
-
-  static func dismantleUIViewController(
-    _ uiViewController: DataScannerViewController,
-    coordinator: Coordinator
-  ) {
-    uiViewController.stopScanning()
-  }
-
-  func makeCoordinator() -> Coordinator {
-    Coordinator(onText: onText)
-  }
-
-  final class Coordinator: NSObject, DataScannerViewControllerDelegate {
-    var onText: (String) -> Void
-
-    init(onText: @escaping (String) -> Void) {
-      self.onText = onText
-    }
-
-    func dataScanner(
-      _ dataScanner: DataScannerViewController,
-      didAdd addedItems: [RecognizedItem],
-      allItems: [RecognizedItem],
-    ) {
-      onText(Self.transcript(from: allItems))
-    }
-
-    func dataScanner(
-      _ dataScanner: DataScannerViewController,
-      didUpdate updatedItems: [RecognizedItem],
-      allItems: [RecognizedItem],
-    ) {
-      onText(Self.transcript(from: allItems))
-    }
-
-    private static func transcript(from items: [RecognizedItem]) -> String {
-      items.compactMap { item in
-        if case .text(let text) = item {
-          return text.transcript
-        }
-        return nil
-      }
-      .joined(separator: "\n")
-    }
   }
 }
