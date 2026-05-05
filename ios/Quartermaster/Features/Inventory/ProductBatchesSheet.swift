@@ -329,6 +329,7 @@ private struct EditBatchForm: View {
   @State private var hasExpiry: Bool
   @State private var expiry: Date
   @State private var hadExpiryOriginally: Bool
+  @State private var showExpiryScanner = false
   @State private var hasProduced: Bool
   @State private var produced: Date
   @State private var hadProducedOriginally: Bool
@@ -403,6 +404,11 @@ private struct EditBatchForm: View {
           if hasExpiry {
             DatePicker("Expires", selection: $expiry, displayedComponents: .date)
           }
+          Button {
+            showExpiryScanner = true
+          } label: {
+            Label("Scan expiry date", systemImage: "text.viewfinder")
+          }
           if hadExpiryOriginally && !hasExpiry {
             Text("Saving will remove the expiry date from this batch.")
               .font(.footnote)
@@ -424,6 +430,12 @@ private struct EditBatchForm: View {
       }
       .navigationTitle("Edit batch")
       .navigationBarTitleDisplayMode(.inline)
+      .sheet(isPresented: $showExpiryScanner) {
+        ExpiryDateScannerView { candidate in
+          expiry = candidate.date
+          hasExpiry = true
+        }
+      }
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button("Cancel") { dismiss() }
