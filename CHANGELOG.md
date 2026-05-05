@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.16.0](https://github.com/jbg/quartermaster/compare/1.15.1...1.16.0) (2026-05-05)
+
+
+### Features
+
+* **ios:** add barcode-to-expiry scan flow ([93dcd9f](https://github.com/jbg/quartermaster/commit/93dcd9f5a8222cd2c23be0d2bf9d8bff24b9d94a))
+* **ios:** scan expiry dates ([13bf9b2](https://github.com/jbg/quartermaster/commit/13bf9b260409fdb67f44d45f27fab7f0ac2b0f72))
+
+
+### Bug Fixes
+
+* collapse web inventory package rows ([049035a](https://github.com/jbg/quartermaster/commit/049035a5a5d9af28d8d91caecb31f456cd9d3a91))
+
 ## [1.15.1](https://github.com/jbg/quartermaster/compare/1.15.0...1.15.1) (2026-05-05)
 
 
