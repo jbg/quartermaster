@@ -255,6 +255,8 @@ import UIKit
         "image_url": null,
         "family": "mass",
         "preferred_unit": "g",
+        "package_quantity": null,
+        "package_unit": null,
         "source": "manual",
         "deleted_at": null
       }

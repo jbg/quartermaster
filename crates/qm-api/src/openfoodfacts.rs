@@ -22,7 +22,8 @@ use tracing::{debug, info, warn};
 
 use crate::ApiConfig;
 
-const FIELDS: &str = "code,product_name,product_name_en,brands,image_url,product_quantity_unit";
+const FIELDS: &str =
+    "code,product_name,product_name_en,brands,image_url,product_quantity,product_quantity_unit";
 const MOCK_OFF_BASE_URL_PREFIX: &str = "mock://off/";
 
 type MockOffHits = Arc<Mutex<HashMap<String, usize>>>;
@@ -42,6 +43,8 @@ pub struct OffProduct {
     pub name: String,
     pub brand: Option<String>,
     pub image_url: Option<String>,
+    /// Numeric amount in `quantity_unit` for one retail package, as OFF reports it.
+    pub quantity: Option<String>,
     /// Raw unit string as OFF reports it, for family inference by the caller.
     pub quantity_unit: Option<String>,
 }
@@ -233,6 +236,7 @@ impl OpenFoodFactsClient {
             name,
             brand: product.brands.filter(|s| !s.trim().is_empty()),
             image_url: product.image_url.filter(|s| !s.trim().is_empty()),
+            quantity: product.product_quantity.and_then(normalize_quantity),
             quantity_unit: product
                 .product_quantity_unit
                 .filter(|s| !s.trim().is_empty()),
@@ -295,6 +299,7 @@ async fn mock_fetch_once(session_id: &str, barcode: &str) -> FetchOutcome {
                     "product_name": "Retry Beans",
                     "brands": "Acme",
                     "image_url": Value::Null,
+                    "product_quantity": "400",
                     "product_quantity_unit": "g",
                 }
             });
@@ -329,6 +334,7 @@ fn decode_mock_payload(barcode: &str, payload: OffResponse) -> FetchOutcome {
         name,
         brand: product.brands.filter(|s| !s.trim().is_empty()),
         image_url: product.image_url.filter(|s| !s.trim().is_empty()),
+        quantity: product.product_quantity.and_then(normalize_quantity),
         quantity_unit: product
             .product_quantity_unit
             .filter(|s| !s.trim().is_empty()),
@@ -482,6 +488,46 @@ pub fn infer_family(hint: Option<&str>) -> UnitFamily {
     }
 }
 
+pub fn normalize_package(quantity: Option<&str>, unit: Option<&str>) -> Option<(String, String)> {
+    let quantity = quantity?.trim();
+    let unit = unit?.trim().to_ascii_lowercase();
+    if quantity.is_empty() || unit.is_empty() {
+        return None;
+    }
+    let normalized_quantity = normalize_quantity(Value::String(quantity.to_owned()))?;
+    let unit = normalize_unit(&unit)?;
+    Some((normalized_quantity, unit))
+}
+
+fn normalize_quantity(value: Value) -> Option<String> {
+    let raw = match value {
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => s.trim().replace(',', "."),
+        _ => return None,
+    };
+    let decimal = raw.parse::<rust_decimal::Decimal>().ok()?;
+    if decimal <= rust_decimal::Decimal::ZERO {
+        return None;
+    }
+    Some(decimal.normalize().to_string())
+}
+
+fn normalize_unit(raw: &str) -> Option<String> {
+    if let Ok(unit) = qm_core::units::lookup(raw) {
+        return Some(unit.code.to_owned());
+    }
+    match raw {
+        "grams" | "gram" => Some("g".into()),
+        "kilograms" | "kilogram" => Some("kg".into()),
+        "ounces" | "ounce" => Some("oz".into()),
+        "pounds" | "pound" => Some("lb".into()),
+        "milliliters" | "milliliter" | "millilitre" | "millilitres" => Some("ml".into()),
+        "liters" | "liter" | "litre" | "litres" => Some("l".into()),
+        "pieces" | "units" | "unit" | "ct" | "count" => Some("piece".into()),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct OffResponse {
     #[serde(default)]
@@ -496,6 +542,7 @@ struct OffInnerProduct {
     product_name_en: Option<String>,
     brands: Option<String>,
     image_url: Option<String>,
+    product_quantity: Option<Value>,
     product_quantity_unit: Option<String>,
 }
 
@@ -525,6 +572,25 @@ mod tests {
         assert_eq!(infer_family(Some("")), UnitFamily::Count);
         assert_eq!(infer_family(Some("  ")), UnitFamily::Count);
         assert_eq!(infer_family(Some("whatever")), UnitFamily::Count);
+    }
+
+    #[test]
+    fn normalize_package_keeps_known_positive_quantities() {
+        assert_eq!(
+            normalize_package(Some("400.0"), Some("grams")),
+            Some(("400".into(), "g".into()))
+        );
+        assert_eq!(
+            normalize_package(Some("1,5"), Some("LITRE")),
+            Some(("1.5".into(), "l".into()))
+        );
+    }
+
+    #[test]
+    fn normalize_package_rejects_unknown_or_empty_values() {
+        assert_eq!(normalize_package(Some("0"), Some("g")), None);
+        assert_eq!(normalize_package(Some("400"), Some("can")), None);
+        assert_eq!(normalize_package(None, Some("g")), None);
     }
 
     #[tokio::test]

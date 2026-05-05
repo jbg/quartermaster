@@ -7,6 +7,15 @@ struct AddStockView: View {
   let product: Product
   var onAdded: ((StockBatch) -> Void)?
 
+  private enum QuantityEntryMode: String, CaseIterable, Identifiable {
+    case package
+    case exact
+
+    var id: String { rawValue }
+  }
+
+  @State private var entryMode: QuantityEntryMode = .exact
+  @State private var packageCount: String = ""
   @State private var quantity: String = ""
   @State private var unitCode: String = ""
   @State private var selectedLocationID: String?
@@ -29,12 +38,30 @@ struct AddStockView: View {
         Section("Product") {
           productHeader
         }
-        Section("Quantity") {
-          DecimalField(title: "Amount", text: $quantity)
-          Picker("Unit", selection: $unitCode) {
-            ForEach(unitOptions, id: \.code) { u in
-              Text(u.code).tag(u.code)
+        Section {
+          if productPackageSize != nil {
+            Picker("Entry", selection: $entryMode) {
+              Text("Packages").tag(QuantityEntryMode.package)
+              Text("Exact amount").tag(QuantityEntryMode.exact)
             }
+            .pickerStyle(.segmented)
+          }
+          if entryMode == .package, let packageSize = productPackageSize {
+            DecimalField(title: "Packages", text: $packageCount)
+            LabeledContent("Each", value: "\(packageSize.quantity) \(packageSize.unit)")
+          } else {
+            DecimalField(title: "Amount", text: $quantity)
+            Picker("Unit", selection: $unitCode) {
+              ForEach(unitOptions, id: \.code) { u in
+                Text(u.code).tag(u.code)
+              }
+            }
+          }
+        } header: {
+          Text("Quantity")
+        } footer: {
+          if entryMode == .package, productPackageSize != nil {
+            Text("Quartermaster stores the equivalent product amount for the batch.")
           }
         }
         Section("Location") {
@@ -128,10 +155,26 @@ struct AddStockView: View {
     appState.unitsFor(family: product.family)
   }
 
+  private var productPackageSize: (quantity: String, unit: String)? {
+    guard
+      let quantity = product.packageQuantity,
+      let unit = product.packageUnit,
+      Decimal(string: quantity).map({ $0 > 0 }) == true
+    else { return nil }
+    return (quantity, unit)
+  }
+
   private var canSubmit: Bool {
-    guard !quantity.isEmpty, selectedLocationID != nil, !unitCode.isEmpty else { return false }
-    guard let value = Decimal(string: quantity), value > 0 else { return false }
-    return true
+    guard selectedLocationID != nil else { return false }
+    if entryMode == .package {
+      guard productPackageSize != nil else { return false }
+      guard let value = Decimal(string: packageCount), value > 0 else { return false }
+      return true
+    } else {
+      guard !quantity.isEmpty, !unitCode.isEmpty else { return false }
+      guard let value = Decimal(string: quantity), value > 0 else { return false }
+      return true
+    }
   }
 
   private var familyIcon: String {
@@ -143,6 +186,9 @@ struct AddStockView: View {
   }
 
   private func loadInitial() async {
+    if productPackageSize != nil {
+      entryMode = .package
+    }
     if unitCode.isEmpty {
       unitCode = product.preferredUnit
     }
@@ -157,7 +203,9 @@ struct AddStockView: View {
   }
 
   private func submit() async {
-    guard let locationID = selectedLocationID else { return }
+    guard let locationID = selectedLocationID, let stockAmount = stockQuantityAndUnit() else {
+      return
+    }
     isSubmitting = true
     errorMessage = nil
     let req = CreateStockRequest(
@@ -167,8 +215,8 @@ struct AddStockView: View {
       openedOn: hasOpened ? StockBatch.yyyymmdd.string(from: opened) : nil,
       producedOn: hasProduced ? StockBatch.yyyymmdd.string(from: produced) : nil,
       productId: product.id,
-      quantity: quantity,
-      unit: unitCode,
+      quantity: stockAmount.quantity,
+      unit: stockAmount.unit,
     )
     do {
       let created = try await appState.api.createStock(req)
@@ -181,5 +229,22 @@ struct AddStockView: View {
       errorMessage = error.localizedDescription
     }
     isSubmitting = false
+  }
+
+  private func stockQuantityAndUnit() -> (quantity: String, unit: String)? {
+    if entryMode == .package {
+      guard
+        let packageSize = productPackageSize,
+        let count = Decimal(string: packageCount),
+        let quantityPerPackage = Decimal(string: packageSize.quantity)
+      else { return nil }
+      return (Self.format(count * quantityPerPackage), packageSize.unit)
+    }
+    guard !unitCode.isEmpty else { return nil }
+    return (quantity, unitCode)
+  }
+
+  private static func format(_ value: Decimal) -> String {
+    NSDecimalNumber(decimal: value).stringValue
   }
 }
