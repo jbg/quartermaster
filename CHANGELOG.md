@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.15.0](https://github.com/jbg/quartermaster/compare/1.14.2...1.15.0) (2026-05-05)
+
+
+### Features
+
+* snapshot package sizes on stock batches ([2a64d93](https://github.com/jbg/quartermaster/commit/2a64d93eec0ee200911a73b5c8b4c15c781552f7))
+* support package counts for barcode stock ([45eb0b3](https://github.com/jbg/quartermaster/commit/45eb0b38e4b188499c486ac81dd47dad14b75585))
+
 ## [1.14.2](https://github.com/jbg/quartermaster/compare/1.14.1...1.14.2) (2026-05-04)
 
 
