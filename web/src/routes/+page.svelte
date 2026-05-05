@@ -32,10 +32,12 @@
     stockName,
     stockOpened,
     stockProduced,
+    stockProducedValue,
     stockUnit,
     unitChoicesForFamily,
     validateAddStockInput,
     validateStockEditInput,
+    type InventoryBatchPackageGroup,
     type InventoryFilterMode,
     type InventoryLocationGroup,
     type InventoryProductGroup,
@@ -805,6 +807,9 @@
   }
 
   function productGroupQuantity(group: InventoryProductGroup): string {
+    if (group.packageGroups.length === 1 && group.packageGroups[0].count > 1) {
+      return packageGroupQuantity(group.packageGroups[0]);
+    }
     if (group.totalQuantity && group.totalUnit) {
       return `${group.totalQuantity} ${group.totalUnit}`;
     }
@@ -824,19 +829,25 @@
     return parts.join(' - ');
   }
 
-  function batchChoiceMeta(batch: StockBatch): string {
+  function packageGroupQuantity(group: InventoryBatchPackageGroup): string {
+    if (group.count > 1 && group.packageQuantity && group.packageUnit) {
+      return `${group.count} x ${group.packageQuantity} ${group.packageUnit}`;
+    }
+    if (group.totalQuantity && group.totalUnit) {
+      return `${group.totalQuantity} ${group.totalUnit}`;
+    }
+    return `${group.count} ${group.count === 1 ? 'batch' : 'batches'}`;
+  }
+
+  function packageGroupMeta(group: InventoryBatchPackageGroup): string {
     const parts = [
-      stockExpiry(batch) === 'No expiry' ? 'No expiry date' : `Expires ${stockExpiry(batch)}`
+      group.earliestExpiry ? `Earliest ${group.earliestExpiry}` : 'No expiry date',
+      `${group.count} ${group.count === 1 ? 'batch' : 'batches'}`
     ];
-    const produced = stockProduced(batch);
-    if (produced !== 'Not set') {
-      parts.push(`Prepared ${produced}`);
-    }
-    if (isDepleted(batch)) {
-      parts.push('depleted');
-    }
-    if (batch.note) {
-      parts.push(batch.note);
+    if (group.depletedCount > 0 && group.activeCount === 0) {
+      parts.push('depleted history');
+    } else if (group.depletedCount > 0) {
+      parts.push(`${group.depletedCount} depleted`);
     }
     return parts.join(' - ');
   }
@@ -1264,28 +1275,30 @@
                         </div>
                         <div class="product-group-summary">
                           <strong>{productGroupQuantity(productGroup)}</strong>
-                          <span>Open</span>
                         </div>
                       </button>
-                      {#if productGroup.visibleBatches.length > 1}
+                      {#if productGroup.packageGroups.length > 1}
                         <div
                           class="batch-choice-list"
                           aria-label={`${productGroup.productName} batches`}
                         >
-                          {#each productGroup.visibleBatches as batch}
+                          {#each productGroup.packageGroups as packageGroup}
                             <button
-                              class:active={selectedBatchId === batch.id}
-                              class:highlight={highlightBatchId === batch.id}
-                              class:depleted={isDepleted(batch)}
+                              class:active={packageGroup.batches.some(
+                                (batch) => selectedBatchId === batch.id
+                              )}
+                              class:highlight={packageGroup.batches.some(
+                                (batch) => highlightBatchId === batch.id
+                              )}
+                              class:depleted={packageGroup.activeCount === 0}
                               class="batch-choice-row"
                               type="button"
-                              onclick={() => selectBatch(batch)}
+                              onclick={() => selectBatch(packageGroup.bestBatch)}
                             >
                               <div>
-                                <strong>{batch.quantity ?? '?'} {stockUnit(batch)}</strong>
-                                <p>{batchChoiceMeta(batch)}</p>
+                                <strong>{packageGroupQuantity(packageGroup)}</strong>
+                                <p>{packageGroupMeta(packageGroup)}</p>
                               </div>
-                              <span>{selectedBatchId === batch.id ? 'Selected' : 'Open'}</span>
                             </button>
                           {/each}
                         </div>
@@ -1328,10 +1341,12 @@
               <dt>Location</dt>
               <dd>{displayLocation(selectedBatch)}</dd>
             </div>
-            <div>
-              <dt>Prepared</dt>
-              <dd>{stockProduced(selectedBatch)}</dd>
-            </div>
+            {#if stockProducedValue(selectedBatch)}
+              <div>
+                <dt>Prepared</dt>
+                <dd>{stockProduced(selectedBatch)}</dd>
+              </div>
+            {/if}
             <div>
               <dt>Expires</dt>
               <dd>{stockExpiry(selectedBatch)}</dd>

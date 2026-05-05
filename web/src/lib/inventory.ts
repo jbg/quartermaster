@@ -29,12 +29,27 @@ export interface InventoryProductGroup {
   productBrand: string;
   batches: StockBatch[];
   visibleBatches: StockBatch[];
+  packageGroups: InventoryBatchPackageGroup[];
   activeCount: number;
   depletedCount: number;
   totalQuantity: string | null;
   totalUnit: string | null;
   earliestExpiry: string | null;
   bestBatch: StockBatch;
+}
+
+export interface InventoryBatchPackageGroup {
+  key: string;
+  batches: StockBatch[];
+  bestBatch: StockBatch;
+  count: number;
+  packageQuantity: string | null;
+  packageUnit: string | null;
+  totalQuantity: string | null;
+  totalUnit: string | null;
+  earliestExpiry: string | null;
+  activeCount: number;
+  depletedCount: number;
 }
 
 export interface InventoryLocationGroup {
@@ -265,6 +280,15 @@ export function stockInitialQuantity(batch: StockBatch): string {
   return value === undefined || value === null ? '' : String(value);
 }
 
+export function stockPackageQuantity(batch: StockBatch): string | null {
+  const value = batch.package_quantity ?? batch.packageQuantity ?? stockInitialQuantity(batch);
+  return value === undefined || value === null || value === '' ? null : String(value);
+}
+
+export function stockPackageUnit(batch: StockBatch): string | null {
+  return batch.package_unit ?? batch.packageUnit ?? stockUnit(batch) ?? null;
+}
+
 export function isDepleted(batch: StockBatch): boolean {
   return Boolean(batch.depleted_at ?? batch.depletedAt);
 }
@@ -461,6 +485,7 @@ function groupVisibleBatches(
       const depleted = batches.filter(isDepleted);
       const unit = commonUnit(active.length > 0 ? active : batches);
       const totalQuantity = unit ? sumQuantities(active.length > 0 ? active : batches, unit) : null;
+      const packageGroups = groupBatchesByPackage(visibleSorted, highlightBatchId);
       return {
         locationId,
         productId,
@@ -468,6 +493,7 @@ function groupVisibleBatches(
         productBrand: batchProductBrand(bestBatch),
         batches: visibleSorted,
         visibleBatches: visibleSorted,
+        packageGroups,
         activeCount: active.length,
         depletedCount: depleted.length,
         totalQuantity,
@@ -477,6 +503,52 @@ function groupVisibleBatches(
       };
     })
     .sort(compareProductGroups);
+}
+
+function groupBatchesByPackage(
+  batches: StockBatch[],
+  highlightBatchId: string | null
+): InventoryBatchPackageGroup[] {
+  const byPackage = new Map<string, StockBatch[]>();
+  for (const batch of batches) {
+    const packageQuantity = stockPackageQuantity(batch);
+    const packageUnit = stockPackageUnit(batch);
+    const key =
+      packageQuantity && packageUnit
+        ? `package:${packageQuantity}:${packageUnit}`
+        : `batch:${batch.id}`;
+    byPackage.set(key, [...(byPackage.get(key) ?? []), batch]);
+  }
+
+  return Array.from(byPackage.entries())
+    .map(([key, packageBatches]) => {
+      const sorted = [...packageBatches].sort(compareBatchesForSelection);
+      const active = sorted.filter((batch) => !isDepleted(batch));
+      const depleted = sorted.filter(isDepleted);
+      const displayBatches = active.length > 0 ? active : sorted;
+      const unit = commonUnit(displayBatches);
+      return {
+        key,
+        batches: sorted,
+        bestBatch: chooseBestBatch(sorted, highlightBatchId),
+        count: sorted.length,
+        packageQuantity: stockPackageQuantity(sorted[0]),
+        packageUnit: stockPackageUnit(sorted[0]),
+        totalQuantity: unit ? sumQuantities(displayBatches, unit) : null,
+        totalUnit: unit,
+        earliestExpiry: earliestExpiry(displayBatches),
+        activeCount: active.length,
+        depletedCount: depleted.length
+      };
+    })
+    .sort(comparePackageGroups);
+}
+
+function comparePackageGroups(
+  left: InventoryBatchPackageGroup,
+  right: InventoryBatchPackageGroup
+): number {
+  return compareBatchesForSelection(left.bestBatch, right.bestBatch);
 }
 
 function compareProductGroups(left: InventoryProductGroup, right: InventoryProductGroup): number {

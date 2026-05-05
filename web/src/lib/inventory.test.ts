@@ -16,6 +16,7 @@ import {
   stockExpiry,
   stockLocation,
   stockName,
+  stockProducedValue,
   stockUnit,
   unitChoicesForFamily,
   validateAddStockInput,
@@ -153,6 +154,78 @@ describe('inventory helpers', () => {
       totalUnit: 'kg',
       earliestExpiry: '2026-05-01'
     });
+  });
+
+  it('collapses equally sized packages within a product group', () => {
+    const locations = [{ id: 'pantry', name: 'Pantry' }];
+    const items = [
+      {
+        id: 'can-1',
+        product: { id: 'tomatoes', name: 'Tomatoes' },
+        location_id: 'pantry',
+        quantity: '400',
+        unit: 'g',
+        initial_quantity: '400',
+        package_quantity: '400',
+        package_unit: 'g',
+        expires_on: '2028-08-31'
+      },
+      {
+        id: 'can-2',
+        product: { id: 'tomatoes', name: 'Tomatoes' },
+        location_id: 'pantry',
+        quantity: '400',
+        unit: 'g',
+        initial_quantity: '400',
+        package_quantity: '400',
+        package_unit: 'g',
+        expires_on: '2028-10-31'
+      },
+      {
+        id: 'jar-1',
+        product: { id: 'tomatoes', name: 'Tomatoes' },
+        location_id: 'pantry',
+        quantity: '700',
+        unit: 'g',
+        initial_quantity: '700',
+        package_quantity: '700',
+        package_unit: 'g',
+        expires_on: '2028-09-30'
+      }
+    ];
+
+    const productGroup = groupInventoryByLocation({
+      items,
+      locations,
+      filter: 'active',
+      search: '',
+      today: new Date('2026-04-27T12:00:00')
+    })[0].productGroups[0];
+
+    expect(productGroup.packageGroups).toHaveLength(2);
+    expect(productGroup.packageGroups[0]).toMatchObject({
+      count: 2,
+      packageQuantity: '400',
+      packageUnit: 'g',
+      earliestExpiry: '2028-08-31'
+    });
+    expect(productGroup.packageGroups[1]).toMatchObject({
+      count: 1,
+      packageQuantity: '700',
+      packageUnit: 'g',
+      earliestExpiry: '2028-09-30'
+    });
+  });
+
+  it('keeps missing prepared dates as nullable display values', () => {
+    expect(stockProducedValue({ id: 'batch-1', product: { name: 'Tomatoes' } })).toBeNull();
+    expect(
+      stockProducedValue({
+        id: 'batch-2',
+        product: { name: 'Sauce' },
+        produced_on: '2026-04-20'
+      })
+    ).toBe('2026-04-20');
   });
 
   it('filters active depleted expired and soon inventory', () => {
