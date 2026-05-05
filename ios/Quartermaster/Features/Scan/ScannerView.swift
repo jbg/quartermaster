@@ -5,6 +5,7 @@ import VisionKit
 /// responsible for debouncing + lookup; this just forwards every recognised
 /// barcode payload.
 struct ScannerView: UIViewControllerRepresentable {
+  var isScanning: Bool = true
   var onBarcode: (String) -> Void
 
   func makeUIViewController(context: Context) -> DataScannerViewController {
@@ -22,7 +23,19 @@ struct ScannerView: UIViewControllerRepresentable {
   }
 
   func updateUIViewController(_ uiViewController: DataScannerViewController, context: Context) {
-    try? uiViewController.startScanning()
+    context.coordinator.onBarcode = onBarcode
+    if isScanning {
+      try? uiViewController.startScanning()
+    } else {
+      uiViewController.stopScanning()
+    }
+  }
+
+  static func dismantleUIViewController(
+    _ uiViewController: DataScannerViewController,
+    coordinator: Coordinator
+  ) {
+    uiViewController.stopScanning()
   }
 
   func makeCoordinator() -> Coordinator {
@@ -30,7 +43,7 @@ struct ScannerView: UIViewControllerRepresentable {
   }
 
   final class Coordinator: NSObject, DataScannerViewControllerDelegate {
-    let onBarcode: (String) -> Void
+    var onBarcode: (String) -> Void
 
     init(onBarcode: @escaping (String) -> Void) {
       self.onBarcode = onBarcode
@@ -56,6 +69,7 @@ struct ScanScreen: View {
   @State private var lookupTask: Task<Void, Never>?
   @State private var lastHandled: String = ""
   @State private var sheet: Route?
+  @State private var scannerSessionID = UUID()
   @State private var errorMessage: String?
   @State private var isLooking = false
   @State private var isSwitchingHousehold = false
@@ -75,7 +89,8 @@ struct ScanScreen: View {
   var body: some View {
     ZStack {
       if DataScannerViewController.isSupported && DataScannerViewController.isAvailable {
-        ScannerView(onBarcode: handleBarcode)
+        ScannerView(isScanning: sheet == nil, onBarcode: handleBarcode)
+          .id(scannerSessionID)
           .ignoresSafeArea(edges: [.bottom, .horizontal])
         if isLooking {
           ProgressView("Looking up…")
@@ -116,7 +131,7 @@ struct ScanScreen: View {
     } message: {
       Text(errorMessage ?? "")
     }
-    .sheet(item: $sheet) { route in
+    .sheet(item: $sheet, onDismiss: resetScanner) { route in
       switch route {
       case .addStock(let product):
         AddStockView(product: product) { _ in
@@ -131,7 +146,7 @@ struct ScanScreen: View {
   }
 
   private func handleBarcode(_ code: String) {
-    if code == lastHandled || isLooking { return }
+    if sheet != nil || code == lastHandled || isLooking { return }
     lastHandled = code
     lookupTask?.cancel()
     lookupTask = Task {
@@ -154,6 +169,14 @@ struct ScanScreen: View {
         lastHandled = ""
       }
     }
+  }
+
+  private func resetScanner() {
+    lookupTask?.cancel()
+    lookupTask = nil
+    isLooking = false
+    lastHandled = ""
+    scannerSessionID = UUID()
   }
 
   private func switchHousehold(to householdID: String) {

@@ -61,7 +61,7 @@ struct AddStockView: View {
           Text("Quantity")
         } footer: {
           if entryMode == .package, productPackageSize != nil {
-            Text("Quartermaster stores the equivalent product amount for the batch.")
+            Text("Quartermaster adds one inventory batch per package.")
           }
         }
         Section("Location") {
@@ -168,8 +168,7 @@ struct AddStockView: View {
     guard selectedLocationID != nil else { return false }
     if entryMode == .package {
       guard productPackageSize != nil else { return false }
-      guard let value = Decimal(string: packageCount), value > 0 else { return false }
-      return true
+      return wholePackageCount() != nil
     } else {
       guard !quantity.isEmpty, !unitCode.isEmpty else { return false }
       guard let value = Decimal(string: quantity), value > 0 else { return false }
@@ -203,25 +202,24 @@ struct AddStockView: View {
   }
 
   private func submit() async {
-    guard let locationID = selectedLocationID, let stockAmount = stockQuantityAndUnit() else {
-      return
-    }
+    guard let locationID = selectedLocationID else { return }
     isSubmitting = true
     errorMessage = nil
-    let req = CreateStockRequest(
-      expiresOn: hasExpiry ? StockBatch.yyyymmdd.string(from: expiry) : nil,
-      locationId: locationID,
-      note: note.trimmingCharacters(in: .whitespaces).isEmpty ? nil : note,
-      openedOn: hasOpened ? StockBatch.yyyymmdd.string(from: opened) : nil,
-      producedOn: hasProduced ? StockBatch.yyyymmdd.string(from: produced) : nil,
-      productId: product.id,
-      quantity: stockAmount.quantity,
-      unit: stockAmount.unit,
-    )
     do {
-      let created = try await appState.api.createStock(req)
+      let requests = createStockRequests(locationID: locationID)
+      guard !requests.isEmpty else {
+        isSubmitting = false
+        return
+      }
+      var created: StockBatch?
+      for request in requests {
+        let batch = try await appState.api.createStock(request)
+        if created == nil { created = batch }
+      }
       await appState.refreshRemindersAfterInventoryMutation()
-      onAdded?(created)
+      if let created {
+        onAdded?(created)
+      }
       dismiss()
     } catch let err as APIError {
       errorMessage = err.userFacingMessage
@@ -231,20 +229,43 @@ struct AddStockView: View {
     isSubmitting = false
   }
 
+  private func createStockRequests(locationID: String) -> [CreateStockRequest] {
+    guard let stockAmount = stockQuantityAndUnit() else { return [] }
+    let request = CreateStockRequest(
+      expiresOn: hasExpiry ? StockBatch.yyyymmdd.string(from: expiry) : nil,
+      locationId: locationID,
+      note: note.trimmingCharacters(in: .whitespaces).isEmpty ? nil : note,
+      openedOn: hasOpened ? StockBatch.yyyymmdd.string(from: opened) : nil,
+      producedOn: hasProduced ? StockBatch.yyyymmdd.string(from: produced) : nil,
+      productId: product.id,
+      quantity: stockAmount.quantity,
+      unit: stockAmount.unit,
+    )
+    guard entryMode == .package, let count = wholePackageCount() else {
+      return [request]
+    }
+    return Array(repeating: request, count: count)
+  }
+
   private func stockQuantityAndUnit() -> (quantity: String, unit: String)? {
     if entryMode == .package {
       guard
         let packageSize = productPackageSize,
-        let count = Decimal(string: packageCount),
-        let quantityPerPackage = Decimal(string: packageSize.quantity)
+        wholePackageCount() != nil
       else { return nil }
-      return (Self.format(count * quantityPerPackage), packageSize.unit)
+      return (packageSize.quantity, packageSize.unit)
     }
     guard !unitCode.isEmpty else { return nil }
     return (quantity, unitCode)
   }
 
-  private static func format(_ value: Decimal) -> String {
-    NSDecimalNumber(decimal: value).stringValue
+  private func wholePackageCount() -> Int? {
+    guard let value = Decimal(string: packageCount), value > 0 else { return nil }
+    var copy = value
+    var rounded = Decimal()
+    NSDecimalRound(&rounded, &copy, 0, .plain)
+    guard rounded == value, rounded <= Decimal(Int.max) else { return nil }
+    let count = NSDecimalNumber(decimal: rounded).intValue
+    return count > 0 ? count : nil
   }
 }
