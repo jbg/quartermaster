@@ -744,7 +744,9 @@ private actor FakeAPI: AppStateAPI {
   {
     fatalError("unused")
   }
-  func printStockLabel(id: String, copies: Int) async throws -> PrintStockLabelResponse {
+  func printStockLabel(id: String, copies: Int, includeQuantity: Bool) async throws
+    -> PrintStockLabelResponse
+  {
     fatalError("unused")
   }
   func listStockEvents(beforeCreatedAt: String?, beforeID: String?, limit: Int) async throws

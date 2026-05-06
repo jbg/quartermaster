@@ -562,10 +562,13 @@ actor APIClient: AppStateAPI {
     }
   }
 
-  func printStockLabel(id: String, copies: Int = 1) async throws -> PrintStockLabelResponse {
+  func printStockLabel(id: String, copies: Int = 1, includeQuantity: Bool = false) async throws
+    -> PrintStockLabelResponse
+  {
     let request = PrintStockLabelRequest(
       copies: Int32(copies),
       dryRun: nil,
+      includeQuantity: includeQuantity,
       printerId: nil,
     )
     let response = try await client.stockLabelPrint(

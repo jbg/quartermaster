@@ -223,6 +223,7 @@ export interface PrintStockLabelRequest {
   printer_id?: string | null;
   copies?: number | null;
   dry_run?: boolean | null;
+  include_quantity?: boolean | null;
 }
 
 export interface PrintStockLabelResponse {

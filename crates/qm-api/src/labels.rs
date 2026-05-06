@@ -25,6 +25,7 @@ pub struct LabelJob {
     pub expires_on: Option<String>,
     pub opened_on: Option<String>,
     pub note: Option<String>,
+    pub include_quantity: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -73,6 +74,7 @@ pub async fn build_label_job(
         expires_on: row.batch.expires_on,
         opened_on: row.batch.opened_on,
         note: row.batch.note,
+        include_quantity: false,
     })
 }
 
@@ -214,28 +216,20 @@ fn render_landscape_label(
     let text_x = qr_x + actual_qr_px + 18;
     let text_width = spec.width_px.saturating_sub(text_x + 8);
     let mut y = if spec.supports_red { 24 } else { 16 };
-    bitmap.draw_text(
-        text_x,
-        y,
-        &truncate_for_width(&job.product_name, text_width, 4),
-        4,
-    );
-    y += 40;
+    y += draw_wrapped_text(bitmap, text_x, y, &job.product_name, text_width, 5, 2) + 12;
     if let Some(brand) = job.brand.as_deref().filter(|s| !s.trim().is_empty()) {
         bitmap.draw_text(text_x, y, &truncate_for_width(brand, text_width, 3), 3);
         y += 30;
     }
-    bitmap.draw_text(
-        text_x,
-        y,
-        &truncate_for_width(
-            &format!("{} {} - {}", job.quantity, job.unit, job.location_name),
-            text_width,
+    if job.include_quantity {
+        bitmap.draw_text(
+            text_x,
+            y,
+            &truncate_for_width(&label_quantity(job), text_width, 3),
             3,
-        ),
-        3,
-    );
-    y += 34;
+        );
+        y += 34;
+    }
     y += draw_primary_date(bitmap, text_x, y, text_width, job);
     y += draw_secondary_dates(bitmap, text_x, y + 4, text_width, job, 3);
     if let Some(note) = job.note.as_deref().filter(|s| !s.trim().is_empty()) {
@@ -263,28 +257,20 @@ fn render_portrait_label(
     let text_x = 14;
     let text_width = spec.width_px.saturating_sub(text_x * 2);
     let mut y = qr_y + actual_qr_px + 28;
-    bitmap.draw_text(
-        text_x,
-        y,
-        &truncate_for_width(&job.product_name, text_width, 3),
-        3,
-    );
-    y += 34;
+    y += draw_wrapped_text(bitmap, text_x, y, &job.product_name, text_width, 4, 2) + 10;
     if let Some(brand) = job.brand.as_deref().filter(|s| !s.trim().is_empty()) {
         bitmap.draw_text(text_x, y, &truncate_for_width(brand, text_width, 2), 2);
         y += 24;
     }
-    bitmap.draw_text(
-        text_x,
-        y,
-        &truncate_for_width(
-            &format!("{} {} - {}", job.quantity, job.unit, job.location_name),
-            text_width,
+    if job.include_quantity {
+        bitmap.draw_text(
+            text_x,
+            y,
+            &truncate_for_width(&label_quantity(job), text_width, 2),
             2,
-        ),
-        2,
-    );
-    y += 32;
+        );
+        y += 32;
+    }
     y += draw_primary_date(bitmap, text_x, y, text_width, job);
     y += draw_secondary_dates(bitmap, text_x, y + 8, text_width, job, 2);
     if let Some(note) = job.note.as_deref().filter(|s| !s.trim().is_empty()) {
@@ -311,6 +297,16 @@ fn batch_qr(batch_url: &str) -> ApiResult<QrCode> {
 
 fn branded_qr_logo_px(actual_qr_px: usize, module_px: usize) -> usize {
     (actual_qr_px / 5).max(module_px * 7)
+}
+
+fn branded_qr_badge_px(actual_qr_px: usize, module_px: usize) -> usize {
+    branded_qr_logo_px(actual_qr_px, module_px) + module_px * 4
+}
+
+fn label_quantity(job: &LabelJob) -> String {
+    format!("{} {}", job.quantity.trim(), job.unit.trim())
+        .trim()
+        .to_owned()
 }
 
 fn draw_primary_date(
@@ -357,6 +353,72 @@ fn draw_secondary_dates(
         consumed += line_height(scale) + 6;
     }
     consumed
+}
+
+fn draw_wrapped_text(
+    bitmap: &mut Bitmap,
+    x: usize,
+    y: usize,
+    value: &str,
+    width: usize,
+    scale: usize,
+    max_lines: usize,
+) -> usize {
+    let lines = wrap_for_width(value, width, scale, max_lines);
+    let line_gap = (scale * 2).max(4);
+    let mut consumed = 0;
+    for line in lines {
+        bitmap.draw_text(x, y + consumed, &line, scale);
+        consumed += line_height(scale) + line_gap;
+    }
+    consumed.saturating_sub(line_gap)
+}
+
+fn wrap_for_width(value: &str, width: usize, scale: usize, max_lines: usize) -> Vec<String> {
+    if max_lines == 0 {
+        return Vec::new();
+    }
+    let max_chars = (width / (6 * scale.max(1))).max(1);
+    let words = value.split_whitespace().collect::<Vec<_>>();
+    if words.is_empty() {
+        return vec![String::new()];
+    }
+
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in words {
+        let proposed_len = if current.is_empty() {
+            word.chars().count()
+        } else {
+            current.chars().count() + 1 + word.chars().count()
+        };
+        if proposed_len <= max_chars {
+            if !current.is_empty() {
+                current.push(' ');
+            }
+            current.push_str(word);
+            continue;
+        }
+        if !current.is_empty() {
+            lines.push(current);
+            current = String::new();
+            if lines.len() == max_lines {
+                break;
+            }
+        }
+        if word.chars().count() > max_chars {
+            lines.push(truncate(word, max_chars));
+            if lines.len() == max_lines {
+                break;
+            }
+        } else {
+            current.push_str(word);
+        }
+    }
+    if !current.is_empty() && lines.len() < max_lines {
+        lines.push(current);
+    }
+    lines
 }
 
 fn primary_date(job: &LabelJob) -> Option<(&'static str, &str)> {
@@ -444,10 +506,30 @@ impl Bitmap {
         module_px: usize,
     ) {
         self.draw_qr(qr, x, y, module_px);
+        let badge_px = branded_qr_badge_px(actual_qr_px, module_px);
+        let badge_x = x + (actual_qr_px.saturating_sub(badge_px)) / 2;
+        let badge_y = y + (actual_qr_px.saturating_sub(badge_px)) / 2;
+        self.draw_rect(badge_x, badge_y, badge_px, badge_px, Pixel::White);
+        let border = (module_px / 2).max(2);
+        self.draw_rect(badge_x, badge_y, badge_px, border, Pixel::Black);
+        self.draw_rect(
+            badge_x,
+            badge_y + badge_px.saturating_sub(border),
+            badge_px,
+            border,
+            Pixel::Black,
+        );
+        self.draw_rect(badge_x, badge_y, border, badge_px, Pixel::Black);
+        self.draw_rect(
+            badge_x + badge_px.saturating_sub(border),
+            badge_y,
+            border,
+            badge_px,
+            Pixel::Black,
+        );
         let logo_px = branded_qr_logo_px(actual_qr_px, module_px);
         let logo_x = x + (actual_qr_px.saturating_sub(logo_px)) / 2;
         let logo_y = y + (actual_qr_px.saturating_sub(logo_px)) / 2;
-        self.draw_rect(logo_x, logo_y, logo_px, logo_px, Pixel::White);
         self.draw_quartermaster_mark(logo_x, logo_y, logo_px);
     }
 
@@ -667,6 +749,7 @@ mod tests {
             expires_on: Some("2026-06-01".into()),
             opened_on: None,
             note: Some("bag".into()),
+            include_quantity: false,
         };
 
         let rendered = BrotherQlRenderer
@@ -696,6 +779,7 @@ mod tests {
             expires_on: Some("2026-06-01".into()),
             opened_on: None,
             note: Some("bag".into()),
+            include_quantity: false,
         };
 
         let rendered = BrotherQlRenderer
@@ -729,6 +813,7 @@ mod tests {
             expires_on: None,
             opened_on: None,
             note: None,
+            include_quantity: false,
         };
 
         let rendered = BrotherQlRenderer
@@ -752,12 +837,19 @@ mod tests {
 
         let (actual_qr_px, module_px) = qr_size(&qr, 300);
         let logo_px = branded_qr_logo_px(actual_qr_px, module_px);
+        let badge_px = branded_qr_badge_px(actual_qr_px, module_px);
+        let badge_x = (actual_qr_px - badge_px) / 2;
+        let badge_y = (actual_qr_px - badge_px) / 2;
         let logo_x = (actual_qr_px - logo_px) / 2;
         let logo_y = (actual_qr_px - logo_px) / 2;
         let mut bitmap = Bitmap::new(actual_qr_px, actual_qr_px);
         bitmap.draw_branded_qr(&qr, 0, 0, actual_qr_px, module_px);
 
-        assert_eq!(bitmap.get(logo_x, logo_y), Pixel::White);
+        assert_eq!(bitmap.get(badge_x, badge_y), Pixel::Black);
+        assert_eq!(
+            bitmap.get(badge_x + module_px, badge_y + module_px),
+            Pixel::White
+        );
         assert_eq!(
             bitmap.get(logo_x + logo_px * 25 / 100, logo_y + logo_px * 20 / 100),
             Pixel::Black
@@ -766,6 +858,36 @@ mod tests {
             bitmap.get(logo_x + logo_px / 2, logo_y + logo_px * 30 / 100),
             Pixel::White
         );
+    }
+
+    #[test]
+    fn product_name_wraps_into_large_label_headline() {
+        assert_eq!(
+            wrap_for_width("Red Pepper Flakes", 360, 5, 2),
+            vec!["Red Pepper", "Flakes"]
+        );
+    }
+
+    #[test]
+    fn label_quantity_omits_location() {
+        let job = LabelJob {
+            batch_id: Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap(),
+            batch_url:
+                "https://quartermaster.example.com/batches/33333333-3333-3333-3333-333333333333"
+                    .into(),
+            product_name: "Sofrito".into(),
+            brand: None,
+            location_name: "Freezer".into(),
+            quantity: "2".into(),
+            unit: "portions".into(),
+            produced_on: None,
+            expires_on: None,
+            opened_on: None,
+            note: None,
+            include_quantity: true,
+        };
+
+        assert_eq!(label_quantity(&job), "2 portions");
     }
 
     #[test]
@@ -784,6 +906,7 @@ mod tests {
             expires_on: None,
             opened_on: None,
             note: None,
+            include_quantity: false,
         };
 
         assert_eq!(primary_date(&job), Some(("MADE", "2026-05-01")));

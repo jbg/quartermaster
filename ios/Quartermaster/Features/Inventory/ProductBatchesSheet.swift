@@ -138,8 +138,8 @@ struct ProductBatchesSheet: View {
     BatchRow(
       batch: batch,
       isPrintingLabel: labelPrintingBatchID == batch.id
-    ) {
-      Task { await printLabel(for: batch) }
+    ) { includeQuantity in
+      Task { await printLabel(for: batch, includeQuantity: includeQuantity) }
     }
     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
       if !isDepleted(batch) {
@@ -203,12 +203,16 @@ struct ProductBatchesSheet: View {
     }
   }
 
-  private func printLabel(for batch: StockBatch) async {
+  private func printLabel(for batch: StockBatch, includeQuantity: Bool) async {
     guard labelPrintingBatchID == nil else { return }
     labelPrintingBatchID = batch.id
     defer { labelPrintingBatchID = nil }
     do {
-      let response = try await appState.api.printStockLabel(id: batch.id, copies: 1)
+      let response = try await appState.api.printStockLabel(
+        id: batch.id,
+        copies: 1,
+        includeQuantity: includeQuantity,
+      )
       let action = response.status == .sent ? "sent" : "rendered"
       labelPrintNotice = LabelPrintNotice(
         title: "Label \(action)",
@@ -251,7 +255,7 @@ private struct LabelPrintNotice: Identifiable {
 struct BatchRow: View {
   let batch: StockBatch
   var isPrintingLabel = false
-  var onPrintLabel: (() -> Void)?
+  var onPrintLabel: ((Bool) -> Void)?
 
   var body: some View {
     HStack {
@@ -280,20 +284,28 @@ struct BatchRow: View {
       Spacer()
       ExpiryBadge(expiresOn: batch.expiresOn)
       if let onPrintLabel {
-        Button {
-          onPrintLabel()
-        } label: {
-          if isPrintingLabel {
-            ProgressView()
-          } else {
+        if isPrintingLabel {
+          ProgressView()
+        } else {
+          Menu {
+            Button {
+              onPrintLabel(false)
+            } label: {
+              Label("Print label", systemImage: "qrcode")
+            }
+            Button {
+              onPrintLabel(true)
+            } label: {
+              Label("Print with quantity", systemImage: "number")
+            }
+          } label: {
             Image(systemName: "qrcode")
           }
+          .buttonStyle(.borderless)
+          .foregroundStyle(QuartermasterBrand.green600)
+          .accessibilityLabel("Print label for this batch")
+          .accessibilityIdentifier("batch.print-label.\(batch.id)")
         }
-        .buttonStyle(.borderless)
-        .disabled(isPrintingLabel)
-        .foregroundStyle(QuartermasterBrand.green600)
-        .accessibilityLabel("Print label for this batch")
-        .accessibilityIdentifier("batch.print-label.\(batch.id)")
       }
     }
     .accessibilityElement(children: .contain)

@@ -126,6 +126,14 @@ export type CreateProductRequest = {
     max_open_days?: number | null;
     name: string;
     /**
+     * Amount in `package_unit` for one retail package.
+     */
+    package_quantity?: string | null;
+    /**
+     * Unit for `package_quantity`; belongs to the same family as the product.
+     */
+    package_unit?: string | null;
+    /**
      * Optional display unit override. Must belong to `family`. Defaults to
      * the family's base unit (`g` / `ml` / `piece`) when omitted.
      */
@@ -275,6 +283,11 @@ export type OnboardingStatusResponse = {
 export type PrintStockLabelRequest = {
     copies?: number | null;
     dry_run?: boolean | null;
+    /**
+     * Include the batch quantity/unit on the printed label. Defaults to false
+     * because labels often stay with mutable containers after first use.
+     */
+    include_quantity?: boolean | null;
     printer_id?: string | null;
 };
 

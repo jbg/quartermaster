@@ -3797,6 +3797,13 @@
               "null"
             ]
           },
+          "include_quantity": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Include the batch quantity/unit on the printed label. Defaults to false\nbecause labels often stay with mutable containers after first use."
+          },
           "printer_id": {
             "type": [
               "string",
