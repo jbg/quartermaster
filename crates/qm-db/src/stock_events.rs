@@ -121,6 +121,7 @@ pub async fn list_timeline(
             p.package_quantity AS p_package_quantity, p.package_unit AS p_package_unit, \
             p.fetched_at AS p_fetched_at, p.created_by_household_id AS p_created_by_household_id, \
             p.created_at AS p_created_at, p.deleted_at AS p_deleted_at, \
+            p.max_open_days AS p_max_open_days, \
             u.username AS u_username \
          FROM stock_event e \
          INNER JOIN stock_batch b ON b.id = e.batch_id \
@@ -248,6 +249,7 @@ fn row_to_timeline_entry(row: sqlx::any::AnyRow) -> Result<TimelineEntryRow, sql
             .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         created_at: row.try_get("p_created_at")?,
         deleted_at: row.try_get("p_deleted_at")?,
+        max_open_days: row.try_get("p_max_open_days")?,
     };
 
     Ok(TimelineEntryRow {

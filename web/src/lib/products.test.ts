@@ -20,7 +20,8 @@ describe('product helpers', () => {
         brand: '',
         family: 'mass',
         preferredUnit: 'g',
-        imageUrl: ''
+        imageUrl: '',
+        maxOpenDays: ''
       })
     ).toBe('Enter a product name.');
     expect(
@@ -29,7 +30,8 @@ describe('product helpers', () => {
         brand: '',
         family: 'volume',
         preferredUnit: 'kg',
-        imageUrl: ''
+        imageUrl: '',
+        maxOpenDays: ''
       })
     ).toBe('Choose a preferred unit that matches the product family.');
     expect(
@@ -38,7 +40,18 @@ describe('product helpers', () => {
         brand: '',
         family: 'volume',
         preferredUnit: 'l',
-        imageUrl: ''
+        imageUrl: '',
+        maxOpenDays: '0'
+      })
+    ).toBe('Maximum open days must be a positive whole number.');
+    expect(
+      validateProductForm({
+        name: 'Milk',
+        brand: '',
+        family: 'volume',
+        preferredUnit: 'l',
+        imageUrl: '',
+        maxOpenDays: '3'
       })
     ).toBeNull();
   });
@@ -50,7 +63,8 @@ describe('product helpers', () => {
         brand: '  House  ',
         family: 'mass',
         preferredUnit: 'kg',
-        imageUrl: '  https://example.test/rice.jpg  '
+        imageUrl: '  https://example.test/rice.jpg  ',
+        maxOpenDays: '5'
       })
     ).toEqual({
       name: 'Rice',
@@ -58,7 +72,8 @@ describe('product helpers', () => {
       family: 'mass',
       preferred_unit: 'kg',
       barcode: null,
-      image_url: 'https://example.test/rice.jpg'
+      image_url: 'https://example.test/rice.jpg',
+      max_open_days: 5
     });
   });
 
@@ -69,7 +84,8 @@ describe('product helpers', () => {
       brand: 'House',
       family: 'mass',
       preferred_unit: 'kg',
-      image_url: 'https://example.test/rice.jpg'
+      image_url: 'https://example.test/rice.jpg',
+      max_open_days: 7
     };
 
     expect(
@@ -78,13 +94,15 @@ describe('product helpers', () => {
         brand: '',
         family: 'mass',
         preferredUnit: 'g',
-        imageUrl: ''
+        imageUrl: '',
+        maxOpenDays: ''
       })
     ).toEqual([
       { op: 'replace', path: '/name', value: 'Rice Long Grain' },
       { op: 'replace', path: '/preferred_unit', value: 'g' },
       { op: 'remove', path: '/brand' },
-      { op: 'remove', path: '/image_url' }
+      { op: 'remove', path: '/image_url' },
+      { op: 'remove', path: '/max_open_days' }
     ]);
   });
 

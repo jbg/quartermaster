@@ -97,6 +97,11 @@
   let batchDetailRefreshToken = 0;
   let history = $state<HistoryState>(emptyHistoryState);
   let consumeQuantity = $state('');
+  let storeRemainderQuantity = $state('');
+  let storeRemainderLocationId = $state('');
+  let storeRemainderOpenedOn = $state('');
+  let storeRemainderExpiresOn = $state('');
+  let storeRemainderNote = $state('');
   let stockActionBusy = $state<string | null>(null);
   let stockActionError = $state<string | null>(null);
   let labelPrintBusy = $state(false);
@@ -124,6 +129,7 @@
   let manualProductBrand = $state('');
   let manualProductFamily = $state<UnitFamily>('mass');
   let manualProductUnit = $state('g');
+  let manualProductMaxOpenDays = $state('');
   let addStockQuantity = $state('');
   let addStockUnit = $state('g');
   let addStockLocationId = $state('');
@@ -275,6 +281,9 @@
     selectedBatch = nextSelection;
     selectedBatchId = nextSelection?.id ?? null;
     if (nextSelection) {
+      hydrateStoreRemainder(nextSelection);
+    }
+    if (nextSelection) {
       await refreshBatchDetail(nextSelection.id);
     } else {
       history = emptyHistoryState;
@@ -398,6 +407,7 @@
     selectedBatch = batch;
     selectedBatchId = batch.id;
     stockActionError = null;
+    hydrateStoreRemainder(batch);
     closeStockEdit();
     await refreshBatchDetail(batch.id);
   }
@@ -428,6 +438,53 @@
       await refreshWorkspace(selectedBatch.id);
     } catch {
       stockActionError = 'Stock could not be consumed.';
+    } finally {
+      stockActionBusy = null;
+    }
+  }
+
+  function hydrateStoreRemainder(batch: StockBatch) {
+    storeRemainderQuantity = consumeQuantity.trim();
+    storeRemainderLocationId = preferredRemainderLocationId(batch);
+    storeRemainderOpenedOn = localDateKey(new Date());
+    storeRemainderExpiresOn = '';
+    storeRemainderNote = '';
+  }
+
+  async function consumeAndStoreSelected() {
+    if (!session || !selectedBatch) {
+      return;
+    }
+    const quantity = storeRemainderQuantity.trim();
+    if (!quantity || Number(quantity) <= 0) {
+      stockActionError = 'Enter a positive quantity to use.';
+      return;
+    }
+    if (Number(quantity) >= Number(selectedBatch.quantity ?? 0)) {
+      stockActionError = 'Use less than the current batch quantity.';
+      return;
+    }
+    if (!storeRemainderLocationId) {
+      stockActionError = 'Choose a location for the remainder.';
+      return;
+    }
+    stockActionBusy = 'consume-and-store';
+    stockActionError = null;
+    closeStockEdit();
+    try {
+      const result = await session.stockConsumeAndStore(selectedBatch.id, {
+        used_quantity: quantity,
+        remainder_location_id: storeRemainderLocationId,
+        opened_on: storeRemainderOpenedOn || null,
+        remainder_expires_on: storeRemainderExpiresOn || null,
+        note: storeRemainderNote.trim() || null
+      });
+      consumeQuantity = '';
+      hydrateStoreRemainder(result.remainder);
+      highlightBatchId = result.remainder.id;
+      await refreshWorkspace(result.remainder.id);
+    } catch {
+      stockActionError = 'Remainder could not be stored.';
     } finally {
       stockActionBusy = null;
     }
@@ -571,6 +628,7 @@
     manualProductBrand = '';
     manualProductFamily = 'mass';
     manualProductUnit = unitChoicesForFamily('mass', units)[0];
+    manualProductMaxOpenDays = '';
     addStockQuantity = '';
     addStockUnit = unitChoicesForFamily('mass', units)[0];
     addStockLocationId = preferredAddStockLocationId();
@@ -659,6 +717,11 @@
       manualProductError = 'Enter a product name.';
       return;
     }
+    const maxOpenDays = manualProductMaxOpenDays.trim();
+    if (maxOpenDays && (!Number.isInteger(Number(maxOpenDays)) || Number(maxOpenDays) <= 0)) {
+      manualProductError = 'Maximum open days must be a positive whole number.';
+      return;
+    }
     manualProductBusy = true;
     manualProductError = null;
     try {
@@ -668,7 +731,8 @@
         family: manualProductFamily,
         preferred_unit: manualProductUnit,
         barcode: null,
-        image_url: null
+        image_url: null,
+        max_open_days: maxOpenDays ? Number(maxOpenDays) : null
       });
       chooseProduct(product);
       productSearchResults = [
@@ -679,6 +743,7 @@
       productSearchQuery = product.name;
       manualProductName = '';
       manualProductBrand = '';
+      manualProductMaxOpenDays = '';
     } catch {
       manualProductError = 'Product could not be created.';
     } finally {
@@ -736,6 +801,11 @@
     selectedBatchId = null;
     history = emptyHistoryState;
     consumeQuantity = '';
+    storeRemainderQuantity = '';
+    storeRemainderLocationId = '';
+    storeRemainderOpenedOn = '';
+    storeRemainderExpiresOn = '';
+    storeRemainderNote = '';
     stockActionBusy = null;
     stockActionError = null;
     closeStockEdit();
@@ -781,6 +851,22 @@
       return lastAddStockLocationId;
     }
     return locations[0]?.id ?? '';
+  }
+
+  function preferredRemainderLocationId(batch: StockBatch): string {
+    const current = stockLocationId(batch);
+    const fridge = locations.find((location) => location.kind === 'fridge');
+    if (fridge) {
+      return fridge.id;
+    }
+    return locations.find((location) => location.id !== current)?.id ?? current ?? '';
+  }
+
+  function localDateKey(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   function sortHighlightedLocationGroups(
@@ -1099,6 +1185,10 @@
                       <option value={unit}>{unit}</option>
                     {/each}
                   </select>
+                </label>
+                <label>
+                  Maximum open days
+                  <input bind:value={manualProductMaxOpenDays} inputmode="numeric" type="number" />
                 </label>
                 <button
                   class="secondary-action"
@@ -1508,6 +1598,76 @@
               <p class="error-text">{stockActionError}</p>
             {/if}
           </form>
+
+          {#if !isDepleted(selectedBatch)}
+            <form
+              class="action-panel"
+              onsubmit={(event) => {
+                event.preventDefault();
+                void consumeAndStoreSelected();
+              }}
+            >
+              <div class="section-heading compact">
+                <div>
+                  <p class="eyebrow">Opened package</p>
+                  <h2>Open and store remainder</h2>
+                </div>
+              </div>
+              <label>
+                Used quantity
+                <input
+                  bind:value={storeRemainderQuantity}
+                  inputmode="decimal"
+                  placeholder={`Amount in ${stockUnit(selectedBatch)}`}
+                  disabled={stockActionBusy !== null || stockEditBusy}
+                />
+              </label>
+              <label>
+                Remainder location
+                <select
+                  bind:value={storeRemainderLocationId}
+                  disabled={stockActionBusy !== null || stockEditBusy}
+                >
+                  {#each locations as location}
+                    <option value={location.id}>{location.name}</option>
+                  {/each}
+                </select>
+              </label>
+              <label>
+                Opened date
+                <input
+                  bind:value={storeRemainderOpenedOn}
+                  type="date"
+                  disabled={stockActionBusy !== null || stockEditBusy}
+                />
+              </label>
+              <label>
+                Remainder expiry override
+                <input
+                  bind:value={storeRemainderExpiresOn}
+                  type="date"
+                  disabled={stockActionBusy !== null || stockEditBusy}
+                />
+              </label>
+              <label>
+                Remainder note
+                <input
+                  bind:value={storeRemainderNote}
+                  disabled={stockActionBusy !== null || stockEditBusy}
+                />
+              </label>
+              <div class="stock-actions">
+                <button
+                  class="primary-action"
+                  type="submit"
+                  disabled={stockActionBusy !== null || stockEditBusy || locations.length === 0}
+                  >{stockActionBusy === 'consume-and-store'
+                    ? 'Storing...'
+                    : 'Use and store'}</button
+                >
+              </div>
+            </form>
+          {/if}
 
           <section class="history-region" aria-labelledby="history-heading">
             <div class="section-heading compact">

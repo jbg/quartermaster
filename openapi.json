@@ -2612,6 +2612,72 @@
         ]
       }
     },
+    "/api/v1/stock/{id}/consume-and-store": {
+      "post": {
+        "tags": [
+          "stock"
+        ],
+        "operationId": "stock_consume_and_store",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsumeAndStoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsumeAndStoreResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/stock/{id}/events": {
       "get": {
         "tags": [
@@ -2906,6 +2972,60 @@
           }
         }
       },
+      "ConsumeAndStoreRequest": {
+        "type": "object",
+        "required": [
+          "used_quantity",
+          "remainder_location_id"
+        ],
+        "properties": {
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "opened_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remainder_expires_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remainder_location_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "used_quantity": {
+            "type": "string"
+          }
+        }
+      },
+      "ConsumeAndStoreResponse": {
+        "type": "object",
+        "required": [
+          "source",
+          "remainder",
+          "consume_request_id"
+        ],
+        "properties": {
+          "consume_request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "remainder": {
+            "$ref": "#/components/schemas/StockBatchDto"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StockBatchDto"
+          }
+        }
+      },
       "ConsumeRequest": {
         "type": "object",
         "required": [
@@ -3151,6 +3271,13 @@
               "string",
               "null"
             ]
+          },
+          "max_open_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           },
           "name": {
             "type": "string"
@@ -3737,6 +3864,14 @@
               "string",
               "null"
             ]
+          },
+          "max_open_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Maximum days this product should remain open before being discarded."
           },
           "name": {
             "type": "string"

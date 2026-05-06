@@ -11,7 +11,7 @@ pub const SOURCE_MANUAL: &str = "manual";
 /// only need adding in one place.
 const COLS: &str = "id, source, off_barcode, name, brand, family, default_unit, \
                     image_url, package_quantity, package_unit, fetched_at, \
-                    created_by_household_id, created_at, deleted_at";
+                    created_by_household_id, created_at, deleted_at, max_open_days";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProductRow {
@@ -29,6 +29,7 @@ pub struct ProductRow {
     pub created_by_household_id: Option<Uuid>,
     pub created_at: String,
     pub deleted_at: Option<String>,
+    pub max_open_days: Option<i64>,
 }
 
 pub fn base_unit_for_family(family: &str) -> &'static str {
@@ -49,14 +50,40 @@ pub async fn create_manual(
     barcode: Option<&str>,
     image_url: Option<&str>,
 ) -> Result<ProductRow, sqlx::Error> {
+    create_manual_with_max_open_days(
+        db,
+        household_id,
+        name,
+        brand,
+        family,
+        preferred_unit,
+        barcode,
+        image_url,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn create_manual_with_max_open_days(
+    db: &Database,
+    household_id: Uuid,
+    name: &str,
+    brand: Option<&str>,
+    family: &str,
+    preferred_unit: Option<&str>,
+    barcode: Option<&str>,
+    image_url: Option<&str>,
+    max_open_days: Option<i64>,
+) -> Result<ProductRow, sqlx::Error> {
     let id = Uuid::now_v7();
     let created_at = now_utc_rfc3339();
     let unit = preferred_unit.unwrap_or(base_unit_for_family(family));
 
     sqlx::query(
         "INSERT INTO product \
-         (id, source, off_barcode, name, brand, default_unit, family, image_url, fetched_at, created_by_household_id, created_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+         (id, source, off_barcode, name, brand, default_unit, family, image_url, fetched_at, created_by_household_id, created_at, max_open_days) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
     )
     .bind(id.to_string())
     .bind(SOURCE_MANUAL)
@@ -68,6 +95,7 @@ pub async fn create_manual(
     .bind(image_url)
     .bind(household_id.to_string())
     .bind(&created_at)
+    .bind(max_open_days)
     .execute(&db.pool)
     .await?;
 
@@ -86,6 +114,7 @@ pub async fn create_manual(
         created_by_household_id: Some(household_id),
         created_at,
         deleted_at: None,
+        max_open_days,
     })
 }
 
@@ -282,6 +311,7 @@ pub struct ProductUpdate<'a> {
     pub family: Option<&'a str>,
     pub preferred_unit: Option<&'a str>,
     pub image_url: Option<Option<&'a str>>,
+    pub max_open_days: Option<Option<i64>>,
 }
 
 pub async fn update(
@@ -301,9 +331,13 @@ pub async fn update(
         Some(inner) => inner.map(str::to_owned),
         None => current.image_url.clone(),
     };
+    let max_open_days = match upd.max_open_days {
+        Some(inner) => inner,
+        None => current.max_open_days,
+    };
 
     sqlx::query(
-        "UPDATE product SET name = ?, brand = ?, family = ?, default_unit = ?, image_url = ? \
+        "UPDATE product SET name = ?, brand = ?, family = ?, default_unit = ?, image_url = ?, max_open_days = ? \
          WHERE id = ?",
     )
     .bind(name)
@@ -311,6 +345,7 @@ pub async fn update(
     .bind(family)
     .bind(preferred_unit)
     .bind(image_url.as_deref())
+    .bind(max_open_days)
     .bind(id.to_string())
     .execute(&db.pool)
     .await?;
@@ -376,6 +411,7 @@ fn row_to_product(row: sqlx::any::AnyRow) -> Result<ProductRow, sqlx::Error> {
             .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         created_at: row.try_get("created_at")?,
         deleted_at: row.try_get("deleted_at")?,
+        max_open_days: row.try_get("max_open_days")?,
     })
 }
 

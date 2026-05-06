@@ -53,6 +53,8 @@ export interface Product {
   source?: 'openfoodfacts' | 'manual';
   deleted_at?: string | null;
   deletedAt?: string | null;
+  max_open_days?: number | null;
+  maxOpenDays?: number | null;
 }
 
 export interface ProductSearchResponse {
@@ -243,6 +245,21 @@ export interface ConsumeResponse {
   consumeRequestId?: string;
 }
 
+export interface ConsumeAndStoreRequest {
+  used_quantity: string;
+  remainder_location_id: string;
+  opened_on?: string | null;
+  remainder_expires_on?: string | null;
+  note?: string | null;
+}
+
+export interface ConsumeAndStoreResponse {
+  source: StockBatch;
+  remainder: StockBatch;
+  consume_request_id?: string;
+  consumeRequestId?: string;
+}
+
 export interface CreateProductRequest {
   name: string;
   brand?: string | null;
@@ -250,6 +267,7 @@ export interface CreateProductRequest {
   preferred_unit?: string | null;
   barcode?: string | null;
   image_url?: string | null;
+  max_open_days?: number | null;
 }
 
 export interface JsonPatchOperation {
@@ -387,6 +405,10 @@ export interface SessionTransport {
     query?: { before_created_at?: string | null; before_id?: string | null; limit?: number | null }
   ): Promise<ApiResult<StockEventListResponse>>;
   stockConsume(body: ConsumeRequest): Promise<ApiResult<ConsumeResponse>>;
+  stockConsumeAndStore?(
+    id: string,
+    body: ConsumeAndStoreRequest
+  ): Promise<ApiResult<ConsumeAndStoreResponse>>;
   stockDelete(id: string): Promise<ApiResult<void>>;
   stockRestore(id: string): Promise<ApiResult<StockBatch>>;
   stockLabelPrint?(
@@ -648,6 +670,12 @@ export class QuartermasterSession {
 
   stockConsume(body: ConsumeRequest): Promise<ConsumeResponse> {
     return this.authed(() => this.transport.stockConsume(body));
+  }
+
+  stockConsumeAndStore(id: string, body: ConsumeAndStoreRequest): Promise<ConsumeAndStoreResponse> {
+    return this.authed(() =>
+      required(this.transport.stockConsumeAndStore, 'stockConsumeAndStore')(id, body)
+    );
   }
 
   stockDelete(id: string): Promise<void> {

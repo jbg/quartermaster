@@ -21,6 +21,7 @@
     productBrand,
     productDeletedAt,
     productImageUrl,
+    productMaxOpenDays,
     productMutationErrorMessage,
     productSourceLabel
   } from '$lib/products';
@@ -194,6 +195,10 @@
           <div>
             <dt>Barcode</dt>
             <dd>{productBarcode(product) || 'No barcode'}</dd>
+          </div>
+          <div>
+            <dt>Maximum open days</dt>
+            <dd>{productMaxOpenDays(product) ?? 'Not set'}</dd>
           </div>
           <div>
             <dt>Status</dt>

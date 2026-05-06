@@ -32,6 +32,7 @@ import {
   remindersOpen,
   remindersPresent,
   stockConsume,
+  stockConsumeAndStore,
   stockCreate,
   stockDelete,
   stockGet,
@@ -164,6 +165,9 @@ export function generatedTransport(): SessionTransport {
     },
     stockConsume(body) {
       return stockConsume({ body });
+    },
+    stockConsumeAndStore(id, body) {
+      return stockConsumeAndStore({ path: { id }, body });
     },
     stockDelete(id) {
       return stockDelete({ path: { id } });

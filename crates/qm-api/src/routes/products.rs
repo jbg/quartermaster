@@ -55,6 +55,8 @@ pub struct ProductDto {
     pub package_quantity: Option<String>,
     /// Unit for `package_quantity`; belongs to the same family as the product.
     pub package_unit: Option<String>,
+    /// Maximum days this product should remain open before being discarded.
+    pub max_open_days: Option<i64>,
     pub barcode: Option<String>,
     pub source: ProductSource,
     /// RFC-3339 timestamp when the product was soft-deleted. Present only
@@ -84,6 +86,7 @@ impl TryFrom<ProductRow> for ProductDto {
             image_url: p.image_url,
             package_quantity: p.package_quantity,
             package_unit: p.package_unit,
+            max_open_days: p.max_open_days,
             barcode: p.off_barcode,
             source,
             deleted_at: p.deleted_at,
@@ -105,6 +108,7 @@ pub struct CreateProductRequest {
     pub preferred_unit: Option<String>,
     pub barcode: Option<String>,
     pub image_url: Option<String>,
+    pub max_open_days: Option<i64>,
 }
 
 pub type UpdateProductRequest = JsonPatchDocument;
@@ -116,6 +120,7 @@ struct ProductPatch {
     family: Option<UnitFamily>,
     preferred_unit: Option<String>,
     image_url: Option<Option<String>>,
+    max_open_days: Option<Option<i64>>,
 }
 
 impl ProductPatch {
@@ -147,6 +152,9 @@ impl ProductPatch {
             }
             "/preferred_unit" => self.preferred_unit = Some(string_value("preferred_unit", value)?),
             "/image_url" => self.image_url = Some(Some(string_value("image_url", value)?)),
+            "/max_open_days" => {
+                self.max_open_days = Some(Some(max_open_days_value("max_open_days", value)?));
+            }
             other => {
                 return Err(ApiError::BadRequest(format!(
                     "unknown product patch path: {other}"
@@ -165,6 +173,10 @@ impl ProductPatch {
             "/image_url" => {
                 reject_value_for_remove("image_url", value)?;
                 self.image_url = Some(None);
+            }
+            "/max_open_days" => {
+                reject_value_for_remove("max_open_days", value)?;
+                self.max_open_days = Some(None);
             }
             "/name" => return Err(reject_remove("name")),
             "/family" => return Err(reject_remove("family")),
@@ -364,6 +376,9 @@ pub async fn create(
             });
         }
     }
+    if let Some(days) = req.max_open_days {
+        validate_max_open_days(days)?;
+    }
 
     let brand_trim = req
         .brand
@@ -381,7 +396,7 @@ pub async fn create(
         .map(str::trim)
         .filter(|s| !s.is_empty());
 
-    let row = qm_db::products::create_manual(
+    let row = qm_db::products::create_manual_with_max_open_days(
         &state.db,
         household_id,
         name,
@@ -390,6 +405,7 @@ pub async fn create(
         req.preferred_unit.as_deref(),
         barcode_trim,
         image_url_trim,
+        req.max_open_days,
     )
     .await?;
 
@@ -509,6 +525,9 @@ pub async fn update(
             });
         }
     }
+    if let Some(Some(days)) = req.max_open_days {
+        validate_max_open_days(days)?;
+    }
 
     let name_trim = req.name.as_deref().map(str::trim);
     let brand_inner: Option<Option<&str>> = req.brand.as_ref().map(|inner| {
@@ -533,11 +552,28 @@ pub async fn update(
             family: family_str,
             preferred_unit,
             image_url: image_inner,
+            max_open_days: req.max_open_days,
         },
     )
     .await?;
 
     Ok(Json(updated.try_into()?))
+}
+
+fn max_open_days_value(field: &str, value: Option<&serde_json::Value>) -> ApiResult<i64> {
+    let value = value.ok_or_else(|| ApiError::BadRequest(format!("{field} is required")))?;
+    value
+        .as_i64()
+        .ok_or_else(|| ApiError::BadRequest(format!("{field} must be an integer")))
+}
+
+fn validate_max_open_days(days: i64) -> ApiResult<()> {
+    if days <= 0 {
+        return Err(ApiError::BadRequest(
+            "max_open_days must be greater than zero".into(),
+        ));
+    }
+    Ok(())
 }
 
 #[utoipa::path(

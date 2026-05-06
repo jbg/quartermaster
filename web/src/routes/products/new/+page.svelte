@@ -194,6 +194,16 @@
           Image URL
           <input bind:value={form.imageUrl} data-testid="product-image-url-input" />
         </label>
+        <label>
+          Maximum open days
+          <input
+            bind:value={form.maxOpenDays}
+            data-testid="product-max-open-days-input"
+            inputmode="numeric"
+            min="1"
+            type="number"
+          />
+        </label>
         {#if error}
           <p class="error-text">{error}</p>
         {/if}

@@ -8,6 +8,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.quartermaster.android.generated.models.BarcodeLookupResponse
+import dev.quartermaster.android.generated.models.ConsumeAndStoreRequest
+import dev.quartermaster.android.generated.models.ConsumeAndStoreResponse
 import dev.quartermaster.android.generated.models.ConsumeRequest
 import dev.quartermaster.android.generated.models.ConsumeResponse
 import dev.quartermaster.android.generated.models.CreateInviteRequest
@@ -109,6 +111,7 @@ data class ProductFormFields(
     val family: UnitFamily = UnitFamily.MASS,
     val preferredUnit: String = "g",
     val imageUrl: String = "",
+    val maxOpenDays: String = "",
 )
 
 data class LocationFormFields(
@@ -200,6 +203,7 @@ interface QuartermasterBackend {
     suspend fun addStock(request: CreateStockRequest): StockBatchDto
     suspend fun updateStock(id: String, request: StockUpdateRequest): StockBatchDto
     suspend fun consumeStock(request: ConsumeRequest): ConsumeResponse
+    suspend fun consumeAndStoreStock(batchId: String, request: ConsumeAndStoreRequest): ConsumeAndStoreResponse
     suspend fun discardStock(batchId: String)
     suspend fun restoreStock(batchId: String): StockBatchDto
 }
@@ -310,6 +314,10 @@ class QuartermasterApiBackend(
     override suspend fun addStock(request: CreateStockRequest): StockBatchDto = api.addStock(request)
     override suspend fun updateStock(id: String, request: StockUpdateRequest): StockBatchDto = api.updateStock(id, request)
     override suspend fun consumeStock(request: ConsumeRequest): ConsumeResponse = api.consumeStock(request)
+    override suspend fun consumeAndStoreStock(
+        batchId: String,
+        request: ConsumeAndStoreRequest,
+    ): ConsumeAndStoreResponse = api.consumeAndStoreStock(batchId, request)
     override suspend fun discardStock(batchId: String) = api.discardStock(batchId)
     override suspend fun restoreStock(batchId: String): StockBatchDto = api.restoreStock(batchId)
 }
@@ -1176,6 +1184,7 @@ class QuartermasterAppState(
         family = product.family,
         preferredUnit = product.preferredUnit,
         imageUrl = product.imageUrl.orEmpty(),
+        maxOpenDays = product.maxOpenDays?.toString().orEmpty(),
     )
 
     fun productFormWithFamily(
@@ -1204,6 +1213,9 @@ class QuartermasterAppState(
             name.isEmpty() -> "Enter a product name."
             name.length > 256 -> "Product name must be 256 characters or fewer."
             fields.preferredUnit !in productUnitSymbolsFor(fields.family) -> "Choose a preferred unit that matches the product family."
+            fields.maxOpenDays.trim().isNotEmpty() &&
+                fields.maxOpenDays.trim().toLongOrNull()?.takeIf { it > 0 } == null ->
+                "Maximum open days must be a positive whole number."
             else -> null
         }
     }
@@ -1755,6 +1767,7 @@ private fun ProductFormFields.toCreateProductRequest(): CreateProductRequest = C
     preferredUnit = preferredUnit,
     barcode = null,
     imageUrl = imageUrl.trim().takeIf(String::isNotEmpty),
+    maxOpenDays = maxOpenDays.trim().toLongOrNull(),
 )
 
 private fun ProductFormFields.toUpdatePatch(product: ProductDto): ProductUpdateRequest {
@@ -1763,6 +1776,8 @@ private fun ProductFormFields.toUpdatePatch(product: ProductDto): ProductUpdateR
     val currentBrand = product.brand.orEmpty()
     val nextImageUrl = imageUrl.trim()
     val currentImageUrl = product.imageUrl.orEmpty()
+    val nextMaxOpenDays = maxOpenDays.trim().toLongOrNull()
+    val currentMaxOpenDays = product.maxOpenDays
     val operations = buildList {
         if (nextName != product.name) add(JsonPatchOperation("replace", "/name", nextName))
         when {
@@ -1777,6 +1792,11 @@ private fun ProductFormFields.toUpdatePatch(product: ProductDto): ProductUpdateR
             nextImageUrl.isNotEmpty() && nextImageUrl != currentImageUrl ->
                 add(JsonPatchOperation("replace", "/image_url", nextImageUrl))
             nextImageUrl.isEmpty() && currentImageUrl.isNotEmpty() -> add(JsonPatchOperation("remove", "/image_url"))
+        }
+        when {
+            nextMaxOpenDays != null && nextMaxOpenDays != currentMaxOpenDays ->
+                add(JsonPatchOperation("replace", "/max_open_days", nextMaxOpenDays))
+            maxOpenDays.trim().isEmpty() && currentMaxOpenDays != null -> add(JsonPatchOperation("remove", "/max_open_days"))
         }
     }
     return ProductUpdateRequest(operations)

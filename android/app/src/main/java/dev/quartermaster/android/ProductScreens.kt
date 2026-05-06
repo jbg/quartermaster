@@ -473,6 +473,15 @@ internal fun ProductFormScreen(
             )
         }
         item {
+            OutlinedTextField(
+                value = fields.maxOpenDays,
+                onValueChange = { fields = fields.copy(maxOpenDays = it) },
+                label = { Text("Maximum open days") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     modifier = Modifier

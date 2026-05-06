@@ -20,6 +20,7 @@ struct ProductDetailView: View {
   @State private var preferredUnit: String
   @State private var imageURLText: String
   @State private var imageURLValid: Bool = true
+  @State private var maxOpenDaysText: String
   @State private var isSubmitting = false
   @State private var errorMessage: String?
   @State private var confirmDelete = false
@@ -32,6 +33,7 @@ struct ProductDetailView: View {
     _family = State(initialValue: product.family)
     _preferredUnit = State(initialValue: product.preferredUnit)
     _imageURLText = State(initialValue: product.imageURL?.absoluteString ?? "")
+    _maxOpenDaysText = State(initialValue: product.maxOpenDays.map(String.init) ?? "")
   }
 
   var body: some View {
@@ -120,6 +122,12 @@ struct ProductDetailView: View {
       Text("Used as the thumbnail in inventory lists.")
     }
     Section {
+      TextField("Maximum open days (optional)", text: $maxOpenDaysText)
+        .keyboardType(.numberPad)
+    } footer: {
+      Text("Used to date leftovers when an opened package is stored.")
+    }
+    Section {
       Button(role: .destructive) {
         confirmDelete = true
       } label: {
@@ -201,6 +209,14 @@ struct ProductDetailView: View {
 
   private var canSave: Bool {
     !name.trimmingCharacters(in: .whitespaces).isEmpty && imageURLValid
+      && parsedMaxOpenDays != 0
+  }
+
+  private var parsedMaxOpenDays: Int64? {
+    let trimmed = maxOpenDaysText.trimmingCharacters(in: .whitespaces)
+    if trimmed.isEmpty { return nil }
+    guard let value = Int64(trimmed), value > 0 else { return 0 }
+    return value
   }
 
   // MARK: - Actions
@@ -235,6 +251,14 @@ struct ProductDetailView: View {
       request.append(jsonPatchRemove("/image_url"))
     case (let existing, let new) where existing != new && !new.isEmpty:
       request.append(jsonPatchReplace("/image_url", new))
+    default:
+      break
+    }
+    switch (product.maxOpenDays, parsedMaxOpenDays) {
+    case (_?, nil):
+      request.append(jsonPatchRemove("/max_open_days"))
+    case (let existing, let new?) where existing != new:
+      request.append(jsonPatchReplace("/max_open_days", new))
     default:
       break
     }

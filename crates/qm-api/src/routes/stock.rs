@@ -7,11 +7,12 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use jiff::civil::Date;
+use jiff::{civil::Date, tz, Timestamp, ToSpan};
 use qm_core::batch::plan_consumption;
 use qm_db::products::ProductRow;
 use qm_db::stock::{
-    RestoreError, StockBatchRow, StockBatchWithProduct, StockFilter, StockMetadataUpdate,
+    ConsumeAndStoreError, RestoreError, StockBatchRow, StockBatchWithProduct, StockFilter,
+    StockMetadataUpdate,
 };
 use qm_db::stock_events::TimelineEntryRow;
 use rust_decimal::Decimal;
@@ -44,6 +45,7 @@ pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
         )
         .route("/stock/restore-many", post(restore_many))
         .route("/stock/{id}", get(get_one).patch(update).delete(delete_one))
+        .route("/stock/{id}/consume-and-store", post(consume_and_store))
         .route(
             "/stock/{id}/events",
             get(list_events_for_batch).route_layer(middleware::from_fn_with_state(
@@ -254,6 +256,22 @@ pub struct ConsumedBatchDto {
 pub struct ConsumeResponse {
     pub consumed: Vec<ConsumedBatchDto>,
     /// Correlates the `consume` events this call wrote to the ledger.
+    pub consume_request_id: Uuid,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ConsumeAndStoreRequest {
+    pub used_quantity: String,
+    pub remainder_location_id: Uuid,
+    pub opened_on: Option<String>,
+    pub remainder_expires_on: Option<String>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ConsumeAndStoreResponse {
+    pub source: StockBatchDto,
+    pub remainder: StockBatchDto,
     pub consume_request_id: Uuid,
 }
 
@@ -595,6 +613,88 @@ pub async fn consume(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/stock/{id}/consume-and-store",
+    operation_id = "stock_consume_and_store",
+    tag = "stock",
+    params(("id" = Uuid, Path)),
+    request_body = ConsumeAndStoreRequest,
+    responses(
+        (status = 200, body = ConsumeAndStoreResponse),
+        (status = 400, body = crate::error::ApiErrorBody),
+        (status = 404, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn consume_and_store(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<ConsumeAndStoreRequest>,
+) -> ApiResult<Json<ConsumeAndStoreResponse>> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    validate_positive_decimal(&req.used_quantity)?;
+    validate_location(&state, household_id, req.remainder_location_id).await?;
+
+    let existing = qm_db::stock::get(&state.db, household_id, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if existing.depleted_at.is_some() {
+        return Err(ApiError::BadRequest(
+            "depleted stock cannot be consumed and stored".into(),
+        ));
+    }
+    let product = load_product_for_write(&state, household_id, existing.product_id).await?;
+
+    let used = Decimal::from_str(&req.used_quantity)
+        .map_err(|_| ApiError::BadRequest("quantity not a valid decimal".into()))?;
+    let current_quantity = Decimal::from_str(&existing.quantity)
+        .map_err(|_| ApiError::Internal(anyhow::anyhow!("invalid stored quantity")))?;
+    if used >= current_quantity {
+        return Err(ApiError::BadRequest(
+            "used_quantity must be less than the current batch quantity".into(),
+        ));
+    }
+
+    let opened_on = match req.opened_on.as_deref() {
+        Some(opened_on) => {
+            validate_iso_date(opened_on)?;
+            opened_on.to_owned()
+        }
+        None => household_today(&state, household_id).await?,
+    };
+    let remainder_expires_on = match req.remainder_expires_on.as_deref() {
+        Some(expires_on) => {
+            validate_iso_date(expires_on)?;
+            expires_on.to_owned()
+        }
+        None => derive_open_expiry(&opened_on, product.max_open_days)?,
+    };
+    validate_remainder_expiry(&opened_on, &remainder_expires_on)?;
+
+    let result = qm_db::stock::consume_and_store_remainder(
+        &state.db,
+        household_id,
+        id,
+        &req.used_quantity,
+        req.remainder_location_id,
+        &opened_on,
+        &remainder_expires_on,
+        req.note.as_deref(),
+        current.user_id,
+        Some(&state.config.expiry_reminder_policy),
+    )
+    .await
+    .map_err(consume_and_store_error)?;
+
+    Ok(Json(ConsumeAndStoreResponse {
+        source: stock_dto(&state, household_id, result.source.id, true).await?,
+        remainder: stock_dto(&state, household_id, result.remainder.id, false).await?,
+        consume_request_id: result.consume_request_id,
+    }))
+}
+
 // ----- history / restore -----
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -898,6 +998,59 @@ fn validate_unit_family(unit: &str, product_family: &str) -> ApiResult<()> {
         });
     }
     Ok(())
+}
+
+async fn household_today(state: &AppState, household_id: Uuid) -> ApiResult<String> {
+    let household = qm_db::households::find_by_id(&state.db, household_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let time_zone = tz::db()
+        .get(&household.timezone)
+        .map_err(|_| ApiError::Internal(anyhow::anyhow!("invalid household timezone")))?;
+    Ok(Timestamp::now().to_zoned(time_zone).date().to_string())
+}
+
+fn derive_open_expiry(opened_on: &str, max_open_days: Option<i64>) -> ApiResult<String> {
+    let days = max_open_days.ok_or_else(|| {
+        ApiError::BadRequest(
+            "remainder_expires_on is required when the product has no max_open_days".into(),
+        )
+    })?;
+    let opened = Date::from_str(opened_on)
+        .map_err(|_| ApiError::BadRequest(format!("date must be YYYY-MM-DD (got {opened_on})")))?;
+    let expires = opened
+        .checked_add(days.days())
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!("open expiry overflow: {e}")))?;
+    Ok(expires.to_string())
+}
+
+fn validate_remainder_expiry(opened_on: &str, expires_on: &str) -> ApiResult<()> {
+    let opened = Date::from_str(opened_on)
+        .map_err(|_| ApiError::BadRequest(format!("date must be YYYY-MM-DD (got {opened_on})")))?;
+    let expires = Date::from_str(expires_on)
+        .map_err(|_| ApiError::BadRequest(format!("date must be YYYY-MM-DD (got {expires_on})")))?;
+    if expires < opened {
+        return Err(ApiError::BadRequest(
+            "remainder_expires_on cannot be before opened_on".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn consume_and_store_error(err: ConsumeAndStoreError) -> ApiError {
+    match err {
+        ConsumeAndStoreError::NotFound => ApiError::NotFound,
+        ConsumeAndStoreError::Depleted => {
+            ApiError::BadRequest("depleted stock cannot be consumed and stored".into())
+        }
+        ConsumeAndStoreError::QuantityNotPositive => {
+            ApiError::BadRequest("quantity must be greater than zero".into())
+        }
+        ConsumeAndStoreError::QuantityNotPartial => ApiError::BadRequest(
+            "used_quantity must be less than the current batch quantity".into(),
+        ),
+        ConsumeAndStoreError::Database(err) => ApiError::Database(err),
+    }
 }
 
 async fn validate_location(

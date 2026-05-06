@@ -159,7 +159,12 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
     .getByRole('button', { name: /Smoke Oats/ })
     .click();
   await expect(page.getByTestId('detail-quantity')).toHaveText('2 kg');
-  await expect(page.locator('.detail-region').getByText('Smoke Shelf Renamed')).toBeVisible();
+  await expect(
+    page
+      .locator('.detail-region')
+      .getByRole('definition')
+      .filter({ hasText: 'Smoke Shelf Renamed' })
+  ).toBeVisible();
 
   await page.getByRole('button', { name: 'Add stock' }).click();
   await page.getByTestId('inventory-barcode-lookup-input').fill(fixture.barcode);
