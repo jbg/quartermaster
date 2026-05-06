@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.18.0](https://github.com/jbg/quartermaster/compare/1.17.0...1.18.0) (2026-05-06)
+
+
+### Features
+
+* add branded QR label mark ([395ad76](https://github.com/jbg/quartermaster/commit/395ad76c9b78907ca5533b469bb5528c793449b1))
+
+
+### Bug Fixes
+
+* improve iOS scan stock flow ([21af586](https://github.com/jbg/quartermaster/commit/21af5868ce55581c214835f23227c251458c8c03))
+
 ## [1.17.0](https://github.com/jbg/quartermaster/compare/1.16.0...1.17.0) (2026-05-06)
 
 
