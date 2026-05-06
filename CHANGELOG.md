@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.19.0](https://github.com/jbg/quartermaster/compare/1.18.0...1.19.0) (2026-05-06)
+
+
+### Features
+
+* add optional quantity on QR labels ([6767953](https://github.com/jbg/quartermaster/commit/6767953acff98c26ddd92058d134aed0c8118947))
+
+
+### Bug Fixes
+
+* allow correcting OFF package sizes ([d571e24](https://github.com/jbg/quartermaster/commit/d571e24fb1aaaf27129e6b92e808f4550030b238))
+
 ## [1.18.0](https://github.com/jbg/quartermaster/compare/1.17.0...1.18.0) (2026-05-06)
 
 
