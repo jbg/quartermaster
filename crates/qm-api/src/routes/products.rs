@@ -108,6 +108,10 @@ pub struct CreateProductRequest {
     pub preferred_unit: Option<String>,
     pub barcode: Option<String>,
     pub image_url: Option<String>,
+    /// Amount in `package_unit` for one retail package.
+    pub package_quantity: Option<String>,
+    /// Unit for `package_quantity`; belongs to the same family as the product.
+    pub package_unit: Option<String>,
     pub max_open_days: Option<i64>,
 }
 
@@ -379,6 +383,11 @@ pub async fn create(
     if let Some(days) = req.max_open_days {
         validate_max_open_days(days)?;
     }
+    let package = validate_package_size(
+        req.package_quantity.as_deref(),
+        req.package_unit.as_deref(),
+        req.family,
+    )?;
 
     let brand_trim = req
         .brand
@@ -405,6 +414,8 @@ pub async fn create(
         req.preferred_unit.as_deref(),
         barcode_trim,
         image_url_trim,
+        package.as_ref().map(|(quantity, _)| quantity.as_str()),
+        package.as_ref().map(|(_, unit)| unit.as_str()),
         req.max_open_days,
     )
     .await?;
@@ -574,6 +585,40 @@ fn validate_max_open_days(days: i64) -> ApiResult<()> {
         ));
     }
     Ok(())
+}
+
+fn validate_package_size(
+    quantity: Option<&str>,
+    unit: Option<&str>,
+    family: UnitFamily,
+) -> ApiResult<Option<(String, String)>> {
+    let quantity = quantity.map(str::trim).filter(|s| !s.is_empty());
+    let unit = unit.map(str::trim).filter(|s| !s.is_empty());
+    match (quantity, unit) {
+        (None, None) => Ok(None),
+        (Some(_), None) | (None, Some(_)) => Err(ApiError::BadRequest(
+            "package_quantity and package_unit must be provided together".into(),
+        )),
+        (Some(quantity), Some(unit)) => {
+            let parsed = quantity
+                .parse::<rust_decimal::Decimal>()
+                .map_err(|_| ApiError::BadRequest("package_quantity must be a decimal".into()))?;
+            if parsed <= rust_decimal::Decimal::ZERO {
+                return Err(ApiError::BadRequest(
+                    "package_quantity must be greater than zero".into(),
+                ));
+            }
+            let u =
+                qm_core::units::lookup(unit).map_err(|_| ApiError::UnknownUnit(unit.to_owned()))?;
+            if u.family != family {
+                return Err(ApiError::UnitFamilyMismatch {
+                    product_family: family.as_str().to_owned(),
+                    unit: unit.to_owned(),
+                });
+            }
+            Ok(Some((quantity.to_owned(), unit.to_owned())))
+        }
+    }
 }
 
 #[utoipa::path(

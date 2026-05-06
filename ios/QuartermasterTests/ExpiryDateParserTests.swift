@@ -42,6 +42,16 @@ final class ExpiryDateParserTests: XCTestCase {
     XCTAssertEqual(candidate.map { StockBatch.yyyymmdd.string(from: $0.date) }, "2026-06-28")
   }
 
+  func testUnambiguousSpacedDateParsesDayMonthYear() {
+    let candidate = ExpiryDateParser.bestCandidate(
+      in: "EXP 29 06 2026",
+      today: date("2026-05-06")
+    )
+
+    XCTAssertEqual(candidate.map { StockBatch.yyyymmdd.string(from: $0.date) }, "2026-06-29")
+    XCTAssertEqual(candidate?.precision, .day)
+  }
+
   func testAmbiguousSlashDateIsIgnored() {
     let candidate = ExpiryDateParser.bestCandidate(
       in: "best before 06/07/2026",

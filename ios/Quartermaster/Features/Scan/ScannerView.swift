@@ -266,7 +266,10 @@ struct ScanScreen: View {
     }
     .padding()
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(.regularMaterial)
+    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+    .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+    .padding(.horizontal, 12)
+    .padding(.bottom, 10)
   }
 
   private var expiryScanPanel: some View {
@@ -317,7 +320,10 @@ struct ScanScreen: View {
     }
     .padding()
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(.regularMaterial)
+    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+    .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+    .padding(.horizontal, 12)
+    .padding(.bottom, 10)
   }
 
   private func productSummary(_ product: Product) -> some View {
@@ -424,7 +430,7 @@ struct ScanScreen: View {
   }
 
   private var expirySummary: some View {
-    HStack {
+    VStack(alignment: .leading, spacing: 8) {
       VStack(alignment: .leading, spacing: 2) {
         Text("Expiry")
           .font(.subheadline.weight(.semibold))
@@ -438,37 +444,50 @@ struct ScanScreen: View {
             .foregroundStyle(.secondary)
         }
       }
-      Spacer()
       Button {
         showExpiryScan()
       } label: {
-        Label(draft?.expiryCandidate == nil ? "Scan" : "Rescan", systemImage: "text.viewfinder")
+        Label(
+          draft?.expiryCandidate == nil ? "Scan expiry date" : "Rescan expiry date",
+          systemImage: "text.viewfinder"
+        )
       }
       .buttonStyle(.bordered)
     }
   }
 
   private var actionButtons: some View {
-    HStack {
-      Button("Cancel", role: .cancel) { resetScanner() }
-      Button("Edit details") {
-        if let product = draft?.product {
-          sheet = .addStock(product)
-        }
-      }
-      Spacer()
+    VStack(spacing: 12) {
       Button {
         Task { await submitDraft() }
       } label: {
         if isSubmitting {
           ProgressView()
+            .frame(maxWidth: .infinity)
         } else {
           Text("Add stock")
             .fontWeight(.semibold)
+            .frame(maxWidth: .infinity)
         }
       }
       .buttonStyle(.borderedProminent)
+      .controlSize(.large)
       .disabled(!canSubmitDraft || isSubmitting)
+
+      HStack(spacing: 20) {
+        Button("Cancel", role: .cancel) { resetScanner() }
+          .buttonStyle(.bordered)
+        Button {
+          if let product = draft?.product {
+            sheet = .addStock(product)
+          }
+        } label: {
+          Text("Edit details")
+            .fontWeight(.semibold)
+        }
+        .buttonStyle(.bordered)
+        Spacer()
+      }
     }
   }
 
@@ -515,7 +534,21 @@ struct ScanScreen: View {
   private func handleExpiryText(_ text: String) {
     guard scannerMode == .expiryText, text != scannedExpiryText else { return }
     scannedExpiryText = text
-    expiryCandidates = ExpiryDateParser.candidates(in: text)
+    mergeExpiryCandidates(ExpiryDateParser.candidates(in: text))
+  }
+
+  private func mergeExpiryCandidates(_ candidates: [ExpiryDateCandidate]) {
+    guard !candidates.isEmpty else { return }
+    var merged = expiryCandidates
+    var seen = Set(merged.map(\.id))
+    for candidate in candidates where !seen.contains(candidate.id) {
+      merged.append(candidate)
+      seen.insert(candidate.id)
+    }
+    expiryCandidates = merged.sorted { lhs, rhs in
+      if lhs.date != rhs.date { return lhs.date < rhs.date }
+      return lhs.precision.sortOrder < rhs.precision.sortOrder
+    }
   }
 
   private func beginDraft(for product: Product) {

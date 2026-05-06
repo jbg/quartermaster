@@ -252,6 +252,8 @@ async fn product_patch_uses_json_patch_replace_and_remove() {
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
+    assert!(product["package_quantity"].is_null());
+    assert!(product["package_unit"].is_null());
     let product_id = product["id"].as_str().unwrap();
 
     let (status, updated) = app
@@ -305,6 +307,59 @@ async fn product_patch_uses_json_patch_replace_and_remove() {
                 Some(body),
                 Some(&alice),
             )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+}
+
+#[tokio::test]
+async fn product_create_accepts_manual_package_size() {
+    let app = TestApp::start(ApiConfig::default()).await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+
+    let (status, product) = app
+        .send(
+            Method::POST,
+            "/api/v1/products",
+            Some(json!({
+                "name": "Bagged Flour",
+                "brand": null,
+                "family": "mass",
+                "preferred_unit": "g",
+                "barcode": "12345670",
+                "image_url": null,
+                "package_quantity": "500",
+                "package_unit": "g",
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(product["package_quantity"], "500");
+    assert_eq!(product["package_unit"], "g");
+
+    for body in [
+        json!({
+            "name": "Missing package unit",
+            "family": "mass",
+            "package_quantity": "500",
+        }),
+        json!({
+            "name": "Bad package amount",
+            "family": "mass",
+            "package_quantity": "0",
+            "package_unit": "g",
+        }),
+        json!({
+            "name": "Bad package family",
+            "family": "mass",
+            "package_quantity": "500",
+            "package_unit": "ml",
+        }),
+    ] {
+        let (status, _) = app
+            .send(Method::POST, "/api/v1/products", Some(body), Some(&alice))
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }

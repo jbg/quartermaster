@@ -81,6 +81,20 @@ struct ExpiryDateScannerView: View {
   private func updateCandidates(_ text: String) {
     guard text != scannedText else { return }
     scannedText = text
-    candidates = ExpiryDateParser.candidates(in: text)
+    mergeCandidates(ExpiryDateParser.candidates(in: text))
+  }
+
+  private func mergeCandidates(_ newCandidates: [ExpiryDateCandidate]) {
+    guard !newCandidates.isEmpty else { return }
+    var merged = candidates
+    var seen = Set(merged.map(\.id))
+    for candidate in newCandidates where !seen.contains(candidate.id) {
+      merged.append(candidate)
+      seen.insert(candidate.id)
+    }
+    candidates = merged.sorted { lhs, rhs in
+      if lhs.date != rhs.date { return lhs.date < rhs.date }
+      return lhs.precision.sortOrder < rhs.precision.sortOrder
+    }
   }
 }
