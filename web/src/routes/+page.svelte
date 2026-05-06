@@ -107,6 +107,7 @@
   let labelPrintBusy = $state(false);
   let labelPrintMessage = $state<string | null>(null);
   let labelPrintError = $state<string | null>(null);
+  let labelPrintIncludeQuantity = $state(false);
   let stockEditOpen = $state(false);
   let stockEditQuantity = $state('');
   let stockEditLocationId = $state('');
@@ -186,6 +187,7 @@
     );
     session = created;
     serverUrl = created.snapshot().serverUrl;
+    labelPrintIncludeQuantity = window.localStorage.getItem('qm_label_include_quantity') === 'true';
     const batchParam = page.url.searchParams.get('batch');
     if (batchParam) {
       selectedBatchId = batchParam;
@@ -590,7 +592,16 @@
     labelPrintError = null;
     labelPrintMessage = null;
     try {
-      const printed = await session.stockLabelPrint(selectedBatch.id, { copies: 1 });
+      if (browser) {
+        window.localStorage.setItem(
+          'qm_label_include_quantity',
+          labelPrintIncludeQuantity ? 'true' : 'false'
+        );
+      }
+      const printed = await session.stockLabelPrint(selectedBatch.id, {
+        copies: 1,
+        include_quantity: labelPrintIncludeQuantity
+      });
       labelPrintMessage =
         printed.status === 'sent'
           ? `Label sent: ${printed.batch_url}`
@@ -1474,6 +1485,10 @@
               <a class="secondary-action small" href={settingsHref}>Printers</a>
             </div>
             <div class="stock-actions">
+              <label>
+                <input type="checkbox" bind:checked={labelPrintIncludeQuantity} />
+                Include quantity
+              </label>
               <button
                 class="primary-action"
                 type="button"

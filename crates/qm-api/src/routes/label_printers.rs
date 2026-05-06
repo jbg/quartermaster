@@ -84,6 +84,9 @@ pub struct PrintStockLabelRequest {
     pub printer_id: Option<Uuid>,
     pub copies: Option<u8>,
     pub dry_run: Option<bool>,
+    /// Include the batch quantity/unit on the printed label. Defaults to false
+    /// because labels often stay with mutable containers after first use.
+    pub include_quantity: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, ToSchema)]
@@ -260,6 +263,7 @@ pub async fn test_label_printer(
         expires_on: None,
         opened_on: None,
         note: Some("Test print".into()),
+        include_quantity: false,
     };
     let rendered = BrotherQlRenderer.render(&job, media)?;
     send_to_printer(&printer, &rendered, 1).await?;
@@ -310,7 +314,8 @@ pub async fn print_stock_label(
     if !printer.enabled {
         return Err(ApiError::BadRequest("label printer is disabled".into()));
     }
-    let job = build_label_job(&state, household_id, id).await?;
+    let mut job = build_label_job(&state, household_id, id).await?;
+    job.include_quantity = req.include_quantity.unwrap_or(false);
     let media = LabelPrinterMedia::from_str(&printer.media)?;
     let rendered = BrotherQlRenderer.render(&job, media)?;
     let status = if req.dry_run.unwrap_or(false) {
