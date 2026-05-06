@@ -20,6 +20,9 @@ struct ProductDetailView: View {
   @State private var preferredUnit: String
   @State private var imageURLText: String
   @State private var imageURLValid: Bool = true
+  @State private var hasPackageSize: Bool
+  @State private var packageQuantity: String
+  @State private var packageUnit: String
   @State private var maxOpenDaysText: String
   @State private var isSubmitting = false
   @State private var errorMessage: String?
@@ -33,6 +36,10 @@ struct ProductDetailView: View {
     _family = State(initialValue: product.family)
     _preferredUnit = State(initialValue: product.preferredUnit)
     _imageURLText = State(initialValue: product.imageURL?.absoluteString ?? "")
+    _hasPackageSize = State(
+      initialValue: product.packageQuantity != nil && product.packageUnit != nil)
+    _packageQuantity = State(initialValue: product.packageQuantity ?? "")
+    _packageUnit = State(initialValue: product.packageUnit ?? product.family.baseUnit)
     _maxOpenDaysText = State(initialValue: product.maxOpenDays.map(String.init) ?? "")
   }
 
@@ -57,7 +64,7 @@ struct ProductDetailView: View {
         ToolbarItem(placement: .cancellationAction) {
           Button(product.isManual && !product.isDeleted ? "Cancel" : "Done") { dismiss() }
         }
-        if product.isManual && !product.isDeleted {
+        if (product.isManual || product.isOFF) && !product.isDeleted {
           ToolbarItem(placement: .confirmationAction) {
             Button {
               Task { await save() }
@@ -112,6 +119,7 @@ struct ProductDetailView: View {
         }
       }
     }
+    packageSizeSection
     Section {
       ValidatedURLField(
         title: "Image URL (optional)",
@@ -139,6 +147,9 @@ struct ProductDetailView: View {
     .onChange(of: family) { _, newFamily in
       if !appState.unitsFor(family: newFamily).contains(where: { $0.code == preferredUnit }) {
         preferredUnit = newFamily.baseUnit
+      }
+      if !appState.unitsFor(family: newFamily).contains(where: { $0.code == packageUnit }) {
+        packageUnit = newFamily.baseUnit
       }
     }
   }
@@ -189,6 +200,7 @@ struct ProductDetailView: View {
         }
       }
     }
+    packageSizeSection
     Section {
       Button {
         Task { await refreshFromOFF() }
@@ -202,14 +214,56 @@ struct ProductDetailView: View {
       .disabled(isSubmitting)
     } footer: {
       Text(
-        "This product is sourced from Open Food Facts. Details are managed there — tap refresh to pull the latest values."
+        "This product is sourced from Open Food Facts. Package size corrections are kept locally; tap refresh to pull the latest catalogue values."
       )
     }
   }
 
+  private var packageSizeSection: some View {
+    Section {
+      Toggle("Comes in packages", isOn: $hasPackageSize.animation())
+      if hasPackageSize {
+        DecimalField(title: "Amount per package", text: $packageQuantity)
+        Picker("Package unit", selection: $packageUnit) {
+          ForEach(appState.unitsFor(family: family), id: \.code) { u in
+            Text(u.code).tag(u.code)
+          }
+        }
+      }
+    } header: {
+      Text("Package size")
+    } footer: {
+      Text("Used by the scan flow to add one inventory batch per package.")
+    }
+  }
+
   private var canSave: Bool {
-    !name.trimmingCharacters(in: .whitespaces).isEmpty && imageURLValid
-      && parsedMaxOpenDays != 0
+    if product.isOFF {
+      return packageSizeIsValid && packageSizeChanged
+    }
+    return !name.trimmingCharacters(in: .whitespaces).isEmpty && imageURLValid
+      && packageSizeIsValid && parsedMaxOpenDays != 0
+  }
+
+  private var packageSizeIsValid: Bool {
+    parsedPackageQuantity != 0
+      && (!hasPackageSize || appState.unitsFor(family: family).contains { $0.code == packageUnit })
+  }
+
+  private var parsedPackageQuantity: Decimal? {
+    guard hasPackageSize else { return nil }
+    let trimmed = packageQuantity.trimmingCharacters(in: .whitespaces)
+    guard let value = Decimal(string: trimmed), value > 0 else { return 0 }
+    return value
+  }
+
+  private var packageSizeChanged: Bool {
+    if hasPackageSize, let parsedPackageQuantity {
+      let quantity = NSDecimalNumber(decimal: parsedPackageQuantity).stringValue
+      return quantity != (product.packageQuantity ?? "")
+        || packageUnit != (product.packageUnit ?? product.family.baseUnit)
+    }
+    return product.packageQuantity != nil || product.packageUnit != nil
   }
 
   private var parsedMaxOpenDays: Int64? {
@@ -261,6 +315,18 @@ struct ProductDetailView: View {
       request.append(jsonPatchReplace("/max_open_days", new))
     default:
       break
+    }
+    if hasPackageSize, let parsedPackageQuantity {
+      let quantity = NSDecimalNumber(decimal: parsedPackageQuantity).stringValue
+      if quantity != (product.packageQuantity ?? "") {
+        request.append(jsonPatchReplace("/package_quantity", quantity))
+      }
+      if product.packageUnit == nil || packageUnit != product.packageUnit {
+        request.append(jsonPatchReplace("/package_unit", packageUnit))
+      }
+    } else if !hasPackageSize && (product.packageQuantity != nil || product.packageUnit != nil) {
+      request.append(jsonPatchRemove("/package_quantity"))
+      request.append(jsonPatchRemove("/package_unit"))
     }
 
     do {

@@ -11,7 +11,8 @@ pub const SOURCE_MANUAL: &str = "manual";
 /// only need adding in one place.
 const COLS: &str = "id, source, off_barcode, name, brand, family, default_unit, \
                     image_url, package_quantity, package_unit, fetched_at, \
-                    created_by_household_id, created_at, deleted_at, max_open_days";
+                    created_by_household_id, created_at, deleted_at, max_open_days, \
+                    package_size_local_override";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProductRow {
@@ -25,6 +26,7 @@ pub struct ProductRow {
     pub image_url: Option<String>,
     pub package_quantity: Option<String>,
     pub package_unit: Option<String>,
+    pub package_size_local_override: bool,
     pub fetched_at: Option<String>,
     pub created_by_household_id: Option<Uuid>,
     pub created_at: String,
@@ -116,6 +118,7 @@ pub async fn create_manual_with_max_open_days(
         image_url: image_url.map(str::to_owned),
         package_quantity: package_quantity.map(str::to_owned),
         package_unit: package_unit.map(str::to_owned),
+        package_size_local_override: package_quantity.is_some() && package_unit.is_some(),
         fetched_at: None,
         created_by_household_id: Some(household_id),
         created_at,
@@ -143,7 +146,9 @@ pub async fn upsert_from_off(
         sqlx::query(
             "UPDATE product \
              SET name = ?, brand = ?, family = ?, default_unit = ?, image_url = ?, \
-                 package_quantity = ?, package_unit = ?, fetched_at = ? \
+                 package_quantity = CASE WHEN package_size_local_override = 1 THEN package_quantity ELSE ? END, \
+                 package_unit = CASE WHEN package_size_local_override = 1 THEN package_unit ELSE ? END, \
+                 fetched_at = ? \
              WHERE id = ?",
         )
         .bind(name)
@@ -318,6 +323,9 @@ pub struct ProductUpdate<'a> {
     pub preferred_unit: Option<&'a str>,
     pub image_url: Option<Option<&'a str>>,
     pub max_open_days: Option<Option<i64>>,
+    pub package_quantity: Option<Option<&'a str>>,
+    pub package_unit: Option<Option<&'a str>>,
+    pub package_size_local_override: Option<bool>,
 }
 
 pub async fn update(
@@ -341,9 +349,21 @@ pub async fn update(
         Some(inner) => inner,
         None => current.max_open_days,
     };
+    let package_quantity: Option<String> = match upd.package_quantity {
+        Some(inner) => inner.map(str::to_owned),
+        None => current.package_quantity.clone(),
+    };
+    let package_unit: Option<String> = match upd.package_unit {
+        Some(inner) => inner.map(str::to_owned),
+        None => current.package_unit.clone(),
+    };
+    let package_size_local_override = upd
+        .package_size_local_override
+        .unwrap_or(current.package_size_local_override);
 
     sqlx::query(
-        "UPDATE product SET name = ?, brand = ?, family = ?, default_unit = ?, image_url = ?, max_open_days = ? \
+        "UPDATE product SET name = ?, brand = ?, family = ?, default_unit = ?, image_url = ?, max_open_days = ?, \
+                            package_quantity = ?, package_unit = ?, package_size_local_override = ? \
          WHERE id = ?",
     )
     .bind(name)
@@ -352,6 +372,9 @@ pub async fn update(
     .bind(preferred_unit)
     .bind(image_url.as_deref())
     .bind(max_open_days)
+    .bind(package_quantity.as_deref())
+    .bind(package_unit.as_deref())
+    .bind(if package_size_local_override { 1 } else { 0 })
     .bind(id.to_string())
     .execute(&db.pool)
     .await?;
@@ -410,6 +433,7 @@ fn row_to_product(row: sqlx::any::AnyRow) -> Result<ProductRow, sqlx::Error> {
         image_url: row.try_get("image_url")?,
         package_quantity: row.try_get("package_quantity")?,
         package_unit: row.try_get("package_unit")?,
+        package_size_local_override: row.try_get::<i64, _>("package_size_local_override")? != 0,
         fetched_at: row.try_get("fetched_at")?,
         created_by_household_id: household_id_str
             .map(|s| Uuid::parse_str(&s))

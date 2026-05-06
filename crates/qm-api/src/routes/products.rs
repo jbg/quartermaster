@@ -125,9 +125,21 @@ struct ProductPatch {
     preferred_unit: Option<String>,
     image_url: Option<Option<String>>,
     max_open_days: Option<Option<i64>>,
+    package_quantity: Option<Option<String>>,
+    package_unit: Option<Option<String>>,
 }
 
 impl ProductPatch {
+    fn is_off_local_correction_only(&self) -> bool {
+        self.name.is_none()
+            && self.brand.is_none()
+            && self.family.is_none()
+            && self.preferred_unit.is_none()
+            && self.image_url.is_none()
+            && self.max_open_days.is_none()
+            && (self.package_quantity.is_some() || self.package_unit.is_some())
+    }
+
     fn parse(operations: Vec<JsonPatchOperation>) -> ApiResult<Self> {
         let mut patch = Self::default();
         for operation in operations {
@@ -156,6 +168,12 @@ impl ProductPatch {
             }
             "/preferred_unit" => self.preferred_unit = Some(string_value("preferred_unit", value)?),
             "/image_url" => self.image_url = Some(Some(string_value("image_url", value)?)),
+            "/package_quantity" => {
+                self.package_quantity = Some(Some(string_value("package_quantity", value)?));
+            }
+            "/package_unit" => {
+                self.package_unit = Some(Some(string_value("package_unit", value)?));
+            }
             "/max_open_days" => {
                 self.max_open_days = Some(Some(max_open_days_value("max_open_days", value)?));
             }
@@ -177,6 +195,14 @@ impl ProductPatch {
             "/image_url" => {
                 reject_value_for_remove("image_url", value)?;
                 self.image_url = Some(None);
+            }
+            "/package_quantity" => {
+                reject_value_for_remove("package_quantity", value)?;
+                self.package_quantity = Some(None);
+            }
+            "/package_unit" => {
+                reject_value_for_remove("package_unit", value)?;
+                self.package_unit = Some(None);
             }
             "/max_open_days" => {
                 reject_value_for_remove("max_open_days", value)?;
@@ -481,13 +507,13 @@ pub async fn update(
         .await?
         .ok_or(ApiError::NotFound)?;
 
-    // OFF products are read-only from the client; only refresh is allowed.
-    if existing.source == qm_db::products::SOURCE_OFF {
+    if existing.source == qm_db::products::SOURCE_OFF && !req.is_off_local_correction_only() {
         return Err(ApiError::OffProductReadOnly);
     }
 
-    // Manual product: only the owning household may edit.
-    if existing.created_by_household_id != Some(household_id) {
+    if existing.source == qm_db::products::SOURCE_MANUAL
+        && existing.created_by_household_id != Some(household_id)
+    {
         return Err(ApiError::NotFound);
     }
 
@@ -539,6 +565,23 @@ pub async fn update(
     if let Some(Some(days)) = req.max_open_days {
         validate_max_open_days(days)?;
     }
+    let package_quantity = match &req.package_quantity {
+        Some(Some(value)) => Some(Some(value.as_str())),
+        Some(None) => Some(None),
+        None => None,
+    };
+    let package_unit = match &req.package_unit {
+        Some(Some(value)) => Some(Some(value.as_str())),
+        Some(None) => Some(None),
+        None => None,
+    };
+    let effective_package = validate_patch_package_size(
+        package_quantity,
+        package_unit,
+        existing.package_quantity.as_deref(),
+        existing.package_unit.as_deref(),
+        effective_family,
+    )?;
 
     let name_trim = req.name.as_deref().map(str::trim);
     let brand_inner: Option<Option<&str>> = req.brand.as_ref().map(|inner| {
@@ -564,6 +607,17 @@ pub async fn update(
             preferred_unit,
             image_url: image_inner,
             max_open_days: req.max_open_days,
+            package_quantity: Some(
+                effective_package
+                    .as_ref()
+                    .map(|(quantity, _)| quantity.as_str()),
+            ),
+            package_unit: Some(effective_package.as_ref().map(|(_, unit)| unit.as_str())),
+            package_size_local_override: req
+                .package_quantity
+                .as_ref()
+                .or(req.package_unit.as_ref())
+                .map(|_| true),
         },
     )
     .await?;
@@ -619,6 +673,24 @@ fn validate_package_size(
             Ok(Some((quantity.to_owned(), unit.to_owned())))
         }
     }
+}
+
+fn validate_patch_package_size(
+    quantity_patch: Option<Option<&str>>,
+    unit_patch: Option<Option<&str>>,
+    existing_quantity: Option<&str>,
+    existing_unit: Option<&str>,
+    family: UnitFamily,
+) -> ApiResult<Option<(String, String)>> {
+    let quantity = match quantity_patch {
+        Some(inner) => inner,
+        None => existing_quantity,
+    };
+    let unit = match unit_patch {
+        Some(inner) => inner,
+        None => existing_unit,
+    };
+    validate_package_size(quantity, unit, family)
 }
 
 #[utoipa::path(
