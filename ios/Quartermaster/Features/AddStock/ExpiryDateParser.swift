@@ -104,7 +104,7 @@ enum ExpiryDateParser {
     calendar: Calendar,
   ) -> [ExpiryDateCandidate] {
     regexMatches(
-      #"(?<!\d)([0-3]?\d)[./-]([0-3]?\d)[./-]((?:19|20)\d{2})(?!\d)"#,
+      #"(?<!\d)([0-3]?\d)[\s./-]([0-3]?\d)[\s./-]((?:19|20)\d{2})(?!\d)"#,
       in: text
     ).compactMap { match in
       guard
@@ -262,7 +262,7 @@ extension Array {
 }
 
 extension ExpiryDateCandidate.Precision {
-  fileprivate var sortOrder: Int {
+  var sortOrder: Int {
     switch self {
     case .day: return 0
     case .month: return 1

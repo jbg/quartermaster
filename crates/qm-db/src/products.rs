@@ -60,6 +60,8 @@ pub async fn create_manual(
         barcode,
         image_url,
         None,
+        None,
+        None,
     )
     .await
 }
@@ -74,6 +76,8 @@ pub async fn create_manual_with_max_open_days(
     preferred_unit: Option<&str>,
     barcode: Option<&str>,
     image_url: Option<&str>,
+    package_quantity: Option<&str>,
+    package_unit: Option<&str>,
     max_open_days: Option<i64>,
 ) -> Result<ProductRow, sqlx::Error> {
     let id = Uuid::now_v7();
@@ -82,8 +86,8 @@ pub async fn create_manual_with_max_open_days(
 
     sqlx::query(
         "INSERT INTO product \
-         (id, source, off_barcode, name, brand, default_unit, family, image_url, fetched_at, created_by_household_id, created_at, max_open_days) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+         (id, source, off_barcode, name, brand, default_unit, family, image_url, package_quantity, package_unit, fetched_at, created_by_household_id, created_at, max_open_days) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
     )
     .bind(id.to_string())
     .bind(SOURCE_MANUAL)
@@ -93,6 +97,8 @@ pub async fn create_manual_with_max_open_days(
     .bind(unit)
     .bind(family)
     .bind(image_url)
+    .bind(package_quantity)
+    .bind(package_unit)
     .bind(household_id.to_string())
     .bind(&created_at)
     .bind(max_open_days)
@@ -108,8 +114,8 @@ pub async fn create_manual_with_max_open_days(
         family: family.to_owned(),
         preferred_unit: unit.to_owned(),
         image_url: image_url.map(str::to_owned),
-        package_quantity: None,
-        package_unit: None,
+        package_quantity: package_quantity.map(str::to_owned),
+        package_unit: package_unit.map(str::to_owned),
         fetched_at: None,
         created_by_household_id: Some(household_id),
         created_at,

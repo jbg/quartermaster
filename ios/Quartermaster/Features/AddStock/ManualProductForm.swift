@@ -14,6 +14,9 @@ struct ManualProductForm: View {
   @State private var barcode: String = ""
   @State private var imageURLText: String = ""
   @State private var imageURLValid: Bool = true
+  @State private var hasPackageSize: Bool = false
+  @State private var packageQuantity: String = ""
+  @State private var packageUnit: String = ProductFamily.mass.baseUnit
   @State private var maxOpenDaysText: String = ""
   @State private var isSubmitting = false
   @State private var errorMessage: String?
@@ -36,6 +39,19 @@ struct ManualProductForm: View {
               Text(u.code).tag(u.code)
             }
           }
+        }
+        Section {
+          Toggle("Comes in packages", isOn: $hasPackageSize.animation())
+          if hasPackageSize {
+            DecimalField(title: "Amount per package", text: $packageQuantity)
+            Picker("Package unit", selection: $packageUnit) {
+              ForEach(appState.unitsFor(family: family), id: \.code) { u in
+                Text(u.code).tag(u.code)
+              }
+            }
+          }
+        } footer: {
+          Text("Used by the scan flow to add one inventory batch per package.")
         }
         Section {
           ValidatedURLField(
@@ -79,6 +95,7 @@ struct ManualProductForm: View {
       }
       .onChange(of: family) { _, newFamily in
         preferredUnit = newFamily.baseUnit
+        packageUnit = newFamily.baseUnit
       }
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
@@ -98,7 +115,14 @@ struct ManualProductForm: View {
 
   private var canSubmit: Bool {
     !name.trimmingCharacters(in: .whitespaces).isEmpty && imageURLValid
-      && parsedMaxOpenDays != 0
+      && parsedPackageQuantity != 0 && parsedMaxOpenDays != 0
+  }
+
+  private var parsedPackageQuantity: Decimal? {
+    guard hasPackageSize else { return nil }
+    let trimmed = packageQuantity.trimmingCharacters(in: .whitespaces)
+    guard let value = Decimal(string: trimmed), value > 0 else { return 0 }
+    return value
   }
 
   private var parsedMaxOpenDays: Int64? {
@@ -121,6 +145,8 @@ struct ManualProductForm: View {
       imageUrl: cleanImageURL.isEmpty ? nil : cleanImageURL,
       maxOpenDays: parsedMaxOpenDays,
       name: name.trimmingCharacters(in: .whitespaces),
+      packageQuantity: parsedPackageQuantity.map { NSDecimalNumber(decimal: $0).stringValue },
+      packageUnit: hasPackageSize ? packageUnit : nil,
       preferredUnit: preferredUnit.isEmpty ? nil : preferredUnit,
     )
     do {
