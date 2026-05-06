@@ -2,7 +2,7 @@ use std::{future::Future, num::NonZeroU8, pin::Pin, time::Duration};
 
 use brother_ql::{media::Media, printjob::PrintJobBuilder};
 use image::{DynamicImage, ImageBuffer, RgbImage};
-use qrcode::{Color, QrCode};
+use qrcode::{Color, EcLevel, QrCode};
 use tokio::{io::AsyncWriteExt, net::TcpStream, time::timeout};
 use uuid::Uuid;
 
@@ -103,8 +103,7 @@ impl LabelRenderer for BrotherQlRenderer {
             bitmap.draw_rect(2, 2, spec.width_px.saturating_sub(4), 14, Pixel::Red);
         }
 
-        let qr = QrCode::new(job.batch_url.as_bytes())
-            .map_err(|err| ApiError::Internal(anyhow::anyhow!("encoding batch QR: {err}")))?;
+        let qr = batch_qr(&job.batch_url)?;
         if spec.is_portrait() {
             render_portrait_label(&mut bitmap, &qr, job, &spec);
         } else {
@@ -210,7 +209,7 @@ fn render_landscape_label(
     let (actual_qr_px, module_px) = qr_size(qr, spec.qr_px.min(spec.height_px.saturating_sub(24)));
     let qr_x = 10;
     let qr_y = (spec.height_px.saturating_sub(actual_qr_px)) / 2;
-    bitmap.draw_qr(qr, qr_x, qr_y, module_px);
+    bitmap.draw_branded_qr(qr, qr_x, qr_y, actual_qr_px, module_px);
 
     let text_x = qr_x + actual_qr_px + 18;
     let text_width = spec.width_px.saturating_sub(text_x + 8);
@@ -259,7 +258,7 @@ fn render_portrait_label(
     let (actual_qr_px, module_px) = qr_size(qr, spec.qr_px.min(spec.width_px.saturating_sub(28)));
     let qr_x = (spec.width_px.saturating_sub(actual_qr_px)) / 2;
     let qr_y = 18;
-    bitmap.draw_qr(qr, qr_x, qr_y, module_px);
+    bitmap.draw_branded_qr(qr, qr_x, qr_y, actual_qr_px, module_px);
 
     let text_x = 14;
     let text_width = spec.width_px.saturating_sub(text_x * 2);
@@ -303,6 +302,15 @@ fn qr_size(qr: &QrCode, max_px: usize) -> (usize, usize) {
     let modules = qr.width();
     let module_px = (max_px / (modules + 8)).max(2);
     (module_px * (modules + 8), module_px)
+}
+
+fn batch_qr(batch_url: &str) -> ApiResult<QrCode> {
+    QrCode::with_error_correction_level(batch_url.as_bytes(), EcLevel::H)
+        .map_err(|err| ApiError::Internal(anyhow::anyhow!("encoding batch QR: {err}")))
+}
+
+fn branded_qr_logo_px(actual_qr_px: usize, module_px: usize) -> usize {
+    (actual_qr_px / 5).max(module_px * 7)
 }
 
 fn draw_primary_date(
@@ -423,6 +431,96 @@ impl Bitmap {
                         Pixel::Black,
                     );
                 }
+            }
+        }
+    }
+
+    fn draw_branded_qr(
+        &mut self,
+        qr: &QrCode,
+        x: usize,
+        y: usize,
+        actual_qr_px: usize,
+        module_px: usize,
+    ) {
+        self.draw_qr(qr, x, y, module_px);
+        let logo_px = branded_qr_logo_px(actual_qr_px, module_px);
+        let logo_x = x + (actual_qr_px.saturating_sub(logo_px)) / 2;
+        let logo_y = y + (actual_qr_px.saturating_sub(logo_px)) / 2;
+        self.draw_rect(logo_x, logo_y, logo_px, logo_px, Pixel::White);
+        self.draw_quartermaster_mark(logo_x, logo_y, logo_px);
+    }
+
+    fn draw_quartermaster_mark(&mut self, x: usize, y: usize, size: usize) {
+        let outer_x = x + size * 15 / 100;
+        let outer_y = y + size * 12 / 100;
+        let outer_w = size * 70 / 100;
+        let outer_h = size * 58 / 100;
+        let stroke = (size / 8).max(3);
+        self.draw_rect(outer_x, outer_y, outer_w, outer_h, Pixel::Black);
+        self.draw_rect(
+            outer_x + stroke,
+            outer_y + stroke,
+            outer_w.saturating_sub(stroke * 2),
+            outer_h.saturating_sub(stroke * 2),
+            Pixel::White,
+        );
+        self.draw_rect(
+            outer_x + outer_w * 28 / 100,
+            outer_y + outer_h * 50 / 100,
+            outer_w * 44 / 100,
+            stroke.max(2),
+            Pixel::Black,
+        );
+        self.draw_thick_line(
+            outer_x + outer_w * 62 / 100,
+            outer_y + outer_h * 72 / 100,
+            x + size * 86 / 100,
+            y + size * 90 / 100,
+            stroke,
+            Pixel::Black,
+        );
+    }
+
+    fn draw_thick_line(
+        &mut self,
+        x0: usize,
+        y0: usize,
+        x1: usize,
+        y1: usize,
+        thickness: usize,
+        pixel: Pixel,
+    ) {
+        let mut x0 = x0 as isize;
+        let mut y0 = y0 as isize;
+        let x1 = x1 as isize;
+        let y1 = y1 as isize;
+        let dx = (x1 - x0).abs();
+        let sx = if x0 < x1 { 1 } else { -1 };
+        let dy = -(y1 - y0).abs();
+        let sy = if y0 < y1 { 1 } else { -1 };
+        let mut err = dx + dy;
+        let radius = (thickness / 2) as isize;
+
+        loop {
+            for yy in y0 - radius..=y0 + radius {
+                for xx in x0 - radius..=x0 + radius {
+                    if xx >= 0 && yy >= 0 {
+                        self.set(xx as usize, yy as usize, pixel);
+                    }
+                }
+            }
+            if x0 == x1 && y0 == y1 {
+                break;
+            }
+            let e2 = 2 * err;
+            if e2 >= dy {
+                err += dy;
+                x0 += sx;
+            }
+            if e2 <= dx {
+                err += dx;
+                y0 += sy;
             }
         }
     }
@@ -642,6 +740,32 @@ mod tests {
         assert_eq!(rendered.height_px, 944);
         assert!(bytes.starts_with(&[0x00; 10]));
         assert_eq!(bytes.last(), Some(&0x1a));
+    }
+
+    #[test]
+    fn label_qr_uses_high_correction_with_centered_mark() {
+        let qr = batch_qr(
+            "https://quartermaster.example.com/batches/33333333-3333-3333-3333-333333333333",
+        )
+        .unwrap();
+        assert_eq!(qr.error_correction_level(), EcLevel::H);
+
+        let (actual_qr_px, module_px) = qr_size(&qr, 300);
+        let logo_px = branded_qr_logo_px(actual_qr_px, module_px);
+        let logo_x = (actual_qr_px - logo_px) / 2;
+        let logo_y = (actual_qr_px - logo_px) / 2;
+        let mut bitmap = Bitmap::new(actual_qr_px, actual_qr_px);
+        bitmap.draw_branded_qr(&qr, 0, 0, actual_qr_px, module_px);
+
+        assert_eq!(bitmap.get(logo_x, logo_y), Pixel::White);
+        assert_eq!(
+            bitmap.get(logo_x + logo_px * 25 / 100, logo_y + logo_px * 20 / 100),
+            Pixel::Black
+        );
+        assert_eq!(
+            bitmap.get(logo_x + logo_px / 2, logo_y + logo_px * 30 / 100),
+            Pixel::White
+        );
     }
 
     #[test]
