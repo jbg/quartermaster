@@ -3,6 +3,8 @@ package dev.quartermaster.android
 import dev.quartermaster.android.generated.infrastructure.Serializer
 import dev.quartermaster.android.generated.models.BarcodeLookupResponse
 import dev.quartermaster.android.generated.models.ConfirmEmailVerificationRequest
+import dev.quartermaster.android.generated.models.ConsumeAndStoreRequest
+import dev.quartermaster.android.generated.models.ConsumeAndStoreResponse
 import dev.quartermaster.android.generated.models.ConsumeRequest
 import dev.quartermaster.android.generated.models.ConsumeResponse
 import dev.quartermaster.android.generated.models.CreateHouseholdRequest
@@ -45,6 +47,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -73,8 +77,11 @@ data class StockUpdateRequest(
 data class JsonPatchOperation(
     val op: String,
     val path: String,
-    val value: String? = null,
-)
+    val value: JsonElement? = null,
+) {
+    constructor(op: String, path: String, value: String) : this(op, path, JsonPrimitive(value))
+    constructor(op: String, path: String, value: Long) : this(op, path, JsonPrimitive(value))
+}
 
 class QuartermasterApi(
     private val authStore: AuthStore,
@@ -381,6 +388,15 @@ class QuartermasterApi(
     suspend fun consumeStock(request: ConsumeRequest): ConsumeResponse = authedJson(
         method = "POST",
         path = "/stock/consume",
+        body = request,
+    )
+
+    suspend fun consumeAndStoreStock(
+        batchId: String,
+        request: ConsumeAndStoreRequest,
+    ): ConsumeAndStoreResponse = authedJson(
+        method = "POST",
+        path = "/stock/${batchId.urlEncode()}/consume-and-store",
         body = request,
     )
 

@@ -246,6 +246,7 @@ async fn product_patch_uses_json_patch_replace_and_remove() {
                 "preferred_unit": "g",
                 "barcode": null,
                 "image_url": "https://example.com/flour.png",
+                "max_open_days": 5,
             })),
             Some(&alice),
         )
@@ -261,6 +262,7 @@ async fn product_patch_uses_json_patch_replace_and_remove() {
                 { "op": "replace", "path": "/name", "value": "Patch Bread Flour" },
                 { "op": "remove", "path": "/brand" },
                 { "op": "replace", "path": "/preferred_unit", "value": "kg" },
+                { "op": "replace", "path": "/max_open_days", "value": 7 },
             ])),
             Some(&alice),
         )
@@ -270,6 +272,7 @@ async fn product_patch_uses_json_patch_replace_and_remove() {
     assert!(updated["brand"].is_null());
     assert_eq!(updated["preferred_unit"], "kg");
     assert_eq!(updated["image_url"], "https://example.com/flour.png");
+    assert_eq!(updated["max_open_days"], 7);
 
     let (status, updated) = app
         .send(
@@ -278,6 +281,7 @@ async fn product_patch_uses_json_patch_replace_and_remove() {
             Some(json!([
                 { "op": "replace", "path": "/brand", "value": "New Mill" },
                 { "op": "remove", "path": "/image_url" },
+                { "op": "remove", "path": "/max_open_days" },
             ])),
             Some(&alice),
         )
@@ -285,9 +289,12 @@ async fn product_patch_uses_json_patch_replace_and_remove() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(updated["brand"], "New Mill");
     assert!(updated["image_url"].is_null());
+    assert!(updated["max_open_days"].is_null());
 
     for body in [
         json!([{ "op": "replace", "path": "/brand" }]),
+        json!([{ "op": "replace", "path": "/max_open_days", "value": 0 }]),
+        json!([{ "op": "replace", "path": "/max_open_days", "value": "7" }]),
         json!([{ "op": "remove", "path": "/name" }]),
         json!([{ "op": "add", "path": "/brand", "value": "x" }]),
     ] {

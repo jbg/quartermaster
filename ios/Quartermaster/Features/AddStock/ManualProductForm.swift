@@ -14,6 +14,7 @@ struct ManualProductForm: View {
   @State private var barcode: String = ""
   @State private var imageURLText: String = ""
   @State private var imageURLValid: Bool = true
+  @State private var maxOpenDaysText: String = ""
   @State private var isSubmitting = false
   @State private var errorMessage: String?
 
@@ -44,6 +45,12 @@ struct ManualProductForm: View {
           )
         } footer: {
           Text("Used as the thumbnail in inventory lists.")
+        }
+        Section {
+          TextField("Maximum open days (optional)", text: $maxOpenDaysText)
+            .keyboardType(.numberPad)
+        } footer: {
+          Text("Used to date leftovers when an opened package is stored.")
         }
         Section("Barcode") {
           TextField("Optional", text: $barcode)
@@ -91,6 +98,14 @@ struct ManualProductForm: View {
 
   private var canSubmit: Bool {
     !name.trimmingCharacters(in: .whitespaces).isEmpty && imageURLValid
+      && parsedMaxOpenDays != 0
+  }
+
+  private var parsedMaxOpenDays: Int64? {
+    let trimmed = maxOpenDaysText.trimmingCharacters(in: .whitespaces)
+    if trimmed.isEmpty { return nil }
+    guard let value = Int64(trimmed), value > 0 else { return 0 }
+    return value
   }
 
   private func submit() async {
@@ -104,6 +119,7 @@ struct ManualProductForm: View {
       brand: cleanBrand.isEmpty ? nil : cleanBrand,
       family: family,
       imageUrl: cleanImageURL.isEmpty ? nil : cleanImageURL,
+      maxOpenDays: parsedMaxOpenDays,
       name: name.trimmingCharacters(in: .whitespaces),
       preferredUnit: preferredUnit.isEmpty ? nil : preferredUnit,
     )

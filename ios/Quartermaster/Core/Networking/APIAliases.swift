@@ -135,6 +135,10 @@ func jsonPatchReplace(_ path: String, _ value: String) -> JsonPatchOperation {
   .init(op: "replace", path: path, value: OpenAPIValueContainer(stringLiteral: value))
 }
 
+func jsonPatchReplace(_ path: String, _ value: Int64) -> JsonPatchOperation {
+  .init(op: "replace", path: path, value: OpenAPIValueContainer(integerLiteral: Int(value)))
+}
+
 func jsonPatchRemove(_ path: String) -> JsonPatchOperation {
   .init(op: "remove", path: path, value: nil)
 }
@@ -162,6 +166,8 @@ typealias UpdateStockRequest = [JsonPatchOperation]
 typealias ConsumeRequest = Components.Schemas.ConsumeRequest
 typealias ConsumedBatch = Components.Schemas.ConsumedBatchDto
 typealias ConsumeResponse = Components.Schemas.ConsumeResponse
+typealias ConsumeAndStoreRequest = Components.Schemas.ConsumeAndStoreRequest
+typealias ConsumeAndStoreResponse = Components.Schemas.ConsumeAndStoreResponse
 typealias RestoreManyRequest = Components.Schemas.RestoreManyRequest
 typealias RestoreManyResponse = Components.Schemas.RestoreManyResponse
 typealias PrintStockLabelRequest = Components.Schemas.PrintStockLabelRequest

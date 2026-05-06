@@ -548,6 +548,20 @@ actor APIClient: AppStateAPI {
     }
   }
 
+  func consumeAndStoreStock(id: String, request: ConsumeAndStoreRequest) async throws
+    -> ConsumeAndStoreResponse
+  {
+    let response = try await client.stockConsumeAndStore(
+      .init(path: .init(id: id), body: .json(request)))
+    switch response {
+    case .ok(let ok): return try ok.body.json
+    case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+    case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+    case .undocumented(let statusCode, _):
+      throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
   func printStockLabel(id: String, copies: Int = 1) async throws -> PrintStockLabelResponse {
     let request = PrintStockLabelRequest(
       copies: Int32(copies),

@@ -15,6 +15,7 @@ export interface ProductFormFields {
   family: UnitFamily;
   preferredUnit: string;
   imageUrl: string;
+  maxOpenDays: string;
 }
 
 export function productBrand(product: Product): string {
@@ -31,6 +32,10 @@ export function productBarcode(product: Product): string {
 
 export function productDeletedAt(product: Product): string {
   return product.deleted_at ?? product.deletedAt ?? '';
+}
+
+export function productMaxOpenDays(product: Product): number | null {
+  return product.max_open_days ?? product.maxOpenDays ?? null;
 }
 
 export function isDeletedProduct(product: Product): boolean {
@@ -51,7 +56,8 @@ export function emptyProductForm(units: Unit[] = []): ProductFormFields {
     brand: '',
     family: 'mass',
     preferredUnit: unitChoicesForFamily('mass', units)[0],
-    imageUrl: ''
+    imageUrl: '',
+    maxOpenDays: ''
   };
 }
 
@@ -61,7 +67,8 @@ export function productFormFields(product: Product, units: Unit[] = []): Product
     brand: productBrand(product),
     family: product.family,
     preferredUnit: productPreferredUnit(product, units),
-    imageUrl: productImageUrl(product)
+    imageUrl: productImageUrl(product),
+    maxOpenDays: productMaxOpenDays(product)?.toString() ?? ''
   };
 }
 
@@ -74,6 +81,12 @@ export function validateProductForm(fields: ProductFormFields, units: Unit[] = [
   }
   if (!unitChoicesForFamily(fields.family, units).includes(fields.preferredUnit)) {
     return 'Choose a preferred unit that matches the product family.';
+  }
+  if (fields.maxOpenDays.trim()) {
+    const days = Number(fields.maxOpenDays.trim());
+    if (!Number.isInteger(days) || days <= 0) {
+      return 'Maximum open days must be a positive whole number.';
+    }
   }
   return null;
 }
@@ -97,7 +110,8 @@ export function buildProductCreateRequest(fields: ProductFormFields) {
     family: fields.family,
     preferred_unit: fields.preferredUnit,
     barcode: null,
-    image_url: fields.imageUrl.trim() || null
+    image_url: fields.imageUrl.trim() || null,
+    max_open_days: fields.maxOpenDays.trim() ? Number(fields.maxOpenDays.trim()) : null
   };
 }
 
@@ -118,6 +132,7 @@ export function buildProductUpdateRequest(
   }
   applyClearableText(request, 'brand', productBrand(product), fields.brand);
   applyClearableText(request, 'image_url', productImageUrl(product), fields.imageUrl);
+  applyClearableNumber(request, 'max_open_days', productMaxOpenDays(product), fields.maxOpenDays);
   return request;
 }
 
@@ -133,6 +148,23 @@ function applyClearableText(
       request.push({ op: 'replace', path: `/${key}`, value: trimmed });
     }
   } else if (currentValue) {
+    request.push({ op: 'remove', path: `/${key}` });
+  }
+}
+
+function applyClearableNumber(
+  request: UpdateProductRequest,
+  key: 'max_open_days',
+  currentValue: number | null,
+  nextValue: string
+) {
+  const trimmed = nextValue.trim();
+  if (trimmed) {
+    const parsed = Number(trimmed);
+    if (parsed !== currentValue) {
+      request.push({ op: 'replace', path: `/${key}`, value: parsed });
+    }
+  } else if (currentValue !== null) {
     request.push({ op: 'remove', path: `/${key}` });
   }
 }

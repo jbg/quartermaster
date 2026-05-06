@@ -2,6 +2,8 @@ package dev.quartermaster.android
 
 import dev.quartermaster.android.generated.infrastructure.Serializer
 import dev.quartermaster.android.generated.models.BarcodeLookupResponse
+import dev.quartermaster.android.generated.models.ConsumeAndStoreRequest
+import dev.quartermaster.android.generated.models.ConsumeAndStoreResponse
 import dev.quartermaster.android.generated.models.ConsumeRequest
 import dev.quartermaster.android.generated.models.ConsumeResponse
 import dev.quartermaster.android.generated.models.ConsumedBatchDto
@@ -1554,6 +1556,7 @@ class QuartermasterAppStateTest {
         val restoredProductIds = mutableListOf<String>()
         val updateStockRequests = mutableListOf<StockUpdateRequest>()
         val consumeStockRequests = mutableListOf<ConsumeRequest>()
+        val consumeAndStoreStockRequests = mutableListOf<Pair<String, ConsumeAndStoreRequest>>()
         val discardedBatchIds = mutableListOf<String>()
         val restoredBatchIds = mutableListOf<String>()
         val createdOnboardingHouseholds = mutableListOf<String>()
@@ -1818,6 +1821,19 @@ class QuartermasterAppStateTest {
                         depleted = false,
                     ),
                 ),
+            )
+        }
+
+        override suspend fun consumeAndStoreStock(
+            batchId: String,
+            request: ConsumeAndStoreRequest,
+        ): ConsumeAndStoreResponse {
+            consumeAndStoreStockRequests += batchId to request
+            val batch = stockState.firstOrNull { it.id.toString() == batchId } ?: error("Unused in test")
+            return ConsumeAndStoreResponse(
+                consumeRequestId = UUID.fromString("99999999-9999-9999-9999-999999999999"),
+                remainder = batch,
+                source = batch.copy(quantity = "0", depletedAt = "2026-04-22T12:30:00Z"),
             )
         }
 

@@ -33,6 +33,20 @@ export type ConfirmEmailVerificationRequest = {
     code: string;
 };
 
+export type ConsumeAndStoreRequest = {
+    note?: string | null;
+    opened_on?: string | null;
+    remainder_expires_on?: string | null;
+    remainder_location_id: string;
+    used_quantity: string;
+};
+
+export type ConsumeAndStoreResponse = {
+    consume_request_id: string;
+    remainder: StockBatchDto;
+    source: StockBatchDto;
+};
+
 export type ConsumeRequest = {
     location_id?: string | null;
     product_id: string;
@@ -51,6 +65,11 @@ export type ConsumeResponse = {
 export type ConsumedBatchDto = {
     batch_id: string;
     depleted: boolean;
+    /**
+     * Package size snapshot for the consumed batch, when known.
+     */
+    package_quantity?: string | null;
+    package_unit?: string | null;
     /**
      * Amount taken from this batch, in the batch's own unit.
      */
@@ -104,6 +123,7 @@ export type CreateProductRequest = {
     brand?: string | null;
     family: UnitFamily;
     image_url?: string | null;
+    max_open_days?: number | null;
     name: string;
     /**
      * Optional display unit override. Must belong to `family`. Defaults to
@@ -278,7 +298,19 @@ export type ProductDto = {
     family: UnitFamily;
     id: string;
     image_url?: string | null;
+    /**
+     * Maximum days this product should remain open before being discarded.
+     */
+    max_open_days?: number | null;
     name: string;
+    /**
+     * Amount in `package_unit` for one retail package when known from the catalogue.
+     */
+    package_quantity?: string | null;
+    /**
+     * Unit for `package_quantity`; belongs to the same family as the product.
+     */
+    package_unit?: string | null;
     preferred_unit: string;
     source: ProductSource;
 };
@@ -383,6 +415,14 @@ export type StockBatchDto = {
     location_name: string;
     note?: string | null;
     opened_on?: string | null;
+    /**
+     * Package size snapshot for this batch, captured when the batch was added.
+     */
+    package_quantity?: string | null;
+    /**
+     * Unit for `package_quantity`; belongs to the same family as `unit`.
+     */
+    package_unit?: string | null;
     produced_on?: string | null;
     product: ProductDto;
     quantity: string;
@@ -405,6 +445,11 @@ export type StockEventDto = {
     event_type: StockEventType;
     id: string;
     note?: string | null;
+    /**
+     * Package size snapshot for the event/batch, when known.
+     */
+    package_quantity?: string | null;
+    package_unit?: string | null;
     product: ProductDto;
     /**
      * Signed decimal in `unit`.
@@ -1544,6 +1589,28 @@ export type StockUpdateResponses = {
 };
 
 export type StockUpdateResponse = StockUpdateResponses[keyof StockUpdateResponses];
+
+export type StockConsumeAndStoreData = {
+    body: ConsumeAndStoreRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/stock/{id}/consume-and-store';
+};
+
+export type StockConsumeAndStoreErrors = {
+    400: ApiErrorBody;
+    404: ApiErrorBody;
+};
+
+export type StockConsumeAndStoreError = StockConsumeAndStoreErrors[keyof StockConsumeAndStoreErrors];
+
+export type StockConsumeAndStoreResponses = {
+    200: ConsumeAndStoreResponse;
+};
+
+export type StockConsumeAndStoreResponse = StockConsumeAndStoreResponses[keyof StockConsumeAndStoreResponses];
 
 export type StockListBatchEventsData = {
     body?: never;

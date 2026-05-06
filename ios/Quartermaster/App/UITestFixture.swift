@@ -155,6 +155,11 @@ import UIKit
     func consumeStock(_ request: ConsumeRequest) async throws -> ConsumeResponse {
       throw APIError.unknown
     }
+    func consumeAndStoreStock(id: String, request: ConsumeAndStoreRequest) async throws
+      -> ConsumeAndStoreResponse
+    {
+      throw APIError.unknown
+    }
     func printStockLabel(id: String, copies: Int) async throws -> PrintStockLabelResponse {
       try decodeFixture(
         from:

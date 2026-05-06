@@ -60,6 +60,8 @@ protocol AppStateAPI: Actor {
   func updateStock(id: String, request: UpdateStockRequest) async throws -> StockBatch
   func deleteStock(id: String) async throws
   func consumeStock(_ request: ConsumeRequest) async throws -> ConsumeResponse
+  func consumeAndStoreStock(id: String, request: ConsumeAndStoreRequest) async throws
+    -> ConsumeAndStoreResponse
   func printStockLabel(id: String, copies: Int) async throws -> PrintStockLabelResponse
   func listStockEvents(beforeCreatedAt: String?, beforeID: String?, limit: Int) async throws
     -> StockEventListResponse

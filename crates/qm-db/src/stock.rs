@@ -74,6 +74,28 @@ pub struct StockBatchWithProduct {
     pub location_name: String,
 }
 
+#[derive(Debug)]
+pub enum ConsumeAndStoreError {
+    NotFound,
+    Depleted,
+    QuantityNotPositive,
+    QuantityNotPartial,
+    Database(sqlx::Error),
+}
+
+impl From<sqlx::Error> for ConsumeAndStoreError {
+    fn from(e: sqlx::Error) -> Self {
+        Self::Database(e)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ConsumeAndStoreResult {
+    pub source: StockBatchRow,
+    pub remainder: StockBatchRow,
+    pub consume_request_id: Uuid,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct StockFilter {
     pub location_id: Option<Uuid>,
@@ -102,7 +124,7 @@ pub async fn list(
             p.image_url AS p_image_url, p.package_quantity AS p_package_quantity, \
             p.package_unit AS p_package_unit, p.fetched_at AS p_fetched_at, \
             p.created_by_household_id AS p_created_by_household_id, p.created_at AS p_created_at, \
-            p.deleted_at AS p_deleted_at, \
+            p.deleted_at AS p_deleted_at, p.max_open_days AS p_max_open_days, \
             l.name AS l_name \
          FROM stock_batch s \
          INNER JOIN product p ON p.id = s.product_id \
@@ -180,7 +202,7 @@ async fn get_with_product_inner(
             p.image_url AS p_image_url, p.package_quantity AS p_package_quantity, \
             p.package_unit AS p_package_unit, p.fetched_at AS p_fetched_at, \
             p.created_by_household_id AS p_created_by_household_id, p.created_at AS p_created_at, \
-            p.deleted_at AS p_deleted_at, \
+            p.deleted_at AS p_deleted_at, p.max_open_days AS p_max_open_days, \
             l.name AS l_name \
          FROM stock_batch s \
          INNER JOIN product p ON p.id = s.product_id \
@@ -754,6 +776,141 @@ pub async fn apply_consumption(
     Ok(consume_request_id)
 }
 
+#[allow(clippy::too_many_arguments)]
+pub async fn consume_and_store_remainder(
+    db: &Database,
+    household_id: Uuid,
+    source_batch_id: Uuid,
+    used_quantity: &str,
+    remainder_location_id: Uuid,
+    opened_on: &str,
+    remainder_expires_on: &str,
+    note: Option<&str>,
+    actor: Uuid,
+    reminder_policy: Option<&ExpiryReminderPolicy>,
+) -> Result<ConsumeAndStoreResult, ConsumeAndStoreError> {
+    let used = Decimal::from_str(used_quantity).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+    if used <= Decimal::ZERO {
+        return Err(ConsumeAndStoreError::QuantityNotPositive);
+    }
+
+    let consume_request_id = Uuid::now_v7();
+    let remainder_id = Uuid::now_v7();
+    let now = now_utc_rfc3339();
+    let mut tx = db.pool.begin().await?;
+
+    let row = fetch_locked_batch_row(
+        &mut tx,
+        db.backend(),
+        household_id,
+        source_batch_id,
+        "id, household_id, product_id, location_id, initial_quantity, quantity, unit, \
+         package_quantity, package_unit, produced_on, expires_on, opened_on, note, \
+         created_at, created_by, depleted_at",
+    )
+    .await?
+    .ok_or(ConsumeAndStoreError::NotFound)?;
+    let source = row_to_batch(row)?;
+    if source.depleted_at.is_some() {
+        return Err(ConsumeAndStoreError::Depleted);
+    }
+
+    let current =
+        Decimal::from_str(&source.quantity).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+    if used >= current {
+        return Err(ConsumeAndStoreError::QuantityNotPartial);
+    }
+    let remainder_quantity = current - used;
+
+    insert_event(
+        &mut tx,
+        household_id,
+        source_batch_id,
+        EVENT_CONSUME,
+        &(-used).to_string(),
+        Some("consumed via POST /stock/{id}/consume-and-store"),
+        actor,
+        Some(consume_request_id),
+    )
+    .await?;
+    insert_event(
+        &mut tx,
+        household_id,
+        source_batch_id,
+        EVENT_CONSUME,
+        &(-remainder_quantity).to_string(),
+        Some(&format!("stored remainder as batch {remainder_id}")),
+        actor,
+        Some(consume_request_id),
+    )
+    .await?;
+
+    sqlx::query(
+        "UPDATE stock_batch SET quantity = '0', depleted_at = ? \
+         WHERE id = ? AND household_id = ?",
+    )
+    .bind(&now)
+    .bind(source_batch_id.to_string())
+    .bind(household_id.to_string())
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO stock_batch \
+         (id, household_id, product_id, location_id, initial_quantity, quantity, unit, \
+          package_quantity, package_unit, produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+    )
+    .bind(remainder_id.to_string())
+    .bind(household_id.to_string())
+    .bind(source.product_id.to_string())
+    .bind(remainder_location_id.to_string())
+    .bind(remainder_quantity.to_string())
+    .bind(remainder_quantity.to_string())
+    .bind(&source.unit)
+    .bind(source.package_quantity.as_deref())
+    .bind(source.package_unit.as_deref())
+    .bind(source.produced_on.as_deref())
+    .bind(remainder_expires_on)
+    .bind(opened_on)
+    .bind(note)
+    .bind(&now)
+    .bind(actor.to_string())
+    .execute(&mut *tx)
+    .await?;
+
+    insert_event(
+        &mut tx,
+        household_id,
+        remainder_id,
+        EVENT_ADD,
+        &remainder_quantity.to_string(),
+        Some("stored remainder"),
+        actor,
+        Some(consume_request_id),
+    )
+    .await?;
+
+    if let Some(policy) = reminder_policy {
+        crate::reminders::sync_expiry_for_batch_tx(&mut tx, source_batch_id, policy).await?;
+        crate::reminders::sync_expiry_for_batch_tx(&mut tx, remainder_id, policy).await?;
+    }
+
+    tx.commit().await?;
+
+    let source = get(db, household_id, source_batch_id)
+        .await?
+        .ok_or(ConsumeAndStoreError::NotFound)?;
+    let remainder = get(db, household_id, remainder_id)
+        .await?
+        .ok_or(ConsumeAndStoreError::NotFound)?;
+    Ok(ConsumeAndStoreResult {
+        source,
+        remainder,
+        consume_request_id,
+    })
+}
+
 /// Ancillary helper for products repo — "does this product have any active
 /// (non-depleted) stock anywhere?" — used to refuse product deletion.
 pub async fn has_active_stock_for_product(
@@ -911,6 +1068,7 @@ fn row_to_joined(row: sqlx::any::AnyRow) -> Result<StockBatchWithProduct, sqlx::
             .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         created_at: row.try_get("p_created_at")?,
         deleted_at: row.try_get("p_deleted_at")?,
+        max_open_days: row.try_get("p_max_open_days")?,
     };
     Ok(StockBatchWithProduct {
         batch,
@@ -961,6 +1119,82 @@ mod tests {
             .into_iter()
             .map(|e| Decimal::from_str(&e.quantity_delta).unwrap())
             .sum()
+    }
+
+    #[tokio::test]
+    async fn consume_and_store_remainder_closes_source_and_creates_new_batch() {
+        let (db, hid, uid, pantry, pid) = setup().await;
+        let fridge = locations::list_for_household(&db, hid)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|l| l.kind == "fridge")
+            .unwrap()
+            .id;
+        let batch = create(
+            &db,
+            hid,
+            pid,
+            pantry,
+            "500",
+            "g",
+            None,
+            Some("2026-12-31"),
+            None,
+            None,
+            uid,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let result = consume_and_store_remainder(
+            &db,
+            hid,
+            batch.id,
+            "125",
+            fridge,
+            "2026-05-01",
+            "2026-05-04",
+            Some("stored in bowl"),
+            uid,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.source.quantity, "0");
+        assert!(result.source.depleted_at.is_some());
+        assert_eq!(result.remainder.location_id, fridge);
+        assert_eq!(result.remainder.quantity, "375");
+        assert_eq!(result.remainder.initial_quantity, "375");
+        assert_eq!(result.remainder.opened_on.as_deref(), Some("2026-05-01"));
+        assert_eq!(result.remainder.expires_on.as_deref(), Some("2026-05-04"));
+        assert_eq!(result.remainder.note.as_deref(), Some("stored in bowl"));
+        assert_eq!(balance_from_events(&db, batch.id).await, Decimal::ZERO);
+        assert_eq!(
+            balance_from_events(&db, result.remainder.id).await,
+            Decimal::from(375)
+        );
+
+        let source_events = stock_events::list_for_batch(&db, batch.id).await.unwrap();
+        assert_eq!(source_events.len(), 3);
+        assert_eq!(
+            source_events[1].consume_request_id,
+            Some(result.consume_request_id)
+        );
+        assert_eq!(
+            source_events[2].consume_request_id,
+            Some(result.consume_request_id)
+        );
+        let remainder_events = stock_events::list_for_batch(&db, result.remainder.id)
+            .await
+            .unwrap();
+        assert_eq!(remainder_events[0].event_type, "add");
+        assert_eq!(
+            remainder_events[0].consume_request_id,
+            Some(result.consume_request_id)
+        );
     }
 
     async fn assert_stock_ledger_parity(db: &Database) {
