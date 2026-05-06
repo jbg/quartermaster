@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.0](https://github.com/jbg/quartermaster/compare/1.16.0...1.17.0) (2026-05-06)
+
+
+### Features
+
+* add consume and store remainder ([8d6f11c](https://github.com/jbg/quartermaster/commit/8d6f11c50d1b6cf04dae8f15024537ff6f764a3f))
+
 ## [1.16.0](https://github.com/jbg/quartermaster/compare/1.15.1...1.16.0) (2026-05-05)
 
 
