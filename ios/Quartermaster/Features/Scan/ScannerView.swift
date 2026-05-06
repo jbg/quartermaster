@@ -147,12 +147,12 @@ struct ScanScreen: View {
   @State private var isSwitchingHousehold = false
 
   enum Route: Identifiable, Hashable {
-    case addStock(Product)
+    case productDetails(Product)
     case manualCreate(String)
 
     var id: String {
       switch self {
-      case .addStock(let p): "addStock-\(p.id)"
+      case .productDetails(let p): "productDetails-\(p.id)"
       case .manualCreate(let code): "manual-\(code)"
       }
     }
@@ -211,10 +211,14 @@ struct ScanScreen: View {
     }
     .sheet(item: $sheet, onDismiss: handleSheetDismiss) { route in
       switch route {
-      case .addStock(let product):
-        AddStockView(product: product) { _ in
-          lastHandled = ""
-          resetScanner()
+      case .productDetails(let product):
+        ProductDetailView(product: product) { action in
+          switch action {
+          case .updated(let updated), .refreshed(let updated), .restored(let updated):
+            draft?.product = updated
+          case .deleted:
+            resetScanner()
+          }
         }
       case .manualCreate(let barcode):
         ManualProductForm(prefillBarcode: barcode) { created in
@@ -479,7 +483,8 @@ struct ScanScreen: View {
           .buttonStyle(.bordered)
         Button {
           if let product = draft?.product {
-            sheet = .addStock(product)
+            suppressNextSheetDismissReset = true
+            sheet = .productDetails(product)
           }
         } label: {
           Text("Edit details")

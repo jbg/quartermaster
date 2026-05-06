@@ -2,7 +2,7 @@ mod support;
 
 use std::time::Duration;
 
-use axum::http::StatusCode;
+use axum::http::{Method, StatusCode};
 use qm_api::ApiConfig;
 use support::off_http::MockOffServer;
 use support::TestApp;
@@ -105,4 +105,58 @@ async fn breaker_open_failures_do_not_write_cache_misses_and_fail_fast() {
         .await
         .unwrap()
         .is_none());
+}
+
+#[tokio::test]
+async fn off_package_size_can_be_corrected_locally_and_survives_refresh() {
+    let mock = MockOffServer::start().await;
+    let app = TestApp::start(ApiConfig {
+        off_api_base_url: mock.base_url(),
+        off_max_retries: 2,
+        off_retry_base_delay: Duration::from_millis(5),
+        off_timeout: Duration::from_millis(50),
+        ..ApiConfig::default()
+    })
+    .await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+
+    let (status, body) = app
+        .send(
+            Method::GET,
+            "/api/v1/products/by-barcode/1111111111111",
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["product"]["package_quantity"], "400");
+    let product_id = body["product"]["id"].as_str().unwrap();
+
+    let (status, corrected) = app
+        .send(
+            Method::PATCH,
+            &format!("/api/v1/products/{product_id}"),
+            Some(serde_json::json!([
+                { "op": "replace", "path": "/package_quantity", "value": "660" },
+                { "op": "replace", "path": "/package_unit", "value": "g" },
+            ])),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(corrected["package_quantity"], "660");
+    assert_eq!(corrected["package_unit"], "g");
+
+    let (status, refreshed) = app
+        .send(
+            Method::POST,
+            &format!("/api/v1/products/{product_id}/refresh"),
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(refreshed["package_quantity"], "660");
+    assert_eq!(refreshed["package_unit"], "g");
 }
