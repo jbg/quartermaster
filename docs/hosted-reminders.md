@@ -131,9 +131,11 @@ Quartermaster's current provider contract is intentionally small:
   - `QM_APNS_AUTH_TOKEN=<bearer token>`
   - `QM_APNS_KEY_ID`, `QM_APNS_TEAM_ID`, and exactly one of `QM_APNS_PRIVATE_KEY_PATH` or `QM_APNS_PRIVATE_KEY`
 - `QM_APNS_ENVIRONMENT=sandbox|production`
+- optional local/provider testing override: `QM_APNS_BASE_URL`
 - `QM_FCM_ENABLED=true`
 - `QM_FCM_PROJECT_ID=<firebase-project-id>`
 - FCM auth uses exactly one of `QM_FCM_SERVICE_ACCOUNT_JSON_PATH` or `QM_FCM_SERVICE_ACCOUNT_JSON`
+- optional local/provider testing overrides: `QM_FCM_BASE_URL` and `QM_FCM_TOKEN_URL`
 
 `QM_APNS_AUTH_TOKEN` is still supported for operators that already mint provider tokens externally. When it is set, Quartermaster uses it directly and ignores APNs JWT signing fields.
 

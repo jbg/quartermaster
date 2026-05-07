@@ -46,10 +46,13 @@ Native client DTOs are generated from OpenAPI. Do not hand-edit generated DTOs o
 ## Rust Verification
 
 ```sh
+cargo deny check advisories bans licenses sources
 cargo test --workspace
 cargo xtask verify-release-config
 cargo xtask verify-stock-ledger
 ```
+
+`cargo deny check advisories bans licenses sources` mirrors CI's Rust dependency policy gate. Install the pinned CI version with `cargo install cargo-deny --locked --version 0.19.4` when you need to run it locally.
 
 `cargo xtask verify-release-config` checks that backend AASA identity matches the checked-in iOS team and bundle settings. Use it after changing universal-link identity wiring, AASA payloads, or related iOS project settings.
 
@@ -125,6 +128,7 @@ pnpm -C web generate:api
 pnpm -C web check
 pnpm -C web test
 pnpm -C web build
+pnpm -C web test:e2e
 ```
 
 For local development:
@@ -136,6 +140,12 @@ pnpm -C web dev
 ```
 
 The development server can talk to a local backend by entering `http://localhost:8080` in the web app's server URL field.
+
+The Playwright smoke path builds/uses the static web shell and starts `qm-server` against a temporary SQLite database, so install the Chromium browser first when running it locally:
+
+```sh
+pnpm -C web exec playwright install chromium
+```
 
 ## Release Identity And Universal Links
 
