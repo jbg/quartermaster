@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.0](https://github.com/jbg/quartermaster/compare/1.19.0...1.20.0) (2026-05-07)
+
+
+### Features
+
+* add OpenFoodFacts contribution flow ([3bcbcbc](https://github.com/jbg/quartermaster/commit/3bcbcbc3743b1d24851c827f9bec354b332a448d))
+
 ## [1.19.0](https://github.com/jbg/quartermaster/compare/1.18.0...1.19.0) (2026-05-06)
 
 
