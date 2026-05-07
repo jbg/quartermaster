@@ -39,6 +39,7 @@ import dev.quartermaster.android.generated.models.UnitFamily
 import dev.quartermaster.android.generated.models.UpdateLocationRequest
 import java.net.URI
 import java.net.URLDecoder
+import java.time.LocalDate
 import java.util.UUID
 
 enum class MainTab { Inventory, Products, Reminders, Scan, Settings }
@@ -94,6 +95,7 @@ enum class StockAction {
     LoadEvents,
     Update,
     Consume,
+    ConsumeAndStore,
     Discard,
     Restore,
 }
@@ -129,6 +131,14 @@ data class StockEditFields(
     val locationId: String = "",
     val expiresOn: String = "",
     val openedOn: String = "",
+    val note: String = "",
+)
+
+data class ConsumeAndStoreFields(
+    val usedQuantity: String = "",
+    val remainderLocationId: String = "",
+    val openedOn: String = "",
+    val remainderExpiresOn: String = "",
     val note: String = "",
 )
 
@@ -1107,6 +1117,37 @@ class QuartermasterAppState(
         }
     }
 
+    suspend fun consumeAndStoreSelectedBatch(fields: ConsumeAndStoreFields): Boolean {
+        val batch = selectedBatch ?: return false
+        if (isBatchDepleted(batch)) return false
+        validateConsumeAndStoreFields(fields)?.let {
+            inventoryError = it
+            lastError = it
+            return false
+        }
+        var saved = false
+        runStockAction(batch.id.toString(), StockAction.ConsumeAndStore) {
+            val response = backend.consumeAndStoreStock(
+                batch.id.toString(),
+                ConsumeAndStoreRequest(
+                    remainderLocationId = UUID.fromString(fields.remainderLocationId),
+                    usedQuantity = fields.usedQuantity.trim(),
+                    openedOn = fields.openedOn.trim().takeIf { it.isNotEmpty() },
+                    remainderExpiresOn = fields.remainderExpiresOn.trim().takeIf { it.isNotEmpty() },
+                    note = fields.note.trim().takeIf { it.isNotEmpty() },
+                ),
+            )
+            pendingInventoryTarget = InventoryTarget(
+                productId = response.remainder.product.id.toString(),
+                locationId = response.remainder.locationId.toString(),
+                batchId = response.remainder.id.toString(),
+            )
+            refreshInventoryAfterStockMutation(response.remainder.id.toString())
+            saved = true
+        }
+        return saved
+    }
+
     suspend fun updateSelectedBatch(fields: StockEditFields): Boolean {
         val batch = selectedBatch ?: return false
         if (!canEditBatch(batch)) return false
@@ -1205,6 +1246,11 @@ class QuartermasterAppState(
         expiresOn = batch.expiresOn.orEmpty(),
         openedOn = batch.openedOn.orEmpty(),
         note = batch.note.orEmpty(),
+    )
+
+    fun consumeAndStoreFields(batch: StockBatchDto): ConsumeAndStoreFields = ConsumeAndStoreFields(
+        remainderLocationId = batch.locationId.toString(),
+        openedOn = todayLocalDate(),
     )
 
     fun isBatchDepleted(batch: StockBatchDto): Boolean = batch.depletedAt != null
@@ -1317,6 +1363,21 @@ class QuartermasterAppState(
             locations.none { it.id.toString() == fields.locationId } -> "Choose an existing location."
             expiresOn.isNotEmpty() && !LOCAL_DATE.matches(expiresOn) -> "Enter expiry as YYYY-MM-DD."
             openedOn.isNotEmpty() && !LOCAL_DATE.matches(openedOn) -> "Enter opened date as YYYY-MM-DD."
+            else -> null
+        }
+    }
+
+    fun validateConsumeAndStoreFields(fields: ConsumeAndStoreFields): String? {
+        val usedQuantity = fields.usedQuantity.trim()
+        val openedOn = fields.openedOn.trim()
+        val remainderExpiresOn = fields.remainderExpiresOn.trim()
+        return when {
+            usedQuantity.isEmpty() -> "Enter a used quantity."
+            usedQuantity.toBigDecimalOrNull()?.let { it > java.math.BigDecimal.ZERO } != true -> "Enter a positive used quantity."
+            fields.remainderLocationId.isBlank() -> "Choose a remainder location."
+            locations.none { it.id.toString() == fields.remainderLocationId } -> "Choose an existing remainder location."
+            openedOn.isNotEmpty() && !LOCAL_DATE.matches(openedOn) -> "Enter opened date as YYYY-MM-DD."
+            remainderExpiresOn.isNotEmpty() && !LOCAL_DATE.matches(remainderExpiresOn) -> "Enter remainder expiry as YYYY-MM-DD."
             else -> null
         }
     }
@@ -1744,6 +1805,8 @@ class QuartermasterAppState(
     companion object {
         private val LOCATION_KINDS = setOf("pantry", "fridge", "freezer")
         private val LOCAL_DATE = Regex("""\d{4}-\d{2}-\d{2}""")
+
+        private fun todayLocalDate(): String = LocalDate.now().toString()
 
         private fun sortLocations(locations: List<LocationDto>): List<LocationDto> = locations.sortedWith(
             compareBy<LocationDto> { it.sortOrder }.thenBy { it.name.lowercase() },

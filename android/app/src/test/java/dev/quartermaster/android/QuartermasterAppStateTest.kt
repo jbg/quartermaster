@@ -985,6 +985,87 @@ class QuartermasterAppStateTest {
     }
 
     @Test
+    fun `consumeAndStoreSelectedBatch records request and selects remainder`() = runTest {
+        val pantry = locationJson()
+        val fridge = locationJson(id = "55555555-5555-5555-5555-555555555555", name = "Fridge", kind = "fridge", sortOrder = 1)
+        val batch = stockBatchJson()
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                stock = listOf(batch),
+                reminders = listOf(reminderJson()),
+                locations = listOf(pantry, fridge),
+            )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend = backend,
+            )
+
+        appState.bootstrap()
+        appState.selectBatch(batch.id.toString())
+        val saved = appState.consumeAndStoreSelectedBatch(
+            ConsumeAndStoreFields(
+                usedQuantity = "125",
+                remainderLocationId = fridge.id.toString(),
+                openedOn = "2026-05-01",
+                remainderExpiresOn = "2026-05-04",
+                note = "stored in bowl",
+            ),
+        )
+
+        assertTrue(saved)
+        assertEquals(1, backend.consumeAndStoreStockRequests.size)
+        val (requestBatchId, request) = backend.consumeAndStoreStockRequests.single()
+        assertEquals(batch.id.toString(), requestBatchId)
+        assertEquals("125", request.usedQuantity)
+        assertEquals(fridge.id, request.remainderLocationId)
+        assertEquals("2026-05-01", request.openedOn)
+        assertEquals("2026-05-04", request.remainderExpiresOn)
+        assertEquals("stored in bowl", request.note)
+        assertEquals("aaaaaaaa-0000-0000-0000-000000000001", appState.selectedBatchId)
+        assertEquals("aaaaaaaa-0000-0000-0000-000000000001", appState.pendingInventoryTarget?.batchId)
+        assertEquals(fridge.id.toString(), appState.pendingInventoryTarget?.locationId)
+        assertTrue(appState.hasLoadedInventoryOnce)
+        assertTrue(appState.hasLoadedRemindersOnce)
+        assertEquals(StockEventType.ADD, appState.selectedBatchEvents.first().eventType)
+    }
+
+    @Test
+    fun `consume and store fields validate required quantity location and dates`() = runTest {
+        val pantry = locationJson()
+        val batch = stockBatchJson()
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    stock = listOf(batch),
+                    locations = listOf(pantry),
+                ),
+            )
+
+        appState.bootstrap()
+
+        val defaults = appState.consumeAndStoreFields(batch)
+        assertEquals(pantry.id.toString(), defaults.remainderLocationId)
+        assertEquals(null, appState.validateConsumeAndStoreFields(defaults.copy(usedQuantity = "1")))
+        assertEquals("Enter a used quantity.", appState.validateConsumeAndStoreFields(defaults.copy(usedQuantity = "")))
+        assertEquals("Enter a positive used quantity.", appState.validateConsumeAndStoreFields(defaults.copy(usedQuantity = "0")))
+        assertEquals("Choose a remainder location.", appState.validateConsumeAndStoreFields(defaults.copy(usedQuantity = "1", remainderLocationId = "")))
+        assertEquals(
+            "Choose an existing remainder location.",
+            appState.validateConsumeAndStoreFields(defaults.copy(usedQuantity = "1", remainderLocationId = "55555555-5555-5555-5555-555555555555")),
+        )
+        assertEquals("Enter opened date as YYYY-MM-DD.", appState.validateConsumeAndStoreFields(defaults.copy(usedQuantity = "1", openedOn = "today")))
+        assertEquals(
+            "Enter remainder expiry as YYYY-MM-DD.",
+            appState.validateConsumeAndStoreFields(defaults.copy(usedQuantity = "1", remainderExpiresOn = "tomorrow")),
+        )
+    }
+
+    @Test
     fun `stock edit fields validate and build JSON Patch operations`() = runTest {
         val pantry = locationJson()
         val fridge = locationJson(id = "55555555-5555-5555-5555-555555555555", name = "Fridge", kind = "fridge", sortOrder = 1)
@@ -1864,10 +1945,40 @@ class QuartermasterAppStateTest {
         ): ConsumeAndStoreResponse {
             consumeAndStoreStockRequests += batchId to request
             val batch = stockState.firstOrNull { it.id.toString() == batchId } ?: error("Unused in test")
+            val source = batch.copy(quantity = "0", depletedAt = "2026-04-22T12:30:00Z")
+            val remainder = batch.copy(
+                id = UUID.fromString("aaaaaaaa-0000-0000-0000-000000000001"),
+                locationId = request.remainderLocationId,
+                initialQuantity = "775",
+                quantity = "775",
+                expiresOn = request.remainderExpiresOn,
+                openedOn = request.openedOn,
+                note = request.note,
+                depletedAt = null,
+            )
+            stockState.removeAll { it.id.toString() == batchId || it.id == remainder.id }
+            stockState += source
+            stockState += remainder
+            batchEventState[batchId] = (
+                listOf(
+                    stockEventJson(
+                        id = "77777777-7777-7777-7777-777777777777",
+                        eventType = "consume",
+                        quantityDelta = "-775",
+                    ),
+                ) + batchEventState[batchId].orEmpty()
+                ).toMutableList()
+            batchEventState[remainder.id.toString()] = mutableListOf(
+                stockEventJson(
+                    id = "66666666-6666-6666-6666-666666666666",
+                    eventType = "add",
+                    quantityDelta = remainder.quantity,
+                ),
+            )
             return ConsumeAndStoreResponse(
                 consumeRequestId = UUID.fromString("99999999-9999-9999-9999-999999999999"),
-                remainder = batch,
-                source = batch.copy(quantity = "0", depletedAt = "2026-04-22T12:30:00Z"),
+                remainder = remainder,
+                source = source,
             )
         }
 

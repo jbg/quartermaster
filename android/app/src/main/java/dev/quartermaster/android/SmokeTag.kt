@@ -60,6 +60,15 @@ internal object SmokeTag {
     fun batchEditButton(id: String) = "smoke-batch-edit-$id"
     fun batchConsumeField(id: String) = "smoke-batch-consume-quantity-$id"
     fun batchConsumeButton(id: String) = "smoke-batch-consume-$id"
+    fun batchRemainderUsedQuantity(id: String) = "smoke-batch-remainder-used-quantity-$id"
+    fun batchRemainderLocation(
+        batchId: String,
+        locationId: String,
+    ) = "smoke-batch-remainder-location-$batchId-$locationId"
+    fun batchRemainderOpened(id: String) = "smoke-batch-remainder-opened-$id"
+    fun batchRemainderExpires(id: String) = "smoke-batch-remainder-expires-$id"
+    fun batchRemainderNote(id: String) = "smoke-batch-remainder-note-$id"
+    fun batchRemainderButton(id: String) = "smoke-batch-remainder-store-$id"
     fun batchDiscardButton(id: String) = "smoke-batch-discard-$id"
     fun batchRestoreButton(id: String) = "smoke-batch-restore-$id"
     fun batchHistoryRow(id: String) = "smoke-batch-history-$id"

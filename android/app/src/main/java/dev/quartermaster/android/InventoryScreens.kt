@@ -332,6 +332,7 @@ internal fun BatchDetailScreen(
                     batch = batch,
                     onEdit = onEditBatch,
                     onConsume = { quantity -> scope.launch { appState.consumeSelectedBatch(quantity) } },
+                    onConsumeAndStore = { fields -> scope.launch { appState.consumeAndStoreSelectedBatch(fields) } },
                     onDiscard = { scope.launch { appState.discardBatch(batch.id.toString()) } },
                     onRestore = { scope.launch { appState.restoreBatch(batch.id.toString()) } },
                     onClose = onBack,
@@ -347,11 +348,15 @@ private fun BatchDetailCard(
     batch: StockBatchDto,
     onEdit: () -> Unit,
     onConsume: (String) -> Unit,
+    onConsumeAndStore: (ConsumeAndStoreFields) -> Unit,
     onDiscard: () -> Unit,
     onRestore: () -> Unit,
     onClose: () -> Unit,
 ) {
     var consumeQuantity by remember(batch.id) { mutableStateOf("") }
+    var remainderFields by remember(batch.id) {
+        mutableStateOf(appState.consumeAndStoreFields(batch))
+    }
     val batchId = batch.id.toString()
     val depleted = appState.isBatchDepleted(batch)
     val action = appState.stockActionFor(batchId)
@@ -362,6 +367,7 @@ private fun BatchDetailCard(
         consumeQuantityNumber == null || consumeQuantityNumber <= 0 -> "Enter a positive amount."
         else -> null
     }
+    val remainderValidation = appState.validateConsumeAndStoreFields(remainderFields)
 
     Card {
         Column(
@@ -391,6 +397,7 @@ private fun BatchDetailCard(
                         StockAction.LoadEvents -> "Loading the latest batch history."
                         StockAction.Update -> "Saving stock correction."
                         StockAction.Consume -> "Recording consumption."
+                        StockAction.ConsumeAndStore -> "Opening and storing the remainder."
                         StockAction.Discard -> "Discarding this batch."
                         StockAction.Restore -> "Restoring this batch."
                     },
@@ -425,6 +432,80 @@ private fun BatchDetailCard(
                     modifier = Modifier.testTag(SmokeTag.batchConsumeButton(batchId)),
                 ) {
                     Text(if (action == StockAction.Consume) "Using..." else "Use stock")
+                }
+                SectionHeader(
+                    title = "Open and store remainder",
+                    body = "Use part of this batch and create a new open batch for what is left.",
+                )
+                OutlinedTextField(
+                    value = remainderFields.usedQuantity,
+                    onValueChange = { remainderFields = remainderFields.copy(usedQuantity = it) },
+                    label = { Text("Used quantity (${batch.unit})") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier
+                        .testTag(SmokeTag.batchRemainderUsedQuantity(batchId))
+                        .fillMaxWidth(),
+                )
+                Card {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("Remainder location", style = MaterialTheme.typography.titleSmall)
+                        appState.sortedLocations().forEach { location ->
+                            val locationId = location.id.toString()
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(location.name)
+                                if (remainderFields.remainderLocationId == locationId) {
+                                    Text("Selected", style = MaterialTheme.typography.labelMedium)
+                                } else {
+                                    TextButton(
+                                        modifier = Modifier.testTag(SmokeTag.batchRemainderLocation(batchId, locationId)),
+                                        onClick = { remainderFields = remainderFields.copy(remainderLocationId = locationId) },
+                                    ) {
+                                        Text("Select")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = remainderFields.openedOn,
+                    onValueChange = { remainderFields = remainderFields.copy(openedOn = it) },
+                    label = { Text("Opened on (YYYY-MM-DD)") },
+                    modifier = Modifier
+                        .testTag(SmokeTag.batchRemainderOpened(batchId))
+                        .fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = remainderFields.remainderExpiresOn,
+                    onValueChange = { remainderFields = remainderFields.copy(remainderExpiresOn = it) },
+                    label = { Text("Remainder expiry override (YYYY-MM-DD)") },
+                    modifier = Modifier
+                        .testTag(SmokeTag.batchRemainderExpires(batchId))
+                        .fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = remainderFields.note,
+                    onValueChange = { remainderFields = remainderFields.copy(note = it) },
+                    label = { Text("Remainder note") },
+                    modifier = Modifier
+                        .testTag(SmokeTag.batchRemainderNote(batchId))
+                        .fillMaxWidth(),
+                )
+                remainderValidation?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                Button(
+                    onClick = { onConsumeAndStore(remainderFields) },
+                    enabled = remainderValidation == null && action == null,
+                    modifier = Modifier.testTag(SmokeTag.batchRemainderButton(batchId)),
+                ) {
+                    Text(if (action == StockAction.ConsumeAndStore) "Storing..." else "Open and store remainder")
                 }
                 TextButton(
                     onClick = onDiscard,
