@@ -330,6 +330,14 @@ internal fun ProductDetailScreen(
                         ) {
                             Text(if (appState.productActionInFlight == ProductAction.Refresh) "Refreshing..." else "Refresh from OpenFoodFacts")
                         }
+                        if (appState.offContributionPreview?.credentialsPresent == true && appState.offContributionPreview?.changedFields?.isNotEmpty() == true) {
+                            Button(
+                                onClick = { scope.launch { appState.contributeSelectedProductToOff() } },
+                                enabled = appState.productActionInFlight == null,
+                            ) {
+                                Text(if (appState.productActionInFlight == ProductAction.Refresh) "Contributing..." else "Contribute")
+                            }
+                        }
                     }
                 }
             }

@@ -12,6 +12,7 @@
     createBrowserSessionStorage,
     QuartermasterSession,
     type MeResponse,
+    type OffContributionPreviewResponse,
     type Product
   } from '$lib/session-core';
   import {
@@ -32,6 +33,7 @@
   let loading = $state(true);
   let actionBusy = $state(false);
   let product = $state<Product | null>(null);
+  let contributionPreview = $state<OffContributionPreviewResponse | null>(null);
   let error = $state<string | null>(null);
   let actionError = $state<string | null>(null);
 
@@ -65,6 +67,13 @@
       me = await session.me();
       if (currentHousehold(me) && productId) {
         product = await session.productGet(productId);
+        if (product.source === 'openfoodfacts') {
+          contributionPreview = await session
+            .productOffContributionPreview(productId)
+            .catch(() => null);
+        } else {
+          contributionPreview = null;
+        }
       }
     } catch {
       product = null;
@@ -112,6 +121,25 @@
       product = await session.productRefresh(product.id);
     } catch (err) {
       actionError = productMutationErrorMessage(err, 'Product could not be refreshed.');
+    } finally {
+      actionBusy = false;
+    }
+  }
+
+  async function contributeProduct() {
+    if (!session || !product) {
+      return;
+    }
+    actionBusy = true;
+    actionError = null;
+    try {
+      const response = await session.productOffContribution(product.id);
+      product = response.product;
+      contributionPreview = await session
+        .productOffContributionPreview(product.id)
+        .catch(() => null);
+    } catch (err) {
+      actionError = productMutationErrorMessage(err, 'Product could not be contributed.');
     } finally {
       actionBusy = false;
     }
@@ -230,6 +258,9 @@
               {actionBusy ? 'Restoring...' : 'Restore product'}
             </button>
           {:else}
+            <a class="primary-action" href={appPath(`/products/${product.id}/edit`, page.url)}
+              >Edit corrections</a
+            >
             <button
               class="secondary-action"
               type="button"
@@ -238,6 +269,16 @@
             >
               {actionBusy ? 'Refreshing...' : 'Refresh from OpenFoodFacts'}
             </button>
+            {#if contributionPreview?.credentials_present && contributionPreview.changed_fields?.length}
+              <button
+                class="secondary-action"
+                type="button"
+                disabled={actionBusy}
+                onclick={contributeProduct}
+              >
+                {actionBusy ? 'Contributing...' : 'Contribute to OpenFoodFacts'}
+              </button>
+            {/if}
           {/if}
         </div>
         {#if actionError}

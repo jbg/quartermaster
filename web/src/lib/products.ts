@@ -16,6 +16,8 @@ export interface ProductFormFields {
   preferredUnit: string;
   imageUrl: string;
   maxOpenDays: string;
+  packageQuantity?: string;
+  packageUnit?: string;
 }
 
 export function productBrand(product: Product): string {
@@ -38,6 +40,18 @@ export function productMaxOpenDays(product: Product): number | null {
   return product.max_open_days ?? product.maxOpenDays ?? null;
 }
 
+export function productPackageQuantity(product: Product): string {
+  return String(product.package_quantity ?? product.packageQuantity ?? '');
+}
+
+export function productPackageUnit(product: Product): string {
+  return (
+    product.package_unit ??
+    product.packageUnit ??
+    (product.family === 'volume' ? 'ml' : product.family === 'mass' ? 'g' : 'piece')
+  );
+}
+
 export function isDeletedProduct(product: Product): boolean {
   return productDeletedAt(product).length > 0;
 }
@@ -57,7 +71,9 @@ export function emptyProductForm(units: Unit[] = []): ProductFormFields {
     family: 'mass',
     preferredUnit: unitChoicesForFamily('mass', units)[0],
     imageUrl: '',
-    maxOpenDays: ''
+    maxOpenDays: '',
+    packageQuantity: '',
+    packageUnit: unitChoicesForFamily('mass', units)[0]
   };
 }
 
@@ -68,7 +84,9 @@ export function productFormFields(product: Product, units: Unit[] = []): Product
     family: product.family,
     preferredUnit: productPreferredUnit(product, units),
     imageUrl: productImageUrl(product),
-    maxOpenDays: productMaxOpenDays(product)?.toString() ?? ''
+    maxOpenDays: productMaxOpenDays(product)?.toString() ?? '',
+    packageQuantity: productPackageQuantity(product),
+    packageUnit: productPackageUnit(product)
   };
 }
 
@@ -133,12 +151,35 @@ export function buildProductUpdateRequest(
   applyClearableText(request, 'brand', productBrand(product), fields.brand);
   applyClearableText(request, 'image_url', productImageUrl(product), fields.imageUrl);
   applyClearableNumber(request, 'max_open_days', productMaxOpenDays(product), fields.maxOpenDays);
+  applyPackageSize(request, product, fields);
   return request;
+}
+
+function applyPackageSize(
+  request: UpdateProductRequest,
+  product: Product,
+  fields: ProductFormFields
+) {
+  const currentQuantity = productPackageQuantity(product);
+  const currentUnit = product.package_unit ?? product.packageUnit ?? '';
+  const nextQuantity = (fields.packageQuantity ?? '').trim();
+  const nextUnit = (fields.packageUnit ?? productPackageUnit(product)).trim();
+  if (nextQuantity) {
+    if (nextQuantity !== currentQuantity) {
+      request.push({ op: 'replace', path: '/package_quantity', value: nextQuantity });
+    }
+    if (nextUnit !== currentUnit) {
+      request.push({ op: 'replace', path: '/package_unit', value: nextUnit });
+    }
+  } else if (currentQuantity || currentUnit) {
+    request.push({ op: 'remove', path: '/package_quantity' });
+    request.push({ op: 'remove', path: '/package_unit' });
+  }
 }
 
 function applyClearableText(
   request: UpdateProductRequest,
-  key: 'brand' | 'image_url',
+  key: 'brand' | 'image_url' | 'package_quantity' | 'package_unit',
   currentValue: string,
   nextValue: string
 ) {
@@ -209,6 +250,14 @@ export function productMutationErrorMessage(err: unknown, fallback: string): str
   switch (err.code) {
     case 'off_product_read_only':
       return 'OpenFoodFacts products are read-only from the web catalogue.';
+    case 'off_credentials_not_configured':
+      return 'OpenFoodFacts contribution is not configured on this server.';
+    case 'off_credentials_missing':
+      return 'Save your OpenFoodFacts credentials in Settings first.';
+    case 'off_contribution_no_changes':
+      return 'There are no local OpenFoodFacts corrections to contribute.';
+    case 'off_authentication_failed':
+      return 'OpenFoodFacts rejected the saved credentials.';
     case 'product_has_stock':
       return 'This product still has active stock. Consume or discard it first.';
     case 'product_has_incompatible_stock':

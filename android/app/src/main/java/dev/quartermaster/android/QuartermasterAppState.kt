@@ -21,12 +21,16 @@ import dev.quartermaster.android.generated.models.InviteDto
 import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.MeResponse
 import dev.quartermaster.android.generated.models.MembershipRole
+import dev.quartermaster.android.generated.models.OffContributionPreviewResponse
+import dev.quartermaster.android.generated.models.OffContributionResponse
 import dev.quartermaster.android.generated.models.OnboardingStatusResponse
+import dev.quartermaster.android.generated.models.OpenFoodFactsCredentialStatusResponse
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.ProductSource
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
 import dev.quartermaster.android.generated.models.ReminderDto
 import dev.quartermaster.android.generated.models.RequestEmailVerificationResponse
+import dev.quartermaster.android.generated.models.SaveOpenFoodFactsCredentialsRequest
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventType
@@ -199,6 +203,11 @@ interface QuartermasterBackend {
     suspend fun deleteProduct(id: String)
     suspend fun restoreProduct(id: String): ProductDto
     suspend fun refreshProduct(id: String): ProductDto
+    suspend fun offContributionPreview(id: String): OffContributionPreviewResponse
+    suspend fun contributeProductToOff(id: String): OffContributionResponse
+    suspend fun openFoodFactsCredentialStatus(): OpenFoodFactsCredentialStatusResponse
+    suspend fun saveOpenFoodFactsCredentials(request: SaveOpenFoodFactsCredentialsRequest): OpenFoodFactsCredentialStatusResponse
+    suspend fun deleteOpenFoodFactsCredentials()
     suspend fun lookupBarcode(barcode: String): BarcodeLookupResponse
     suspend fun addStock(request: CreateStockRequest): StockBatchDto
     suspend fun updateStock(id: String, request: StockUpdateRequest): StockBatchDto
@@ -310,6 +319,11 @@ class QuartermasterApiBackend(
     override suspend fun deleteProduct(id: String) = api.deleteProduct(id)
     override suspend fun restoreProduct(id: String): ProductDto = api.restoreProduct(id)
     override suspend fun refreshProduct(id: String): ProductDto = api.refreshProduct(id)
+    override suspend fun offContributionPreview(id: String): OffContributionPreviewResponse = api.offContributionPreview(id)
+    override suspend fun contributeProductToOff(id: String): OffContributionResponse = api.contributeProductToOff(id)
+    override suspend fun openFoodFactsCredentialStatus(): OpenFoodFactsCredentialStatusResponse = api.openFoodFactsCredentialStatus()
+    override suspend fun saveOpenFoodFactsCredentials(request: SaveOpenFoodFactsCredentialsRequest): OpenFoodFactsCredentialStatusResponse = api.saveOpenFoodFactsCredentials(request)
+    override suspend fun deleteOpenFoodFactsCredentials() = api.deleteOpenFoodFactsCredentials()
     override suspend fun lookupBarcode(barcode: String): BarcodeLookupResponse = api.lookupBarcode(barcode)
     override suspend fun addStock(request: CreateStockRequest): StockBatchDto = api.addStock(request)
     override suspend fun updateStock(id: String, request: StockUpdateRequest): StockBatchDto = api.updateStock(id, request)
@@ -352,6 +366,10 @@ class QuartermasterAppState(
     var productIncludeFilter by mutableStateOf(ProductIncludeFilter.Active)
         private set
     var selectedCatalogueProduct by mutableStateOf<ProductDto?>(null)
+        private set
+    var offContributionPreview by mutableStateOf<OffContributionPreviewResponse?>(null)
+        private set
+    var offCredentialStatus by mutableStateOf<OpenFoodFactsCredentialStatusResponse?>(null)
         private set
     var selectedBatchId by mutableStateOf<String?>(null)
         private set
@@ -778,6 +796,7 @@ class QuartermasterAppState(
     ) {
         householdDetail = backend.currentHousehold()
         invites = backend.householdInvites().sortedByDescending { it.createdAt }
+        offCredentialStatus = backend.openFoodFactsCredentialStatus()
         hasLoadedSettingsOnce = true
     }
 
@@ -797,6 +816,21 @@ class QuartermasterAppState(
         hasLoadedProductsOnce = true
     }
 
+    suspend fun saveOpenFoodFactsCredentials(username: String, password: String) {
+        runSettingsAction {
+            offCredentialStatus = backend.saveOpenFoodFactsCredentials(
+                SaveOpenFoodFactsCredentialsRequest(username = username, password = password),
+            )
+        }
+    }
+
+    suspend fun deleteOpenFoodFactsCredentials() {
+        runSettingsAction {
+            backend.deleteOpenFoodFactsCredentials()
+            offCredentialStatus = OpenFoodFactsCredentialStatusResponse(configured = false, username = null)
+        }
+    }
+
     suspend fun applyProductFilters(
         query: String,
         filter: ProductIncludeFilter,
@@ -811,6 +845,11 @@ class QuartermasterAppState(
         runProductAction(ProductAction.LoadDetail) {
             product = backend.getProduct(id)
             selectedCatalogueProduct = product
+            offContributionPreview = if (product?.source == ProductSource.OPENFOODFACTS) {
+                backend.offContributionPreview(id)
+            } else {
+                null
+            }
         }
         return product
     }
@@ -828,18 +867,21 @@ class QuartermasterAppState(
 
     fun prepareProductList() {
         selectedCatalogueProduct = null
+        offContributionPreview = null
         productError = null
     }
 
     fun prepareProductCreate() {
         returnToScanAfterProductCreate = false
         selectedCatalogueProduct = null
+        offContributionPreview = null
         productError = null
     }
 
     fun prepareProductCreateForScan() {
         returnToScanAfterProductCreate = true
         selectedCatalogueProduct = null
+        offContributionPreview = null
         productError = null
         selectedTab = MainTab.Products
     }
@@ -939,10 +981,26 @@ class QuartermasterAppState(
             refreshedProduct = refreshed
             selectedCatalogueProduct = refreshed
             products = upsertProduct(products, refreshed)
+            offContributionPreview = backend.offContributionPreview(product.id.toString())
             refreshProductsBody(forceUnits = false)
             hasLoadedProductsOnce = true
         }
         return refreshedProduct
+    }
+
+    suspend fun contributeSelectedProductToOff(): ProductDto? {
+        val product = selectedCatalogueProduct ?: return null
+        var contributedProduct: ProductDto? = null
+        runProductAction(ProductAction.Refresh) {
+            val response = backend.contributeProductToOff(product.id.toString())
+            contributedProduct = response.product
+            selectedCatalogueProduct = response.product
+            products = upsertProduct(products, response.product)
+            offContributionPreview = backend.offContributionPreview(product.id.toString())
+            refreshProductsBody(forceUnits = false)
+            hasLoadedProductsOnce = true
+        }
+        return contributedProduct
     }
 
     suspend fun searchProducts(query: String) {
@@ -1740,6 +1798,10 @@ private fun Throwable.productFacingMessage(action: ProductAction): String {
     }
     return when (code) {
         "off_product_read_only" -> "OpenFoodFacts products are read-only from the Android catalogue."
+        "off_credentials_not_configured" -> "OpenFoodFacts contribution is not configured on this server."
+        "off_credentials_missing" -> "Save your OpenFoodFacts credentials in Settings first."
+        "off_contribution_no_changes" -> "There are no local OpenFoodFacts corrections to contribute."
+        "off_authentication_failed" -> "OpenFoodFacts rejected the saved credentials."
         "product_has_stock" -> "This product still has active stock. Consume or discard it first."
         "product_has_incompatible_stock" -> "This product has active stock with units that do not fit the new family."
         "unit_family_mismatch",

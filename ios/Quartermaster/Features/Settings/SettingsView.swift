@@ -13,6 +13,10 @@ struct SettingsView: View {
   @State private var newInviteRole: MembershipRole = .member
   @State private var recoveryEmailDraft: String = ""
   @State private var recoveryCodeDraft: String = ""
+  @State private var offCredentialStatus: OpenFoodFactsCredentialStatusResponse?
+  @State private var offUsernameDraft: String = ""
+  @State private var offPasswordDraft: String = ""
+  @State private var isSavingOFFCredentials = false
 
   @State private var showLocationEditor = false
   @State private var editingLocation: Location?
@@ -109,6 +113,15 @@ struct SettingsView: View {
               "Recovery Email",
               systemImage: "envelope",
               detail: me.user.email ?? me.user.pendingEmail ?? "Not configured"
+            )
+          }
+          NavigationLink {
+            openFoodFactsCredentialsView
+          } label: {
+            settingsLinkLabel(
+              "Open Food Facts",
+              systemImage: "square.and.pencil",
+              detail: offCredentialStatus?.username ?? "Not configured"
             )
           }
         }
@@ -450,6 +463,52 @@ struct SettingsView: View {
     .navigationTitle("Recovery Email")
   }
 
+  private var openFoodFactsCredentialsView: some View {
+    Form {
+      Section {
+        TextField("Username", text: $offUsernameDraft)
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled()
+        SecureField("Password", text: $offPasswordDraft)
+        if let username = offCredentialStatus?.username {
+          LabeledContent("Saved account", value: username)
+        }
+      } header: {
+        Text("Open Food Facts")
+      } footer: {
+        Text(
+          "Credentials are encrypted on this Quartermaster server and used only when you contribute product corrections."
+        )
+      }
+
+      Section {
+        Button {
+          Task { await saveOFFCredentials() }
+        } label: {
+          if isSavingOFFCredentials {
+            ProgressView()
+          } else {
+            Text("Save credentials")
+          }
+        }
+        .disabled(
+          isSavingOFFCredentials
+            || offUsernameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || offPasswordDraft.isEmpty)
+
+        if offCredentialStatus?.configured == true {
+          Button(role: .destructive) {
+            Task { await deleteOFFCredentials() }
+          } label: {
+            Text("Remove credentials")
+          }
+          .disabled(isSavingOFFCredentials)
+        }
+      }
+    }
+    .navigationTitle("Open Food Facts")
+  }
+
   private var serverView: some View {
     Form {
       Section("Server") {
@@ -657,12 +716,18 @@ struct SettingsView: View {
       async let householdReq = appState.api.currentHousehold()
       async let membersReq = appState.api.householdMembers()
       async let locationsReq = appState.api.locations()
-      let (household, members, locations) = try await (householdReq, membersReq, locationsReq)
+      async let offReq = appState.api.openFoodFactsCredentialStatus()
+      let (household, members, locations, offCredentialStatus) = try await (
+        householdReq, membersReq, locationsReq, offReq
+      )
       self.household = household
       self.householdNameDraft = household.name
       self.householdTimezoneDraft = household.timezone
       self.members = members
       self.locations = locations.sorted { $0.sortOrder < $1.sortOrder }
+      self.offCredentialStatus = offCredentialStatus
+      self.offUsernameDraft = offCredentialStatus.username ?? ""
+      self.offPasswordDraft = ""
       if members.first(where: { $0.user.id == me.user.id })?.role == .admin {
         invites = try await appState.api.householdInvites()
       } else {
@@ -688,6 +753,39 @@ struct SettingsView: View {
           return
         }
       }
+      errorMessage = err.userFacingMessage
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+  }
+
+  private func saveOFFCredentials() async {
+    isSavingOFFCredentials = true
+    defer { isSavingOFFCredentials = false }
+    do {
+      let saved = try await appState.api.saveOpenFoodFactsCredentials(
+        username: offUsernameDraft.trimmingCharacters(in: .whitespacesAndNewlines),
+        password: offPasswordDraft
+      )
+      offCredentialStatus = saved
+      offUsernameDraft = saved.username ?? ""
+      offPasswordDraft = ""
+    } catch let err as APIError {
+      errorMessage = err.userFacingMessage
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+  }
+
+  private func deleteOFFCredentials() async {
+    isSavingOFFCredentials = true
+    defer { isSavingOFFCredentials = false }
+    do {
+      try await appState.api.deleteOpenFoodFactsCredentials()
+      offCredentialStatus = .init(configured: false, username: nil)
+      offUsernameDraft = ""
+      offPasswordDraft = ""
+    } catch let err as APIError {
       errorMessage = err.userFacingMessage
     } catch {
       errorMessage = error.localizedDescription

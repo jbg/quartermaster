@@ -15,11 +15,15 @@ import dev.quartermaster.android.generated.models.HouseholdDetailDto
 import dev.quartermaster.android.generated.models.InviteDto
 import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.MeResponse
+import dev.quartermaster.android.generated.models.OffContributionPreviewResponse
+import dev.quartermaster.android.generated.models.OffContributionResponse
 import dev.quartermaster.android.generated.models.OnboardingStatusResponse
+import dev.quartermaster.android.generated.models.OpenFoodFactsCredentialStatusResponse
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
 import dev.quartermaster.android.generated.models.ReminderDto
 import dev.quartermaster.android.generated.models.RequestEmailVerificationResponse
+import dev.quartermaster.android.generated.models.SaveOpenFoodFactsCredentialsRequest
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventType
@@ -1763,6 +1767,28 @@ class QuartermasterAppStateTest {
             productState += product
             return product
         }
+
+        override suspend fun offContributionPreview(id: String): OffContributionPreviewResponse = OffContributionPreviewResponse(
+            changedFields = emptyList(),
+            credentialsConfigured = false,
+            credentialsPresent = false,
+            eligible = false,
+        )
+
+        override suspend fun contributeProductToOff(id: String): OffContributionResponse = OffContributionResponse(
+            product = getProduct(id),
+            status = "saved",
+            statusVerbose = "saved",
+            submittedFields = emptyList(),
+        )
+
+        override suspend fun openFoodFactsCredentialStatus(): OpenFoodFactsCredentialStatusResponse = OpenFoodFactsCredentialStatusResponse(configured = false, username = null)
+
+        override suspend fun saveOpenFoodFactsCredentials(
+            request: SaveOpenFoodFactsCredentialsRequest,
+        ): OpenFoodFactsCredentialStatusResponse = OpenFoodFactsCredentialStatusResponse(configured = true, username = request.username)
+
+        override suspend fun deleteOpenFoodFactsCredentials() {}
 
         override suspend fun lookupBarcode(barcode: String): BarcodeLookupResponse {
             barcodeFailure?.let { throw it }

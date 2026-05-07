@@ -19,6 +19,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
+use uuid::Uuid;
 
 use crate::ApiConfig;
 
@@ -52,6 +53,30 @@ pub struct OffProduct {
 #[derive(Debug)]
 pub enum OffResult {
     Found(OffProduct),
+    NotFound,
+    Upstream(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct OffWriteCredentials {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct OffContributionForm {
+    pub barcode: String,
+    pub product_name: Option<String>,
+    pub brands: Option<Option<String>>,
+    pub product_quantity: Option<String>,
+    pub product_quantity_unit: Option<String>,
+    pub app_uuid: String,
+}
+
+#[derive(Debug)]
+pub enum OffWriteResult {
+    Saved { status_verbose: String },
+    AuthFailed,
     NotFound,
     Upstream(String),
 }
@@ -242,6 +267,98 @@ impl OpenFoodFactsClient {
                 .filter(|s| !s.trim().is_empty()),
         })
     }
+
+    pub async fn contribute(
+        &self,
+        credentials: &OffWriteCredentials,
+        form: &OffContributionForm,
+    ) -> OffWriteResult {
+        let mut params: Vec<(&str, String)> = vec![
+            ("code", form.barcode.clone()),
+            ("user_id", credentials.username.clone()),
+            ("password", credentials.password.clone()),
+            ("app_name", "Quartermaster".to_owned()),
+            ("app_version", env!("CARGO_PKG_VERSION").to_owned()),
+            ("app_uuid", form.app_uuid.clone()),
+        ];
+        if let Some(value) = &form.product_name {
+            params.push(("product_name", value.clone()));
+        }
+        if let Some(value) = &form.brands {
+            params.push(("brands", value.clone().unwrap_or_default()));
+        }
+        if let Some(value) = &form.product_quantity {
+            params.push(("product_quantity", value.clone()));
+        }
+        if let Some(value) = &form.product_quantity_unit {
+            params.push(("product_quantity_unit", value.clone()));
+        }
+
+        let response = match self
+            .http
+            .post(&self.config.off_write_url)
+            .form(&params)
+            .send()
+            .await
+        {
+            Ok(response) => response,
+            Err(err) => {
+                warn!(?err, "OFF contribution request failed");
+                return OffWriteResult::Upstream(err.to_string());
+            }
+        };
+
+        let status = response.status();
+        if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+            return OffWriteResult::AuthFailed;
+        }
+        if status == StatusCode::NOT_FOUND {
+            return OffWriteResult::NotFound;
+        }
+        if status == StatusCode::REQUEST_TIMEOUT
+            || status == StatusCode::TOO_MANY_REQUESTS
+            || status.is_server_error()
+        {
+            return OffWriteResult::Upstream(format!("OFF returned {status}"));
+        }
+        if !status.is_success() {
+            return OffWriteResult::Upstream(format!("OFF returned {status}"));
+        }
+
+        let payload: OffWriteResponse = match response.json().await {
+            Ok(payload) => payload,
+            Err(err) => return OffWriteResult::Upstream(err.to_string()),
+        };
+        if payload.status == Some(1) {
+            OffWriteResult::Saved {
+                status_verbose: payload
+                    .status_verbose
+                    .unwrap_or_else(|| "fields saved".into()),
+            }
+        } else {
+            let message = payload
+                .status_verbose
+                .unwrap_or_else(|| "OFF write failed".into());
+            if message.to_ascii_lowercase().contains("user")
+                || message.to_ascii_lowercase().contains("password")
+                || message.to_ascii_lowercase().contains("auth")
+            {
+                OffWriteResult::AuthFailed
+            } else {
+                OffWriteResult::Upstream(message)
+            }
+        }
+    }
+}
+
+pub fn app_uuid_for_user(user_id: Uuid) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(user_id.as_bytes());
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    Uuid::from_bytes(bytes).to_string()
 }
 
 fn mock_off_sessions() -> &'static Mutex<HashMap<String, MockOffHits>> {
@@ -544,6 +661,12 @@ struct OffInnerProduct {
     image_url: Option<String>,
     product_quantity: Option<Value>,
     product_quantity_unit: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OffWriteResponse {
+    status: Option<i64>,
+    status_verbose: Option<String>,
 }
 
 #[cfg(test)]

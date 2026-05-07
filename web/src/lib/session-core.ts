@@ -55,6 +55,10 @@ export interface Product {
   deletedAt?: string | null;
   max_open_days?: number | null;
   maxOpenDays?: number | null;
+  package_quantity?: string | null;
+  packageQuantity?: string | null;
+  package_unit?: string | null;
+  packageUnit?: string | null;
 }
 
 export interface ProductSearchResponse {
@@ -64,6 +68,43 @@ export interface ProductSearchResponse {
 export interface BarcodeLookupResponse {
   product: Product;
   source?: string;
+}
+
+export interface OpenFoodFactsCredentialStatusResponse {
+  configured: boolean;
+  username?: string | null;
+}
+
+export interface SaveOpenFoodFactsCredentialsRequest {
+  username: string;
+  password: string;
+}
+
+export interface OffContributionFieldChange {
+  field: string;
+  current_value?: string | null;
+  currentValue?: string | null;
+  off_value?: string | null;
+  offValue?: string | null;
+}
+
+export interface OffContributionPreviewResponse {
+  eligible: boolean;
+  credentials_configured?: boolean;
+  credentialsConfigured?: boolean;
+  credentials_present?: boolean;
+  credentialsPresent?: boolean;
+  changed_fields?: OffContributionFieldChange[];
+  changedFields?: OffContributionFieldChange[];
+}
+
+export interface OffContributionResponse {
+  status: string;
+  status_verbose?: string;
+  statusVerbose?: string;
+  submitted_fields?: string[];
+  submittedFields?: string[];
+  product: Product;
 }
 
 export interface StockBatch {
@@ -397,6 +438,13 @@ export interface SessionTransport {
   productDelete(id: string): Promise<ApiResult<void>>;
   productRestore(id: string): Promise<ApiResult<Product>>;
   productRefresh(id: string): Promise<ApiResult<Product>>;
+  productOffContributionPreview?(id: string): Promise<ApiResult<OffContributionPreviewResponse>>;
+  productOffContribution?(id: string): Promise<ApiResult<OffContributionResponse>>;
+  accountOpenfoodfactsStatus?(): Promise<ApiResult<OpenFoodFactsCredentialStatusResponse>>;
+  accountOpenfoodfactsPut?(
+    body: SaveOpenFoodFactsCredentialsRequest
+  ): Promise<ApiResult<OpenFoodFactsCredentialStatusResponse>>;
+  accountOpenfoodfactsDelete?(): Promise<ApiResult<void>>;
   stockList(query?: { include_depleted?: boolean | null }): Promise<ApiResult<StockListResponse>>;
   stockCreate(body: CreateStockRequest): Promise<ApiResult<StockBatch>>;
   stockGet(id: string): Promise<ApiResult<StockBatch>>;
@@ -644,6 +692,38 @@ export class QuartermasterSession {
 
   productRefresh(id: string): Promise<Product> {
     return this.authed(() => this.transport.productRefresh(id));
+  }
+
+  productOffContributionPreview(id: string): Promise<OffContributionPreviewResponse> {
+    return this.authed(() =>
+      required(this.transport.productOffContributionPreview, 'productOffContributionPreview')(id)
+    );
+  }
+
+  productOffContribution(id: string): Promise<OffContributionResponse> {
+    return this.authed(() =>
+      required(this.transport.productOffContribution, 'productOffContribution')(id)
+    );
+  }
+
+  openFoodFactsCredentialStatus(): Promise<OpenFoodFactsCredentialStatusResponse> {
+    return this.authed(() =>
+      required(this.transport.accountOpenfoodfactsStatus, 'accountOpenfoodfactsStatus')()
+    );
+  }
+
+  saveOpenFoodFactsCredentials(
+    body: SaveOpenFoodFactsCredentialsRequest
+  ): Promise<OpenFoodFactsCredentialStatusResponse> {
+    return this.authed(() =>
+      required(this.transport.accountOpenfoodfactsPut, 'accountOpenfoodfactsPut')(body)
+    );
+  }
+
+  deleteOpenFoodFactsCredentials(): Promise<void> {
+    return this.authed(() =>
+      required(this.transport.accountOpenfoodfactsDelete, 'accountOpenfoodfactsDelete')()
+    );
   }
 
   stockList(query?: { include_depleted?: boolean | null }): Promise<StockListResponse> {

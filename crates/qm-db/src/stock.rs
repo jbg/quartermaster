@@ -1062,6 +1062,12 @@ fn row_to_joined(row: sqlx::any::AnyRow) -> Result<StockBatchWithProduct, sqlx::
         package_quantity: row.try_get("p_package_quantity")?,
         package_unit: row.try_get("p_package_unit")?,
         package_size_local_override: false,
+        off_name: None,
+        off_brand: None,
+        off_package_quantity: None,
+        off_package_unit: None,
+        name_local_override: false,
+        brand_local_override: false,
         fetched_at: row.try_get("p_fetched_at")?,
         created_by_household_id: p_household
             .map(|s| Uuid::parse_str(&s))

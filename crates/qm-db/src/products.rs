@@ -12,7 +12,9 @@ pub const SOURCE_MANUAL: &str = "manual";
 const COLS: &str = "id, source, off_barcode, name, brand, family, default_unit, \
                     image_url, package_quantity, package_unit, fetched_at, \
                     created_by_household_id, created_at, deleted_at, max_open_days, \
-                    package_size_local_override";
+                    package_size_local_override, off_name, off_brand, \
+                    off_package_quantity, off_package_unit, name_local_override, \
+                    brand_local_override";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProductRow {
@@ -27,6 +29,12 @@ pub struct ProductRow {
     pub package_quantity: Option<String>,
     pub package_unit: Option<String>,
     pub package_size_local_override: bool,
+    pub off_name: Option<String>,
+    pub off_brand: Option<String>,
+    pub off_package_quantity: Option<String>,
+    pub off_package_unit: Option<String>,
+    pub name_local_override: bool,
+    pub brand_local_override: bool,
     pub fetched_at: Option<String>,
     pub created_by_household_id: Option<Uuid>,
     pub created_at: String,
@@ -119,6 +127,12 @@ pub async fn create_manual_with_max_open_days(
         package_quantity: package_quantity.map(str::to_owned),
         package_unit: package_unit.map(str::to_owned),
         package_size_local_override: package_quantity.is_some() && package_unit.is_some(),
+        off_name: None,
+        off_brand: None,
+        off_package_quantity: None,
+        off_package_unit: None,
+        name_local_override: false,
+        brand_local_override: false,
         fetched_at: None,
         created_by_household_id: Some(household_id),
         created_at,
@@ -145,9 +159,12 @@ pub async fn upsert_from_off(
     if let Some(existing) = find_by_off_barcode(db, barcode).await? {
         sqlx::query(
             "UPDATE product \
-             SET name = ?, brand = ?, family = ?, default_unit = ?, image_url = ?, \
+             SET name = CASE WHEN name_local_override = 1 THEN name ELSE ? END, \
+                 brand = CASE WHEN brand_local_override = 1 THEN brand ELSE ? END, \
+                 family = ?, default_unit = ?, image_url = ?, \
                  package_quantity = CASE WHEN package_size_local_override = 1 THEN package_quantity ELSE ? END, \
                  package_unit = CASE WHEN package_size_local_override = 1 THEN package_unit ELSE ? END, \
+                 off_name = ?, off_brand = ?, off_package_quantity = ?, off_package_unit = ?, \
                  fetched_at = ? \
              WHERE id = ?",
         )
@@ -156,6 +173,10 @@ pub async fn upsert_from_off(
         .bind(family)
         .bind(unit)
         .bind(image_url)
+        .bind(package_quantity)
+        .bind(package_unit)
+        .bind(name)
+        .bind(brand)
         .bind(package_quantity)
         .bind(package_unit)
         .bind(&now)
@@ -170,8 +191,10 @@ pub async fn upsert_from_off(
     let id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO product \
-         (id, source, off_barcode, name, brand, default_unit, family, image_url, package_quantity, package_unit, fetched_at, created_by_household_id, created_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)",
+         (id, source, off_barcode, name, brand, default_unit, family, image_url, \
+          package_quantity, package_unit, fetched_at, created_by_household_id, created_at, \
+          off_name, off_brand, off_package_quantity, off_package_unit) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)",
     )
     .bind(id.to_string())
     .bind(SOURCE_OFF)
@@ -185,6 +208,10 @@ pub async fn upsert_from_off(
     .bind(package_unit)
     .bind(&now)
     .bind(&now)
+    .bind(name)
+    .bind(brand)
+    .bind(package_quantity)
+    .bind(package_unit)
     .execute(&db.pool)
     .await?;
 
@@ -326,6 +353,8 @@ pub struct ProductUpdate<'a> {
     pub package_quantity: Option<Option<&'a str>>,
     pub package_unit: Option<Option<&'a str>>,
     pub package_size_local_override: Option<bool>,
+    pub name_local_override: Option<bool>,
+    pub brand_local_override: Option<bool>,
 }
 
 pub async fn update(
@@ -360,10 +389,17 @@ pub async fn update(
     let package_size_local_override = upd
         .package_size_local_override
         .unwrap_or(current.package_size_local_override);
+    let name_local_override = upd
+        .name_local_override
+        .unwrap_or(current.name_local_override);
+    let brand_local_override = upd
+        .brand_local_override
+        .unwrap_or(current.brand_local_override);
 
     sqlx::query(
         "UPDATE product SET name = ?, brand = ?, family = ?, default_unit = ?, image_url = ?, max_open_days = ?, \
-                            package_quantity = ?, package_unit = ?, package_size_local_override = ? \
+                            package_quantity = ?, package_unit = ?, package_size_local_override = ?, \
+                            name_local_override = ?, brand_local_override = ? \
          WHERE id = ?",
     )
     .bind(name)
@@ -375,6 +411,8 @@ pub async fn update(
     .bind(package_quantity.as_deref())
     .bind(package_unit.as_deref())
     .bind(if package_size_local_override { 1 } else { 0 })
+    .bind(if name_local_override { 1 } else { 0 })
+    .bind(if brand_local_override { 1 } else { 0 })
     .bind(id.to_string())
     .execute(&db.pool)
     .await?;
@@ -419,6 +457,58 @@ pub async fn invalidate_barcode_cache_for(db: &Database, id: Uuid) -> Result<boo
     Ok(true)
 }
 
+pub async fn mark_off_contributed(
+    db: &Database,
+    id: Uuid,
+    name: bool,
+    brand: bool,
+    package_size: bool,
+) -> Result<ProductRow, sqlx::Error> {
+    let current = find_by_id(db, id).await?.ok_or(sqlx::Error::RowNotFound)?;
+    let off_name = if name {
+        Some(current.name.as_str())
+    } else {
+        current.off_name.as_deref()
+    };
+    let off_brand = if brand {
+        current.brand.as_deref()
+    } else {
+        current.off_brand.as_deref()
+    };
+    let off_package_quantity = if package_size {
+        current.package_quantity.as_deref()
+    } else {
+        current.off_package_quantity.as_deref()
+    };
+    let off_package_unit = if package_size {
+        current.package_unit.as_deref()
+    } else {
+        current.off_package_unit.as_deref()
+    };
+    let name_override = current.name_local_override && !name;
+    let brand_override = current.brand_local_override && !brand;
+    let package_override = current.package_size_local_override && !package_size;
+
+    sqlx::query(
+        "UPDATE product \
+         SET off_name = ?, off_brand = ?, off_package_quantity = ?, off_package_unit = ?, \
+             name_local_override = ?, brand_local_override = ?, package_size_local_override = ? \
+         WHERE id = ?",
+    )
+    .bind(off_name)
+    .bind(off_brand)
+    .bind(off_package_quantity)
+    .bind(off_package_unit)
+    .bind(if name_override { 1 } else { 0 })
+    .bind(if brand_override { 1 } else { 0 })
+    .bind(if package_override { 1 } else { 0 })
+    .bind(id.to_string())
+    .execute(&db.pool)
+    .await?;
+
+    find_by_id(db, id).await?.ok_or(sqlx::Error::RowNotFound)
+}
+
 fn row_to_product(row: sqlx::any::AnyRow) -> Result<ProductRow, sqlx::Error> {
     let id_str: String = row.try_get("id")?;
     let household_id_str: Option<String> = row.try_get("created_by_household_id")?;
@@ -434,6 +524,12 @@ fn row_to_product(row: sqlx::any::AnyRow) -> Result<ProductRow, sqlx::Error> {
         package_quantity: row.try_get("package_quantity")?,
         package_unit: row.try_get("package_unit")?,
         package_size_local_override: row.try_get::<i64, _>("package_size_local_override")? != 0,
+        off_name: row.try_get("off_name")?,
+        off_brand: row.try_get("off_brand")?,
+        off_package_quantity: row.try_get("off_package_quantity")?,
+        off_package_unit: row.try_get("off_package_unit")?,
+        name_local_override: row.try_get::<i64, _>("name_local_override")? != 0,
+        brand_local_override: row.try_get::<i64, _>("brand_local_override")? != 0,
         fetched_at: row.try_get("fetched_at")?,
         created_by_household_id: household_id_str
             .map(|s| Uuid::parse_str(&s))

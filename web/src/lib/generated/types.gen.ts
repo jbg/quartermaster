@@ -259,6 +259,26 @@ export type MemberDto = {
 
 export type MembershipRole = 'admin' | 'member';
 
+export type OffContributionFieldChange = {
+    current_value?: string | null;
+    field: string;
+    off_value?: string | null;
+};
+
+export type OffContributionPreviewResponse = {
+    changed_fields: Array<OffContributionFieldChange>;
+    credentials_configured: boolean;
+    credentials_present: boolean;
+    eligible: boolean;
+};
+
+export type OffContributionResponse = {
+    product: ProductDto;
+    status: string;
+    status_verbose: string;
+    submitted_fields: Array<string>;
+};
+
 export type OnboardingAuthMethod = 'password' | 'passkey';
 
 export type OnboardingAuthMethodAvailability = 'enabled' | 'unavailable';
@@ -278,6 +298,11 @@ export type OnboardingStatusResponse = {
     household_signup: OnboardingAvailability;
     invite_join: OnboardingAvailability;
     server_state: OnboardingServerState;
+};
+
+export type OpenFoodFactsCredentialStatusResponse = {
+    configured: boolean;
+    username?: string | null;
 };
 
 export type PrintStockLabelRequest = {
@@ -418,6 +443,11 @@ export type RestoreManyResponse = {
     restored: Array<StockBatchDto>;
 };
 
+export type SaveOpenFoodFactsCredentialsRequest = {
+    password: string;
+    username: string;
+};
+
 export type StockBatchDto = {
     created_at: string;
     depleted_at?: string | null;
@@ -545,6 +575,65 @@ export type UserDto = {
     pending_email_verification_expires_at?: string | null;
     username: string;
 };
+
+export type AccountOpenfoodfactsDeleteData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/account/openfoodfacts';
+};
+
+export type AccountOpenfoodfactsDeleteErrors = {
+    401: ApiErrorBody;
+};
+
+export type AccountOpenfoodfactsDeleteError = AccountOpenfoodfactsDeleteErrors[keyof AccountOpenfoodfactsDeleteErrors];
+
+export type AccountOpenfoodfactsDeleteResponses = {
+    204: void;
+};
+
+export type AccountOpenfoodfactsDeleteResponse = AccountOpenfoodfactsDeleteResponses[keyof AccountOpenfoodfactsDeleteResponses];
+
+export type AccountOpenfoodfactsPutData = {
+    body: SaveOpenFoodFactsCredentialsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/account/openfoodfacts';
+};
+
+export type AccountOpenfoodfactsPutErrors = {
+    400: ApiErrorBody;
+    401: ApiErrorBody;
+    503: ApiErrorBody;
+};
+
+export type AccountOpenfoodfactsPutError = AccountOpenfoodfactsPutErrors[keyof AccountOpenfoodfactsPutErrors];
+
+export type AccountOpenfoodfactsPutResponses = {
+    200: OpenFoodFactsCredentialStatusResponse;
+};
+
+export type AccountOpenfoodfactsPutResponse = AccountOpenfoodfactsPutResponses[keyof AccountOpenfoodfactsPutResponses];
+
+export type AccountOpenfoodfactsStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/account/openfoodfacts/status';
+};
+
+export type AccountOpenfoodfactsStatusErrors = {
+    401: ApiErrorBody;
+};
+
+export type AccountOpenfoodfactsStatusError = AccountOpenfoodfactsStatusErrors[keyof AccountOpenfoodfactsStatusErrors];
+
+export type AccountOpenfoodfactsStatusResponses = {
+    200: OpenFoodFactsCredentialStatusResponse;
+};
+
+export type AccountOpenfoodfactsStatusResponse = AccountOpenfoodfactsStatusResponses[keyof AccountOpenfoodfactsStatusResponses];
 
 export type AuthEmailClearData = {
     body?: never;
@@ -1287,6 +1376,54 @@ export type ProductUpdateResponses = {
 };
 
 export type ProductUpdateResponse = ProductUpdateResponses[keyof ProductUpdateResponses];
+
+export type ProductOffContributionData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/products/{id}/off-contribution';
+};
+
+export type ProductOffContributionErrors = {
+    400: ApiErrorBody;
+    401: ApiErrorBody;
+    404: ApiErrorBody;
+    409: ApiErrorBody;
+    428: ApiErrorBody;
+    502: ApiErrorBody;
+    503: ApiErrorBody;
+};
+
+export type ProductOffContributionError = ProductOffContributionErrors[keyof ProductOffContributionErrors];
+
+export type ProductOffContributionResponses = {
+    200: OffContributionResponse;
+};
+
+export type ProductOffContributionResponse = ProductOffContributionResponses[keyof ProductOffContributionResponses];
+
+export type ProductOffContributionPreviewData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/products/{id}/off-contribution-preview';
+};
+
+export type ProductOffContributionPreviewErrors = {
+    404: ApiErrorBody;
+};
+
+export type ProductOffContributionPreviewError = ProductOffContributionPreviewErrors[keyof ProductOffContributionPreviewErrors];
+
+export type ProductOffContributionPreviewResponses = {
+    200: OffContributionPreviewResponse;
+};
+
+export type ProductOffContributionPreviewResponse = ProductOffContributionPreviewResponses[keyof ProductOffContributionPreviewResponses];
 
 export type ProductRefreshData = {
     body?: never;

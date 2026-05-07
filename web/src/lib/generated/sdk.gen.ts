@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AuthEmailClearData, AuthEmailClearErrors, AuthEmailClearResponses, AuthEmailVerificationConfirmData, AuthEmailVerificationConfirmErrors, AuthEmailVerificationConfirmResponses, AuthEmailVerificationRequestData, AuthEmailVerificationRequestErrors, AuthEmailVerificationRequestResponses, AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthMeData, AuthMeErrors, AuthMeResponses, AuthRefreshData, AuthRefreshErrors, AuthRefreshResponses, AuthRegisterData, AuthRegisterErrors, AuthRegisterResponses, AuthSwitchHouseholdData, AuthSwitchHouseholdErrors, AuthSwitchHouseholdResponses, DeviceRegisterData, DeviceRegisterErrors, DeviceRegisterResponses, HealthzData, HealthzResponses, HouseholdCreateData, HouseholdCreateErrors, HouseholdCreateResponses, HouseholdCurrentGetData, HouseholdCurrentGetErrors, HouseholdCurrentGetResponses, HouseholdCurrentUpdateData, HouseholdCurrentUpdateErrors, HouseholdCurrentUpdateResponses, HouseholdInviteCreateData, HouseholdInviteCreateErrors, HouseholdInviteCreateResponses, HouseholdInvitesListData, HouseholdInvitesListResponses, HouseholdMemberRemoveData, HouseholdMemberRemoveErrors, HouseholdMemberRemoveResponses, HouseholdMembersListData, HouseholdMembersListResponses, InviteRedeemData, InviteRedeemErrors, InviteRedeemResponses, InviteRevokeData, InviteRevokeErrors, InviteRevokeResponses, LabelPrintersCreateData, LabelPrintersCreateResponses, LabelPrintersDeleteData, LabelPrintersDeleteResponses, LabelPrintersListData, LabelPrintersListResponses, LabelPrintersTestData, LabelPrintersTestResponses, LabelPrintersUpdateData, LabelPrintersUpdateResponses, LocationsCreateData, LocationsCreateResponses, LocationsDeleteData, LocationsDeleteErrors, LocationsDeleteResponses, LocationsListData, LocationsListErrors, LocationsListResponses, LocationsUpdateData, LocationsUpdateResponses, OnboardingCreateHouseholdData, OnboardingCreateHouseholdErrors, OnboardingCreateHouseholdResponses, OnboardingJoinInviteData, OnboardingJoinInviteErrors, OnboardingJoinInviteResponses, OnboardingStatusData, OnboardingStatusResponses, ProductByBarcodeData, ProductByBarcodeErrors, ProductByBarcodeResponses, ProductCreateData, ProductCreateErrors, ProductCreateResponses, ProductDeleteData, ProductDeleteErrors, ProductDeleteResponses, ProductGetData, ProductGetErrors, ProductGetResponses, ProductListData, ProductListErrors, ProductListResponses, ProductRefreshData, ProductRefreshErrors, ProductRefreshResponses, ProductRestoreData, ProductRestoreErrors, ProductRestoreResponses, ProductSearchData, ProductSearchErrors, ProductSearchResponses, ProductUpdateData, ProductUpdateErrors, ProductUpdateResponses, RemindersAckData, RemindersAckErrors, RemindersAckResponses, RemindersListData, RemindersListErrors, RemindersListResponses, RemindersOpenData, RemindersOpenErrors, RemindersOpenResponses, RemindersPresentData, RemindersPresentErrors, RemindersPresentResponses, StockConsumeAndStoreData, StockConsumeAndStoreErrors, StockConsumeAndStoreResponses, StockConsumeData, StockConsumeErrors, StockConsumeResponses, StockCreateData, StockCreateErrors, StockCreateResponses, StockDeleteData, StockDeleteErrors, StockDeleteResponses, StockGetData, StockGetErrors, StockGetResponses, StockLabelPrintData, StockLabelPrintErrors, StockLabelPrintResponses, StockListBatchEventsData, StockListBatchEventsErrors, StockListBatchEventsResponses, StockListData, StockListErrors, StockListEventsData, StockListEventsErrors, StockListEventsResponses, StockListResponses, StockRestoreData, StockRestoreErrors, StockRestoreManyData, StockRestoreManyErrors, StockRestoreManyResponses, StockRestoreResponses, StockUpdateData, StockUpdateErrors, StockUpdateResponses, UnitsListData, UnitsListResponses } from './types.gen';
+import type { AccountOpenfoodfactsDeleteData, AccountOpenfoodfactsDeleteErrors, AccountOpenfoodfactsDeleteResponses, AccountOpenfoodfactsPutData, AccountOpenfoodfactsPutErrors, AccountOpenfoodfactsPutResponses, AccountOpenfoodfactsStatusData, AccountOpenfoodfactsStatusErrors, AccountOpenfoodfactsStatusResponses, AuthEmailClearData, AuthEmailClearErrors, AuthEmailClearResponses, AuthEmailVerificationConfirmData, AuthEmailVerificationConfirmErrors, AuthEmailVerificationConfirmResponses, AuthEmailVerificationRequestData, AuthEmailVerificationRequestErrors, AuthEmailVerificationRequestResponses, AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthMeData, AuthMeErrors, AuthMeResponses, AuthRefreshData, AuthRefreshErrors, AuthRefreshResponses, AuthRegisterData, AuthRegisterErrors, AuthRegisterResponses, AuthSwitchHouseholdData, AuthSwitchHouseholdErrors, AuthSwitchHouseholdResponses, DeviceRegisterData, DeviceRegisterErrors, DeviceRegisterResponses, HealthzData, HealthzResponses, HouseholdCreateData, HouseholdCreateErrors, HouseholdCreateResponses, HouseholdCurrentGetData, HouseholdCurrentGetErrors, HouseholdCurrentGetResponses, HouseholdCurrentUpdateData, HouseholdCurrentUpdateErrors, HouseholdCurrentUpdateResponses, HouseholdInviteCreateData, HouseholdInviteCreateErrors, HouseholdInviteCreateResponses, HouseholdInvitesListData, HouseholdInvitesListResponses, HouseholdMemberRemoveData, HouseholdMemberRemoveErrors, HouseholdMemberRemoveResponses, HouseholdMembersListData, HouseholdMembersListResponses, InviteRedeemData, InviteRedeemErrors, InviteRedeemResponses, InviteRevokeData, InviteRevokeErrors, InviteRevokeResponses, LabelPrintersCreateData, LabelPrintersCreateResponses, LabelPrintersDeleteData, LabelPrintersDeleteResponses, LabelPrintersListData, LabelPrintersListResponses, LabelPrintersTestData, LabelPrintersTestResponses, LabelPrintersUpdateData, LabelPrintersUpdateResponses, LocationsCreateData, LocationsCreateResponses, LocationsDeleteData, LocationsDeleteErrors, LocationsDeleteResponses, LocationsListData, LocationsListErrors, LocationsListResponses, LocationsUpdateData, LocationsUpdateResponses, OnboardingCreateHouseholdData, OnboardingCreateHouseholdErrors, OnboardingCreateHouseholdResponses, OnboardingJoinInviteData, OnboardingJoinInviteErrors, OnboardingJoinInviteResponses, OnboardingStatusData, OnboardingStatusResponses, ProductByBarcodeData, ProductByBarcodeErrors, ProductByBarcodeResponses, ProductCreateData, ProductCreateErrors, ProductCreateResponses, ProductDeleteData, ProductDeleteErrors, ProductDeleteResponses, ProductGetData, ProductGetErrors, ProductGetResponses, ProductListData, ProductListErrors, ProductListResponses, ProductOffContributionData, ProductOffContributionErrors, ProductOffContributionPreviewData, ProductOffContributionPreviewErrors, ProductOffContributionPreviewResponses, ProductOffContributionResponses, ProductRefreshData, ProductRefreshErrors, ProductRefreshResponses, ProductRestoreData, ProductRestoreErrors, ProductRestoreResponses, ProductSearchData, ProductSearchErrors, ProductSearchResponses, ProductUpdateData, ProductUpdateErrors, ProductUpdateResponses, RemindersAckData, RemindersAckErrors, RemindersAckResponses, RemindersListData, RemindersListErrors, RemindersListResponses, RemindersOpenData, RemindersOpenErrors, RemindersOpenResponses, RemindersPresentData, RemindersPresentErrors, RemindersPresentResponses, StockConsumeAndStoreData, StockConsumeAndStoreErrors, StockConsumeAndStoreResponses, StockConsumeData, StockConsumeErrors, StockConsumeResponses, StockCreateData, StockCreateErrors, StockCreateResponses, StockDeleteData, StockDeleteErrors, StockDeleteResponses, StockGetData, StockGetErrors, StockGetResponses, StockLabelPrintData, StockLabelPrintErrors, StockLabelPrintResponses, StockListBatchEventsData, StockListBatchEventsErrors, StockListBatchEventsResponses, StockListData, StockListErrors, StockListEventsData, StockListEventsErrors, StockListEventsResponses, StockListResponses, StockRestoreData, StockRestoreErrors, StockRestoreManyData, StockRestoreManyErrors, StockRestoreManyResponses, StockRestoreResponses, StockUpdateData, StockUpdateErrors, StockUpdateResponses, UnitsListData, UnitsListResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -17,6 +17,28 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
      */
     meta?: Record<string, unknown>;
 };
+
+export const accountOpenfoodfactsDelete = <ThrowOnError extends boolean = false>(options?: Options<AccountOpenfoodfactsDeleteData, ThrowOnError>) => (options?.client ?? client).delete<AccountOpenfoodfactsDeleteResponses, AccountOpenfoodfactsDeleteErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/account/openfoodfacts',
+    ...options
+});
+
+export const accountOpenfoodfactsPut = <ThrowOnError extends boolean = false>(options: Options<AccountOpenfoodfactsPutData, ThrowOnError>) => (options.client ?? client).put<AccountOpenfoodfactsPutResponses, AccountOpenfoodfactsPutErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/account/openfoodfacts',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const accountOpenfoodfactsStatus = <ThrowOnError extends boolean = false>(options?: Options<AccountOpenfoodfactsStatusData, ThrowOnError>) => (options?.client ?? client).get<AccountOpenfoodfactsStatusResponses, AccountOpenfoodfactsStatusErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/account/openfoodfacts/status',
+    ...options
+});
 
 export const authEmailClear = <ThrowOnError extends boolean = false>(options?: Options<AuthEmailClearData, ThrowOnError>) => (options?.client ?? client).delete<AuthEmailClearResponses, AuthEmailClearErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -313,6 +335,18 @@ export const productUpdate = <ThrowOnError extends boolean = false>(options: Opt
         'Content-Type': 'application/json',
         ...options.headers
     }
+});
+
+export const productOffContribution = <ThrowOnError extends boolean = false>(options: Options<ProductOffContributionData, ThrowOnError>) => (options.client ?? client).post<ProductOffContributionResponses, ProductOffContributionErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/products/{id}/off-contribution',
+    ...options
+});
+
+export const productOffContributionPreview = <ThrowOnError extends boolean = false>(options: Options<ProductOffContributionPreviewData, ThrowOnError>) => (options.client ?? client).get<ProductOffContributionPreviewResponses, ProductOffContributionPreviewErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/products/{id}/off-contribution-preview',
+    ...options
 });
 
 export const productRefresh = <ThrowOnError extends boolean = false>(options: Options<ProductRefreshData, ThrowOnError>) => (options.client ?? client).post<ProductRefreshResponses, ProductRefreshErrors, ThrowOnError>({

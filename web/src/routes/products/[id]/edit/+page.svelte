@@ -175,10 +175,10 @@
       <p class="muted">{error}</p>
       <a class="primary-action" href={productsHref}>Back to products</a>
     </section>
-  {:else if product && form && (!isManualProduct(product) || isDeletedProduct(product))}
+  {:else if product && form && isDeletedProduct(product)}
     <section class="panel empty-state">
       <h2>Product is read-only</h2>
-      <p class="muted">Only active manual products can be edited.</p>
+      <p class="muted">Deleted products must be restored before they can be edited.</p>
       <a class="primary-action" href={productHref}>Back to product</a>
     </section>
   {:else if product && form}
@@ -198,39 +198,53 @@
           Brand
           <input bind:value={form.brand} data-testid="product-brand-input" />
         </label>
+        {#if isManualProduct(product)}
+          <label>
+            Product family
+            <select
+              value={form.family}
+              data-testid="product-family-select"
+              onchange={(event) => updateFamily(event.currentTarget.value)}
+            >
+              <option value="mass">Mass</option>
+              <option value="volume">Volume</option>
+              <option value="count">Count</option>
+            </select>
+          </label>
+          <label>
+            Preferred unit
+            <select bind:value={form.preferredUnit} data-testid="product-unit-select">
+              {#each unitChoices as unit}
+                <option value={unit}>{unit}</option>
+              {/each}
+            </select>
+          </label>
+          <label>
+            Image URL
+            <input bind:value={form.imageUrl} data-testid="product-image-url-input" />
+          </label>
+          <label>
+            Maximum open days
+            <input
+              bind:value={form.maxOpenDays}
+              data-testid="product-max-open-days-input"
+              inputmode="numeric"
+              min="1"
+              type="number"
+            />
+          </label>
+        {/if}
         <label>
-          Product family
-          <select
-            value={form.family}
-            data-testid="product-family-select"
-            onchange={(event) => updateFamily(event.currentTarget.value)}
-          >
-            <option value="mass">Mass</option>
-            <option value="volume">Volume</option>
-            <option value="count">Count</option>
-          </select>
+          Package quantity
+          <input bind:value={form.packageQuantity} data-testid="product-package-quantity-input" />
         </label>
         <label>
-          Preferred unit
-          <select bind:value={form.preferredUnit} data-testid="product-unit-select">
+          Package unit
+          <select bind:value={form.packageUnit} data-testid="product-package-unit-select">
             {#each unitChoices as unit}
               <option value={unit}>{unit}</option>
             {/each}
           </select>
-        </label>
-        <label>
-          Image URL
-          <input bind:value={form.imageUrl} data-testid="product-image-url-input" />
-        </label>
-        <label>
-          Maximum open days
-          <input
-            bind:value={form.maxOpenDays}
-            data-testid="product-max-open-days-input"
-            inputmode="numeric"
-            min="1"
-            type="number"
-          />
         </label>
         {#if error}
           <p class="error-text">{error}</p>

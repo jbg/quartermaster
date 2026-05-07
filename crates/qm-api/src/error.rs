@@ -39,6 +39,18 @@ pub enum ApiError {
     #[error("this action is only available on OpenFoodFacts-sourced products")]
     ManualProductNotRefreshable,
 
+    #[error("OpenFoodFacts credential storage is not configured on this server")]
+    OffCredentialsNotConfigured,
+
+    #[error("OpenFoodFacts credentials are required before contributing")]
+    OffCredentialsMissing,
+
+    #[error("there are no local OpenFoodFacts corrections to contribute")]
+    OffContributionNoChanges,
+
+    #[error("OpenFoodFacts rejected the saved credentials")]
+    OffAuthenticationFailed,
+
     #[error("this batch can't be restored — only discarded batches can be undone")]
     BatchNotRestorable { unrestorable_ids: Vec<uuid::Uuid> },
 
@@ -117,6 +129,19 @@ impl IntoResponse for ApiError {
             ApiError::OffProductReadOnly => (StatusCode::FORBIDDEN, "off_product_read_only"),
             ApiError::ManualProductNotRefreshable => {
                 (StatusCode::BAD_REQUEST, "manual_product_not_refreshable")
+            }
+            ApiError::OffCredentialsNotConfigured => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "off_credentials_not_configured",
+            ),
+            ApiError::OffCredentialsMissing => {
+                (StatusCode::PRECONDITION_REQUIRED, "off_credentials_missing")
+            }
+            ApiError::OffContributionNoChanges => {
+                (StatusCode::CONFLICT, "off_contribution_no_changes")
+            }
+            ApiError::OffAuthenticationFailed => {
+                (StatusCode::UNAUTHORIZED, "off_authentication_failed")
             }
             ApiError::BatchNotRestorable { .. } => (StatusCode::CONFLICT, "batch_not_restorable"),
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),

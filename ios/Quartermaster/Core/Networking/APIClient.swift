@@ -454,6 +454,69 @@ actor APIClient: AppStateAPI {
     }
   }
 
+  func openFoodFactsCredentialStatus() async throws -> OpenFoodFactsCredentialStatusResponse {
+    let response = try await client.accountOpenfoodfactsStatus(.init())
+    switch response {
+    case .ok(let ok): return try ok.body.json
+    case .unauthorized(let err): throw APIError.server(status: 401, body: try? err.body.json)
+    case .undocumented(let statusCode, _):
+      throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
+  func saveOpenFoodFactsCredentials(username: String, password: String) async throws
+    -> OpenFoodFactsCredentialStatusResponse
+  {
+    let body = Operations.AccountOpenfoodfactsPut.Input.Body.json(
+      .init(password: password, username: username))
+    let response = try await client.accountOpenfoodfactsPut(.init(body: body))
+    switch response {
+    case .ok(let ok): return try ok.body.json
+    case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+    case .unauthorized(let err): throw APIError.server(status: 401, body: try? err.body.json)
+    case .serviceUnavailable(let err): throw APIError.server(status: 503, body: try? err.body.json)
+    case .undocumented(let statusCode, _):
+      throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
+  func deleteOpenFoodFactsCredentials() async throws {
+    let response = try await client.accountOpenfoodfactsDelete(.init())
+    switch response {
+    case .noContent: return
+    case .unauthorized(let err): throw APIError.server(status: 401, body: try? err.body.json)
+    case .undocumented(let statusCode, _):
+      throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
+  func offContributionPreview(productID: String) async throws -> OffContributionPreviewResponse {
+    let response = try await client.productOffContributionPreview(.init(path: .init(id: productID)))
+    switch response {
+    case .ok(let ok): return try ok.body.json
+    case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+    case .undocumented(let statusCode, _):
+      throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
+  func contributeProductToOFF(id: String) async throws -> OffContributionResponse {
+    let response = try await client.productOffContribution(.init(path: .init(id: id)))
+    switch response {
+    case .ok(let ok): return try ok.body.json
+    case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+    case .unauthorized(let err): throw APIError.server(status: 401, body: try? err.body.json)
+    case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+    case .conflict(let err): throw APIError.server(status: 409, body: try? err.body.json)
+    case .preconditionRequired(let err):
+      throw APIError.server(status: 428, body: try? err.body.json)
+    case .badGateway(let err): throw APIError.server(status: 502, body: try? err.body.json)
+    case .serviceUnavailable(let err): throw APIError.server(status: 503, body: try? err.body.json)
+    case .undocumented(let statusCode, _):
+      throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
   func restoreProduct(id: String) async throws -> Product {
     let response = try await client.productRestore(.init(path: .init(id: id)))
     switch response {

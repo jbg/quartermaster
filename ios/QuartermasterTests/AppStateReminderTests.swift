@@ -725,6 +725,23 @@ private actor FakeAPI: AppStateAPI {
   func deleteProduct(id: String) async throws {}
   func refreshProduct(id: String) async throws -> Product { fatalError("unused") }
   func restoreProduct(id: String) async throws -> Product { fatalError("unused") }
+  func openFoodFactsCredentialStatus() async throws -> OpenFoodFactsCredentialStatusResponse {
+    .init(configured: false, username: nil)
+  }
+  func saveOpenFoodFactsCredentials(username: String, password: String) async throws
+    -> OpenFoodFactsCredentialStatusResponse
+  { .init(configured: true, username: username) }
+  func deleteOpenFoodFactsCredentials() async throws {}
+  func offContributionPreview(productID: String) async throws -> OffContributionPreviewResponse {
+    .init(
+      changedFields: [],
+      credentialsConfigured: false,
+      credentialsPresent: false,
+      eligible: false)
+  }
+  func contributeProductToOFF(id: String) async throws -> OffContributionResponse {
+    fatalError("unused")
+  }
   func listStock(
     locationID: String?, productID: String?, expiringBefore: String?, includeDepleted: Bool
   ) async throws -> [StockBatch] { [] }

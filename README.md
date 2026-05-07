@@ -110,6 +110,8 @@ Barcode lookup tuning:
 | Variable                                   | Default                                          | Meaning                                               |
 | ------------------------------------------ | ------------------------------------------------ | ----------------------------------------------------- |
 | `QM_OFF_API_BASE_URL`                      | `https://world.openfoodfacts.org/api/v2/product` | Barcode product API base URL                          |
+| `QM_OFF_WRITE_URL`                         | `https://world.openfoodfacts.org/cgi/product_jqm2.pl` | OpenFoodFacts product contribution endpoint       |
+| `QM_OFF_CREDENTIAL_ENCRYPTION_KEY`         | unset                                           | Secret used to encrypt per-user OFF credentials       |
 | `QM_OFF_POSITIVE_TTL_DAYS`                 | `30`                                             | Freshness window for successful barcode cache entries |
 | `QM_OFF_NEGATIVE_TTL_DAYS`                 | `7`                                              | Freshness window for barcode miss cache entries       |
 | `QM_OFF_TIMEOUT_SECONDS`                   | `5`                                              | Timeout for one barcode lookup request                |

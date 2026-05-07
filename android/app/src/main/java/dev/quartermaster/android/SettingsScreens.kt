@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.quartermaster.android.generated.models.LocationDto
 import kotlinx.coroutines.launch
@@ -42,8 +43,13 @@ internal fun SettingsScreen(
     var redeemInviteCode by remember { mutableStateOf(appState.pendingInviteContext?.inviteCode.orEmpty()) }
     var recoveryEmail by remember { mutableStateOf(appState.meOrNull?.user?.pendingEmail ?: appState.meOrNull?.user?.email.orEmpty()) }
     var recoveryCode by remember { mutableStateOf("") }
+    var offUsername by remember { mutableStateOf("") }
+    var offPassword by remember { mutableStateOf("") }
 
     LaunchedEffect(appState.currentHouseholdId) { appState.loadSettings() }
+    LaunchedEffect(appState.offCredentialStatus?.username) {
+        offUsername = appState.offCredentialStatus?.username.orEmpty()
+    }
     LaunchedEffect(appState.pendingInviteContext) {
         if (!appState.pendingInviteContext?.inviteCode.isNullOrBlank()) {
             redeemInviteCode = appState.pendingInviteContext?.inviteCode.orEmpty()
@@ -100,6 +106,58 @@ internal fun SettingsScreen(
                     MetadataRow("Household", appState.meOrNull?.currentHousehold?.name ?: "None")
                     MetadataRow("Timezone", appState.meOrNull?.currentHousehold?.timezone ?: "UTC")
                     MetadataRow("Server", appState.serverUrl)
+                }
+            }
+        }
+        item {
+            SectionHeader(
+                title = "OpenFoodFacts",
+                body = "Save the account used when contributing product corrections.",
+            )
+        }
+        item {
+            Card {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    appState.offCredentialStatus?.username?.let { MetadataRow("Saved account", it) }
+                    OutlinedTextField(
+                        value = offUsername,
+                        onValueChange = { offUsername = it },
+                        label = { Text("Username") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = offPassword,
+                        onValueChange = { offPassword = it },
+                        label = { Text("Password") },
+                        modifier = Modifier.fillMaxWidth(),
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    appState.saveOpenFoodFactsCredentials(offUsername.trim(), offPassword)
+                                    offPassword = ""
+                                }
+                            },
+                            enabled = appState.settingsLoadState != LoadState.Loading && offUsername.isNotBlank() && offPassword.isNotBlank(),
+                        ) {
+                            Text(if (appState.settingsLoadState == LoadState.Loading) "Saving..." else "Save")
+                        }
+                        if (appState.offCredentialStatus?.configured == true) {
+                            TextButton(
+                                onClick = { scope.launch { appState.deleteOpenFoodFactsCredentials() } },
+                                enabled = appState.settingsLoadState != LoadState.Loading,
+                            ) {
+                                Text("Remove")
+                            }
+                        }
+                    }
                 }
             }
         }
