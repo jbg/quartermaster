@@ -1,14 +1,20 @@
 use std::str::FromStr;
 
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
+};
 use axum::{
     extract::State,
     http::{header, HeaderMap, HeaderValue, StatusCode},
     middleware,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Json, Router,
 };
+use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use utoipa::{
     openapi::{
         schema::{AllOfBuilder, ArrayBuilder, ObjectBuilder, Schema, SchemaType, Type},
@@ -17,6 +23,8 @@ use utoipa::{
     PartialSchema, ToSchema,
 };
 use uuid::Uuid;
+
+use argon2::password_hash::rand_core::{OsRng as ArgonOsRng, RngCore};
 
 use crate::{
     auth::{self, CurrentUser},
@@ -57,6 +65,14 @@ pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
         )
         .route("/auth/email", delete(clear_recovery_email))
         .route("/auth/me", get(me))
+        .route(
+            "/account/openfoodfacts",
+            put(put_openfoodfacts_credentials).delete(delete_openfoodfacts_credentials),
+        )
+        .route(
+            "/account/openfoodfacts/status",
+            get(get_openfoodfacts_status),
+        )
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -182,6 +198,24 @@ pub struct ConfirmEmailVerificationRequest {
     pub code: String,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+pub struct OpenFoodFactsCredentialStatusResponse {
+    pub configured: bool,
+    pub username: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SaveOpenFoodFactsCredentialsRequest {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct OpenFoodFactsPlainCredentials {
+    pub username: String,
+    pub password: String,
+}
+
 #[utoipa::path(
     post,
     path = "/auth/register",
@@ -273,6 +307,87 @@ pub async fn register(
     .await?;
     let headers = session_cookie_headers(&state, &pair);
     Ok((StatusCode::CREATED, headers, Json(pair)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/account/openfoodfacts/status",
+    operation_id = "account_openfoodfacts_status",
+    tag = "accounts",
+    responses(
+        (status = 200, body = OpenFoodFactsCredentialStatusResponse),
+        (status = 401, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_openfoodfacts_status(
+    State(state): State<AppState>,
+    current: CurrentUser,
+) -> ApiResult<Json<OpenFoodFactsCredentialStatusResponse>> {
+    let row = qm_db::off_credentials::get(&state.db, current.user_id).await?;
+    Ok(Json(OpenFoodFactsCredentialStatusResponse {
+        configured: row.is_some(),
+        username: row.map(|row| row.off_username),
+    }))
+}
+
+#[utoipa::path(
+    put,
+    path = "/account/openfoodfacts",
+    operation_id = "account_openfoodfacts_put",
+    tag = "accounts",
+    request_body = SaveOpenFoodFactsCredentialsRequest,
+    responses(
+        (status = 200, body = OpenFoodFactsCredentialStatusResponse),
+        (status = 400, body = crate::error::ApiErrorBody),
+        (status = 401, body = crate::error::ApiErrorBody),
+        (status = 503, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn put_openfoodfacts_credentials(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Json(req): Json<SaveOpenFoodFactsCredentialsRequest>,
+) -> ApiResult<Json<OpenFoodFactsCredentialStatusResponse>> {
+    let username = req.username.trim();
+    if username.is_empty() || username.len() > 128 {
+        return Err(ApiError::BadRequest(
+            "OpenFoodFacts username must be 1..=128 chars".into(),
+        ));
+    }
+    if req.password.is_empty() {
+        return Err(ApiError::BadRequest(
+            "OpenFoodFacts password must not be empty".into(),
+        ));
+    }
+    let encrypted_password = encrypt_off_password(&state, current.user_id, &req.password)?;
+    let row =
+        qm_db::off_credentials::upsert(&state.db, current.user_id, username, &encrypted_password)
+            .await?;
+    Ok(Json(OpenFoodFactsCredentialStatusResponse {
+        configured: true,
+        username: Some(row.off_username),
+    }))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/account/openfoodfacts",
+    operation_id = "account_openfoodfacts_delete",
+    tag = "accounts",
+    responses(
+        (status = 204),
+        (status = 401, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn delete_openfoodfacts_credentials(
+    State(state): State<AppState>,
+    current: CurrentUser,
+) -> ApiResult<StatusCode> {
+    qm_db::off_credentials::delete(&state.db, current.user_id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[utoipa::path(
@@ -801,4 +916,77 @@ pub(crate) async fn build_me_response(
         households,
         public_base_url: state.config.public_base_url.clone(),
     })
+}
+
+pub(crate) async fn load_openfoodfacts_credentials(
+    state: &AppState,
+    user_id: Uuid,
+) -> ApiResult<OpenFoodFactsPlainCredentials> {
+    let row = qm_db::off_credentials::get(&state.db, user_id)
+        .await?
+        .ok_or(ApiError::OffCredentialsMissing)?;
+    let password = decrypt_off_password(state, user_id, &row.encrypted_password)?;
+    Ok(OpenFoodFactsPlainCredentials {
+        username: row.off_username,
+        password,
+    })
+}
+
+fn encryption_key(state: &AppState) -> ApiResult<[u8; 32]> {
+    let secret = state
+        .config
+        .off_credential_encryption_key
+        .as_deref()
+        .ok_or(ApiError::OffCredentialsNotConfigured)?;
+    let digest = Sha256::digest(secret.as_bytes());
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&digest);
+    Ok(key)
+}
+
+fn encrypt_off_password(state: &AppState, user_id: Uuid, password: &str) -> ApiResult<String> {
+    let key = encryption_key(state)?;
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|err| ApiError::Internal(anyhow::anyhow!("OFF cipher init: {err}")))?;
+    let mut nonce_bytes = [0u8; 12];
+    ArgonOsRng.fill_bytes(&mut nonce_bytes);
+    let ciphertext = cipher
+        .encrypt(
+            Nonce::from_slice(&nonce_bytes),
+            aes_gcm::aead::Payload {
+                msg: password.as_bytes(),
+                aad: user_id.as_bytes(),
+            },
+        )
+        .map_err(|err| ApiError::Internal(anyhow::anyhow!("OFF credential encrypt: {err}")))?;
+    let mut payload = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
+    payload.extend_from_slice(&nonce_bytes);
+    payload.extend_from_slice(&ciphertext);
+    Ok(STANDARD_NO_PAD.encode(payload))
+}
+
+fn decrypt_off_password(state: &AppState, user_id: Uuid, encrypted: &str) -> ApiResult<String> {
+    let key = encryption_key(state)?;
+    let payload = STANDARD_NO_PAD
+        .decode(encrypted)
+        .map_err(|err| ApiError::Internal(anyhow::anyhow!("OFF credential decode: {err}")))?;
+    if payload.len() <= 12 {
+        return Err(ApiError::Internal(anyhow::anyhow!(
+            "OFF credential payload is too short"
+        )));
+    }
+    let (nonce, ciphertext) = payload.split_at(12);
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|err| ApiError::Internal(anyhow::anyhow!("OFF cipher init: {err}")))?;
+    let plaintext = cipher
+        .decrypt(
+            Nonce::from_slice(nonce),
+            aes_gcm::aead::Payload {
+                msg: ciphertext,
+                aad: user_id.as_bytes(),
+            },
+        )
+        .map_err(|err| ApiError::Internal(anyhow::anyhow!("OFF credential decrypt: {err}")))?;
+    String::from_utf8(plaintext)
+        .map_err(|err| ApiError::Internal(anyhow::anyhow!("OFF credential utf8: {err}")))
 }

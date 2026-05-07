@@ -116,6 +116,23 @@ import UIKit
     func deleteProduct(id: String) async throws {}
     func refreshProduct(id: String) async throws -> Product { throw APIError.unknown }
     func restoreProduct(id: String) async throws -> Product { throw APIError.unknown }
+    func openFoodFactsCredentialStatus() async throws -> OpenFoodFactsCredentialStatusResponse {
+      .init(configured: false, username: nil)
+    }
+    func saveOpenFoodFactsCredentials(username: String, password: String) async throws
+      -> OpenFoodFactsCredentialStatusResponse
+    { .init(configured: true, username: username) }
+    func deleteOpenFoodFactsCredentials() async throws {}
+    func offContributionPreview(productID: String) async throws -> OffContributionPreviewResponse {
+      .init(
+        changedFields: [],
+        credentialsConfigured: false,
+        credentialsPresent: false,
+        eligible: false)
+    }
+    func contributeProductToOFF(id: String) async throws -> OffContributionResponse {
+      throw APIError.unknown
+    }
 
     func listStock(
       locationID requestedLocationID: String?,

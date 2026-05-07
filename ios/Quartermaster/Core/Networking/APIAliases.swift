@@ -130,6 +130,12 @@ typealias JsonPatchOperation = Components.Schemas.JsonPatchOperation
 typealias UpdateProductRequest = [JsonPatchOperation]
 typealias ProductSearchResponse = Components.Schemas.ProductSearchResponse
 typealias BarcodeLookupResponse = Components.Schemas.BarcodeLookupResponse
+typealias OpenFoodFactsCredentialStatusResponse = Components.Schemas
+  .OpenFoodFactsCredentialStatusResponse
+typealias SaveOpenFoodFactsCredentialsRequest =
+  Components.Schemas.SaveOpenFoodFactsCredentialsRequest
+typealias OffContributionPreviewResponse = Components.Schemas.OffContributionPreviewResponse
+typealias OffContributionResponse = Components.Schemas.OffContributionResponse
 
 func jsonPatchReplace(_ path: String, _ value: String) -> JsonPatchOperation {
   .init(op: "replace", path: path, value: OpenAPIValueContainer(stringLiteral: value))

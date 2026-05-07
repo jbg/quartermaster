@@ -52,6 +52,12 @@ protocol AppStateAPI: Actor {
   func deleteProduct(id: String) async throws
   func refreshProduct(id: String) async throws -> Product
   func restoreProduct(id: String) async throws -> Product
+  func openFoodFactsCredentialStatus() async throws -> OpenFoodFactsCredentialStatusResponse
+  func saveOpenFoodFactsCredentials(username: String, password: String) async throws
+    -> OpenFoodFactsCredentialStatusResponse
+  func deleteOpenFoodFactsCredentials() async throws
+  func offContributionPreview(productID: String) async throws -> OffContributionPreviewResponse
+  func contributeProductToOFF(id: String) async throws -> OffContributionResponse
   func listStock(
     locationID: String?, productID: String?, expiringBefore: String?, includeDepleted: Bool
   ) async throws -> [StockBatch]

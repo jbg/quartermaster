@@ -1,4 +1,7 @@
 import {
+  accountOpenfoodfactsDelete,
+  accountOpenfoodfactsPut,
+  accountOpenfoodfactsStatus,
   authLogin,
   authLogout,
   authMe,
@@ -24,6 +27,8 @@ import {
   productDelete,
   productGet,
   productList,
+  productOffContribution,
+  productOffContributionPreview,
   productRefresh,
   productRestore,
   productUpdate,
@@ -147,6 +152,21 @@ export function generatedTransport(): SessionTransport {
     },
     productRefresh(id) {
       return productRefresh({ path: { id } });
+    },
+    productOffContributionPreview(id) {
+      return productOffContributionPreview({ path: { id } });
+    },
+    productOffContribution(id) {
+      return productOffContribution({ path: { id } });
+    },
+    accountOpenfoodfactsStatus() {
+      return accountOpenfoodfactsStatus();
+    },
+    accountOpenfoodfactsPut(body) {
+      return accountOpenfoodfactsPut({ body });
+    },
+    accountOpenfoodfactsDelete() {
+      return accountOpenfoodfactsDelete();
     },
     stockList(query) {
       return stockList({ query });

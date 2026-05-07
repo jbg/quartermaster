@@ -25,7 +25,8 @@
     type LabelPrinter,
     type LabelPrinterMedia,
     type Location,
-    type MeResponse
+    type MeResponse,
+    type OpenFoodFactsCredentialStatusResponse
   } from '$lib/session-core';
 
   let session: QuartermasterSession | null = $state(null);
@@ -39,6 +40,11 @@
   let formError = $state<string | null>(null);
   let printerError = $state<string | null>(null);
   let printerMessage = $state<string | null>(null);
+  let offCredentialStatus = $state<OpenFoodFactsCredentialStatusResponse | null>(null);
+  let offUsername = $state('');
+  let offPassword = $state('');
+  let offMessage = $state<string | null>(null);
+  let offError = $state<string | null>(null);
   let deleteError = $state<string | null>(null);
   let editingLocation = $state<Location | null>(null);
   let editingPrinter = $state<LabelPrinter | null>(null);
@@ -110,10 +116,11 @@
     try {
       me = await session.me();
       if (currentHousehold(me)) {
-        await Promise.all([refreshLocations(), refreshPrinters()]);
+        await Promise.all([refreshLocations(), refreshPrinters(), refreshOffCredentialStatus()]);
       } else {
         locations = [];
         printers = [];
+        offCredentialStatus = null;
       }
     } catch {
       me = null;
@@ -151,6 +158,59 @@
     }
     const response = await session.labelPrintersList();
     printers = response.items ?? [];
+  }
+
+  async function refreshOffCredentialStatus() {
+    if (!session) {
+      return;
+    }
+    offCredentialStatus = await session.openFoodFactsCredentialStatus();
+    offUsername = offCredentialStatus.username ?? '';
+    offPassword = '';
+  }
+
+  async function saveOffCredentials() {
+    if (!session) {
+      return;
+    }
+    actionBusy = 'off';
+    offError = null;
+    offMessage = null;
+    try {
+      offCredentialStatus = await session.saveOpenFoodFactsCredentials({
+        username: offUsername,
+        password: offPassword
+      });
+      offUsername = offCredentialStatus.username ?? '';
+      offPassword = '';
+      offMessage = 'OpenFoodFacts credentials saved.';
+    } catch (err) {
+      offError =
+        err instanceof Error ? err.message : 'OpenFoodFacts credentials could not be saved.';
+    } finally {
+      actionBusy = null;
+    }
+  }
+
+  async function deleteOffCredentials() {
+    if (!session) {
+      return;
+    }
+    actionBusy = 'off';
+    offError = null;
+    offMessage = null;
+    try {
+      await session.deleteOpenFoodFactsCredentials();
+      offCredentialStatus = { configured: false, username: null };
+      offUsername = '';
+      offPassword = '';
+      offMessage = 'OpenFoodFacts credentials removed.';
+    } catch (err) {
+      offError =
+        err instanceof Error ? err.message : 'OpenFoodFacts credentials could not be removed.';
+    } finally {
+      actionBusy = null;
+    }
   }
 
   function startCreate() {
@@ -657,6 +717,51 @@
             </div>
           </div>
         </section>
+
+        <form
+          class="location-form"
+          onsubmit={(event) => {
+            event.preventDefault();
+            void saveOffCredentials();
+          }}
+        >
+          <div class="section-heading compact">
+            <div>
+              <p class="eyebrow">OpenFoodFacts</p>
+              <h2>Contribution account</h2>
+            </div>
+          </div>
+          <label>
+            Username
+            <input bind:value={offUsername} autocomplete="username" />
+          </label>
+          <label>
+            Password
+            <input bind:value={offPassword} autocomplete="current-password" type="password" />
+          </label>
+          {#if offCredentialStatus?.configured}
+            <p class="muted">Saved for {offCredentialStatus.username}.</p>
+          {/if}
+          {#if offMessage}
+            <p class="muted">{offMessage}</p>
+          {/if}
+          {#if offError}
+            <p class="error-text">{offError}</p>
+          {/if}
+          <div class="row-actions">
+            <button class="primary-action" type="submit" disabled={actionBusy !== null}>
+              {actionBusy === 'off' ? 'Saving...' : 'Save credentials'}
+            </button>
+            {#if offCredentialStatus?.configured}
+              <button
+                class="ghost-button danger"
+                type="button"
+                disabled={actionBusy !== null}
+                onclick={deleteOffCredentials}>Remove</button
+              >
+            {/if}
+          </div>
+        </form>
 
         <form
           class="location-form"

@@ -20,7 +20,10 @@ import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.LoginRequest
 import dev.quartermaster.android.generated.models.MeResponse
 import dev.quartermaster.android.generated.models.MemberDto
+import dev.quartermaster.android.generated.models.OffContributionPreviewResponse
+import dev.quartermaster.android.generated.models.OffContributionResponse
 import dev.quartermaster.android.generated.models.OnboardingStatusResponse
+import dev.quartermaster.android.generated.models.OpenFoodFactsCredentialStatusResponse
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.ProductSearchResponse
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
@@ -32,6 +35,7 @@ import dev.quartermaster.android.generated.models.ReminderDto
 import dev.quartermaster.android.generated.models.ReminderListResponse
 import dev.quartermaster.android.generated.models.RequestEmailVerificationRequest
 import dev.quartermaster.android.generated.models.RequestEmailVerificationResponse
+import dev.quartermaster.android.generated.models.SaveOpenFoodFactsCredentialsRequest
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventListResponse
@@ -367,6 +371,33 @@ class QuartermasterApi(
         method = "POST",
         path = "/products/${id.urlEncode()}/refresh",
     )
+
+    suspend fun offContributionPreview(id: String): OffContributionPreviewResponse = authedJson(
+        method = "GET",
+        path = "/products/${id.urlEncode()}/off-contribution-preview",
+    )
+
+    suspend fun contributeProductToOff(id: String): OffContributionResponse = authedJson(
+        method = "POST",
+        path = "/products/${id.urlEncode()}/off-contribution",
+    )
+
+    suspend fun openFoodFactsCredentialStatus(): OpenFoodFactsCredentialStatusResponse = authedJson(
+        method = "GET",
+        path = "/account/openfoodfacts/status",
+    )
+
+    suspend fun saveOpenFoodFactsCredentials(
+        request: SaveOpenFoodFactsCredentialsRequest,
+    ): OpenFoodFactsCredentialStatusResponse = authedJson(
+        method = "PUT",
+        path = "/account/openfoodfacts",
+        body = request,
+    )
+
+    suspend fun deleteOpenFoodFactsCredentials() {
+        authedUnit("DELETE", "/account/openfoodfacts")
+    }
 
     suspend fun lookupBarcode(barcode: String): BarcodeLookupResponse = authedJson("GET", "/products/by-barcode/${barcode.urlEncode()}")
 

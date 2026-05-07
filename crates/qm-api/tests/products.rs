@@ -364,3 +364,114 @@ async fn product_create_accepts_manual_package_size() {
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 }
+
+#[tokio::test]
+async fn off_credentials_are_per_user_and_preview_reports_local_changes() {
+    let app = TestApp::start(ApiConfig {
+        registration_mode: qm_api::RegistrationMode::Open,
+        off_credential_encryption_key: Some("test encryption key for off credentials".into()),
+        ..ApiConfig::default()
+    })
+    .await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    assert_eq!(app.register("bob", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let bob = app.login("bob").await;
+
+    let (status, saved) = app
+        .send(
+            Method::PUT,
+            "/api/v1/account/openfoodfacts",
+            Some(json!({
+                "username": "alice-off",
+                "password": "secret",
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(saved["configured"], true);
+    assert_eq!(saved["username"], "alice-off");
+    assert!(saved.get("password").is_none());
+
+    let (status, alice_credentials) = app
+        .send(
+            Method::GET,
+            "/api/v1/account/openfoodfacts/status",
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(alice_credentials["configured"], true);
+    assert_eq!(alice_credentials["username"], "alice-off");
+
+    let (status, bob_credentials) = app
+        .send(
+            Method::GET,
+            "/api/v1/account/openfoodfacts/status",
+            None,
+            Some(&bob),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(bob_credentials["configured"], false);
+    assert!(bob_credentials["username"].is_null());
+
+    let product = qm_db::products::upsert_from_off(
+        &app.db,
+        "5449000000996",
+        "Original cola",
+        Some("Original Brand"),
+        "volume",
+        Some("ml"),
+        None,
+        Some("330"),
+        Some("ml"),
+    )
+    .await
+    .unwrap();
+    let (status, _) = app
+        .send(
+            Method::PATCH,
+            &format!("/api/v1/products/{}", product.id),
+            Some(json!([
+                { "op": "replace", "path": "/name", "value": "Corrected cola" },
+                { "op": "replace", "path": "/brand", "value": "Corrected Brand" }
+            ])),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, preview) = app
+        .send(
+            Method::GET,
+            &format!("/api/v1/products/{}/off-contribution-preview", product.id),
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(preview["eligible"], true);
+    assert_eq!(preview["credentials_configured"], true);
+    assert_eq!(preview["credentials_present"], true);
+    let fields: Vec<_> = preview["changed_fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["field"].as_str().unwrap())
+        .collect();
+    assert_eq!(fields, vec!["product_name", "brands"]);
+
+    let (status, preview) = app
+        .send(
+            Method::GET,
+            &format!("/api/v1/products/{}/off-contribution-preview", product.id),
+            None,
+            Some(&bob),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(preview["credentials_present"], false);
+}

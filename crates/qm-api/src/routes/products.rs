@@ -15,7 +15,10 @@ use crate::{
     auth::CurrentUser,
     barcode,
     error::{ApiError, ApiResult},
-    openfoodfacts::{self, OffResult, OpenFoodFactsClient},
+    openfoodfacts::{
+        self, OffContributionForm, OffResult, OffWriteCredentials, OffWriteResult,
+        OpenFoodFactsClient,
+    },
     rate_limit::RateLimitLayerState,
     routes::patch::{
         reject_remove, reject_value_for_remove, string_value, JsonPatchDocument, JsonPatchOperation,
@@ -40,6 +43,11 @@ pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
             get(get_one).patch(update).delete(delete_one),
         )
         .route("/products/{id}/refresh", post(refresh))
+        .route(
+            "/products/{id}/off-contribution-preview",
+            get(off_contribution_preview),
+        )
+        .route("/products/{id}/off-contribution", post(off_contribution))
         .route("/products/{id}/restore", post(restore))
 }
 
@@ -131,13 +139,10 @@ struct ProductPatch {
 
 impl ProductPatch {
     fn is_off_local_correction_only(&self) -> bool {
-        self.name.is_none()
-            && self.brand.is_none()
-            && self.family.is_none()
+        self.family.is_none()
             && self.preferred_unit.is_none()
             && self.image_url.is_none()
             && self.max_open_days.is_none()
-            && (self.package_quantity.is_some() || self.package_unit.is_some())
     }
 
     fn parse(operations: Vec<JsonPatchOperation>) -> ApiResult<Self> {
@@ -249,6 +254,29 @@ pub struct BarcodeLookupResponse {
     pub product: ProductDto,
     /// `cache` when served from our DB, `openfoodfacts` when fetched just now.
     pub source: &'static str,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct OffContributionFieldChange {
+    pub field: String,
+    pub current_value: Option<String>,
+    pub off_value: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct OffContributionPreviewResponse {
+    pub eligible: bool,
+    pub credentials_configured: bool,
+    pub credentials_present: bool,
+    pub changed_fields: Vec<OffContributionFieldChange>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct OffContributionResponse {
+    pub status: &'static str,
+    pub status_verbose: String,
+    pub submitted_fields: Vec<String>,
+    pub product: ProductDto,
 }
 
 // ----- handlers -----
@@ -618,6 +646,8 @@ pub async fn update(
                 .as_ref()
                 .or(req.package_unit.as_ref())
                 .map(|_| true),
+            name_local_override: req.name.as_ref().map(|_| true),
+            brand_local_override: req.brand.as_ref().map(|_| true),
         },
     )
     .await?;
@@ -814,6 +844,132 @@ pub async fn refresh(
 }
 
 #[utoipa::path(
+    get,
+    path = "/products/{id}/off-contribution-preview",
+    operation_id = "product_off_contribution_preview",
+    tag = "products",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = OffContributionPreviewResponse),
+        (status = 404, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn off_contribution_preview(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<OffContributionPreviewResponse>> {
+    let product = qm_db::products::find_by_id(&state.db, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let credentials = qm_db::off_credentials::get(&state.db, current.user_id).await?;
+    Ok(Json(OffContributionPreviewResponse {
+        eligible: product.source == qm_db::products::SOURCE_OFF && product.off_barcode.is_some(),
+        credentials_configured: state.config.off_credential_encryption_key.is_some(),
+        credentials_present: credentials.is_some(),
+        changed_fields: off_contribution_changes(&product),
+    }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/products/{id}/off-contribution",
+    operation_id = "product_off_contribution",
+    tag = "products",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = OffContributionResponse),
+        (status = 400, body = crate::error::ApiErrorBody),
+        (status = 401, body = crate::error::ApiErrorBody),
+        (status = 404, body = crate::error::ApiErrorBody),
+        (status = 409, body = crate::error::ApiErrorBody),
+        (status = 428, body = crate::error::ApiErrorBody),
+        (status = 502, body = crate::error::ApiErrorBody),
+        (status = 503, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn off_contribution(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<OffContributionResponse>> {
+    let product = qm_db::products::find_by_id(&state.db, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if product.source != qm_db::products::SOURCE_OFF {
+        return Err(ApiError::ManualProductNotRefreshable);
+    }
+    let barcode = product
+        .off_barcode
+        .clone()
+        .ok_or(ApiError::ManualProductNotRefreshable)?;
+    let changes = off_contribution_changes(&product);
+    if changes.is_empty() {
+        return Err(ApiError::OffContributionNoChanges);
+    }
+    let credentials =
+        crate::routes::accounts::load_openfoodfacts_credentials(&state, current.user_id).await?;
+
+    let submit_name = changes.iter().any(|change| change.field == "product_name");
+    let submit_brand = changes.iter().any(|change| change.field == "brands");
+    let submit_package = changes.iter().any(|change| {
+        change.field == "product_quantity" || change.field == "product_quantity_unit"
+    });
+
+    let off = OpenFoodFactsClient::new(
+        state.http.clone(),
+        state.off_breaker.clone(),
+        state.config.clone(),
+    );
+    let result = off
+        .contribute(
+            &OffWriteCredentials {
+                username: credentials.username,
+                password: credentials.password,
+            },
+            &OffContributionForm {
+                barcode,
+                product_name: submit_name.then(|| product.name.clone()),
+                brands: submit_brand.then(|| product.brand.clone()),
+                product_quantity: submit_package
+                    .then(|| product.package_quantity.clone())
+                    .flatten(),
+                product_quantity_unit: submit_package
+                    .then(|| product.package_unit.clone())
+                    .flatten(),
+                app_uuid: openfoodfacts::app_uuid_for_user(current.user_id),
+            },
+        )
+        .await;
+
+    let status_verbose = match result {
+        OffWriteResult::Saved { status_verbose } => status_verbose,
+        OffWriteResult::AuthFailed => return Err(ApiError::OffAuthenticationFailed),
+        OffWriteResult::NotFound => return Err(ApiError::NotFound),
+        OffWriteResult::Upstream(_) => return Err(ApiError::BadGateway),
+    };
+
+    let updated = qm_db::products::mark_off_contributed(
+        &state.db,
+        id,
+        submit_name,
+        submit_brand,
+        submit_package,
+    )
+    .await?;
+    qm_db::products::invalidate_barcode_cache_for(&state.db, id).await?;
+
+    Ok(Json(OffContributionResponse {
+        status: "saved",
+        status_verbose,
+        submitted_fields: changes.into_iter().map(|change| change.field).collect(),
+        product: updated.try_into()?,
+    }))
+}
+
+#[utoipa::path(
     post,
     path = "/products/{id}/restore",
     operation_id = "product_restore",
@@ -853,6 +1009,47 @@ pub async fn restore(
 }
 
 // ----- helpers -----
+
+fn off_contribution_changes(product: &ProductRow) -> Vec<OffContributionFieldChange> {
+    if product.source != qm_db::products::SOURCE_OFF {
+        return Vec::new();
+    }
+    let mut changes = Vec::new();
+    let off_name = product.off_name.as_deref().unwrap_or(&product.name);
+    if product.name.trim() != off_name.trim() {
+        changes.push(OffContributionFieldChange {
+            field: "product_name".into(),
+            current_value: Some(product.name.clone()),
+            off_value: Some(off_name.to_owned()),
+        });
+    }
+    let brand_current = product.brand.as_deref().unwrap_or("").trim();
+    let brand_off = product.off_brand.as_deref().unwrap_or("").trim();
+    if brand_current != brand_off {
+        changes.push(OffContributionFieldChange {
+            field: "brands".into(),
+            current_value: product.brand.clone(),
+            off_value: product.off_brand.clone(),
+        });
+    }
+    let package_current = product.package_quantity.as_deref().unwrap_or("").trim();
+    let package_off = product.off_package_quantity.as_deref().unwrap_or("").trim();
+    let unit_current = product.package_unit.as_deref().unwrap_or("").trim();
+    let unit_off = product.off_package_unit.as_deref().unwrap_or("").trim();
+    if package_current != package_off || unit_current != unit_off {
+        changes.push(OffContributionFieldChange {
+            field: "product_quantity".into(),
+            current_value: product.package_quantity.clone(),
+            off_value: product.off_package_quantity.clone(),
+        });
+        changes.push(OffContributionFieldChange {
+            field: "product_quantity_unit".into(),
+            current_value: product.package_unit.clone(),
+            off_value: product.off_package_unit.clone(),
+        });
+    }
+    changes
+}
 
 async fn fetch_and_cache(
     state: &AppState,

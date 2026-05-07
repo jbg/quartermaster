@@ -27,6 +27,7 @@ struct ProductDetailView: View {
   @State private var isSubmitting = false
   @State private var errorMessage: String?
   @State private var confirmDelete = false
+  @State private var offContributionPreview: OffContributionPreviewResponse?
 
   init(product: Product, onChange: @escaping (Action) -> Void) {
     self.product = product
@@ -86,6 +87,12 @@ struct ProductDetailView: View {
         Button("Cancel", role: .cancel) {}
       } message: {
         Text("Its batches must already be empty.")
+      }
+      .task {
+        if product.isOFF {
+          offContributionPreview = try? await appState.api.offContributionPreview(
+            productID: product.id)
+        }
       }
     }
   }
@@ -189,10 +196,8 @@ struct ProductDetailView: View {
   @ViewBuilder
   private var offBody: some View {
     Section("Product") {
-      LabeledContent("Name", value: product.name)
-      if let brand = product.brand, !brand.isEmpty {
-        LabeledContent("Brand", value: brand)
-      }
+      TextField("Name", text: $name)
+      TextField("Brand (optional)", text: $brand)
       LabeledContent("Family", value: product.family.displayName)
       if let barcode = product.barcode {
         LabeledContent("Barcode") {
@@ -217,6 +222,24 @@ struct ProductDetailView: View {
         "This product is sourced from Open Food Facts. Package size corrections are kept locally; tap refresh to pull the latest catalogue values."
       )
     }
+    if offContributionPreview?.credentialsPresent == true,
+      !(offContributionPreview?.changedFields.isEmpty ?? true)
+    {
+      Section {
+        Button {
+          Task { await contributeToOFF() }
+        } label: {
+          if isSubmitting {
+            ProgressView()
+          } else {
+            Label("Contribute to Open Food Facts", systemImage: "square.and.arrow.up")
+          }
+        }
+        .disabled(isSubmitting)
+      } footer: {
+        Text("Submits your local corrections using your saved Open Food Facts account.")
+      }
+    }
   }
 
   private var packageSizeSection: some View {
@@ -239,7 +262,8 @@ struct ProductDetailView: View {
 
   private var canSave: Bool {
     if product.isOFF {
-      return packageSizeIsValid && packageSizeChanged
+      return !name.trimmingCharacters(in: .whitespaces).isEmpty && packageSizeIsValid
+        && (name != product.name || brand != (product.brand ?? "") || packageSizeChanged)
     }
     return !name.trimmingCharacters(in: .whitespaces).isEmpty && imageURLValid
       && packageSizeIsValid && parsedMaxOpenDays != 0
@@ -362,6 +386,21 @@ struct ProductDetailView: View {
     do {
       let refreshed = try await appState.api.refreshProduct(id: product.id)
       onChange(.refreshed(refreshed))
+      dismiss()
+    } catch let err as APIError {
+      errorMessage = err.userFacingMessage
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+    isSubmitting = false
+  }
+
+  private func contributeToOFF() async {
+    isSubmitting = true
+    errorMessage = nil
+    do {
+      let response = try await appState.api.contributeProductToOFF(id: product.id)
+      onChange(.updated(response.product))
       dismiss()
     } catch let err as APIError {
       errorMessage = err.userFacingMessage

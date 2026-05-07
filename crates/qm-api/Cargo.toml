@@ -11,6 +11,7 @@ qm-core = { path = "../qm-core", default-features = false, features = [] }
 qm-db = { path = "../qm-db", default-features = false, features = [] }
 
 anyhow = { workspace = true, default-features = false, features = ["std"] }
+aes-gcm = { workspace = true, default-features = false, features = ["aes", "alloc"] }
 argon2 = { workspace = true, default-features = false, features = [
     "alloc",
     "password-hash",
