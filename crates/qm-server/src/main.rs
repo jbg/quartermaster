@@ -14,6 +14,7 @@ use qm_db::Database;
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
+mod email;
 mod metrics;
 mod push;
 
@@ -87,6 +88,18 @@ struct RawConfig {
     metrics_trigger_secret: Option<String>,
     web_dist_dir: Option<String>,
     web_auth_allowed_origins: Option<String>,
+    email_transport: Option<String>,
+    email_from: Option<String>,
+    email_from_name: Option<String>,
+    smtp_host: Option<String>,
+    smtp_port: Option<u16>,
+    smtp_username: Option<String>,
+    smtp_password: Option<String>,
+    smtp_tls_mode: String,
+    jmap_session_url: Option<String>,
+    jmap_account_id: Option<String>,
+    jmap_identity_id: Option<String>,
+    jmap_bearer_token: Option<String>,
 }
 
 impl Default for RawConfig {
@@ -154,6 +167,18 @@ impl Default for RawConfig {
             metrics_trigger_secret: None,
             web_dist_dir: Some("web/build".into()),
             web_auth_allowed_origins: None,
+            email_transport: None,
+            email_from: None,
+            email_from_name: None,
+            smtp_host: None,
+            smtp_port: None,
+            smtp_username: None,
+            smtp_password: None,
+            smtp_tls_mode: "starttls".into(),
+            jmap_session_url: None,
+            jmap_account_id: None,
+            jmap_identity_id: None,
+            jmap_bearer_token: None,
         }
     }
 }
@@ -179,6 +204,7 @@ struct LoadedConfig {
     apns_config: push::ApnsConfig,
     fcm_config: push::FcmConfig,
     metrics_config: MetricsConfig,
+    email_transport: Option<Arc<dyn qm_api::email::EmailTransport>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -357,6 +383,24 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
     };
     let web_auth_allowed_origins =
         normalize_web_auth_allowed_origins(raw.web_auth_allowed_origins)?;
+    let email_transport = email::build_email_transport(email::EmailTransportConfig {
+        transport: raw.email_transport,
+        from: raw.email_from,
+        from_name: raw.email_from_name,
+        smtp_host: raw.smtp_host,
+        smtp_port: raw.smtp_port,
+        smtp_username: raw.smtp_username,
+        smtp_password: raw.smtp_password,
+        smtp_tls_mode: raw.smtp_tls_mode,
+        jmap_session_url: raw.jmap_session_url,
+        jmap_account_id: raw.jmap_account_id,
+        jmap_identity_id: raw.jmap_identity_id,
+        jmap_bearer_token: raw.jmap_bearer_token,
+        http: reqwest::Client::builder()
+            .user_agent(USER_AGENT)
+            .build()
+            .context("building email HTTP client")?,
+    })?;
 
     let api_config = Arc::new(ApiConfig {
         registration_mode: RegistrationMode::from_str(&raw.registration_mode)
@@ -444,6 +488,7 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
             trigger_secret: metrics_trigger_secret.map(Arc::new),
             handle: metrics_handle,
         },
+        email_transport,
     })
 }
 
@@ -604,6 +649,7 @@ async fn main() -> anyhow::Result<()> {
         http: http.clone(),
         off_breaker: Arc::new(qm_api::openfoodfacts::OffCircuitBreaker::default()),
         rate_limiters: Arc::new(qm_api::rate_limit::RateLimiters::new(&loaded.api_config)),
+        email_transport: loaded.email_transport.clone(),
     };
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
@@ -1027,6 +1073,69 @@ mod tests {
         assert!(err
             .to_string()
             .contains("QM_FCM_SERVICE_ACCOUNT_JSON and QM_FCM_SERVICE_ACCOUNT_JSON_PATH"));
+    }
+
+    #[test]
+    fn email_transport_is_disabled_by_default() {
+        let loaded = build_config(RawConfig::default()).unwrap();
+        assert!(loaded.email_transport.is_none());
+    }
+
+    #[test]
+    fn accepts_explicit_log_email_transport() {
+        let loaded = build_config(RawConfig {
+            email_transport: Some("log".into()),
+            ..RawConfig::default()
+        })
+        .unwrap();
+        assert!(loaded.email_transport.is_some());
+    }
+
+    #[test]
+    fn smtp_email_transport_requires_host_and_from() {
+        let err = build_config(RawConfig {
+            email_transport: Some("smtp".into()),
+            smtp_host: Some("smtp.example.com".into()),
+            ..RawConfig::default()
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("QM_EMAIL_FROM is required"));
+
+        let loaded = build_config(RawConfig {
+            email_transport: Some("smtp".into()),
+            email_from: Some("quartermaster@example.com".into()),
+            smtp_host: Some("smtp.example.com".into()),
+            smtp_tls_mode: "none".into(),
+            ..RawConfig::default()
+        })
+        .unwrap();
+        assert!(loaded.email_transport.is_some());
+    }
+
+    #[test]
+    fn jmap_email_transport_requires_bearer_config() {
+        let err = build_config(RawConfig {
+            email_transport: Some("jmap".into()),
+            email_from: Some("quartermaster@example.com".into()),
+            jmap_session_url: Some("https://mail.example.com/.well-known/jmap".into()),
+            jmap_account_id: Some("account".into()),
+            jmap_identity_id: Some("identity".into()),
+            ..RawConfig::default()
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("QM_JMAP_BEARER_TOKEN is required"));
+
+        let loaded = build_config(RawConfig {
+            email_transport: Some("jmap".into()),
+            email_from: Some("quartermaster@example.com".into()),
+            jmap_session_url: Some("https://mail.example.com/.well-known/jmap".into()),
+            jmap_account_id: Some("account".into()),
+            jmap_identity_id: Some("identity".into()),
+            jmap_bearer_token: Some("token".into()),
+            ..RawConfig::default()
+        })
+        .unwrap();
+        assert!(loaded.email_transport.is_some());
     }
 
     #[test]

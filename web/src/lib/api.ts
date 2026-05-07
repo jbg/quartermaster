@@ -5,6 +5,8 @@ import {
   authLogin,
   authLogout,
   authMe,
+  authPasswordResetConfirm,
+  authPasswordResetRequest,
   authRefresh,
   authRegister,
   authSwitchHousehold,
@@ -71,6 +73,12 @@ export function generatedTransport(): SessionTransport {
     },
     login(body) {
       return authLogin({ body });
+    },
+    passwordResetRequest(body) {
+      return authPasswordResetRequest({ body });
+    },
+    passwordResetConfirm(body) {
+      return authPasswordResetConfirm({ body });
     },
     register(body) {
       return authRegister({ body });

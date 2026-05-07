@@ -90,6 +90,9 @@ pub enum ApiError {
     #[error("upstream service unavailable")]
     BadGateway,
 
+    #[error("service unavailable: {0}")]
+    ServiceUnavailable(String),
+
     #[error("database error")]
     Database(#[from] sqlx::Error),
 
@@ -156,6 +159,9 @@ impl IntoResponse for ApiError {
             ApiError::AlreadyMember => (StatusCode::CONFLICT, "already_member"),
             ApiError::LocationHasStock => (StatusCode::CONFLICT, "location_has_stock"),
             ApiError::BadGateway => (StatusCode::BAD_GATEWAY, "upstream"),
+            ApiError::ServiceUnavailable(_) => {
+                (StatusCode::SERVICE_UNAVAILABLE, "service_unavailable")
+            }
             ApiError::Database(err) => {
                 tracing::error!(?err, "database error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal")

@@ -81,6 +81,9 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
     var serverUrl by remember { mutableStateOf(appState.serverUrl) }
     var advancedExpanded by remember { mutableStateOf(false) }
     var signInMode by remember { mutableStateOf(true) }
+    var resetMode by remember { mutableStateOf(false) }
+    var resetCode by remember { mutableStateOf("") }
+    var resetMessage by remember { mutableStateOf<String?>(null) }
     var localError by remember { mutableStateOf<String?>(null) }
     var showSetupScanner by remember { mutableStateOf(false) }
 
@@ -133,6 +136,9 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
         }
         localError?.let { message ->
             item { ErrorCard("Setup code failed", message) }
+        }
+        resetMessage?.let { message ->
+            item { Text(message, style = MaterialTheme.typography.bodyMedium) }
         }
         if (appState.onboardingStatus == null) {
             item {
@@ -272,7 +278,18 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
                         }
                     }
                     item {
-                        AccountFields(username, password, onUsername = { username = it }, onPassword = { password = it })
+                        if (signInMode && resetMode) {
+                            ResetPasswordFields(
+                                username = username,
+                                code = resetCode,
+                                newPassword = password,
+                                onUsername = { username = it },
+                                onCode = { resetCode = it },
+                                onNewPassword = { password = it },
+                            )
+                        } else {
+                            AccountFields(username, password, onUsername = { username = it }, onPassword = { password = it })
+                        }
                     }
                     if (!signInMode && status?.householdSignup == OnboardingAvailability.ENABLED) {
                         item {
@@ -292,12 +309,42 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
                             )
                         }
                     }
+                    if (signInMode) {
+                        item {
+                            TextButton(
+                                onClick = {
+                                    resetMode = !resetMode
+                                    resetMessage = null
+                                    localError = null
+                                },
+                            ) {
+                                Text(if (resetMode) "Back to sign in" else "Forgot password?")
+                            }
+                        }
+                    }
                     item {
                         Button(
                             modifier = Modifier.testTag(SmokeTag.SignInButton),
                             onClick = {
                                 scope.launch {
-                                    if (signInMode) {
+                                    if (signInMode && resetMode && resetCode.isBlank()) {
+                                        appState.requestPasswordReset(username = username.trim())
+                                        if (appState.lastError == null) {
+                                            resetMessage = "If that account has a verified recovery email, a reset code is on its way."
+                                        }
+                                    } else if (signInMode && resetMode) {
+                                        appState.confirmPasswordReset(
+                                            username = username.trim(),
+                                            newPassword = password,
+                                            code = resetCode.trim(),
+                                        )
+                                        if (appState.lastError == null) {
+                                            resetMode = false
+                                            resetCode = ""
+                                            password = ""
+                                            resetMessage = "Password reset. Sign in with your new password."
+                                        }
+                                    } else if (signInMode) {
                                         appState.signIn(username = username.trim(), password = password)
                                     } else {
                                         appState.createOnboardingHousehold(
@@ -311,12 +358,14 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
                             },
                             enabled = !appState.authActionInFlight &&
                                 username.isNotBlank() &&
-                                password.length >= 8 &&
+                                (signInMode && resetMode && resetCode.isBlank() || password.length >= 8) &&
                                 (signInMode || (householdName.isNotBlank() && timezone.isNotBlank())),
                         ) {
                             Text(
                                 when {
                                     appState.authActionInFlight -> "Working..."
+                                    signInMode && resetMode && resetCode.isBlank() -> "Send reset code"
+                                    signInMode && resetMode -> "Reset password"
                                     signInMode -> "Sign in"
                                     else -> "Create household"
                                 },
@@ -326,6 +375,37 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ResetPasswordFields(
+    username: String,
+    code: String,
+    newPassword: String,
+    onUsername: (String) -> Unit,
+    onCode: (String) -> Unit,
+    onNewPassword: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        OutlinedTextField(
+            value = username,
+            onValueChange = onUsername,
+            label = { Text("Username") },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = code,
+            onValueChange = onCode,
+            label = { Text("Reset code") },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = newPassword,
+            onValueChange = onNewPassword,
+            label = { Text("New password") },
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

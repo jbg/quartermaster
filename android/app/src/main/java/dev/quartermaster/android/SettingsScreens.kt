@@ -164,7 +164,7 @@ internal fun SettingsScreen(
         item {
             SectionHeader(
                 title = "Recovery email",
-                body = "Set a verified email for future account recovery. Verification codes are emitted to the server logs for now.",
+                body = "Set a verified email for future account recovery. Verification codes are delivered by the server email transport.",
             )
         }
         item {

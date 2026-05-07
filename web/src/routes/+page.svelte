@@ -81,10 +81,11 @@
   let password = $state('');
   let householdName = $state('');
   let timezone = $state(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
-  let authMode = $state<'login' | 'register'>('login');
+  let authMode = $state<'login' | 'register' | 'resetRequest' | 'resetConfirm'>('login');
   let onboarding = $state<OnboardingStatus | null>(null);
   let me = $state<MeResponse | null>(null);
   let authError = $state<string | null>(null);
+  let authMessage = $state<string | null>(null);
   let authBusy = $state(false);
   let authenticated = $state(false);
   let inventory = $state<InventoryState>(emptyInventoryState);
@@ -359,8 +360,35 @@
     }
     authBusy = true;
     authError = null;
+    authMessage = null;
     session.setServerUrl(serverUrl);
     await refreshOnboardingStatus();
+    if (authMode === 'resetRequest') {
+      try {
+        await session.requestPasswordReset(username);
+        authMode = 'resetConfirm';
+        authMessage = 'If that account has a verified recovery email, a reset code is on its way.';
+      } catch {
+        authError = 'Password reset could not be requested.';
+      } finally {
+        authBusy = false;
+      }
+      return;
+    }
+    if (authMode === 'resetConfirm') {
+      try {
+        await session.confirmPasswordReset(username, password, { code: householdName });
+        authMode = 'login';
+        password = '';
+        householdName = '';
+        authMessage = 'Password reset. Log in with your new password.';
+      } catch {
+        authError = 'Password reset failed.';
+      } finally {
+        authBusy = false;
+      }
+      return;
+    }
     if (authMode === 'register' && onboarding?.household_signup !== 'enabled') {
       authError = 'This installation is already set up. Log in with an existing account.';
       authBusy = false;
@@ -998,16 +1026,18 @@
           Username
           <input bind:value={username} autocomplete="username" required />
         </label>
-        <label>
-          Password
-          <input
-            bind:value={password}
-            type="password"
-            autocomplete={authMode === 'login' ? 'current-password' : 'new-password'}
-            required
-            minlength="8"
-          />
-        </label>
+        {#if authMode !== 'resetRequest'}
+          <label>
+            {authMode === 'resetConfirm' ? 'New password' : 'Password'}
+            <input
+              bind:value={password}
+              type="password"
+              autocomplete={authMode === 'login' ? 'current-password' : 'new-password'}
+              required
+              minlength="8"
+            />
+          </label>
+        {/if}
 
         {#if authMode === 'register'}
           <label>
@@ -1018,6 +1048,37 @@
             Timezone
             <input bind:value={timezone} required />
           </label>
+        {:else if authMode === 'resetConfirm'}
+          <label>
+            Reset code
+            <input bind:value={householdName} autocomplete="one-time-code" required />
+          </label>
+        {/if}
+
+        {#if authMode === 'login'}
+          <button
+            class="text-button"
+            type="button"
+            onclick={() => {
+              authMode = 'resetRequest';
+              authError = null;
+              authMessage = null;
+            }}>Forgot password?</button
+          >
+        {:else if authMode === 'resetRequest' || authMode === 'resetConfirm'}
+          <button
+            class="text-button"
+            type="button"
+            onclick={() => {
+              authMode = 'login';
+              authError = null;
+              authMessage = null;
+            }}>Back to login</button
+          >
+        {/if}
+
+        {#if authMessage}
+          <p class="success-text">{authMessage}</p>
         {/if}
 
         {#if authError}
@@ -1029,10 +1090,19 @@
           type="submit"
           disabled={authBusy ||
             !username ||
-            password.length < 8 ||
-            (authMode === 'register' && (!householdName || !timezone))}
+            (authMode !== 'resetRequest' && password.length < 8) ||
+            (authMode === 'register' && (!householdName || !timezone)) ||
+            (authMode === 'resetConfirm' && !householdName)}
         >
-          {authBusy ? 'Working...' : authMode === 'login' ? 'Log in' : 'Create account'}
+          {authBusy
+            ? 'Working...'
+            : authMode === 'login'
+              ? 'Log in'
+              : authMode === 'register'
+                ? 'Create account'
+                : authMode === 'resetRequest'
+                  ? 'Send reset code'
+                  : 'Reset password'}
         </button>
       </form>
     </section>

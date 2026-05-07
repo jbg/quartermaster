@@ -1663,6 +1663,7 @@ mod tests {
             http: reqwest::Client::new(),
             off_breaker: Arc::new(qm_api::openfoodfacts::OffCircuitBreaker::default()),
             rate_limiters: Arc::new(qm_api::rate_limit::RateLimiters::new(&config)),
+            email_transport: None,
         };
         let app = qm_api::router(state);
 

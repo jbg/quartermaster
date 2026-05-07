@@ -26,6 +26,8 @@ protocol AppStateAPI: Actor {
   func requestEmailVerification(email: String) async throws -> RequestEmailVerificationResponse
   func confirmEmailVerification(code: String) async throws -> Me
   func clearRecoveryEmail() async throws -> Me
+  func requestPasswordReset(username: String) async throws
+  func confirmPasswordReset(username: String, newPassword: String, code: String) async throws
   func logout() async throws
   func me() async throws -> Me
   func switchHousehold(householdID: String) async throws -> Me
@@ -337,6 +339,29 @@ final class AppState {
       let pair = try await api.login(username: username, password: password)
       await tokenStore.store(pair)
       await refreshMe()
+    } catch {
+      lastError = userMessage(for: error)
+    }
+  }
+
+  func requestPasswordReset(username: String) async {
+    lastError = nil
+    do {
+      try await api.requestPasswordReset(
+        username: username.trimmingCharacters(in: .whitespacesAndNewlines))
+    } catch {
+      lastError = userMessage(for: error)
+    }
+  }
+
+  func confirmPasswordReset(username: String, newPassword: String, code: String) async {
+    lastError = nil
+    do {
+      try await api.confirmPasswordReset(
+        username: username.trimmingCharacters(in: .whitespacesAndNewlines),
+        newPassword: newPassword,
+        code: code.trimmingCharacters(in: .whitespacesAndNewlines)
+      )
     } catch {
       lastError = userMessage(for: error)
     }

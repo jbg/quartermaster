@@ -1614,6 +1614,14 @@ class QuartermasterAppStateTest {
             return meResponse
         }
 
+        override suspend fun requestPasswordReset(username: String) = Unit
+
+        override suspend fun confirmPasswordReset(
+            username: String,
+            newPassword: String,
+            code: String,
+        ) = Unit
+
         override suspend fun clearRecoveryEmail(): MeResponse {
             clearRecoveryEmailCount += 1
             return meResponse

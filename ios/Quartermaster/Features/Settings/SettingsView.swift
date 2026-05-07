@@ -594,7 +594,7 @@ struct SettingsView: View {
       .disabled(isSavingRecoveryEmail)
     }
 
-    Text("Verification codes are emitted to the server logs for now.")
+    Text("Verification codes are delivered to the recovery email.")
       .font(.footnote)
       .foregroundStyle(.secondary)
   }
