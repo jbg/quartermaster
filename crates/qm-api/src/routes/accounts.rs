@@ -25,9 +25,11 @@ use utoipa::{
 use uuid::Uuid;
 
 use argon2::password_hash::rand_core::{OsRng as ArgonOsRng, RngCore};
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 
 use crate::{
     auth::{self, CurrentUser},
+    email::{EmailAddress, EmailMessage},
     error::{ApiError, ApiResult},
     rate_limit::RateLimitLayerState,
     AppState, RegistrationMode,
@@ -52,7 +54,7 @@ pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
         .route(
             "/auth/refresh",
             post(refresh).route_layer(middleware::from_fn_with_state(
-                rate_limit_state,
+                rate_limit_state.clone(),
                 crate::rate_limit::enforce,
             )),
         )
@@ -62,6 +64,20 @@ pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
         .route(
             "/auth/email-verification/confirm",
             post(confirm_email_verification),
+        )
+        .route(
+            "/auth/password-reset/request",
+            post(request_password_reset).route_layer(middleware::from_fn_with_state(
+                rate_limit_state.clone(),
+                crate::rate_limit::enforce,
+            )),
+        )
+        .route(
+            "/auth/password-reset/confirm",
+            post(confirm_password_reset).route_layer(middleware::from_fn_with_state(
+                rate_limit_state,
+                crate::rate_limit::enforce,
+            )),
         )
         .route("/auth/email", delete(clear_recovery_email))
         .route("/auth/me", get(me))
@@ -196,6 +212,24 @@ pub struct RequestEmailVerificationResponse {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ConfirmEmailVerificationRequest {
     pub code: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct PasswordResetRequest {
+    pub username: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct PasswordResetConfirmRequest {
+    pub username: String,
+    pub new_password: String,
+    pub code: Option<String>,
+    pub token: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PasswordResetRequestResponse {
+    pub status: &'static str,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -552,6 +586,7 @@ pub async fn me(
         (status = 200, body = RequestEmailVerificationResponse),
         (status = 400, body = crate::error::ApiErrorBody),
         (status = 401, body = crate::error::ApiErrorBody),
+        (status = 503, body = crate::error::ApiErrorBody),
     ),
     security(("bearer" = [])),
 )]
@@ -561,6 +596,11 @@ pub async fn request_email_verification(
     Json(req): Json<RequestEmailVerificationRequest>,
 ) -> ApiResult<Json<RequestEmailVerificationResponse>> {
     let email = validate_recovery_email(&req.email)?;
+    let Some(email_transport) = state.email_transport.as_ref() else {
+        return Err(ApiError::ServiceUnavailable(
+            "email delivery is not configured".into(),
+        ));
+    };
     let code = auth::generate_human_code(10);
     let code_hash = auth::sha256_hex(&code);
     let expires_at = Timestamp::now()
@@ -578,18 +618,135 @@ pub async fn request_email_verification(
     )
     .await?;
 
-    tracing::info!(
-        user_id = %current.user_id,
-        target_email = %email,
-        expires_at = %expires_at,
-        verification_code = %code,
-        "recovery email verification code generated"
-    );
+    email_transport
+        .send(recovery_verification_email(&email, &code, &expires_at))
+        .await
+        .map_err(|err| {
+            tracing::warn!(
+                user_id = %current.user_id,
+                target_email = %email,
+                error = ?err.source(),
+                "recovery email verification delivery failed"
+            );
+            ApiError::ServiceUnavailable("email delivery failed".into())
+        })?;
 
     Ok(Json(RequestEmailVerificationResponse {
         pending_email: pending.email,
         expires_at: pending.expires_at,
     }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth/password-reset/request",
+    operation_id = "auth_password_reset_request",
+    tag = "accounts",
+    request_body = PasswordResetRequest,
+    responses(
+        (status = 202, body = PasswordResetRequestResponse),
+        (status = 400, body = crate::error::ApiErrorBody),
+        (status = 429, body = crate::error::ApiErrorBody),
+    ),
+)]
+pub async fn request_password_reset(
+    State(state): State<AppState>,
+    Json(req): Json<PasswordResetRequest>,
+) -> ApiResult<(StatusCode, Json<PasswordResetRequestResponse>)> {
+    let username = validate_username(&req.username)?;
+    if let Some(user) = qm_db::users::find_by_username(&state.db, username).await? {
+        if let (Some(email), Some(_verified_at), Some(email_transport)) = (
+            user.email.as_deref(),
+            user.email_verified_at.as_deref(),
+            state.email_transport.as_ref(),
+        ) {
+            let code = auth::generate_human_code(10);
+            let token = auth::generate_token();
+            let expires_at = Timestamp::now()
+                .checked_add(SignedDuration::from_mins(30))
+                .map_err(|e| {
+                    ApiError::Internal(anyhow::anyhow!("password reset expiry overflow: {e}"))
+                })?;
+            let expires_at = qm_db::time::format_timestamp(expires_at);
+            qm_db::users::create_password_reset(
+                &state.db,
+                user.id,
+                &auth::sha256_hex(&code),
+                &auth::sha256_hex(&token),
+                &expires_at,
+            )
+            .await?;
+            if let Err(err) = email_transport
+                .send(password_reset_email(
+                    username,
+                    email,
+                    &code,
+                    &token,
+                    state.config.public_base_url.as_deref(),
+                    &expires_at,
+                ))
+                .await
+            {
+                tracing::warn!(
+                    user_id = %user.id,
+                    target_email = %email,
+                    error = ?err.source(),
+                    "password reset email delivery failed"
+                );
+            }
+        }
+    }
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(PasswordResetRequestResponse { status: "accepted" }),
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth/password-reset/confirm",
+    operation_id = "auth_password_reset_confirm",
+    tag = "accounts",
+    request_body = PasswordResetConfirmRequest,
+    responses(
+        (status = 204),
+        (status = 400, body = crate::error::ApiErrorBody),
+        (status = 429, body = crate::error::ApiErrorBody),
+    ),
+)]
+pub async fn confirm_password_reset(
+    State(state): State<AppState>,
+    Json(req): Json<PasswordResetConfirmRequest>,
+) -> ApiResult<StatusCode> {
+    let username = validate_username(&req.username)?;
+    validate_password(&req.new_password)?;
+    let code = req.code.as_deref().map(normalize_reset_code).transpose()?;
+    let token = req.token.as_deref().map(validate_reset_token).transpose()?;
+    if code.is_none() && token.is_none() {
+        return Err(ApiError::BadRequest(
+            "code or token is required to reset password".into(),
+        ));
+    }
+    let password_hash = auth::hash_password(&req.new_password)?;
+    let now = qm_db::now_utc_rfc3339();
+    let code_hash = code.as_deref().map(auth::sha256_hex);
+    let token_hash = token.as_deref().map(auth::sha256_hex);
+    let updated = qm_db::users::reset_password_by_code_or_token(
+        &state.db,
+        username,
+        code_hash.as_deref(),
+        token_hash.as_deref(),
+        &password_hash,
+        &now,
+    )
+    .await?;
+    if updated.is_none() {
+        return Err(ApiError::BadRequest(
+            "password reset code or token is invalid or expired".into(),
+        ));
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[utoipa::path(
@@ -699,9 +856,19 @@ pub async fn switch_household(
 }
 
 pub(crate) fn validate_credentials(username: &str, password: &str) -> ApiResult<()> {
-    if username.trim().is_empty() || username.len() > 64 {
+    validate_username(username)?;
+    validate_password(password)
+}
+
+fn validate_username(username: &str) -> ApiResult<&str> {
+    let username = username.trim();
+    if username.is_empty() || username.len() > 64 {
         return Err(ApiError::BadRequest("username must be 1..=64 chars".into()));
     }
+    Ok(username)
+}
+
+fn validate_password(password: &str) -> ApiResult<()> {
     if password.len() < 8 {
         return Err(ApiError::BadRequest(
             "password must be at least 8 chars".into(),
@@ -711,6 +878,27 @@ pub(crate) fn validate_credentials(username: &str, password: &str) -> ApiResult<
         return Err(ApiError::BadRequest("password too long".into()));
     }
     Ok(())
+}
+
+fn normalize_reset_code(code: &str) -> ApiResult<String> {
+    let code = code
+        .trim()
+        .chars()
+        .filter(|ch| !ch.is_whitespace() && *ch != '-')
+        .collect::<String>()
+        .to_ascii_uppercase();
+    if code.is_empty() || code.len() > 32 {
+        return Err(ApiError::BadRequest("reset code is invalid".into()));
+    }
+    Ok(code)
+}
+
+fn validate_reset_token(token: &str) -> ApiResult<String> {
+    let token = token.trim();
+    if token.is_empty() || token.len() > 512 {
+        return Err(ApiError::BadRequest("reset token is invalid".into()));
+    }
+    Ok(token.to_owned())
 }
 
 fn validate_recovery_email(value: &str) -> ApiResult<String> {
@@ -725,6 +913,42 @@ fn validate_recovery_email(value: &str) -> ApiResult<String> {
         return Err(ApiError::BadRequest("email is invalid".into()));
     }
     Ok(email)
+}
+
+fn recovery_verification_email(email: &str, code: &str, expires_at: &str) -> EmailMessage {
+    EmailMessage {
+        to: EmailAddress::new(email, None),
+        subject: "Your Quartermaster recovery email code".into(),
+        text_body: format!(
+            "Use this code to verify your Quartermaster recovery email:\n\n{code}\n\nThis code expires at {expires_at}."
+        ),
+    }
+}
+
+fn password_reset_email(
+    username: &str,
+    email: &str,
+    code: &str,
+    token: &str,
+    public_base_url: Option<&str>,
+    expires_at: &str,
+) -> EmailMessage {
+    let mut body = format!(
+        "A Quartermaster password reset was requested for username {username}.\n\nUse this code to reset your password:\n\n{code}\n\nThis reset expires at {expires_at}."
+    );
+    if let Some(base_url) = public_base_url {
+        let base = base_url.trim_end_matches('/');
+        let username = utf8_percent_encode(username, NON_ALPHANUMERIC);
+        let token = utf8_percent_encode(token, NON_ALPHANUMERIC);
+        body.push_str(&format!(
+            "\n\nYou can also open this reset link:\n{base}/reset-password?username={username}&token={token}"
+        ));
+    }
+    EmailMessage {
+        to: EmailAddress::new(email, None),
+        subject: "Reset your Quartermaster password".into(),
+        text_body: body,
+    }
 }
 
 pub(crate) async fn issue_token_pair(

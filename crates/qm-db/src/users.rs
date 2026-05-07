@@ -23,6 +23,14 @@ pub struct PendingEmailVerificationRow {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct PasswordResetRow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub expires_at: String,
+    pub created_at: String,
+}
+
 pub async fn create(
     db: &Database,
     username: &str,
@@ -221,6 +229,147 @@ pub async fn clear_recovery_email(db: &Database, user_id: Uuid) -> Result<(), sq
     tx.commit().await
 }
 
+pub async fn create_password_reset(
+    db: &Database,
+    user_id: Uuid,
+    code_hash: &str,
+    token_hash: &str,
+    expires_at: &str,
+) -> Result<PasswordResetRow, sqlx::Error> {
+    let id = Uuid::now_v7();
+    let created_at = now_utc_rfc3339();
+    sqlx::query(
+        "INSERT INTO user_password_reset \
+         (id, user_id, code_hash, token_hash, expires_at, consumed_at, created_at) \
+         VALUES (?, ?, ?, ?, ?, NULL, ?)",
+    )
+    .bind(id.to_string())
+    .bind(user_id.to_string())
+    .bind(code_hash)
+    .bind(token_hash)
+    .bind(expires_at)
+    .bind(&created_at)
+    .execute(&db.pool)
+    .await?;
+
+    Ok(PasswordResetRow {
+        id,
+        user_id,
+        expires_at: expires_at.to_owned(),
+        created_at,
+    })
+}
+
+pub async fn reset_password_by_code_or_token(
+    db: &Database,
+    username: &str,
+    code_hash: Option<&str>,
+    token_hash: Option<&str>,
+    password_hash: &str,
+    now: &str,
+) -> Result<Option<UserRow>, sqlx::Error> {
+    let mut tx = db.pool.begin().await?;
+    let Some(user) = sqlx::query(
+        "SELECT id, username, email, email_verified_at, password_hash, created_at \
+         FROM users WHERE username = ?",
+    )
+    .bind(username)
+    .fetch_optional(&mut *tx)
+    .await?
+    .map(row_to_user)
+    .transpose()?
+    else {
+        tx.commit().await?;
+        return Ok(None);
+    };
+
+    let row = match (code_hash, token_hash) {
+        (Some(code_hash), Some(token_hash)) => {
+            sqlx::query(
+                "SELECT id, user_id, expires_at, created_at \
+                 FROM user_password_reset \
+                 WHERE user_id = ? AND consumed_at IS NULL AND expires_at >= ? \
+                   AND (code_hash = ? OR token_hash = ?) \
+                 ORDER BY created_at DESC, id DESC \
+                 LIMIT 1",
+            )
+            .bind(user.id.to_string())
+            .bind(now)
+            .bind(code_hash)
+            .bind(token_hash)
+            .fetch_optional(&mut *tx)
+            .await?
+        }
+        (Some(code_hash), None) => {
+            sqlx::query(
+                "SELECT id, user_id, expires_at, created_at \
+                 FROM user_password_reset \
+                 WHERE user_id = ? AND consumed_at IS NULL AND expires_at >= ? AND code_hash = ? \
+                 ORDER BY created_at DESC, id DESC \
+                 LIMIT 1",
+            )
+            .bind(user.id.to_string())
+            .bind(now)
+            .bind(code_hash)
+            .fetch_optional(&mut *tx)
+            .await?
+        }
+        (None, Some(token_hash)) => {
+            sqlx::query(
+                "SELECT id, user_id, expires_at, created_at \
+                 FROM user_password_reset \
+                 WHERE user_id = ? AND consumed_at IS NULL AND expires_at >= ? AND token_hash = ? \
+                 ORDER BY created_at DESC, id DESC \
+                 LIMIT 1",
+            )
+            .bind(user.id.to_string())
+            .bind(now)
+            .bind(token_hash)
+            .fetch_optional(&mut *tx)
+            .await?
+        }
+        (None, None) => None,
+    };
+
+    let Some(reset) = row.map(row_to_password_reset).transpose()? else {
+        tx.commit().await?;
+        return Ok(None);
+    };
+
+    sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+        .bind(password_hash)
+        .bind(user.id.to_string())
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "UPDATE user_password_reset SET consumed_at = ? WHERE user_id = ? AND consumed_at IS NULL",
+    )
+    .bind(now)
+    .bind(user.id.to_string())
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE auth_token SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
+        .bind(now)
+        .bind(user.id.to_string())
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM auth_session WHERE user_id = ?")
+        .bind(user.id.to_string())
+        .execute(&mut *tx)
+        .await?;
+
+    let row = sqlx::query(
+        "SELECT id, username, email, email_verified_at, password_hash, created_at \
+         FROM users WHERE id = ?",
+    )
+    .bind(reset.user_id.to_string())
+    .fetch_optional(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    row.map(row_to_user).transpose()
+}
+
 fn row_to_user(row: sqlx::any::AnyRow) -> Result<UserRow, sqlx::Error> {
     let id_str: String = row.try_get("id")?;
     let id = Uuid::parse_str(&id_str).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
@@ -243,6 +392,17 @@ fn row_to_pending_email_verification(
         id: Uuid::parse_str(&id_str).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         user_id: Uuid::parse_str(&user_id_str).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         email: row.try_get("email")?,
+        expires_at: row.try_get("expires_at")?,
+        created_at: row.try_get("created_at")?,
+    })
+}
+
+fn row_to_password_reset(row: sqlx::any::AnyRow) -> Result<PasswordResetRow, sqlx::Error> {
+    let id_str: String = row.try_get("id")?;
+    let user_id_str: String = row.try_get("user_id")?;
+    Ok(PasswordResetRow {
+        id: Uuid::parse_str(&id_str).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+        user_id: Uuid::parse_str(&user_id_str).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         expires_at: row.try_get("expires_at")?,
         created_at: row.try_get("created_at")?,
     })

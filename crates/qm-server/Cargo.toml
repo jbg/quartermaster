@@ -41,6 +41,12 @@ jiff = { workspace = true, default-features = false, features = [
     "serde",
 ] }
 jsonwebtoken = { version = "10", default-features = false, features = ["use_pem", "aws_lc_rs"] }
+lettre = { workspace = true, default-features = false, features = [
+    "builder",
+    "smtp-transport",
+    "tokio1",
+    "tokio1-rustls-tls",
+] }
 metrics = { workspace = true, default-features = false, features = [] }
 metrics-exporter-prometheus = { workspace = true, default-features = false, features = [
     "http-listener",

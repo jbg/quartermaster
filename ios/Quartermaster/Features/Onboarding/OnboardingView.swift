@@ -13,6 +13,9 @@ struct OnboardingView: View {
   @State private var authMode: AuthMode = .signIn
   @State private var username: String = ""
   @State private var password: String = ""
+  @State private var resetCode: String = ""
+  @State private var resetMode = false
+  @State private var resetMessage: String?
   @State private var householdName: String = ""
   @State private var timezone: String = TimeZone.autoupdatingCurrent.identifier
   @State private var serverURL: String = ""
@@ -47,6 +50,12 @@ struct OnboardingView: View {
           Section {
             Text(message)
               .foregroundStyle(Color.quartermasterError)
+          }
+        }
+        if let resetMessage {
+          Section {
+            Text(resetMessage)
+              .foregroundStyle(.secondary)
           }
         }
       }
@@ -150,13 +159,43 @@ struct OnboardingView: View {
 
   private var signInSection: some View {
     Section("Sign in") {
-      accountFields(passwordContentType: .password)
-      Button {
-        Task { await submitSignIn() }
-      } label: {
-        submitLabel("Sign in")
+      if resetMode {
+        TextField("Username", text: $username)
+          .textContentType(.username)
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled()
+        TextField("Reset code", text: $resetCode)
+          .textContentType(.oneTimeCode)
+          .textInputAutocapitalization(.characters)
+          .autocorrectionDisabled()
+        SecureField("New password", text: $password)
+          .textContentType(.newPassword)
+      } else {
+        accountFields(passwordContentType: .password)
       }
-      .disabled(!canSubmitAccount || isSubmitting)
+      Button(resetMode ? "Back to sign in" : "Forgot password?") {
+        resetMode.toggle()
+        resetMessage = nil
+        localError = nil
+      }
+      Button {
+        Task {
+          if resetMode && resetCode.trimmed.isEmpty {
+            await requestResetCode()
+          } else if resetMode {
+            await submitPasswordReset()
+          } else {
+            await submitSignIn()
+          }
+        }
+      } label: {
+        submitLabel(
+          resetMode
+            ? (resetCode.trimmed.isEmpty ? "Send reset code" : "Reset password")
+            : "Sign in"
+        )
+      }
+      .disabled(!canSubmitResetOrSignIn || isSubmitting)
     }
   }
 
@@ -217,6 +256,16 @@ struct OnboardingView: View {
     !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && password.count >= 8
   }
 
+  private var canSubmitResetOrSignIn: Bool {
+    if !resetMode {
+      return canSubmitAccount
+    }
+    if resetCode.trimmed.isEmpty {
+      return !username.trimmed.isEmpty
+    }
+    return canSubmitAccount
+  }
+
   private var canSubmitHousehold: Bool {
     canSubmitAccount
       && !householdName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -272,6 +321,31 @@ struct OnboardingView: View {
     isSubmitting = true
     defer { isSubmitting = false }
     await appState.login(username: username.trimmed, password: password)
+  }
+
+  private func requestResetCode() async {
+    isSubmitting = true
+    defer { isSubmitting = false }
+    await appState.requestPasswordReset(username: username.trimmed)
+    if appState.lastError == nil {
+      resetMessage = "If that account has a verified recovery email, a reset code is on its way."
+    }
+  }
+
+  private func submitPasswordReset() async {
+    isSubmitting = true
+    defer { isSubmitting = false }
+    await appState.confirmPasswordReset(
+      username: username.trimmed,
+      newPassword: password,
+      code: resetCode.trimmed
+    )
+    if appState.lastError == nil {
+      resetMode = false
+      resetCode = ""
+      password = ""
+      resetMessage = "Password reset. Sign in with your new password."
+    }
   }
 
   private func submitCreateHousehold() async {

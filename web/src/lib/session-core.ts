@@ -380,6 +380,13 @@ export interface OnboardingStatus {
 export interface SessionTransport {
   configure(session: StoredSession): void;
   login(body: { username: string; password: string }): Promise<ApiResult<TokenPair>>;
+  passwordResetRequest?(body: { username: string }): Promise<ApiResult<{ status: string }>>;
+  passwordResetConfirm?(body: {
+    username: string;
+    new_password: string;
+    code?: string | null;
+    token?: string | null;
+  }): Promise<ApiResult<void>>;
   onboardingStatus(): Promise<ApiResult<OnboardingStatus>>;
   createOnboardingHousehold(body: {
     username: string;
@@ -573,6 +580,30 @@ export class QuartermasterSession {
     const result = await this.transport.login({ username, password });
     unwrap(result);
     await this.ensureBrowserDeviceRegistered();
+  }
+
+  async requestPasswordReset(username: string): Promise<void> {
+    unwrap(
+      await required(this.transport.passwordResetRequest, 'passwordResetRequest')({ username })
+    );
+  }
+
+  async confirmPasswordReset(
+    username: string,
+    newPassword: string,
+    secret: { code?: string | null; token?: string | null }
+  ): Promise<void> {
+    unwrap(
+      await required(
+        this.transport.passwordResetConfirm,
+        'passwordResetConfirm'
+      )({
+        username,
+        new_password: newPassword,
+        code: secret.code ?? null,
+        token: secret.token ?? null
+      })
+    );
   }
 
   onboardingStatus() {

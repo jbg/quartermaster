@@ -73,6 +73,10 @@ import UIKit
     func confirmEmailVerification(code: String) async throws -> Me { try await me() }
     func clearRecoveryEmail() async throws -> Me { try await me() }
 
+    func requestPasswordReset(username: String) async throws {}
+
+    func confirmPasswordReset(username: String, newPassword: String, code: String) async throws {}
+
     func logout() async throws {}
     func me() async throws -> Me { try decodeFixture(from: meJSON) }
     func switchHousehold(householdID: String) async throws -> Me { try await me() }

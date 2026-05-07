@@ -420,6 +420,26 @@ a:focus-visible {
   background: var(--qm-danger-bg);
 }
 
+.text-button {
+  border: 0;
+  background: transparent;
+  color: var(--qm-green-800);
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  font-weight: 750;
+}
+
+.text-button:hover {
+  color: var(--qm-green-900);
+}
+
+.success-text {
+  margin: 0;
+  color: var(--qm-green-800);
+  font-weight: 750;
+}
+
 .error-text {
   margin: 0;
   color: var(--qm-beet-strong);

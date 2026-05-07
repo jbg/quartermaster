@@ -7,7 +7,7 @@ use axum::{
     http::{HeaderMap, Method, Request, StatusCode},
     Router,
 };
-use qm_api::{ApiConfig, AppState};
+use qm_api::{email::EmailTransport, ApiConfig, AppState};
 use qm_db::test_support;
 use qm_db::Database;
 use serde_json::{json, Value};
@@ -25,6 +25,22 @@ impl TestApp {
     }
 
     pub async fn start_with_http(config: ApiConfig, http: reqwest::Client) -> Self {
+        Self::start_with_http_and_email(config, http, None).await
+    }
+
+    #[allow(dead_code)]
+    pub async fn start_with_email(
+        config: ApiConfig,
+        email_transport: Arc<dyn EmailTransport>,
+    ) -> Self {
+        Self::start_with_http_and_email(config, reqwest::Client::new(), Some(email_transport)).await
+    }
+
+    pub async fn start_with_http_and_email(
+        config: ApiConfig,
+        http: reqwest::Client,
+        email_transport: Option<Arc<dyn EmailTransport>>,
+    ) -> Self {
         let db = test_db().await;
         let config = Arc::new(config);
         let state = AppState {
@@ -33,6 +49,7 @@ impl TestApp {
             rate_limiters: Arc::new(qm_api::rate_limit::RateLimiters::new(&config)),
             config,
             http,
+            email_transport,
         };
         Self {
             app: qm_api::router(state),
@@ -216,19 +233,25 @@ impl TestApp {
 
     #[allow(dead_code)]
     pub async fn login(&self, username: &str) -> String {
+        let (status, body) = self.login_with_password(username, "password123").await;
+        assert_eq!(status, StatusCode::OK);
+        body["access_token"].as_str().unwrap().to_owned()
+    }
+
+    #[allow(dead_code)]
+    pub async fn login_with_password(&self, username: &str, password: &str) -> (StatusCode, Value) {
         let (status, body) = self
             .send(
                 Method::POST,
                 "/api/v1/auth/login",
                 Some(json!({
                     "username": username,
-                    "password": "password123",
+                    "password": password,
                 })),
                 None,
             )
             .await;
-        assert_eq!(status, StatusCode::OK);
-        body["access_token"].as_str().unwrap().to_owned()
+        (status, body)
     }
 
     #[allow(dead_code)]

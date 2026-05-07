@@ -116,3 +116,12 @@ pub async fn revoke_session(db: &Database, session_id: Uuid) -> Result<(), sqlx:
         .await?;
     Ok(())
 }
+
+pub async fn revoke_user(db: &Database, user_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE auth_token SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
+        .bind(now_utc_rfc3339())
+        .bind(user_id.to_string())
+        .execute(&db.pool)
+        .await?;
+    Ok(())
+}

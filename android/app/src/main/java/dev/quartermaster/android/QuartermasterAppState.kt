@@ -168,6 +168,8 @@ interface QuartermasterBackend {
     suspend fun requestEmailVerification(email: String): RequestEmailVerificationResponse
     suspend fun confirmEmailVerification(code: String): MeResponse
     suspend fun clearRecoveryEmail(): MeResponse
+    suspend fun requestPasswordReset(username: String)
+    suspend fun confirmPasswordReset(username: String, newPassword: String, code: String)
     suspend fun logout()
     suspend fun switchHousehold(householdId: String): MeResponse
     suspend fun createHousehold(name: String, timezone: String): MeResponse
@@ -267,6 +269,14 @@ class QuartermasterApiBackend(
     override suspend fun confirmEmailVerification(code: String): MeResponse = api.confirmEmailVerification(code)
 
     override suspend fun clearRecoveryEmail(): MeResponse = api.clearRecoveryEmail()
+
+    override suspend fun requestPasswordReset(username: String) {
+        api.requestPasswordReset(username)
+    }
+
+    override suspend fun confirmPasswordReset(username: String, newPassword: String, code: String) {
+        api.confirmPasswordReset(username, newPassword, code)
+    }
 
     override suspend fun logout() {
         api.logout()
@@ -562,6 +572,14 @@ class QuartermasterAppState(
     suspend fun signIn(username: String, password: String) = runAuthAction {
         backend.login(username = username, password = password)
         applyAuthenticated(backend.me())
+    }
+
+    suspend fun requestPasswordReset(username: String) = runAuthAction {
+        backend.requestPasswordReset(username.trim())
+    }
+
+    suspend fun confirmPasswordReset(username: String, newPassword: String, code: String) = runAuthAction {
+        backend.confirmPasswordReset(username.trim(), newPassword, code.trim())
     }
 
     suspend fun createOnboardingHousehold(

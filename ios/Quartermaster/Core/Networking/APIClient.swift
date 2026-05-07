@@ -133,6 +133,34 @@ actor APIClient: AppStateAPI {
     }
   }
 
+  func requestPasswordReset(username: String) async throws {
+    let body = Operations.AuthPasswordResetRequest.Input.Body.json(.init(username: username))
+    let response = try await client.authPasswordResetRequest(.init(body: body))
+    switch response {
+    case .accepted: return
+    case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+    case .tooManyRequests(let err): throw APIError.server(status: 429, body: try? err.body.json)
+    case .undocumented(let statusCode, _): throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
+  func confirmPasswordReset(username: String, newPassword: String, code: String) async throws {
+    let body = Operations.AuthPasswordResetConfirm.Input.Body.json(
+      .init(
+        code: code,
+        newPassword: newPassword,
+        token: nil,
+        username: username
+      ))
+    let response = try await client.authPasswordResetConfirm(.init(body: body))
+    switch response {
+    case .noContent: return
+    case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+    case .tooManyRequests(let err): throw APIError.server(status: 429, body: try? err.body.json)
+    case .undocumented(let statusCode, _): throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
   func requestEmailVerification(email: String) async throws -> RequestEmailVerificationResponse {
     let body = Operations.AuthEmailVerificationRequest.Input.Body.json(.init(email: email))
     let response = try await client.authEmailVerificationRequest(.init(body: body))
@@ -140,6 +168,7 @@ actor APIClient: AppStateAPI {
     case .ok(let ok): return try ok.body.json
     case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
     case .unauthorized: throw APIError.unauthorized
+    case .serviceUnavailable(let err): throw APIError.server(status: 503, body: try? err.body.json)
     case .undocumented(let statusCode, _): throw APIError.server(status: statusCode, body: nil)
     }
   }

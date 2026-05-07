@@ -26,6 +26,7 @@ use utoipa::{
 
 pub mod auth;
 pub mod barcode;
+pub mod email;
 pub mod error;
 pub mod labels;
 pub mod openfoodfacts;
@@ -46,6 +47,7 @@ pub struct AppState {
     pub http: reqwest::Client,
     pub off_breaker: Arc<OffCircuitBreaker>,
     pub rate_limiters: Arc<rate_limit::RateLimiters>,
+    pub email_transport: Option<Arc<dyn email::EmailTransport>>,
 }
 
 #[derive(Clone, Debug)]
@@ -247,6 +249,8 @@ impl Modify for SecurityAddon {
         routes::accounts::switch_household,
         routes::accounts::request_email_verification,
         routes::accounts::confirm_email_verification,
+        routes::accounts::request_password_reset,
+        routes::accounts::confirm_password_reset,
         routes::accounts::clear_recovery_email,
         routes::accounts::get_openfoodfacts_status,
         routes::accounts::put_openfoodfacts_credentials,

@@ -24,6 +24,8 @@ import dev.quartermaster.android.generated.models.OffContributionPreviewResponse
 import dev.quartermaster.android.generated.models.OffContributionResponse
 import dev.quartermaster.android.generated.models.OnboardingStatusResponse
 import dev.quartermaster.android.generated.models.OpenFoodFactsCredentialStatusResponse
+import dev.quartermaster.android.generated.models.PasswordResetConfirmRequest
+import dev.quartermaster.android.generated.models.PasswordResetRequest
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.ProductSearchResponse
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
@@ -205,6 +207,29 @@ class QuartermasterApi(
         path = "/auth/email",
         body = null,
     )
+
+    suspend fun requestPasswordReset(username: String) {
+        unitRequest(
+            method = "POST",
+            path = "/auth/password-reset/request",
+            body = PasswordResetRequest(username = username),
+            requiresAuth = false,
+        )
+    }
+
+    suspend fun confirmPasswordReset(username: String, newPassword: String, code: String) {
+        unitRequest(
+            method = "POST",
+            path = "/auth/password-reset/confirm",
+            body = PasswordResetConfirmRequest(
+                username = username,
+                newPassword = newPassword,
+                code = code,
+                token = null,
+            ),
+            requiresAuth = false,
+        )
+    }
 
     suspend fun logout() {
         runCatching { authedUnit("POST", "/auth/logout") }
@@ -580,6 +605,8 @@ class QuartermasterApi(
         is LoginRequest -> json.encodeToString(body)
         is RefreshRequest -> json.encodeToString(body)
         is RedeemInviteRequest -> json.encodeToString(body)
+        is PasswordResetConfirmRequest -> json.encodeToString(body)
+        is PasswordResetRequest -> json.encodeToString(body)
         is RegisterDeviceRequest -> json.encodeToString(body)
         is RegisterRequest -> json.encodeToString(body)
         is SwitchHouseholdRequest -> json.encodeToString(body)

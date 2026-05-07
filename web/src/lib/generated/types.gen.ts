@@ -305,6 +305,21 @@ export type OpenFoodFactsCredentialStatusResponse = {
     username?: string | null;
 };
 
+export type PasswordResetConfirmRequest = {
+    code?: string | null;
+    new_password: string;
+    token?: string | null;
+    username: string;
+};
+
+export type PasswordResetRequest = {
+    username: string;
+};
+
+export type PasswordResetRequestResponse = {
+    status: string;
+};
+
 export type PrintStockLabelRequest = {
     copies?: number | null;
     dry_run?: boolean | null;
@@ -664,6 +679,7 @@ export type AuthEmailVerificationRequestData = {
 export type AuthEmailVerificationRequestErrors = {
     400: ApiErrorBody;
     401: ApiErrorBody;
+    503: ApiErrorBody;
 };
 
 export type AuthEmailVerificationRequestError = AuthEmailVerificationRequestErrors[keyof AuthEmailVerificationRequestErrors];
@@ -751,6 +767,46 @@ export type AuthMeResponses = {
 };
 
 export type AuthMeResponse = AuthMeResponses[keyof AuthMeResponses];
+
+export type AuthPasswordResetConfirmData = {
+    body: PasswordResetConfirmRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/password-reset/confirm';
+};
+
+export type AuthPasswordResetConfirmErrors = {
+    400: ApiErrorBody;
+    429: ApiErrorBody;
+};
+
+export type AuthPasswordResetConfirmError = AuthPasswordResetConfirmErrors[keyof AuthPasswordResetConfirmErrors];
+
+export type AuthPasswordResetConfirmResponses = {
+    204: void;
+};
+
+export type AuthPasswordResetConfirmResponse = AuthPasswordResetConfirmResponses[keyof AuthPasswordResetConfirmResponses];
+
+export type AuthPasswordResetRequestData = {
+    body: PasswordResetRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/password-reset/request';
+};
+
+export type AuthPasswordResetRequestErrors = {
+    400: ApiErrorBody;
+    429: ApiErrorBody;
+};
+
+export type AuthPasswordResetRequestError = AuthPasswordResetRequestErrors[keyof AuthPasswordResetRequestErrors];
+
+export type AuthPasswordResetRequestResponses = {
+    202: PasswordResetRequestResponse;
+};
+
+export type AuthPasswordResetRequestResponse = AuthPasswordResetRequestResponses[keyof AuthPasswordResetRequestResponses];
 
 export type AuthRefreshData = {
     body: RefreshRequest;
