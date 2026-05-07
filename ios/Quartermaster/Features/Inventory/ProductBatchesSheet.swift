@@ -76,12 +76,27 @@ struct ProductBatchesSheet: View {
         }
       }
       .sheet(item: $consumeTarget) { batch in
-        ConsumeForm(product: product, location: location, batch: batch) {
+        ConsumeForm(
+          product: product,
+          location: location,
+          allLocations: allLocations,
+          batch: batch
+        ) { remainder in
           await onMutated()
           if let refreshed = try? await appState.api.listStock(
             locationID: location.id, productID: product.id, includeDepleted: true)
           {
             batches = refreshed
+          }
+          if let remainder {
+            appState.pendingInventoryTarget = InventoryTarget(
+              productID: remainder.product.id,
+              locationID: remainder.locationID,
+              highlightBatchID: remainder.id,
+            )
+            if remainder.locationID != location.id {
+              dismiss()
+            }
           }
           if batches.isEmpty { dismiss() }
         }
@@ -534,28 +549,39 @@ private struct ConsumeForm: View {
 
   let product: Product
   let location: Location
+  let allLocations: [Location]
   let batch: StockBatch
-  var onConsumed: () async -> Void
+  var onConsumed: (StockBatch?) async -> Void
 
   @State private var entryMode: QuantityEntryMode = .exact
   @State private var packageCount: String = ""
   @State private var quantity: String = ""
   @State private var unitCode: String
+  @State private var remainderLocationID: String
+  @State private var openedOn: Date = .now
+  @State private var hasExpiryOverride = false
+  @State private var expiryOverride: Date =
+    Calendar.current.date(byAdding: .day, value: 3, to: .now) ?? .now
+  @State private var remainderNote: String = ""
   @State private var isSubmitting = false
   @State private var errorMessage: String?
   @State private var successMessage: String?
+  @State private var successRemainder: StockBatch?
 
   init(
     product: Product,
     location: Location,
+    allLocations: [Location],
     batch: StockBatch,
-    onConsumed: @escaping () async -> Void
+    onConsumed: @escaping (StockBatch?) async -> Void
   ) {
     self.product = product
     self.location = location
+    self.allLocations = allLocations
     self.batch = batch
     self.onConsumed = onConsumed
     _unitCode = State(initialValue: product.preferredUnit)
+    _remainderLocationID = State(initialValue: batch.locationID)
     if batch.packageQuantity != nil && batch.packageUnit != nil {
       _entryMode = State(initialValue: .package)
     }
@@ -595,6 +621,23 @@ private struct ConsumeForm: View {
             .font(.footnote)
             .foregroundStyle(.secondary)
         }
+        Section {
+          Picker("Remainder location", selection: $remainderLocationID) {
+            ForEach(allLocations) { loc in
+              Text(loc.name).tag(loc.id)
+            }
+          }
+          DatePicker("Opened on", selection: $openedOn, displayedComponents: .date)
+          Toggle("Set expiry override", isOn: $hasExpiryOverride.animation())
+          if hasExpiryOverride {
+            DatePicker("Remainder expires", selection: $expiryOverride, displayedComponents: .date)
+          }
+          TextField("Note", text: $remainderNote, axis: .vertical)
+        } header: {
+          Text("Store remainder")
+        } footer: {
+          Text("Use this when you opened a package and want to track what is left.")
+        }
         if let msg = errorMessage {
           Section { Text(msg).foregroundStyle(Color.quartermasterError) }
         }
@@ -613,6 +656,14 @@ private struct ConsumeForm: View {
           }
           .disabled(!canSubmit || isSubmitting)
         }
+        ToolbarItem(placement: .bottomBar) {
+          Button {
+            Task { await submitAndStoreRemainder() }
+          } label: {
+            Label("Open and Store Remainder", systemImage: "shippingbox")
+          }
+          .disabled(!canStoreRemainder || isSubmitting)
+        }
       }
       .alert(
         "Stock used",
@@ -623,7 +674,7 @@ private struct ConsumeForm: View {
       ) {
         Button("OK") {
           Task {
-            await onConsumed()
+            await onConsumed(successRemainder)
             dismiss()
           }
         }
@@ -644,6 +695,10 @@ private struct ConsumeForm: View {
       }
       return true
     }
+  }
+
+  private var canStoreRemainder: Bool {
+    canSubmit && allLocations.contains(where: { $0.id == remainderLocationID })
   }
 
   private var packageSize: (quantity: String, unit: String)? {
@@ -668,7 +723,35 @@ private struct ConsumeForm: View {
     do {
       let response = try await appState.api.consumeStock(request)
       await appState.refreshRemindersAfterInventoryMutation()
+      successRemainder = nil
       successMessage = buildSuccessMessage(response: response)
+    } catch let err as APIError {
+      errorMessage = err.userFacingMessage
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+    isSubmitting = false
+  }
+
+  private func submitAndStoreRemainder() async {
+    guard let stockAmount = stockQuantityAndUnit() else { return }
+    isSubmitting = true
+    errorMessage = nil
+    let trimmedNote = remainderNote.trimmingCharacters(in: .whitespaces)
+    let request = ConsumeAndStoreRequest(
+      note: trimmedNote.isEmpty ? nil : trimmedNote,
+      openedOn: StockBatch.yyyymmdd.string(from: openedOn),
+      remainderExpiresOn: hasExpiryOverride
+        ? StockBatch.yyyymmdd.string(from: expiryOverride) : nil,
+      remainderLocationId: remainderLocationID,
+      usedQuantity: stockAmount.quantity,
+    )
+    do {
+      let response = try await appState.api.consumeAndStoreStock(id: batch.id, request: request)
+      await appState.refreshRemindersAfterInventoryMutation()
+      successRemainder = response.remainder
+      successMessage =
+        "Used \(stockAmount.quantity) \(stockAmount.unit) and stored \(response.remainder.quantity) \(response.remainder.unit)."
     } catch let err as APIError {
       errorMessage = err.userFacingMessage
     } catch {
