@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.21.0](https://github.com/jbg/quartermaster/compare/1.20.0...1.21.0) (2026-05-07)
+
+
+### Features
+
+* add account recovery email and password reset ([dc6bb16](https://github.com/jbg/quartermaster/commit/dc6bb16c73993f629cdc9dd84f131f2fe99cb174))
+* add native remainder flow ([992ca14](https://github.com/jbg/quartermaster/commit/992ca14550dc3d3087e9bbc60c11d18c01fad6a8))
+
 ## [1.20.0](https://github.com/jbg/quartermaster/compare/1.19.0...1.20.0) (2026-05-07)
 
 
