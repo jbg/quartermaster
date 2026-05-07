@@ -192,13 +192,13 @@ Quartermaster/
 │   ├── AddStock/      Product search, manual product entry, and stock creation
 │   ├── History/       Stock event history and batch detail recovery actions
 │   ├── Households/    Shared household switching, redeem, and create surfaces
-│   ├── Inventory/     Grouped inventory, filters, batch edit/consume/discard/restore
+│   ├── Inventory/     Grouped inventory, filters, batch edit/consume/discard/restore, label print
 │   ├── Main/          TabView shell
 │   ├── Onboarding/    Register / sign-in
-│   ├── Products/      Product detail, edit, delete, and restore
+│   ├── Products/      Product detail, edit, delete, restore, and OpenFoodFacts contribution
 │   ├── Reminders/     Durable reminder inbox
 │   ├── Scan/          VisionKit barcode scanning on supported physical devices
-│   └── Settings/      Household settings, locations, members, invites, and sign out
+│   └── Settings/      Household settings, recovery email, OFF credentials, pairing QR, members, invites, and sign out
 └── DesignSystem/      Shared visual primitives (grows with Liquid Glass work)
 ```
 
@@ -221,4 +221,4 @@ xcodebuild -project ios/Quartermaster.xcodeproj \
   test
 ```
 
-This should execute `QuartermasterTests/AppStateReminderTests.swift`, not just build the test bundle.
+This should execute the `QuartermasterTests` host suite, including reminder-state and expiry-parser tests, not just build the test bundle. UI tests live separately under `QuartermasterUITests`.
