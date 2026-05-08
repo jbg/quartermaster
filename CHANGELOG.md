@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.1](https://github.com/jbg/quartermaster/compare/1.21.0...1.21.1) (2026-05-08)
+
+
+### Bug Fixes
+
+* allow correcting OFF product units on iOS ([af6d333](https://github.com/jbg/quartermaster/commit/af6d33302fa3660c682c9401ba2b1da541e34b6f))
+
 ## [1.21.0](https://github.com/jbg/quartermaster/compare/1.20.0...1.21.0) (2026-05-07)
 
 
