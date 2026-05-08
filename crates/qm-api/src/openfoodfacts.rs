@@ -427,6 +427,21 @@ async fn mock_fetch_once(session_id: &str, barcode: &str) -> FetchOutcome {
         "3333333333333" => {
             FetchOutcome::TransientUpstream("OFF returned 503 Service Unavailable".into())
         }
+        "4444444444444" => {
+            let payload = json!({
+                "code": barcode,
+                "status": 1,
+                "product": {
+                    "product_name": "Big Orange Juice",
+                    "brands": "Acme",
+                    "image_url": Value::Null,
+                    "product_quantity": "1",
+                    "product_quantity_unit": "bottle",
+                }
+            });
+            let product: OffResponse = serde_json::from_value(payload).expect("mock OFF payload");
+            decode_mock_payload(barcode, product)
+        }
         _ => FetchOutcome::NotFound,
     }
 }
