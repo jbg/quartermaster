@@ -1,0 +1,1 @@
+ALTER TABLE product ADD COLUMN family_local_override INTEGER NOT NULL DEFAULT 0;

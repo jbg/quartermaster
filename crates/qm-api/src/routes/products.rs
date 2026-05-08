@@ -139,10 +139,7 @@ struct ProductPatch {
 
 impl ProductPatch {
     fn is_off_local_correction_only(&self) -> bool {
-        self.family.is_none()
-            && self.preferred_unit.is_none()
-            && self.image_url.is_none()
-            && self.max_open_days.is_none()
+        self.image_url.is_none() && self.max_open_days.is_none()
     }
 
     fn parse(operations: Vec<JsonPatchOperation>) -> ApiResult<Self> {
@@ -578,17 +575,18 @@ pub async fn update(
         }
     }
 
-    // If both family and preferred_unit are changing, validate in the new
-    // family; otherwise validate preferred_unit against the existing family.
     let effective_family = req.family.unwrap_or(existing_family);
-    if let Some(pu) = req.preferred_unit.as_deref() {
-        let u = qm_core::units::lookup(pu).map_err(|_| ApiError::UnknownUnit(pu.to_owned()))?;
-        if u.family != effective_family {
-            return Err(ApiError::UnitFamilyMismatch {
-                product_family: effective_family.as_str().to_owned(),
-                unit: pu.to_owned(),
-            });
-        }
+    let effective_preferred_unit = req
+        .preferred_unit
+        .as_deref()
+        .unwrap_or(existing.preferred_unit.as_str());
+    let u = qm_core::units::lookup(effective_preferred_unit)
+        .map_err(|_| ApiError::UnknownUnit(effective_preferred_unit.to_owned()))?;
+    if u.family != effective_family {
+        return Err(ApiError::UnitFamilyMismatch {
+            product_family: effective_family.as_str().to_owned(),
+            unit: effective_preferred_unit.to_owned(),
+        });
     }
     if let Some(Some(days)) = req.max_open_days {
         validate_max_open_days(days)?;
@@ -648,6 +646,11 @@ pub async fn update(
                 .map(|_| true),
             name_local_override: req.name.as_ref().map(|_| true),
             brand_local_override: req.brand.as_ref().map(|_| true),
+            family_local_override: if req.family.is_some() || req.preferred_unit.is_some() {
+                Some(true)
+            } else {
+                None
+            },
         },
     )
     .await?;

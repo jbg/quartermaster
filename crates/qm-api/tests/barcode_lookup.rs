@@ -160,3 +160,61 @@ async fn off_package_size_can_be_corrected_locally_and_survives_refresh() {
     assert_eq!(refreshed["package_quantity"], "660");
     assert_eq!(refreshed["package_unit"], "g");
 }
+
+#[tokio::test]
+async fn off_family_and_package_size_can_be_corrected_locally_and_survive_refresh() {
+    let mock = MockOffServer::start().await;
+    let app = TestApp::start(ApiConfig {
+        off_api_base_url: mock.base_url(),
+        ..ApiConfig::default()
+    })
+    .await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+
+    let (status, body) = app
+        .send(
+            Method::GET,
+            "/api/v1/products/by-barcode/4444444444444",
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["product"]["family"], "count");
+    assert!(body["product"]["package_quantity"].is_null());
+    let product_id = body["product"]["id"].as_str().unwrap();
+
+    let (status, corrected) = app
+        .send(
+            Method::PATCH,
+            &format!("/api/v1/products/{product_id}"),
+            Some(serde_json::json!([
+                { "op": "replace", "path": "/family", "value": "volume" },
+                { "op": "replace", "path": "/preferred_unit", "value": "ml" },
+                { "op": "replace", "path": "/package_quantity", "value": "1000" },
+                { "op": "replace", "path": "/package_unit", "value": "ml" },
+            ])),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(corrected["family"], "volume");
+    assert_eq!(corrected["preferred_unit"], "ml");
+    assert_eq!(corrected["package_quantity"], "1000");
+    assert_eq!(corrected["package_unit"], "ml");
+
+    let (status, refreshed) = app
+        .send(
+            Method::POST,
+            &format!("/api/v1/products/{product_id}/refresh"),
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(refreshed["family"], "volume");
+    assert_eq!(refreshed["preferred_unit"], "ml");
+    assert_eq!(refreshed["package_quantity"], "1000");
+    assert_eq!(refreshed["package_unit"], "ml");
+}

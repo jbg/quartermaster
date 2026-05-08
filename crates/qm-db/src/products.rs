@@ -14,7 +14,7 @@ const COLS: &str = "id, source, off_barcode, name, brand, family, default_unit, 
                     created_by_household_id, created_at, deleted_at, max_open_days, \
                     package_size_local_override, off_name, off_brand, \
                     off_package_quantity, off_package_unit, name_local_override, \
-                    brand_local_override";
+                    brand_local_override, family_local_override";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProductRow {
@@ -35,6 +35,7 @@ pub struct ProductRow {
     pub off_package_unit: Option<String>,
     pub name_local_override: bool,
     pub brand_local_override: bool,
+    pub family_local_override: bool,
     pub fetched_at: Option<String>,
     pub created_by_household_id: Option<Uuid>,
     pub created_at: String,
@@ -133,6 +134,7 @@ pub async fn create_manual_with_max_open_days(
         off_package_unit: None,
         name_local_override: false,
         brand_local_override: false,
+        family_local_override: false,
         fetched_at: None,
         created_by_household_id: Some(household_id),
         created_at,
@@ -161,7 +163,9 @@ pub async fn upsert_from_off(
             "UPDATE product \
              SET name = CASE WHEN name_local_override = 1 THEN name ELSE ? END, \
                  brand = CASE WHEN brand_local_override = 1 THEN brand ELSE ? END, \
-                 family = ?, default_unit = ?, image_url = ?, \
+                 family = CASE WHEN family_local_override = 1 THEN family ELSE ? END, \
+                 default_unit = CASE WHEN family_local_override = 1 THEN default_unit ELSE ? END, \
+                 image_url = ?, \
                  package_quantity = CASE WHEN package_size_local_override = 1 THEN package_quantity ELSE ? END, \
                  package_unit = CASE WHEN package_size_local_override = 1 THEN package_unit ELSE ? END, \
                  off_name = ?, off_brand = ?, off_package_quantity = ?, off_package_unit = ?, \
@@ -355,6 +359,7 @@ pub struct ProductUpdate<'a> {
     pub package_size_local_override: Option<bool>,
     pub name_local_override: Option<bool>,
     pub brand_local_override: Option<bool>,
+    pub family_local_override: Option<bool>,
 }
 
 pub async fn update(
@@ -395,11 +400,14 @@ pub async fn update(
     let brand_local_override = upd
         .brand_local_override
         .unwrap_or(current.brand_local_override);
+    let family_local_override = upd
+        .family_local_override
+        .unwrap_or(current.family_local_override);
 
     sqlx::query(
         "UPDATE product SET name = ?, brand = ?, family = ?, default_unit = ?, image_url = ?, max_open_days = ?, \
                             package_quantity = ?, package_unit = ?, package_size_local_override = ?, \
-                            name_local_override = ?, brand_local_override = ? \
+                            name_local_override = ?, brand_local_override = ?, family_local_override = ? \
          WHERE id = ?",
     )
     .bind(name)
@@ -413,6 +421,7 @@ pub async fn update(
     .bind(if package_size_local_override { 1 } else { 0 })
     .bind(if name_local_override { 1 } else { 0 })
     .bind(if brand_local_override { 1 } else { 0 })
+    .bind(if family_local_override { 1 } else { 0 })
     .bind(id.to_string())
     .execute(&db.pool)
     .await?;
@@ -530,6 +539,7 @@ fn row_to_product(row: sqlx::any::AnyRow) -> Result<ProductRow, sqlx::Error> {
         off_package_unit: row.try_get("off_package_unit")?,
         name_local_override: row.try_get::<i64, _>("name_local_override")? != 0,
         brand_local_override: row.try_get::<i64, _>("brand_local_override")? != 0,
+        family_local_override: row.try_get::<i64, _>("family_local_override")? != 0,
         fetched_at: row.try_get("fetched_at")?,
         created_by_household_id: household_id_str
             .map(|s| Uuid::parse_str(&s))

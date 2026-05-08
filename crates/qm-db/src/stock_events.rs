@@ -249,6 +249,7 @@ fn row_to_timeline_entry(row: sqlx::any::AnyRow) -> Result<TimelineEntryRow, sql
         off_package_unit: None,
         name_local_override: false,
         brand_local_override: false,
+        family_local_override: false,
         fetched_at: row.try_get("p_fetched_at")?,
         created_by_household_id: p_household
             .map(|s| Uuid::parse_str(&s))

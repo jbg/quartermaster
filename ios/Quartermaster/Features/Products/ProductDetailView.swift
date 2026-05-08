@@ -63,7 +63,9 @@ struct ProductDetailView: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button(product.isManual && !product.isDeleted ? "Cancel" : "Done") { dismiss() }
+          Button((product.isManual || product.isOFF) && !product.isDeleted ? "Cancel" : "Done") {
+            dismiss()
+          }
         }
         if (product.isManual || product.isOFF) && !product.isDeleted {
           ToolbarItem(placement: .confirmationAction) {
@@ -114,18 +116,7 @@ struct ProductDetailView: View {
       TextField("Name", text: $name)
       TextField("Brand (optional)", text: $brand)
     }
-    Section("Unit family") {
-      Picker("Family", selection: $family) {
-        ForEach(ProductFamily.allCases, id: \.self) { f in
-          Text(f.displayName).tag(f)
-        }
-      }
-      Picker("Preferred unit", selection: $preferredUnit) {
-        ForEach(appState.unitsFor(family: family), id: \.code) { u in
-          Text(u.code).tag(u.code)
-        }
-      }
-    }
+    unitFamilySection
     packageSizeSection
     Section {
       ValidatedURLField(
@@ -150,14 +141,6 @@ struct ProductDetailView: View {
       }
     } footer: {
       Text("Products with active stock can't be deleted. Consume or remove the batches first.")
-    }
-    .onChange(of: family) { _, newFamily in
-      if !appState.unitsFor(family: newFamily).contains(where: { $0.code == preferredUnit }) {
-        preferredUnit = newFamily.baseUnit
-      }
-      if !appState.unitsFor(family: newFamily).contains(where: { $0.code == packageUnit }) {
-        packageUnit = newFamily.baseUnit
-      }
     }
   }
 
@@ -198,13 +181,13 @@ struct ProductDetailView: View {
     Section("Product") {
       TextField("Name", text: $name)
       TextField("Brand (optional)", text: $brand)
-      LabeledContent("Family", value: product.family.displayName)
       if let barcode = product.barcode {
         LabeledContent("Barcode") {
           Text(barcode).monospaced()
         }
       }
     }
+    unitFamilySection
     packageSizeSection
     Section {
       Button {
@@ -263,7 +246,8 @@ struct ProductDetailView: View {
   private var canSave: Bool {
     if product.isOFF {
       return !name.trimmingCharacters(in: .whitespaces).isEmpty && packageSizeIsValid
-        && (name != product.name || brand != (product.brand ?? "") || packageSizeChanged)
+        && (name != product.name || brand != (product.brand ?? "") || family != product.family
+          || preferredUnit != product.preferredUnit || packageSizeChanged)
     }
     return !name.trimmingCharacters(in: .whitespaces).isEmpty && imageURLValid
       && packageSizeIsValid && parsedMaxOpenDays != 0
@@ -288,6 +272,29 @@ struct ProductDetailView: View {
         || packageUnit != (product.packageUnit ?? product.family.baseUnit)
     }
     return product.packageQuantity != nil || product.packageUnit != nil
+  }
+
+  private var unitFamilySection: some View {
+    Section("Unit family") {
+      Picker("Family", selection: $family) {
+        ForEach(ProductFamily.allCases, id: \.self) { f in
+          Text(f.displayName).tag(f)
+        }
+      }
+      Picker("Preferred unit", selection: $preferredUnit) {
+        ForEach(appState.unitsFor(family: family), id: \.code) { u in
+          Text(u.code).tag(u.code)
+        }
+      }
+    }
+    .onChange(of: family) { _, newFamily in
+      if !appState.unitsFor(family: newFamily).contains(where: { $0.code == preferredUnit }) {
+        preferredUnit = newFamily.baseUnit
+      }
+      if !appState.unitsFor(family: newFamily).contains(where: { $0.code == packageUnit }) {
+        packageUnit = newFamily.baseUnit
+      }
+    }
   }
 
   private var parsedMaxOpenDays: Int64? {
