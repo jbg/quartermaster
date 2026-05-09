@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.23.0](https://github.com/jbg/quartermaster/compare/1.22.0...1.23.0) (2026-05-09)
+
+
+### Features
+
+* improve printed label typography ([4f67868](https://github.com/jbg/quartermaster/commit/4f678685dad95e999525944a2c8188885eca6713))
+* support household measurement systems ([a9bb156](https://github.com/jbg/quartermaster/commit/a9bb156ec00d28c47e6f8a91902b7b115e24cc2f))
+
+
+### Bug Fixes
+
+* hide depleted batches from inventory summaries ([f18079d](https://github.com/jbg/quartermaster/commit/f18079d5cabe330c6fef4fd90469ac7ab6793fc1))
+
 ## [1.22.0](https://github.com/jbg/quartermaster/compare/1.21.3...1.22.0) (2026-05-09)
 
 
