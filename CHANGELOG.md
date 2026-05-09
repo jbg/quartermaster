@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.0](https://github.com/jbg/quartermaster/compare/1.21.3...1.22.0) (2026-05-09)
+
+
+### Features
+
+* add storage vessels ([806d829](https://github.com/jbg/quartermaster/commit/806d8293a266f0bdb5c08ce9ec82c9c7c8b49c48))
+
 ## [1.21.3](https://github.com/jbg/quartermaster/compare/1.21.2...1.21.3) (2026-05-09)
 
 
