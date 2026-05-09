@@ -128,7 +128,12 @@ export function groupInventoryByLocation(input: {
       location,
       activeCount: locationBatches.filter((item) => !isDepleted(item)).length,
       depletedCount: locationBatches.filter(isDepleted).length,
-      productGroups: groupVisibleBatches(location.id, visible, input.highlightBatchId ?? null),
+      productGroups: groupVisibleBatches(
+        location.id,
+        visible,
+        input.filter,
+        input.highlightBatchId ?? null
+      ),
       emptyMessage: inventoryLocationEmptyMessage(location.name, input.filter, search.length > 0)
     };
   });
@@ -141,7 +146,7 @@ export function matchesInventoryFilter(
 ): boolean {
   switch (filter) {
     case 'all':
-      return true;
+      return !isDepleted(batch);
     case 'depleted':
       return isDepleted(batch);
     case 'active':
@@ -469,6 +474,7 @@ function applyOptionalDate(
 function groupVisibleBatches(
   locationId: string,
   visibleBatches: StockBatch[],
+  filter: InventoryFilterMode,
   highlightBatchId: string | null
 ): InventoryProductGroup[] {
   const byProduct = new Map<string, StockBatch[]>();
@@ -502,7 +508,7 @@ function groupVisibleBatches(
         bestBatch
       };
     })
-    .sort(compareProductGroups);
+    .sort((left, right) => compareProductGroups(left, right, filter));
 }
 
 function groupBatchesByPackage(
@@ -551,7 +557,15 @@ function comparePackageGroups(
   return compareBatchesForSelection(left.bestBatch, right.bestBatch);
 }
 
-function compareProductGroups(left: InventoryProductGroup, right: InventoryProductGroup): number {
+function compareProductGroups(
+  left: InventoryProductGroup,
+  right: InventoryProductGroup,
+  filter: InventoryFilterMode
+): number {
+  if (filter === 'all') {
+    const nameComparison = left.productName.localeCompare(right.productName);
+    return nameComparison || left.productId.localeCompare(right.productId);
+  }
   const leftDepletedOnly = left.activeCount === 0;
   const rightDepletedOnly = right.activeCount === 0;
   if (leftDepletedOnly !== rightDepletedOnly) {

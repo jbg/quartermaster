@@ -188,7 +188,9 @@ internal fun InventoryScreen(
 internal fun QuartermasterAppState.batchesForLocation(
     locationId: String,
     target: InventoryTarget?,
-): List<StockBatchDto> = batches.filter { it.locationId.toString() == locationId }
+): List<StockBatchDto> = batches.filter {
+    it.locationId.toString() == locationId && (!isBatchDepleted(it) || it.id.toString() == target?.batchId)
+}
     .sortedWith(
         compareByDescending<StockBatchDto> { it.id.toString() == target?.batchId }
             .thenByDescending { it.product.id.toString() == target?.productId }

@@ -1219,9 +1219,17 @@ class QuartermasterAppStateTest {
         appState.bootstrap()
 
         assertEquals(BatchCounts(active = 1, depleted = 1), appState.batchCountsForLocation(location.id.toString()))
+        assertEquals(listOf(active.id), appState.batchesForLocation(location.id.toString(), target = null).map { it.id })
         assertEquals(
-            listOf(active.id, depleted.id),
-            appState.batchesForLocation(location.id.toString(), target = null).map { it.id },
+            listOf(depleted.id, active.id),
+            appState.batchesForLocation(
+                location.id.toString(),
+                target = InventoryTarget(
+                    productId = depleted.product.id.toString(),
+                    locationId = location.id.toString(),
+                    batchId = depleted.id.toString(),
+                ),
+            ).map { it.id },
         )
     }
 
