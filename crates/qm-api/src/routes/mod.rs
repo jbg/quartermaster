@@ -11,4 +11,5 @@ pub mod patch;
 pub mod products;
 pub mod reminders;
 pub mod stock;
+pub mod storage_vessels;
 pub mod units;

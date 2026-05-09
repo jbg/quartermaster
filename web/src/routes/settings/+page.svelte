@@ -26,7 +26,8 @@
     type LabelPrinterMedia,
     type Location,
     type MeResponse,
-    type OpenFoodFactsCredentialStatusResponse
+    type OpenFoodFactsCredentialStatusResponse,
+    type StorageVessel
   } from '$lib/session-core';
 
   let session: QuartermasterSession | null = $state(null);
@@ -35,11 +36,14 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let locations = $state<Location[]>([]);
+  let storageVessels = $state<StorageVessel[]>([]);
   let printers = $state<LabelPrinter[]>([]);
   let actionBusy = $state<string | null>(null);
   let formError = $state<string | null>(null);
   let printerError = $state<string | null>(null);
   let printerMessage = $state<string | null>(null);
+  let vesselError = $state<string | null>(null);
+  let vesselDeleteError = $state<string | null>(null);
   let offCredentialStatus = $state<OpenFoodFactsCredentialStatusResponse | null>(null);
   let offUsername = $state('');
   let offPassword = $state('');
@@ -47,10 +51,15 @@
   let offError = $state<string | null>(null);
   let deleteError = $state<string | null>(null);
   let editingLocation = $state<Location | null>(null);
+  let editingVessel = $state<StorageVessel | null>(null);
   let editingPrinter = $state<LabelPrinter | null>(null);
   let pendingDelete = $state<Location | null>(null);
+  let pendingVesselDelete = $state<StorageVessel | null>(null);
   let locationName = $state('');
   let locationKind = $state<LocationKind>('pantry');
+  let vesselName = $state('');
+  let vesselTareWeight = $state('');
+  let vesselTareUnit = $state('g');
   let pairingServerUrl = $state('');
   let pairingQrSvg = $state('');
   let printerName = $state('');
@@ -62,6 +71,7 @@
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
   const households = $derived(me?.households ?? []);
   const sortedLocations = $derived(sortLocations(locations));
+  const sortedStorageVessels = $derived(sortStorageVessels(storageVessels));
   const inventoryHref = $derived(appPath('/', page.url));
   const mobilePairingServerUrl = $derived(
     me?.public_base_url?.trim() || me?.publicBaseUrl?.trim() || pairingServerUrl
@@ -116,15 +126,22 @@
     try {
       me = await session.me();
       if (currentHousehold(me)) {
-        await Promise.all([refreshLocations(), refreshPrinters(), refreshOffCredentialStatus()]);
+        await Promise.all([
+          refreshLocations(),
+          refreshStorageVessels(),
+          refreshPrinters(),
+          refreshOffCredentialStatus()
+        ]);
       } else {
         locations = [];
+        storageVessels = [];
         printers = [];
         offCredentialStatus = null;
       }
     } catch {
       me = null;
       locations = [];
+      storageVessels = [];
       printers = [];
       authenticated = false;
       error = 'Sign in again to continue.';
@@ -138,6 +155,13 @@
       return;
     }
     locations = sortLocations(await session.locationsList());
+  }
+
+  async function refreshStorageVessels() {
+    if (!session) {
+      return;
+    }
+    storageVessels = sortStorageVessels(await session.storageVesselsList());
   }
 
   async function switchHousehold(id: string) {
@@ -246,6 +270,26 @@
     printerMessage = null;
   }
 
+  function resetVesselForm() {
+    editingVessel = null;
+    pendingVesselDelete = null;
+    vesselName = '';
+    vesselTareWeight = '';
+    vesselTareUnit = 'g';
+    vesselError = null;
+    vesselDeleteError = null;
+  }
+
+  function startEditVessel(vessel: StorageVessel) {
+    editingVessel = vessel;
+    pendingVesselDelete = null;
+    vesselName = vessel.name;
+    vesselTareWeight = String(vessel.tare_weight ?? vessel.tareWeight ?? '');
+    vesselTareUnit = vessel.tare_unit ?? vessel.tareUnit ?? 'g';
+    vesselError = null;
+    vesselDeleteError = null;
+  }
+
   function startEditPrinter(printer: LabelPrinter) {
     editingPrinter = printer;
     printerName = printer.name;
@@ -324,6 +368,39 @@
     }
   }
 
+  async function moveStorageVessel(vessel: StorageVessel, direction: -1 | 1) {
+    if (!session) {
+      return;
+    }
+    const current = sortedStorageVessels;
+    const index = current.findIndex((item) => item.id === vessel.id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= current.length) {
+      return;
+    }
+    const reordered = [...current];
+    reordered.splice(target, 0, reordered.splice(index, 1)[0]);
+    actionBusy = `vessel:move:${vessel.id}`;
+    vesselError = null;
+    try {
+      await Promise.all(
+        reordered.map((item, sortOrder) =>
+          session!.storageVesselsUpdate(item.id, {
+            name: item.name,
+            tare_weight: String(item.tare_weight ?? item.tareWeight ?? '0'),
+            tare_unit: item.tare_unit ?? item.tareUnit ?? 'g',
+            sort_order: sortOrder
+          })
+        )
+      );
+      await refreshStorageVessels();
+    } catch {
+      vesselError = 'Storage vessels could not be reordered.';
+    } finally {
+      actionBusy = null;
+    }
+  }
+
   function confirmDelete(location: Location) {
     pendingDelete = location;
     deleteError = null;
@@ -346,6 +423,73 @@
       await refreshLocations();
     } catch (err) {
       deleteError = locationDeleteErrorMessage(err);
+    } finally {
+      actionBusy = null;
+    }
+  }
+
+  async function saveStorageVessel() {
+    if (!session) {
+      return;
+    }
+    const name = vesselName.trim();
+    const weight = vesselTareWeight.trim();
+    const parsed = Number(weight);
+    if (!name || !weight || !Number.isFinite(parsed) || parsed < 0) {
+      vesselError = 'Enter a vessel name and zero-or-greater tare weight.';
+      return;
+    }
+    const busyId = editingVessel ? `vessel:save:${editingVessel.id}` : 'vessel:create';
+    actionBusy = busyId;
+    vesselError = null;
+    try {
+      if (editingVessel) {
+        await session.storageVesselsUpdate(editingVessel.id, {
+          name,
+          tare_weight: weight,
+          tare_unit: vesselTareUnit,
+          sort_order: storageVesselSortOrder(editingVessel)
+        });
+      } else {
+        await session.storageVesselsCreate({
+          name,
+          tare_weight: weight,
+          tare_unit: vesselTareUnit
+        });
+      }
+      await refreshStorageVessels();
+      resetVesselForm();
+    } catch {
+      vesselError = editingVessel
+        ? 'Storage vessel could not be saved.'
+        : 'Storage vessel could not be added.';
+    } finally {
+      actionBusy = null;
+    }
+  }
+
+  function confirmVesselDelete(vessel: StorageVessel) {
+    pendingVesselDelete = vessel;
+    vesselDeleteError = null;
+    vesselError = null;
+  }
+
+  async function deleteStorageVessel() {
+    if (!session || !pendingVesselDelete) {
+      return;
+    }
+    const deleting = pendingVesselDelete;
+    actionBusy = `vessel:delete:${deleting.id}`;
+    vesselDeleteError = null;
+    try {
+      await session.storageVesselsDelete(deleting.id);
+      pendingVesselDelete = null;
+      if (editingVessel?.id === deleting.id) {
+        resetVesselForm();
+      }
+      await refreshStorageVessels();
+    } catch {
+      vesselDeleteError = 'Storage vessel could not be deleted.';
     } finally {
       actionBusy = null;
     }
@@ -477,7 +621,19 @@
     authenticated = false;
     me = null;
     locations = [];
+    storageVessels = [];
     await goto(inventoryHref);
+  }
+
+  function storageVesselSortOrder(vessel: StorageVessel): number {
+    return vessel.sort_order ?? vessel.sortOrder ?? 0;
+  }
+
+  function sortStorageVessels(items: StorageVessel[]): StorageVessel[] {
+    return [...items].sort((a, b) => {
+      const order = storageVesselSortOrder(a) - storageVesselSortOrder(b);
+      return order !== 0 ? order : a.name.localeCompare(b.name);
+    });
   }
 </script>
 
@@ -569,6 +725,128 @@
                 </div>
               </article>
             {/each}
+          </div>
+        {/if}
+      </section>
+
+      <section class="panel settings-panel" aria-labelledby="vessels-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Stocktake</p>
+            <h2 id="vessels-heading">Storage vessels</h2>
+          </div>
+        </div>
+
+        {#if vesselError}
+          <p class="error-text">{vesselError}</p>
+        {/if}
+
+        {#if sortedStorageVessels.length === 0}
+          <p class="muted">No storage vessels yet.</p>
+        {:else}
+          <div class="location-list">
+            {#each sortedStorageVessels as vessel, index}
+              <article class="location-row">
+                <div>
+                  <h3>{vessel.name}</h3>
+                  <p>
+                    {vessel.tare_weight ?? vessel.tareWeight}
+                    {vessel.tare_unit ?? vessel.tareUnit}
+                    - order {storageVesselSortOrder(vessel) + 1}
+                  </p>
+                </div>
+                <div class="row-actions">
+                  <button
+                    class="ghost-button small"
+                    type="button"
+                    disabled={index === 0 || actionBusy !== null}
+                    onclick={() => moveStorageVessel(vessel, -1)}>Up</button
+                  >
+                  <button
+                    class="ghost-button small"
+                    type="button"
+                    disabled={index === sortedStorageVessels.length - 1 || actionBusy !== null}
+                    onclick={() => moveStorageVessel(vessel, 1)}>Down</button
+                  >
+                  <button
+                    class="secondary-action small"
+                    type="button"
+                    disabled={actionBusy !== null}
+                    onclick={() => startEditVessel(vessel)}>Edit</button
+                  >
+                  <button
+                    class="ghost-button small danger"
+                    type="button"
+                    disabled={actionBusy !== null}
+                    onclick={() => confirmVesselDelete(vessel)}>Delete</button
+                  >
+                </div>
+              </article>
+            {/each}
+          </div>
+        {/if}
+
+        <form
+          class="settings-form"
+          onsubmit={(event) => {
+            event.preventDefault();
+            void saveStorageVessel();
+          }}
+        >
+          <div class="section-heading compact">
+            <div>
+              <p class="eyebrow">{editingVessel ? 'Edit' : 'New'}</p>
+              <h2>{editingVessel ? editingVessel.name : 'Add storage vessel'}</h2>
+            </div>
+            {#if editingVessel}
+              <button class="ghost-button small" type="button" onclick={resetVesselForm}
+                >Cancel</button
+              >
+            {/if}
+          </div>
+          <label>
+            Name
+            <input bind:value={vesselName} maxlength="80" placeholder="1L Mason jar" />
+          </label>
+          <label>
+            Tare weight
+            <input bind:value={vesselTareWeight} inputmode="decimal" placeholder="410" />
+          </label>
+          <label>
+            Tare unit
+            <select bind:value={vesselTareUnit}>
+              <option value="g">g</option>
+              <option value="kg">kg</option>
+              <option value="oz">oz</option>
+              <option value="lb">lb</option>
+            </select>
+          </label>
+          <button class="primary-action" type="submit" disabled={actionBusy !== null}
+            >{editingVessel ? 'Save vessel' : 'Add vessel'}</button
+          >
+        </form>
+
+        {#if pendingVesselDelete}
+          <div class="delete-confirmation">
+            <h2>Delete {pendingVesselDelete.name}?</h2>
+            <p class="muted">Batches using this vessel will keep their stock quantity.</p>
+            <div class="row-actions">
+              <button
+                class="ghost-button danger"
+                type="button"
+                disabled={actionBusy !== null}
+                onclick={deleteStorageVessel}>Delete vessel</button
+              >
+              <button
+                class="secondary-action"
+                type="button"
+                disabled={actionBusy !== null}
+                onclick={() => (pendingVesselDelete = null)}>Cancel</button
+              >
+            </div>
+            {#if vesselDeleteError}
+              <p class="error-text">{vesselDeleteError}</p>
+            {/if}
           </div>
         {/if}
       </section>

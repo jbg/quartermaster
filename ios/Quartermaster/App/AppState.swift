@@ -45,6 +45,13 @@ protocol AppStateAPI: Actor {
   func updateLocation(id: String, name: String, kind: String, sortOrder: Int) async throws
     -> Location
   func deleteLocation(id: String) async throws
+  func storageVessels() async throws -> [StorageVessel]
+  func createStorageVessel(name: String, tareWeight: String, tareUnit: String, sortOrder: Int?)
+    async throws -> StorageVessel
+  func updateStorageVessel(
+    id: String, name: String, tareWeight: String, tareUnit: String, sortOrder: Int
+  ) async throws -> StorageVessel
+  func deleteStorageVessel(id: String) async throws
   func units() async throws -> [Unit]
   func searchProducts(query: String, limit: Int, includeDeleted: Bool) async throws -> [Product]
   func lookupBarcode(_ barcode: String) async throws -> BarcodeLookupResponse
@@ -128,6 +135,13 @@ extension AppStateAPI {
 
   func createLocation(name: String, kind: String) async throws -> Location {
     try await createLocation(name: name, kind: kind, sortOrder: nil)
+  }
+
+  func createStorageVessel(name: String, tareWeight: String, tareUnit: String) async throws
+    -> StorageVessel
+  {
+    try await createStorageVessel(
+      name: name, tareWeight: tareWeight, tareUnit: tareUnit, sortOrder: nil)
   }
 
   func listStockEvents(limit: Int = 50) async throws -> StockEventListResponse {

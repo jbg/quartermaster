@@ -40,6 +40,22 @@ async fn product_stock_history_lifecycle_flows_through_api() {
     assert_eq!(status, StatusCode::CREATED);
     let product_id = product["id"].as_str().unwrap();
 
+    let (status, vessel) = app
+        .send(
+            Method::POST,
+            "/api/v1/storage-vessels",
+            Some(json!({
+                "name": "1L Mason jar",
+                "tare_weight": "410",
+                "tare_unit": "g",
+                "sort_order": 0,
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let vessel_id = vessel["id"].as_str().unwrap();
+
     let (status, batch) = app
         .send(
             Method::POST,
@@ -47,8 +63,10 @@ async fn product_stock_history_lifecycle_flows_through_api() {
             Some(json!({
                 "product_id": product_id,
                 "location_id": pantry_id,
-                "quantity": "500",
+                "storage_vessel_id": vessel_id,
+                "quantity": "910",
                 "unit": "g",
+                "quantity_includes_storage_vessel": true,
                 "produced_on": "2026-05-20",
                 "expires_on": "2026-06-01",
                 "opened_on": null,
@@ -61,6 +79,11 @@ async fn product_stock_history_lifecycle_flows_through_api() {
     let batch_id = batch["id"].as_str().unwrap();
     assert_eq!(batch["location_id"], pantry_id.to_string());
     assert_eq!(batch["location_name"].as_str().unwrap(), pantry.name);
+    assert_eq!(batch["initial_quantity"], "500");
+    assert_eq!(batch["quantity"], "500");
+    assert_eq!(batch["storage_vessel"]["name"], "1L Mason jar");
+    assert_eq!(batch["storage_vessel"]["tare_weight"], "410");
+    assert_eq!(batch["storage_vessel"]["tare_unit"], "g");
     assert_eq!(batch["produced_on"], "2026-05-20");
     assert!(batch["depleted_at"].is_null());
 
@@ -78,17 +101,22 @@ async fn product_stock_history_lifecycle_flows_through_api() {
         pantry.name
     );
     assert!(listed["items"][0]["depleted_at"].is_null());
+    assert_eq!(listed["items"][0]["storage_vessel"]["id"], vessel_id);
 
     let (status, updated) = app
         .send(
             Method::PATCH,
             &format!("/api/v1/stock/{batch_id}"),
-            Some(json!([{ "op": "replace", "path": "/quantity", "value": "450" }])),
+            Some(json!([
+                { "op": "replace", "path": "/quantity", "value": "450" },
+                { "op": "remove", "path": "/storage_vessel_id" }
+            ])),
             Some(&alice),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(updated["quantity"], "450");
+    assert!(updated["storage_vessel"].is_null());
 
     let (status, consumed) = app
         .send(
@@ -480,6 +508,80 @@ async fn metadata_only_stock_updates_do_not_write_quantity_events() {
     let items = events["items"].as_array().unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["event_type"], "add");
+}
+
+#[tokio::test]
+async fn gross_vessel_weight_is_only_for_free_weight_stock() {
+    let app = TestApp::start(ApiConfig::default()).await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+
+    let me = app.me(&alice).await;
+    let household_id = Uuid::parse_str(me_current_household_id(&me).unwrap()).unwrap();
+    let pantry_id = qm_db::locations::list_for_household(&app.db, household_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|loc| loc.kind == "pantry")
+        .unwrap()
+        .id;
+
+    let (status, product) = app
+        .send(
+            Method::POST,
+            "/api/v1/products",
+            Some(json!({
+                "name": "Packaged flour",
+                "brand": null,
+                "family": "mass",
+                "preferred_unit": "g",
+                "package_quantity": "500",
+                "package_unit": "g",
+                "barcode": null,
+                "image_url": null,
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, vessel) = app
+        .send(
+            Method::POST,
+            "/api/v1/storage-vessels",
+            Some(json!({
+                "name": "Jar",
+                "tare_weight": "100",
+                "tare_unit": "g",
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, body) = app
+        .send(
+            Method::POST,
+            "/api/v1/stock",
+            Some(json!({
+                "product_id": product["id"],
+                "location_id": pantry_id,
+                "storage_vessel_id": vessel["id"],
+                "quantity": "600",
+                "unit": "g",
+                "quantity_includes_storage_vessel": true,
+                "expires_on": null,
+                "opened_on": null,
+                "note": null,
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["message"]
+        .as_str()
+        .unwrap()
+        .contains("cannot be used for packaged products"));
 }
 
 #[tokio::test]

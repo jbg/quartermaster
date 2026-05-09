@@ -63,6 +63,7 @@ export interface InventoryLocationGroup {
 export interface StockEditFields {
   quantity: string;
   locationId: string;
+  storageVesselId: string;
   expiresOn: string;
   producedOn: string;
   openedOn: string;
@@ -252,6 +253,26 @@ export function stockLocationId(batch: StockBatch): string | null {
   return batch.location_id ?? batch.locationId ?? null;
 }
 
+export function stockStorageVessel(batch: StockBatch): StockBatch['storage_vessel'] {
+  return batch.storage_vessel ?? batch.storageVessel ?? null;
+}
+
+export function stockStorageVesselId(batch: StockBatch): string | null {
+  return stockStorageVessel(batch)?.id ?? null;
+}
+
+export function stockStorageVesselLabel(batch: StockBatch): string {
+  const vessel = stockStorageVessel(batch);
+  if (!vessel) {
+    return 'None';
+  }
+  const weight = vessel.tare_weight ?? vessel.tareWeight;
+  const unit = vessel.tare_unit ?? vessel.tareUnit;
+  return weight === undefined || weight === null || !unit
+    ? vessel.name
+    : `${vessel.name} (${weight} ${unit})`;
+}
+
 export function stockExpiry(batch: StockBatch): string {
   return stockExpiryValue(batch) ?? 'No expiry date';
 }
@@ -403,6 +424,7 @@ export function stockEditFields(batch: StockBatch): StockEditFields {
   return {
     quantity: batch.quantity === undefined || batch.quantity === null ? '' : String(batch.quantity),
     locationId: stockLocationId(batch) ?? '',
+    storageVesselId: stockStorageVesselId(batch) ?? '',
     expiresOn: stockExpiryValue(batch) ?? '',
     producedOn: stockProducedValue(batch) ?? '',
     openedOn: stockOpenedValue(batch) ?? '',
@@ -436,6 +458,19 @@ export function buildStockUpdateRequest(
   const currentLocationId = stockLocationId(batch) ?? '';
   if (input.locationId && input.locationId !== currentLocationId) {
     request.push({ op: 'replace', path: '/location_id', value: input.locationId });
+  }
+
+  const currentStorageVesselId = stockStorageVesselId(batch) ?? '';
+  if (input.storageVesselId) {
+    if (input.storageVesselId !== currentStorageVesselId) {
+      request.push({
+        op: 'replace',
+        path: '/storage_vessel_id',
+        value: input.storageVesselId
+      });
+    }
+  } else if (currentStorageVesselId) {
+    request.push({ op: 'remove', path: '/storage_vessel_id' });
   }
 
   applyOptionalDate(request, 'expires_on', stockExpiryValue(batch), input.expiresOn);

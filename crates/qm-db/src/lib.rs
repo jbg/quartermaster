@@ -24,6 +24,7 @@ pub mod products;
 pub mod reminders;
 pub mod stock;
 pub mod stock_events;
+pub mod storage_vessels;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 pub mod time;

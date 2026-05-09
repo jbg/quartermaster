@@ -15,6 +15,7 @@ use qm_db::stock::{
     StockMetadataUpdate,
 };
 use qm_db::stock_events::TimelineEntryRow;
+use qm_db::storage_vessels::StorageVesselRow;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -28,6 +29,7 @@ use crate::{
         reject_remove, reject_value_for_remove, string_value, JsonPatchDocument, JsonPatchOperation,
     },
     routes::products::ProductDto,
+    routes::storage_vessels::{to_dto as storage_vessel_dto, StorageVesselDto},
     types::StockEventType,
     AppState,
 };
@@ -77,6 +79,7 @@ pub struct StockBatchDto {
     pub product: ProductDto,
     pub location_id: Uuid,
     pub location_name: String,
+    pub storage_vessel: Option<StorageVesselDto>,
     pub initial_quantity: String,
     pub quantity: String,
     pub unit: String,
@@ -101,6 +104,7 @@ impl TryFrom<StockBatchWithProduct> for StockBatchDto {
             product: j.product.try_into()?,
             location_id: j.batch.location_id,
             location_name: j.location_name,
+            storage_vessel: j.storage_vessel.map(storage_vessel_dto),
             initial_quantity: j.batch.initial_quantity,
             quantity: j.batch.quantity,
             unit: j.batch.unit,
@@ -139,6 +143,10 @@ pub struct CreateStockRequest {
     pub location_id: Uuid,
     pub quantity: String,
     pub unit: String,
+    pub storage_vessel_id: Option<Uuid>,
+    /// When true, `quantity` is the gross measured mass including the selected
+    /// vessel. The API stores net stock after subtracting the vessel tare.
+    pub quantity_includes_storage_vessel: Option<bool>,
     pub produced_on: Option<String>,
     pub expires_on: Option<String>,
     pub opened_on: Option<String>,
@@ -151,6 +159,7 @@ pub type UpdateStockRequest = JsonPatchDocument;
 struct StockPatch {
     quantity: Option<String>,
     location_id: Option<Uuid>,
+    storage_vessel_id: Option<Option<Uuid>>,
     produced_on: Option<Option<String>>,
     expires_on: Option<Option<String>>,
     opened_on: Option<Option<String>>,
@@ -184,6 +193,12 @@ impl StockPatch {
                         .map_err(|_| ApiError::BadRequest("location_id must be a UUID".into()))?,
                 );
             }
+            "/storage_vessel_id" => {
+                let value = string_value("storage_vessel_id", value)?;
+                self.storage_vessel_id = Some(Some(Uuid::parse_str(&value).map_err(|_| {
+                    ApiError::BadRequest("storage_vessel_id must be a UUID".into())
+                })?));
+            }
             "/produced_on" => self.produced_on = Some(Some(string_value("produced_on", value)?)),
             "/expires_on" => self.expires_on = Some(Some(string_value("expires_on", value)?)),
             "/opened_on" => self.opened_on = Some(Some(string_value("opened_on", value)?)),
@@ -214,6 +229,10 @@ impl StockPatch {
             "/note" => {
                 reject_value_for_remove("note", value)?;
                 self.note = Some(None);
+            }
+            "/storage_vessel_id" => {
+                reject_value_for_remove("storage_vessel_id", value)?;
+                self.storage_vessel_id = Some(None);
             }
             "/quantity" => return Err(reject_remove("quantity")),
             "/location_id" => return Err(reject_remove("location_id")),
@@ -366,6 +385,12 @@ pub async fn create(
     let product = load_product_for_write(&state, household_id, req.product_id).await?;
     validate_unit_family(&req.unit, &product.family)?;
     validate_location(&state, household_id, req.location_id).await?;
+    let storage_vessel = match req.storage_vessel_id {
+        Some(storage_vessel_id) => {
+            Some(validate_storage_vessel(&state, household_id, storage_vessel_id).await?)
+        }
+        None => None,
+    };
     if let Some(d) = req.expires_on.as_deref() {
         validate_iso_date(d)?;
     }
@@ -376,12 +401,15 @@ pub async fn create(
         validate_iso_date(d)?;
     }
 
-    let row = qm_db::stock::create(
+    let quantity = create_stock_quantity(&req, &product, storage_vessel.as_ref())?;
+
+    let row = qm_db::stock::create_with_storage_vessel(
         &state.db,
         household_id,
         product.id,
         req.location_id,
-        &req.quantity,
+        req.storage_vessel_id,
+        &quantity,
         &req.unit,
         req.produced_on.as_deref(),
         req.expires_on.as_deref(),
@@ -445,6 +473,9 @@ pub async fn update(
     if let Some(loc) = req.location_id {
         validate_location(&state, household_id, loc).await?;
     }
+    if let Some(Some(storage_vessel_id)) = req.storage_vessel_id {
+        validate_storage_vessel(&state, household_id, storage_vessel_id).await?;
+    }
     if let Some(d) = expires_on.flatten() {
         validate_iso_date(d)?;
     }
@@ -473,12 +504,14 @@ pub async fn update(
 
     let metadata = StockMetadataUpdate {
         location_id: req.location_id,
+        storage_vessel_id: req.storage_vessel_id,
         produced_on,
         expires_on,
         opened_on,
         note,
     };
     let has_metadata = req.location_id.is_some()
+        || req.storage_vessel_id.is_some()
         || req.produced_on.is_some()
         || req.expires_on.is_some()
         || req.opened_on.is_some()
@@ -1000,6 +1033,52 @@ fn validate_unit_family(unit: &str, product_family: &str) -> ApiResult<()> {
     Ok(())
 }
 
+fn create_stock_quantity(
+    req: &CreateStockRequest,
+    product: &ProductRow,
+    storage_vessel: Option<&StorageVesselRow>,
+) -> ApiResult<String> {
+    if !req.quantity_includes_storage_vessel.unwrap_or(false) {
+        return Ok(req.quantity.clone());
+    }
+
+    let vessel = storage_vessel.ok_or_else(|| {
+        ApiError::BadRequest(
+            "storage_vessel_id is required when quantity includes the storage vessel".into(),
+        )
+    })?;
+    if product.package_quantity.is_some() || product.package_unit.is_some() {
+        return Err(ApiError::BadRequest(
+            "quantity_includes_storage_vessel cannot be used for packaged products".into(),
+        ));
+    }
+    let unit =
+        qm_core::units::lookup(&req.unit).map_err(|_| ApiError::UnknownUnit(req.unit.clone()))?;
+    if unit.family.as_str() != "mass" {
+        return Err(ApiError::BadRequest(
+            "quantity_includes_storage_vessel requires a mass unit".into(),
+        ));
+    }
+
+    let gross = Decimal::from_str(&req.quantity)
+        .map_err(|_| ApiError::BadRequest("quantity not a valid decimal".into()))?;
+    let tare = Decimal::from_str(&vessel.tare_weight)
+        .map_err(|_| ApiError::Internal(anyhow::anyhow!("invalid storage vessel tare weight")))?;
+    let tare_in_quantity_unit = qm_core::units::convert(tare, &vessel.tare_unit, &req.unit)
+        .map_err(|err| {
+            ApiError::Internal(anyhow::anyhow!(
+                "converting storage vessel tare weight: {err}"
+            ))
+        })?;
+    let net = gross - tare_in_quantity_unit;
+    if net <= Decimal::ZERO {
+        return Err(ApiError::BadRequest(
+            "quantity must be greater than storage vessel tare weight".into(),
+        ));
+    }
+    Ok(net.normalize().to_string())
+}
+
 async fn household_today(state: &AppState, household_id: Uuid) -> ApiResult<String> {
     let household = qm_db::households::find_by_id(&state.db, household_id)
         .await?
@@ -1062,6 +1141,18 @@ async fn validate_location(
         .await?
         .ok_or(ApiError::NotFound)?;
     Ok(())
+}
+
+async fn validate_storage_vessel(
+    state: &AppState,
+    household_id: Uuid,
+    storage_vessel_id: Uuid,
+) -> ApiResult<StorageVesselRow> {
+    Ok(
+        qm_db::storage_vessels::find(&state.db, household_id, storage_vessel_id)
+            .await?
+            .ok_or(ApiError::NotFound)?,
+    )
 }
 
 async fn load_product_for_write(

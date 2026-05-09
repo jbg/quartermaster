@@ -3272,6 +3272,160 @@
         ]
       }
     },
+    "/api/v1/storage-vessels": {
+      "get": {
+        "tags": [
+          "storage-vessels"
+        ],
+        "operationId": "storage_vessels_list",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StorageVesselDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "storage-vessels"
+        ],
+        "operationId": "storage_vessels_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStorageVesselRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageVesselDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/storage-vessels/{id}": {
+      "delete": {
+        "tags": [
+          "storage-vessels"
+        ],
+        "operationId": "storage_vessels_delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "storage-vessels"
+        ],
+        "operationId": "storage_vessels_update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStorageVesselRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageVesselDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/units": {
       "get": {
         "tags": [
@@ -3730,7 +3884,47 @@
           "quantity": {
             "type": "string"
           },
+          "quantity_includes_storage_vessel": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "When true, `quantity` is the gross measured mass including the selected\nvessel. The API stores net stock after subtracting the vessel tare."
+          },
+          "storage_vessel_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
           "unit": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateStorageVesselRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "tare_weight",
+          "tare_unit"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "tare_unit": {
+            "type": "string"
+          },
+          "tare_weight": {
             "type": "string"
           }
         }
@@ -4833,6 +5027,16 @@
           "quantity": {
             "type": "string"
           },
+          "storage_vessel": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StorageVesselDto"
+              }
+            ]
+          },
           "unit": {
             "type": "string"
           }
@@ -4966,6 +5170,35 @@
             "items": {
               "$ref": "#/components/schemas/StockBatchDto"
             }
+          }
+        }
+      },
+      "StorageVesselDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "tare_weight",
+          "tare_unit",
+          "sort_order"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tare_unit": {
+            "type": "string"
+          },
+          "tare_weight": {
+            "type": "string"
           }
         }
       },
@@ -5115,6 +5348,30 @@
           }
         }
       },
+      "UpdateStorageVesselRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "tare_weight",
+          "tare_unit",
+          "sort_order"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tare_unit": {
+            "type": "string"
+          },
+          "tare_weight": {
+            "type": "string"
+          }
+        }
+      },
       "UserDto": {
         "type": "object",
         "required": [
@@ -5188,6 +5445,10 @@
     {
       "name": "locations",
       "description": "Pantry / fridge / freezer"
+    },
+    {
+      "name": "storage-vessels",
+      "description": "Household storage vessel tare weights"
     },
     {
       "name": "label-printers",

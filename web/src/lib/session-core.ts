@@ -143,6 +143,8 @@ export interface StockBatch {
   locationId?: string;
   location_name?: string | null;
   locationName?: string | null;
+  storage_vessel?: StorageVessel | null;
+  storageVessel?: StorageVessel | null;
   produced_on?: string | null;
   producedOn?: string | null;
   expires_on?: string | null;
@@ -325,6 +327,8 @@ export interface CreateStockRequest {
   location_id: string;
   quantity: string;
   unit: string;
+  storage_vessel_id?: string | null;
+  quantity_includes_storage_vessel?: boolean | null;
   produced_on?: string | null;
   expires_on?: string | null;
   opened_on?: string | null;
@@ -340,6 +344,31 @@ export interface CreateLocationRequest {
 export interface UpdateLocationRequest {
   name: string;
   kind: string;
+  sort_order: number;
+}
+
+export interface StorageVessel {
+  id: string;
+  name: string;
+  tare_weight?: string | number;
+  tareWeight?: string | number;
+  tare_unit?: string;
+  tareUnit?: string;
+  sort_order?: number;
+  sortOrder?: number;
+}
+
+export interface CreateStorageVesselRequest {
+  name: string;
+  tare_weight: string;
+  tare_unit: string;
+  sort_order?: number | null;
+}
+
+export interface UpdateStorageVesselRequest {
+  name: string;
+  tare_weight: string;
+  tare_unit: string;
   sort_order: number;
 }
 
@@ -420,6 +449,13 @@ export interface SessionTransport {
   locationsCreate(body: CreateLocationRequest): Promise<ApiResult<Location>>;
   locationsUpdate(id: string, body: UpdateLocationRequest): Promise<ApiResult<Location>>;
   locationsDelete(id: string): Promise<ApiResult<void>>;
+  storageVesselsList?(): Promise<ApiResult<StorageVessel[]>>;
+  storageVesselsCreate?(body: CreateStorageVesselRequest): Promise<ApiResult<StorageVessel>>;
+  storageVesselsUpdate?(
+    id: string,
+    body: UpdateStorageVesselRequest
+  ): Promise<ApiResult<StorageVessel>>;
+  storageVesselsDelete?(id: string): Promise<ApiResult<void>>;
   labelPrintersList?(): Promise<ApiResult<LabelPrinterListResponse>>;
   labelPrintersCreate?(body: CreateLabelPrinterRequest): Promise<ApiResult<LabelPrinter>>;
   labelPrintersUpdate?(
@@ -653,6 +689,28 @@ export class QuartermasterSession {
 
   locationsDelete(id: string): Promise<void> {
     return this.authed(() => this.transport.locationsDelete(id));
+  }
+
+  storageVesselsList(): Promise<StorageVessel[]> {
+    return this.authed(() => required(this.transport.storageVesselsList, 'storageVesselsList')());
+  }
+
+  storageVesselsCreate(body: CreateStorageVesselRequest): Promise<StorageVessel> {
+    return this.authed(() =>
+      required(this.transport.storageVesselsCreate, 'storageVesselsCreate')(body)
+    );
+  }
+
+  storageVesselsUpdate(id: string, body: UpdateStorageVesselRequest): Promise<StorageVessel> {
+    return this.authed(() =>
+      required(this.transport.storageVesselsUpdate, 'storageVesselsUpdate')(id, body)
+    );
+  }
+
+  storageVesselsDelete(id: string): Promise<void> {
+    return this.authed(() =>
+      required(this.transport.storageVesselsDelete, 'storageVesselsDelete')(id)
+    );
   }
 
   labelPrintersList(): Promise<LabelPrinterListResponse> {
