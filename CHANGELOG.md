@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.21.3](https://github.com/jbg/quartermaster/compare/1.21.2...1.21.3) (2026-05-09)
+
+
+### Bug Fixes
+
+* **ha:** pass OFF credential encryption option ([92bfc9f](https://github.com/jbg/quartermaster/commit/92bfc9f2484828ddd5dd8c88095c40ee5a673bcc))
+* improve inventory usability ([7f91452](https://github.com/jbg/quartermaster/commit/7f91452db643585a93fdec5cb5ec4e2df5a67510))
+
 ## [1.21.2](https://github.com/jbg/quartermaster/compare/1.21.1...1.21.2) (2026-05-09)
 
 
