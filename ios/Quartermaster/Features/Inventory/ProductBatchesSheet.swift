@@ -4,7 +4,7 @@ struct ProductBatchesSheet: View {
   @Environment(AppState.self) private var appState
   @Environment(\.dismiss) private var dismiss
 
-  let product: Product
+  @State private var product: Product
   let location: Location
   let allLocations: [Location]
   @State var batches: [StockBatch]
@@ -21,6 +21,22 @@ struct ProductBatchesSheet: View {
   /// Batch currently showing the "you came from here" flash. Cleared by a
   /// background task after ~1.5 s so the pulse feels transient.
   @State private var flashingBatchID: String?
+
+  init(
+    product: Product,
+    location: Location,
+    allLocations: [Location],
+    batches: [StockBatch],
+    highlightBatchID: String? = nil,
+    onMutated: @escaping () async -> Void
+  ) {
+    _product = State(initialValue: product)
+    self.location = location
+    self.allLocations = allLocations
+    _batches = State(initialValue: batches)
+    self.highlightBatchID = highlightBatchID
+    self.onMutated = onMutated
+  }
 
   var body: some View {
     NavigationStack {
@@ -108,8 +124,15 @@ struct ProductBatchesSheet: View {
             switch action {
             case .deleted:
               dismiss()
-            case .updated, .refreshed, .restored:
-              break
+            case .updated(let updated), .refreshed(let updated), .restored(let updated):
+              product = updated
+              if let refreshed = try? await appState.api.listStock(
+                locationID: location.id,
+                productID: updated.id,
+                includeDepleted: true,
+              ) {
+                batches = refreshed
+              }
             }
           }
         }
@@ -338,7 +361,7 @@ struct BatchRow: View {
   }
 }
 
-private func isDepleted(_ batch: StockBatch) -> Bool {
+func isDepleted(_ batch: StockBatch) -> Bool {
   batch.depletedAt != nil
 }
 
@@ -621,22 +644,25 @@ private struct ConsumeForm: View {
             .font(.footnote)
             .foregroundStyle(.secondary)
         }
-        Section {
-          Picker("Remainder location", selection: $remainderLocationID) {
-            ForEach(allLocations) { loc in
-              Text(loc.name).tag(loc.id)
+        if entryMode == .exact {
+          Section {
+            Picker("Remainder location", selection: $remainderLocationID) {
+              ForEach(allLocations) { loc in
+                Text(loc.name).tag(loc.id)
+              }
             }
+            DatePicker("Opened on", selection: $openedOn, displayedComponents: .date)
+            Toggle("Set expiry override", isOn: $hasExpiryOverride.animation())
+            if hasExpiryOverride {
+              DatePicker(
+                "Remainder expires", selection: $expiryOverride, displayedComponents: .date)
+            }
+            TextField("Note", text: $remainderNote, axis: .vertical)
+          } header: {
+            Text("Store remainder")
+          } footer: {
+            Text("Use this when you opened a package and want to track what is left.")
           }
-          DatePicker("Opened on", selection: $openedOn, displayedComponents: .date)
-          Toggle("Set expiry override", isOn: $hasExpiryOverride.animation())
-          if hasExpiryOverride {
-            DatePicker("Remainder expires", selection: $expiryOverride, displayedComponents: .date)
-          }
-          TextField("Note", text: $remainderNote, axis: .vertical)
-        } header: {
-          Text("Store remainder")
-        } footer: {
-          Text("Use this when you opened a package and want to track what is left.")
         }
         if let msg = errorMessage {
           Section { Text(msg).foregroundStyle(Color.quartermasterError) }
@@ -656,13 +682,15 @@ private struct ConsumeForm: View {
           }
           .disabled(!canSubmit || isSubmitting)
         }
-        ToolbarItem(placement: .bottomBar) {
-          Button {
-            Task { await submitAndStoreRemainder() }
-          } label: {
-            Label("Open and Store Remainder", systemImage: "shippingbox")
+        if entryMode == .exact {
+          ToolbarItem(placement: .bottomBar) {
+            Button {
+              Task { await submitAndStoreRemainder() }
+            } label: {
+              Label("Open and Store Remainder", systemImage: "shippingbox")
+            }
+            .disabled(!canStoreRemainder || isSubmitting)
           }
-          .disabled(!canStoreRemainder || isSubmitting)
         }
       }
       .alert(
@@ -698,7 +726,8 @@ private struct ConsumeForm: View {
   }
 
   private var canStoreRemainder: Bool {
-    canSubmit && allLocations.contains(where: { $0.id == remainderLocationID })
+    entryMode == .exact && canSubmit
+      && allLocations.contains(where: { $0.id == remainderLocationID })
   }
 
   private var packageSize: (quantity: String, unit: String)? {

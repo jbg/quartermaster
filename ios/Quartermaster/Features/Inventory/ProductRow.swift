@@ -13,9 +13,15 @@ struct ProductRow: View {
     HStack(spacing: 12) {
       productThumb
       VStack(alignment: .leading, spacing: 2) {
-        Text(product.displayTitle)
+        Text(product.name)
           .font(.body)
           .lineLimit(2)
+        if let brand = product.brand, !brand.isEmpty {
+          Text(brand)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
         quantityLine
       }
       Spacer()

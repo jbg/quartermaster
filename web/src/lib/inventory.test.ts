@@ -279,7 +279,48 @@ describe('inventory helpers', () => {
     expect(grouped('expiring_soon')).toEqual(['active']);
     expect(grouped('expired')).toEqual(['expired']);
     expect(grouped('depleted')).toEqual(['depleted']);
-    expect(grouped('all')).toEqual(['expired', 'active', 'later', 'depleted']);
+    expect(grouped('all')).toEqual(['expired', 'later', 'active']);
+  });
+
+  it('sorts all inventory by product name instead of expiry', () => {
+    const locations = [{ id: 'pantry', name: 'Pantry' }];
+    const items = [
+      {
+        id: 'zucchini',
+        product: { id: 'zucchini', name: 'Zucchini' },
+        location_id: 'pantry',
+        quantity: '1',
+        unit: 'piece',
+        expires_on: '2026-04-28'
+      },
+      {
+        id: 'apples',
+        product: { id: 'apples', name: 'Apples' },
+        location_id: 'pantry',
+        quantity: '1',
+        unit: 'piece',
+        expires_on: '2026-05-10'
+      },
+      {
+        id: 'depleted',
+        product: { id: 'beans', name: 'Beans' },
+        location_id: 'pantry',
+        quantity: '0',
+        unit: 'kg',
+        depleted_at: '2026-04-20T00:00:00Z',
+        expires_on: '2026-04-25'
+      }
+    ];
+
+    const groups = groupInventoryByLocation({
+      items,
+      locations,
+      filter: 'all',
+      search: '',
+      today: new Date('2026-04-27T12:00:00')
+    })[0].productGroups;
+
+    expect(groups.map((group) => group.productName)).toEqual(['Apples', 'Zucchini']);
   });
 
   it('searches product brand location note unit and expiry fields', () => {

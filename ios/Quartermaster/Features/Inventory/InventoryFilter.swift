@@ -14,11 +14,13 @@ enum InventoryFilter: String, CaseIterable, Identifiable {
   func matches(_ batch: StockBatch, using appState: AppState) -> Bool {
     switch self {
     case .all:
-      return true
+      return !isDepleted(batch)
     case .expired:
+      guard !isDepleted(batch) else { return false }
       guard let days = appState.householdDayDifference(for: batch.expiresOn) else { return false }
       return days < 0
     case .expiringSoon:
+      guard !isDepleted(batch) else { return false }
       guard let days = appState.householdDayDifference(for: batch.expiresOn) else { return false }
       return days >= 0 && days < Self.soonWindowDays
     }

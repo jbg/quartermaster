@@ -190,6 +190,13 @@ struct InventoryView: View {
     }
 
     return groups.sorted { lhs, rhs in
+      if filter == .all {
+        let nameComparison = lhs.product.name.localizedCaseInsensitiveCompare(rhs.product.name)
+        if nameComparison != .orderedSame {
+          return nameComparison == .orderedAscending
+        }
+        return lhs.product.id < rhs.product.id
+      }
       let le = lhs.visibleBatches.compactMap(\.expiresOnDate).min()
       let re = rhs.visibleBatches.compactMap(\.expiresOnDate).min()
       switch (le, re) {
