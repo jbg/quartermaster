@@ -223,14 +223,14 @@ private fun LocationInventoryCard(
             )
             Text(
                 if (batches.isEmpty()) {
-                    "No active or depleted batches in this location."
+                    "No active batches in this location."
                 } else {
-                    "${counts.active} active · ${counts.depleted} depleted"
+                    "${counts.active} active ${if (counts.active == 1) "batch" else "batches"}"
                 },
                 style = MaterialTheme.typography.bodySmall,
             )
             if (batches.isEmpty()) {
-                Text("No stock recorded.", style = MaterialTheme.typography.bodyMedium)
+                Text("No active stock.", style = MaterialTheme.typography.bodyMedium)
             } else {
                 batches.forEach { batch ->
                     val batchId = batch.id.toString()

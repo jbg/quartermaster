@@ -4,8 +4,8 @@ struct ProductRow: View {
   let product: Product
   /// Batches displayed by the active filter (may be a subset of the product's stock).
   let visibleBatches: [StockBatch]
-  /// All of the product's batches in this location, unfiltered. Used to
-  /// show a "... of <total>" contrast when a filter is hiding some batches.
+  /// Active batches for this product/location before applying expiry filters.
+  /// Used to show a "... of <total>" contrast when a filter is hiding active stock.
   let allBatches: [StockBatch]
   let units: [Unit]
 
@@ -28,6 +28,7 @@ struct ProductRow: View {
       ExpiryBadge(expiresOn: earliestExpiry)
     }
     .padding(.vertical, 2)
+    .contentShape(Rectangle())
   }
 
   private var productThumb: some View {
