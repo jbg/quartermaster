@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.2](https://github.com/jbg/quartermaster/compare/1.21.1...1.21.2) (2026-05-09)
+
+
+### Bug Fixes
+
+* convert piece stock during family corrections ([e9e4966](https://github.com/jbg/quartermaster/commit/e9e496648034a837110a66969d1bae4ef2e2f825))
+
 ## [1.21.1](https://github.com/jbg/quartermaster/compare/1.21.0...1.21.1) (2026-05-08)
 
 
