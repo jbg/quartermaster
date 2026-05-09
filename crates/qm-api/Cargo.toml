@@ -18,6 +18,7 @@ argon2 = { workspace = true, default-features = false, features = [
     "rand",
 ] }
 brother_ql = { workspace = true, default-features = false, features = [] }
+freetype-rs = { workspace = true, default-features = false, features = ["bundled"] }
 axum = { workspace = true, default-features = false, features = [
     "form",
     "http1",
