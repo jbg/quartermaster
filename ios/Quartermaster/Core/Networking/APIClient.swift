@@ -252,10 +252,14 @@ actor APIClient: AppStateAPI {
     }
   }
 
-  func updateCurrentHousehold(name: String, timezone: String) async throws -> HouseholdDetail {
+  func updateCurrentHousehold(
+    name: String,
+    timezone: String,
+    measurementSystem: MeasurementSystem,
+  ) async throws -> HouseholdDetail {
     let response = try await client.householdCurrentUpdate(
       .init(
-        body: .json(.init(name: name, timezone: timezone)),
+        body: .json(.init(measurementSystem: measurementSystem, name: name, timezone: timezone)),
       ))
     switch response {
     case .ok(let ok): return try ok.body.json

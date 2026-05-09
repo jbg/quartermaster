@@ -7,6 +7,7 @@ use axum::{
     Json, Router,
 };
 use jiff::{SignedDuration, Timestamp};
+use qm_core::units::MeasurementSystem;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -46,18 +47,21 @@ pub struct HouseholdDetailDto {
     pub id: Uuid,
     pub name: String,
     pub timezone: String,
+    pub measurement_system: MeasurementSystem,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateHouseholdRequest {
     pub name: String,
     pub timezone: String,
+    pub measurement_system: Option<MeasurementSystem>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateHouseholdRequest {
     pub name: String,
     pub timezone: String,
+    pub measurement_system: MeasurementSystem,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -105,7 +109,19 @@ pub async fn create_household(
 ) -> ApiResult<(StatusCode, Json<MeResponse>)> {
     let name = validate_household_name(&req.name)?;
     let timezone = validate_household_timezone(&req.timezone)?;
-    let household = qm_db::households::create(&state.db, name, timezone).await?;
+    let measurement_system = req.measurement_system.unwrap_or(MeasurementSystem::DEFAULT);
+    let mut household = qm_db::households::create(&state.db, name, timezone).await?;
+    if measurement_system != MeasurementSystem::DEFAULT {
+        household = qm_db::households::update(
+            &state.db,
+            household.id,
+            name,
+            timezone,
+            measurement_system.as_str(),
+        )
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    }
     qm_db::locations::seed_defaults(&state.db, household.id).await?;
     qm_db::memberships::insert(&state.db, household.id, current.user_id, ROLE_ADMIN).await?;
     qm_db::auth_sessions::upsert(
@@ -142,6 +158,7 @@ pub async fn get_current_household(
         id: household.id,
         name: household.name,
         timezone: household.timezone,
+        measurement_system: measurement_system_from_db(&household.measurement_system)?,
     }))
 }
 
@@ -163,13 +180,20 @@ pub async fn update_current_household(
     require_admin(&current)?;
     let name = validate_household_name(&req.name)?;
     let timezone = validate_household_timezone(&req.timezone)?;
-    let household = qm_db::households::update(&state.db, household_id, name, timezone)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+    let household = qm_db::households::update(
+        &state.db,
+        household_id,
+        name,
+        timezone,
+        req.measurement_system.as_str(),
+    )
+    .await?
+    .ok_or(ApiError::NotFound)?;
     Ok(Json(HouseholdDetailDto {
         id: household.id,
         name: household.name,
         timezone: household.timezone,
+        measurement_system: req.measurement_system,
     }))
 }
 
@@ -382,6 +406,14 @@ pub(crate) fn validate_household_timezone(timezone: &str) -> ApiResult<&str> {
         .get(timezone)
         .map_err(|_| ApiError::BadRequest("timezone must be a valid IANA zone".into()))?;
     Ok(timezone)
+}
+
+pub(crate) fn measurement_system_from_db(value: &str) -> ApiResult<MeasurementSystem> {
+    MeasurementSystem::from_str_ci(value).ok_or_else(|| {
+        ApiError::Internal(anyhow::anyhow!(
+            "invalid household measurement_system stored in database: {value}"
+        ))
+    })
 }
 
 fn invite_to_dto(row: qm_db::invites::InviteRow) -> ApiResult<InviteDto> {

@@ -3446,7 +3446,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
       }
     }
   },
@@ -3662,6 +3667,16 @@
           "timezone"
         ],
         "properties": {
+          "measurement_system": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MeasurementSystem"
+              }
+            ]
+          },
           "name": {
             "type": "string"
           },
@@ -3945,12 +3960,16 @@
         "required": [
           "id",
           "name",
-          "timezone"
+          "timezone",
+          "measurement_system"
         ],
         "properties": {
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "measurement_system": {
+            "$ref": "#/components/schemas/MeasurementSystem"
           },
           "name": {
             "type": "string"
@@ -3965,12 +3984,16 @@
         "required": [
           "id",
           "name",
-          "timezone"
+          "timezone",
+          "measurement_system"
         ],
         "properties": {
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "measurement_system": {
+            "$ref": "#/components/schemas/MeasurementSystem"
           },
           "name": {
             "type": "string"
@@ -3986,6 +4009,7 @@
           "id",
           "name",
           "timezone",
+          "measurement_system",
           "role",
           "joined_at"
         ],
@@ -3996,6 +4020,9 @@
           },
           "joined_at": {
             "type": "string"
+          },
+          "measurement_system": {
+            "$ref": "#/components/schemas/MeasurementSystem"
           },
           "name": {
             "type": "string"
@@ -4253,6 +4280,15 @@
             "$ref": "#/components/schemas/UserDto"
           }
         }
+      },
+      "MeasurementSystem": {
+        "type": "string",
+        "enum": [
+          "metric",
+          "us_customary",
+          "australian",
+          "imperial"
+        ]
       },
       "MemberDto": {
         "type": "object",
@@ -5271,9 +5307,13 @@
         "type": "object",
         "required": [
           "name",
-          "timezone"
+          "timezone",
+          "measurement_system"
         ],
         "properties": {
+          "measurement_system": {
+            "$ref": "#/components/schemas/MeasurementSystem"
+          },
           "name": {
             "type": "string"
           },

@@ -531,4 +531,8 @@ export const storageVesselsUpdate = <ThrowOnError extends boolean = false>(optio
     }
 });
 
-export const unitsList = <ThrowOnError extends boolean = false>(options?: Options<UnitsListData, ThrowOnError>) => (options?.client ?? client).get<UnitsListResponses, unknown, ThrowOnError>({ url: '/api/v1/units', ...options });
+export const unitsList = <ThrowOnError extends boolean = false>(options?: Options<UnitsListData, ThrowOnError>) => (options?.client ?? client).get<UnitsListResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/units',
+    ...options
+});

@@ -774,6 +774,13 @@ private struct ConsumeForm: View {
       && allLocations.contains(where: { $0.id == remainderLocationID })
   }
 
+  private var hasRemainderDetails: Bool {
+    entryMode == .exact
+      && (remainderLocationID != batch.locationID
+        || hasExpiryOverride
+        || !remainderNote.trimmingCharacters(in: .whitespaces).isEmpty)
+  }
+
   private var packageSize: (quantity: String, unit: String)? {
     guard
       let quantity = batch.packageQuantity,
@@ -784,6 +791,11 @@ private struct ConsumeForm: View {
   }
 
   private func submit() async {
+    if hasRemainderDetails {
+      await submitAndStoreRemainder()
+      return
+    }
+
     guard let stockAmount = stockQuantityAndUnit() else { return }
     isSubmitting = true
     errorMessage = nil
@@ -807,7 +819,13 @@ private struct ConsumeForm: View {
   }
 
   private func submitAndStoreRemainder() async {
-    guard let stockAmount = stockQuantityAndUnit() else { return }
+    guard
+      let stockAmount = stockQuantityAndUnit(),
+      let usedQuantity = quantityForBatchUnit(stockAmount)
+    else {
+      errorMessage = "That unit cannot be converted for this batch."
+      return
+    }
     isSubmitting = true
     errorMessage = nil
     let trimmedNote = remainderNote.trimmingCharacters(in: .whitespaces)
@@ -817,7 +835,7 @@ private struct ConsumeForm: View {
       remainderExpiresOn: hasExpiryOverride
         ? StockBatch.yyyymmdd.string(from: expiryOverride) : nil,
       remainderLocationId: remainderLocationID,
-      usedQuantity: stockAmount.quantity,
+      usedQuantity: usedQuantity,
     )
     do {
       let response = try await appState.api.consumeAndStoreStock(id: batch.id, request: request)
@@ -863,6 +881,18 @@ private struct ConsumeForm: View {
     }
     guard !unitCode.isEmpty else { return nil }
     return (quantity, unitCode)
+  }
+
+  private func quantityForBatchUnit(_ stockAmount: (quantity: String, unit: String)) -> String? {
+    guard let value = Decimal(string: stockAmount.quantity) else { return nil }
+    if stockAmount.unit == batch.unit {
+      return stockAmount.quantity
+    }
+    guard
+      let converted = UnitConversion.convert(
+        value, fromCode: stockAmount.unit, toCode: batch.unit, units: appState.units)
+    else { return nil }
+    return Self.format(converted)
   }
 
   private static func format(_ d: Decimal) -> String {

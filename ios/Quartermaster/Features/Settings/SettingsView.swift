@@ -11,6 +11,7 @@ struct SettingsView: View {
 
   @State private var householdNameDraft: String = ""
   @State private var householdTimezoneDraft: String = TimeZone.autoupdatingCurrent.identifier
+  @State private var householdMeasurementSystemDraft: MeasurementSystem = .metric
   @State private var newInviteRole: MembershipRole = .member
   @State private var recoveryEmailDraft: String = ""
   @State private var recoveryCodeDraft: String = ""
@@ -312,6 +313,7 @@ struct SettingsView: View {
     guard let household else { return false }
     return trimmedHouseholdNameDraft != household.name
       || householdTimezoneDraft != household.timezone
+      || householdMeasurementSystemDraft != household.measurementSystem
   }
 
   private var canSaveHousehold: Bool {
@@ -329,6 +331,11 @@ struct SettingsView: View {
     }
     if householdTimezoneDraft != household.timezone {
       changes.append("change timezone from \(household.timezone) to \(householdTimezoneDraft)")
+    }
+    if householdMeasurementSystemDraft != household.measurementSystem {
+      changes.append(
+        "change measurement system from \(household.measurementSystem.displayName) to \(householdMeasurementSystemDraft.displayName)"
+      )
     }
 
     let summary = changes.isEmpty ? "save these settings" : changes.joined(separator: " and ")
@@ -363,6 +370,10 @@ struct SettingsView: View {
           LabeledContent("Name", value: household.name)
           LabeledContent("Role", value: currentRole?.displayName ?? "Member")
           LabeledContent("Timezone", value: household.timezone)
+          LabeledContent("Measurement system", value: household.measurementSystem.displayName)
+          Text(household.measurementSystem.detail)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
           LabeledContent("Device timezone", value: appState.deviceTimeZone.identifier)
           if appState.timezonesDiffer {
             Text("Expiry dates and reminder schedules follow household time.")
@@ -379,6 +390,14 @@ struct SettingsView: View {
                 Text(identifier).tag(identifier)
               }
             }
+            Picker("Measurement system", selection: $householdMeasurementSystemDraft) {
+              ForEach(MeasurementSystem.supportedOptions, id: \.rawValue) { measure in
+                Text(measure.displayName).tag(measure)
+              }
+            }
+            Text(householdMeasurementSystemDraft.detail)
+              .font(.footnote)
+              .foregroundStyle(.secondary)
             Button {
               showRenameConfirmation = true
             } label: {
@@ -822,6 +841,8 @@ struct SettingsView: View {
     guard me.currentHouseholdSummary != nil else {
       household = nil
       householdNameDraft = ""
+      householdTimezoneDraft = TimeZone.autoupdatingCurrent.identifier
+      householdMeasurementSystemDraft = .metric
       members = []
       invites = []
       locations = []
@@ -843,6 +864,7 @@ struct SettingsView: View {
       self.household = household
       self.householdNameDraft = household.name
       self.householdTimezoneDraft = household.timezone
+      self.householdMeasurementSystemDraft = household.measurementSystem
       self.members = members
       self.locations = locations.sorted { $0.sortOrder < $1.sortOrder }
       self.storageVessels = storageVessels.sorted { $0.sortOrder < $1.sortOrder }
@@ -864,6 +886,8 @@ struct SettingsView: View {
         case .fallbackToNoHousehold:
           household = nil
           householdNameDraft = ""
+          householdTimezoneDraft = TimeZone.autoupdatingCurrent.identifier
+          householdMeasurementSystemDraft = .metric
           members = []
           invites = []
           locations = []
@@ -920,10 +944,12 @@ struct SettingsView: View {
     do {
       let updated = try await appState.api.updateCurrentHousehold(
         name: trimmedHouseholdNameDraft,
-        timezone: householdTimezoneDraft
+        timezone: householdTimezoneDraft,
+        measurementSystem: householdMeasurementSystemDraft
       )
       household = updated
       await appState.refreshMe()
+      await appState.refreshUnits()
     } catch let err as APIError {
       errorMessage = err.userFacingMessage
     } catch {

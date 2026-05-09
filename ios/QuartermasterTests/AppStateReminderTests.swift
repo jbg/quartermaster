@@ -693,7 +693,9 @@ private actor FakeAPI: AppStateAPI {
   func switchHousehold(householdID: String) async throws -> Me { try await me() }
   func createHousehold(name: String, timezone: String) async throws -> Me { try await me() }
   func currentHousehold() async throws -> HouseholdDetail { fatalError("unused") }
-  func updateCurrentHousehold(name: String, timezone: String) async throws -> HouseholdDetail {
+  func updateCurrentHousehold(
+    name: String, timezone: String, measurementSystem: MeasurementSystem
+  ) async throws -> HouseholdDetail {
     fatalError("unused")
   }
   func householdMembers() async throws -> [Member] { [] }
@@ -900,6 +902,7 @@ private func householdJSON() -> String {
     "id": "66666666-6666-6666-6666-666666666666",
     "name": "Home",
     "timezone": "UTC",
+    "measurement_system": "metric",
     "role": "admin",
     "joined_at": "2026-04-22T12:00:00Z"
   }

@@ -312,6 +312,7 @@ impl Modify for SecurityAddon {
     ),
     components(schemas(
         qm_core::units::UnitFamily,
+        qm_core::units::MeasurementSystem,
         types::ProductSource,
         types::StockEventType,
         types::MembershipRole,

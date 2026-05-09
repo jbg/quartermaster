@@ -33,7 +33,9 @@ protocol AppStateAPI: Actor {
   func switchHousehold(householdID: String) async throws -> Me
   func createHousehold(name: String, timezone: String) async throws -> Me
   func currentHousehold() async throws -> HouseholdDetail
-  func updateCurrentHousehold(name: String, timezone: String) async throws -> HouseholdDetail
+  func updateCurrentHousehold(
+    name: String, timezone: String, measurementSystem: MeasurementSystem
+  ) async throws -> HouseholdDetail
   func householdMembers() async throws -> [Member]
   func removeHouseholdMember(userID: String) async throws
   func householdInvites() async throws -> [Invite]
@@ -275,7 +277,7 @@ final class AppState {
   func applyAuthenticated(_ me: Me) {
     phase = .authenticated(me)
     Task {
-      await loadUnits()
+      await loadUnits(force: true)
       await refreshNotificationAuthorization()
       await requestNotificationAuthorizationIfNeeded()
       await registerCurrentDevice()
@@ -724,8 +726,12 @@ final class AppState {
     }
   }
 
-  private func loadUnits() async {
-    if !units.isEmpty { return }
+  func refreshUnits() async {
+    await loadUnits(force: true)
+  }
+
+  private func loadUnits(force: Bool = false) async {
+    if !force && !units.isEmpty { return }
     if let fresh = try? await api.units() {
       units = fresh
     }

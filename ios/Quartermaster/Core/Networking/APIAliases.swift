@@ -26,6 +26,7 @@ typealias Household = Components.Schemas.HouseholdDto
 typealias Me = Components.Schemas.MeResponse
 typealias HouseholdSummary = Components.Schemas.HouseholdSummaryDto
 typealias HouseholdDetail = Components.Schemas.HouseholdDetailDto
+typealias MeasurementSystem = Components.Schemas.MeasurementSystem
 typealias CreateHouseholdRequest = Components.Schemas.CreateHouseholdRequest
 typealias UpdateHouseholdRequest = Components.Schemas.UpdateHouseholdRequest
 typealias Member = Components.Schemas.MemberDto
@@ -60,6 +61,30 @@ extension MembershipRole {
     switch self {
     case .admin: "Admin"
     case .member: "Member"
+    }
+  }
+}
+
+extension MeasurementSystem {
+  static var supportedOptions: [Self] {
+    [.metric, .usCustomary, .australian, .imperial]
+  }
+
+  var displayName: String {
+    switch self {
+    case .metric: "Metric"
+    case .usCustomary: "US customary"
+    case .australian: "Australian"
+    case .imperial: "Imperial"
+    }
+  }
+
+  var detail: String {
+    switch self {
+    case .metric: "1 tsp = 5 ml, 1 tbsp = 15 ml"
+    case .usCustomary: "1 tsp = 4.929 ml, 1 tbsp = 14.787 ml"
+    case .australian: "1 tsp = 5 ml, 1 tbsp = 20 ml"
+    case .imperial: "1 tsp = 5.919 ml, 1 tbsp = 17.758 ml"
     }
   }
 }
