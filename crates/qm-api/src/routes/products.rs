@@ -559,22 +559,6 @@ pub async fn update(
         ))
     })?;
 
-    if let Some(fam) = req.family {
-        if fam != existing_family {
-            let conflicts = qm_db::stock::conflicting_units_for_family_change(
-                &state.db,
-                existing.id,
-                fam.as_str(),
-            )
-            .await?;
-            if !conflicts.is_empty() {
-                return Err(ApiError::ProductHasIncompatibleStock {
-                    conflicting_units: conflicts,
-                });
-            }
-        }
-    }
-
     let effective_family = req.family.unwrap_or(existing_family);
     let effective_preferred_unit = req
         .preferred_unit
@@ -608,6 +592,34 @@ pub async fn update(
         existing.package_unit.as_deref(),
         effective_family,
     )?;
+    let convert_piece_stock_to_package_unit = if let Some(fam) = req.family {
+        if fam != existing_family {
+            let conflicts = qm_db::stock::conflicting_units_for_family_change(
+                &state.db,
+                existing.id,
+                fam.as_str(),
+            )
+            .await?;
+            if conflicts.is_empty() {
+                false
+            } else if existing_family == UnitFamily::Count
+                && fam != UnitFamily::Count
+                && conflicts.len() == 1
+                && conflicts[0] == "piece"
+                && effective_package.is_some()
+            {
+                true
+            } else {
+                return Err(ApiError::ProductHasIncompatibleStock {
+                    conflicting_units: conflicts,
+                });
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
 
     let name_trim = req.name.as_deref().map(str::trim);
     let brand_inner: Option<Option<&str>> = req.brand.as_ref().map(|inner| {
@@ -654,6 +666,26 @@ pub async fn update(
         },
     )
     .await?;
+
+    if convert_piece_stock_to_package_unit {
+        if let Some((package_quantity, package_unit)) = effective_package.as_ref() {
+            qm_db::stock::convert_active_piece_stock_to_package_unit(
+                &state.db,
+                id,
+                package_quantity,
+                package_unit,
+            )
+            .await?;
+        }
+    }
+
+    let updated = if convert_piece_stock_to_package_unit {
+        qm_db::products::find_by_id(&state.db, id)
+            .await?
+            .ok_or(ApiError::NotFound)?
+    } else {
+        updated
+    };
 
     Ok(Json(updated.try_into()?))
 }

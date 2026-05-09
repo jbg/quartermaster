@@ -366,6 +366,105 @@ async fn product_create_accepts_manual_package_size() {
 }
 
 #[tokio::test]
+async fn product_family_patch_can_convert_piece_stock_to_package_unit() {
+    let app = TestApp::start(ApiConfig::default()).await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let me = app.me(&alice).await;
+    let household_id = Uuid::parse_str(me_current_household_id(&me).unwrap()).unwrap();
+    let pantry = qm_db::locations::list_for_household(&app.db, household_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|loc| loc.kind == "pantry")
+        .unwrap()
+        .id;
+
+    let (status, product) = app
+        .send(
+            Method::POST,
+            "/api/v1/products",
+            Some(json!({
+                "name": "Orange Juice",
+                "brand": null,
+                "family": "count",
+                "preferred_unit": "piece",
+                "barcode": null,
+                "image_url": null,
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let product_id = product["id"].as_str().unwrap();
+
+    let (status, batch) = app
+        .send(
+            Method::POST,
+            "/api/v1/stock",
+            Some(json!({
+                "product_id": product_id,
+                "location_id": pantry,
+                "quantity": "1",
+                "unit": "piece",
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let batch_id = batch["id"].as_str().unwrap();
+
+    let (status, updated) = app
+        .send(
+            Method::PATCH,
+            &format!("/api/v1/products/{product_id}"),
+            Some(json!([
+                { "op": "replace", "path": "/family", "value": "volume" },
+                { "op": "replace", "path": "/preferred_unit", "value": "ml" },
+                { "op": "replace", "path": "/package_quantity", "value": "1000" },
+                { "op": "replace", "path": "/package_unit", "value": "ml" },
+            ])),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(updated["family"], "volume");
+    assert_eq!(updated["preferred_unit"], "ml");
+    assert_eq!(updated["package_quantity"], "1000");
+    assert_eq!(updated["package_unit"], "ml");
+
+    let (status, corrected_batch) = app
+        .send(
+            Method::GET,
+            &format!("/api/v1/stock/{batch_id}"),
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(corrected_batch["quantity"], "1000");
+    assert_eq!(corrected_batch["unit"], "ml");
+    assert_eq!(corrected_batch["package_quantity"], "1000");
+    assert_eq!(corrected_batch["package_unit"], "ml");
+    assert_eq!(corrected_batch["product"]["family"], "volume");
+
+    let (status, history) = app
+        .send(
+            Method::GET,
+            &format!("/api/v1/stock/{batch_id}/events"),
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let event = &history["items"].as_array().unwrap()[0];
+    assert_eq!(event["quantity_delta"], "1000");
+    assert_eq!(event["unit"], "ml");
+    assert_eq!(event["package_quantity"], "1000");
+    assert_eq!(event["package_unit"], "ml");
+}
+
+#[tokio::test]
 async fn off_credentials_are_per_user_and_preview_reports_local_changes() {
     let app = TestApp::start(ApiConfig {
         registration_mode: qm_api::RegistrationMode::Open,

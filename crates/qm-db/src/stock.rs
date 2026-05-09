@@ -951,7 +951,80 @@ pub async fn conflicting_units_for_family_change(
     Ok(conflicts)
 }
 
+/// Reinterpret active count stock as retail packages after a product family
+/// correction. One `piece` becomes one package of `package_quantity package_unit`.
+pub async fn convert_active_piece_stock_to_package_unit(
+    db: &Database,
+    product_id: Uuid,
+    package_quantity: &str,
+    package_unit: &str,
+) -> Result<(), sqlx::Error> {
+    let multiplier =
+        Decimal::from_str(package_quantity).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+    let mut tx = db.pool.begin().await?;
+    let mut sql = "SELECT id, initial_quantity, quantity FROM stock_batch \
+                   WHERE product_id = ? AND depleted_at IS NULL AND unit = 'piece'"
+        .to_owned();
+    if db.backend() == Backend::Postgres {
+        sql.push_str(" FOR UPDATE");
+    }
+    let batches = sqlx::query(&sql)
+        .bind(product_id.to_string())
+        .fetch_all(&mut *tx)
+        .await?;
+
+    for batch in batches {
+        let batch_id: String = batch.try_get("id")?;
+        let initial_quantity: String = batch.try_get("initial_quantity")?;
+        let quantity: String = batch.try_get("quantity")?;
+        let corrected_initial = scale_quantity(&initial_quantity, multiplier)?;
+        let corrected_quantity = scale_quantity(&quantity, multiplier)?;
+
+        sqlx::query(
+            "UPDATE stock_batch \
+             SET initial_quantity = ?, quantity = ?, unit = ?, package_quantity = ?, package_unit = ? \
+             WHERE id = ?",
+        )
+        .bind(corrected_initial)
+        .bind(corrected_quantity)
+        .bind(package_unit)
+        .bind(package_quantity)
+        .bind(package_unit)
+        .bind(&batch_id)
+        .execute(&mut *tx)
+        .await?;
+
+        let events = sqlx::query("SELECT id, quantity_delta FROM stock_event WHERE batch_id = ?")
+            .bind(&batch_id)
+            .fetch_all(&mut *tx)
+            .await?;
+        for event in events {
+            let event_id: String = event.try_get("id")?;
+            let quantity_delta: String = event.try_get("quantity_delta")?;
+            let corrected_delta = scale_quantity(&quantity_delta, multiplier)?;
+            sqlx::query(
+                "UPDATE stock_event \
+                 SET quantity_delta = ?, package_quantity = ?, package_unit = ? \
+                 WHERE id = ?",
+            )
+            .bind(corrected_delta)
+            .bind(package_quantity)
+            .bind(package_unit)
+            .bind(event_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
+
+    tx.commit().await
+}
+
 // ----- internals -----
+
+fn scale_quantity(quantity: &str, multiplier: Decimal) -> Result<String, sqlx::Error> {
+    let parsed = Decimal::from_str(quantity).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+    Ok((parsed * multiplier).normalize().to_string())
+}
 
 #[allow(clippy::too_many_arguments)]
 async fn insert_event(

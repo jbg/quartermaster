@@ -275,7 +275,7 @@ struct ProductDetailView: View {
   }
 
   private var unitFamilySection: some View {
-    Section("Unit family") {
+    Section {
       Picker("Family", selection: $family) {
         ForEach(ProductFamily.allCases, id: \.self) { f in
           Text(f.displayName).tag(f)
@@ -285,6 +285,12 @@ struct ProductDetailView: View {
         ForEach(appState.unitsFor(family: family), id: \.code) { u in
           Text(u.code).tag(u.code)
         }
+      }
+    } header: {
+      Text("Unit family")
+    } footer: {
+      if product.family == .count, family != .count, hasPackageSize {
+        Text("Existing piece stock will be converted as one package per piece.")
       }
     }
     .onChange(of: family) { _, newFamily in
