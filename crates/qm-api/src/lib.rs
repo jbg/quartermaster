@@ -261,6 +261,10 @@ impl Modify for SecurityAddon {
         routes::locations::create_location,
         routes::locations::update_location,
         routes::locations::delete_location,
+        routes::storage_vessels::list_storage_vessels,
+        routes::storage_vessels::create_storage_vessel,
+        routes::storage_vessels::update_storage_vessel,
+        routes::storage_vessels::delete_storage_vessel,
         routes::label_printers::list_label_printers,
         routes::label_printers::create_label_printer,
         routes::label_printers::update_label_printer,
@@ -350,6 +354,9 @@ impl Modify for SecurityAddon {
         routes::locations::LocationDto,
         routes::locations::CreateLocationRequest,
         routes::locations::UpdateLocationRequest,
+        routes::storage_vessels::StorageVesselDto,
+        routes::storage_vessels::CreateStorageVesselRequest,
+        routes::storage_vessels::UpdateStorageVesselRequest,
         routes::label_printers::LabelPrinterDto,
         routes::label_printers::LabelPrinterListResponse,
         routes::label_printers::CreateLabelPrinterRequest,
@@ -389,6 +396,7 @@ impl Modify for SecurityAddon {
         (name = "households", description = "Household administration, invites, and members"),
         (name = "onboarding", description = "First-launch server setup and joining"),
         (name = "locations", description = "Pantry / fridge / freezer"),
+        (name = "storage-vessels", description = "Household storage vessel tare weights"),
         (name = "label-printers", description = "Household label printer configuration and print jobs"),
         (name = "units", description = "Units of measure"),
         (name = "products", description = "Product catalogue and barcode lookup"),
@@ -419,6 +427,7 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::devices::router())
         .merge(routes::households::router())
         .merge(routes::locations::router())
+        .merge(routes::storage_vessels::router())
         .merge(routes::label_printers::router())
         .merge(routes::units::router())
         .merge(routes::products::router(RateLimitLayerState::new(

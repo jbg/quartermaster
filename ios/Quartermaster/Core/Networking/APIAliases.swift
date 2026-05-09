@@ -169,6 +169,9 @@ typealias StockBatch = Components.Schemas.StockBatchDto
 typealias StockListResponse = Components.Schemas.StockListResponse
 typealias CreateStockRequest = Components.Schemas.CreateStockRequest
 typealias UpdateStockRequest = [JsonPatchOperation]
+typealias StorageVessel = Components.Schemas.StorageVesselDto
+typealias CreateStorageVesselRequest = Components.Schemas.CreateStorageVesselRequest
+typealias UpdateStorageVesselRequest = Components.Schemas.UpdateStorageVesselRequest
 typealias ConsumeRequest = Components.Schemas.ConsumeRequest
 typealias ConsumedBatch = Components.Schemas.ConsumedBatchDto
 typealias ConsumeResponse = Components.Schemas.ConsumeResponse
@@ -182,6 +185,10 @@ typealias LabelPrintStatus = Components.Schemas.LabelPrintStatus
 typealias Reminder = Components.Schemas.ReminderDto
 typealias ReminderKind = Components.Schemas.ReminderKind
 typealias ReminderListResponse = Components.Schemas.ReminderListResponse
+
+extension StorageVessel: Identifiable {
+  var displayTare: String { "\(tareWeight) \(tareUnit)" }
+}
 
 extension StockBatch: Identifiable {
   /// Legacy alias for the camelCased `locationId` the generator emits.

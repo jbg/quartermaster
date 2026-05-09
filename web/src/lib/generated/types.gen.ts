@@ -148,7 +148,20 @@ export type CreateStockRequest = {
     produced_on?: string | null;
     product_id: string;
     quantity: string;
+    /**
+     * When true, `quantity` is the gross measured mass including the selected
+     * vessel. The API stores net stock after subtracting the vessel tare.
+     */
+    quantity_includes_storage_vessel?: boolean | null;
+    storage_vessel_id?: string | null;
     unit: string;
+};
+
+export type CreateStorageVesselRequest = {
+    name: string;
+    sort_order?: number | null;
+    tare_unit: string;
+    tare_weight: string;
 };
 
 export type HealthResponse = {
@@ -484,6 +497,7 @@ export type StockBatchDto = {
     produced_on?: string | null;
     product: ProductDto;
     quantity: string;
+    storage_vessel?: null | StorageVesselDto;
     unit: string;
 };
 
@@ -538,6 +552,14 @@ export type StockListResponse = {
     items: Array<StockBatchDto>;
 };
 
+export type StorageVesselDto = {
+    id: string;
+    name: string;
+    sort_order: number;
+    tare_unit: string;
+    tare_weight: string;
+};
+
 export type SwitchHouseholdRequest = {
     household_id: string;
 };
@@ -580,6 +602,13 @@ export type UpdateLocationRequest = {
     kind: string;
     name: string;
     sort_order: number;
+};
+
+export type UpdateStorageVesselRequest = {
+    name: string;
+    sort_order: number;
+    tare_unit: string;
+    tare_weight: string;
 };
 
 export type UserDto = {
@@ -1887,6 +1916,74 @@ export type StockRestoreResponses = {
 };
 
 export type StockRestoreResponse = StockRestoreResponses[keyof StockRestoreResponses];
+
+export type StorageVesselsListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/storage-vessels';
+};
+
+export type StorageVesselsListErrors = {
+    401: ApiErrorBody;
+};
+
+export type StorageVesselsListError = StorageVesselsListErrors[keyof StorageVesselsListErrors];
+
+export type StorageVesselsListResponses = {
+    200: Array<StorageVesselDto>;
+};
+
+export type StorageVesselsListResponse = StorageVesselsListResponses[keyof StorageVesselsListResponses];
+
+export type StorageVesselsCreateData = {
+    body: CreateStorageVesselRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/storage-vessels';
+};
+
+export type StorageVesselsCreateResponses = {
+    201: StorageVesselDto;
+};
+
+export type StorageVesselsCreateResponse = StorageVesselsCreateResponses[keyof StorageVesselsCreateResponses];
+
+export type StorageVesselsDeleteData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/storage-vessels/{id}';
+};
+
+export type StorageVesselsDeleteErrors = {
+    404: ApiErrorBody;
+};
+
+export type StorageVesselsDeleteError = StorageVesselsDeleteErrors[keyof StorageVesselsDeleteErrors];
+
+export type StorageVesselsDeleteResponses = {
+    204: void;
+};
+
+export type StorageVesselsDeleteResponse = StorageVesselsDeleteResponses[keyof StorageVesselsDeleteResponses];
+
+export type StorageVesselsUpdateData = {
+    body: UpdateStorageVesselRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/storage-vessels/{id}';
+};
+
+export type StorageVesselsUpdateResponses = {
+    200: StorageVesselDto;
+};
+
+export type StorageVesselsUpdateResponse = StorageVesselsUpdateResponses[keyof StorageVesselsUpdateResponses];
 
 export type UnitsListData = {
     body?: never;

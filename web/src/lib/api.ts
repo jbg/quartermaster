@@ -48,6 +48,10 @@ import {
   stockListBatchEvents,
   stockRestore,
   stockUpdate,
+  storageVesselsCreate,
+  storageVesselsDelete,
+  storageVesselsList,
+  storageVesselsUpdate,
   unitsList
 } from './generated/sdk.gen';
 import { client } from './generated/client.gen';
@@ -118,6 +122,18 @@ export function generatedTransport(): SessionTransport {
     },
     locationsDelete(id) {
       return locationsDelete({ path: { id } });
+    },
+    storageVesselsList() {
+      return storageVesselsList();
+    },
+    storageVesselsCreate(body) {
+      return storageVesselsCreate({ body });
+    },
+    storageVesselsUpdate(id, body) {
+      return storageVesselsUpdate({ path: { id }, body });
+    },
+    storageVesselsDelete(id) {
+      return storageVesselsDelete({ path: { id } });
     },
     labelPrintersList() {
       return labelPrintersList();

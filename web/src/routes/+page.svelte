@@ -33,6 +33,7 @@
     stockOpened,
     stockProduced,
     stockProducedValue,
+    stockStorageVesselLabel,
     stockUnit,
     unitChoicesForFamily,
     validateAddStockInput,
@@ -53,6 +54,7 @@
     type MeResponse,
     type OnboardingStatus,
     type Product,
+    type StorageVessel,
     type StockBatch,
     type StockEvent,
     type Unit,
@@ -92,6 +94,7 @@
   let inventoryFilter = $state<InventoryFilterMode>('active');
   let inventorySearch = $state('');
   let locations = $state<Location[]>([]);
+  let storageVessels = $state<StorageVessel[]>([]);
   let units = $state<Unit[]>([]);
   let selectedBatchId = $state<string | null>(null);
   let selectedBatch = $state<StockBatch | null>(null);
@@ -112,6 +115,7 @@
   let stockEditOpen = $state(false);
   let stockEditQuantity = $state('');
   let stockEditLocationId = $state('');
+  let stockEditStorageVesselId = $state('');
   let stockEditExpiresOn = $state('');
   let stockEditProducedOn = $state('');
   let stockEditOpenedOn = $state('');
@@ -135,6 +139,8 @@
   let addStockQuantity = $state('');
   let addStockUnit = $state('g');
   let addStockLocationId = $state('');
+  let addStockStorageVesselId = $state('');
+  let addStockQuantityIncludesStorageVessel = $state(false);
   let addStockExpiresOn = $state('');
   let addStockProducedOn = $state('');
   let addStockOpenedOn = $state('');
@@ -173,10 +179,24 @@
       ? unitChoicesForFamily(selectedProduct.family, units)
       : unitChoicesForFamily(manualProductFamily, units)
   );
+  const addStockGrossVesselEligible = $derived(
+    Boolean(
+      selectedProduct &&
+      selectedProduct.family === 'mass' &&
+      addStockStorageVesselId &&
+      !(selectedProduct.package_quantity ?? selectedProduct.packageQuantity)
+    )
+  );
   const manualProductUnitChoices = $derived(unitChoicesForFamily(manualProductFamily, units));
   const inventoryHref = $derived(appPath('/', page.url));
   const settingsHref = $derived(appPath('/settings', page.url));
   const householdSignupEnabled = $derived(onboarding?.household_signup === 'enabled');
+
+  $effect(() => {
+    if (!addStockGrossVesselEligible) {
+      addStockQuantityIncludesStorageVessel = false;
+    }
+  });
 
   onMount(() => {
     if (!browser) {
@@ -236,7 +256,7 @@
 
   async function refreshWorkspace(preferredBatchId: string | null = selectedBatchId) {
     await refreshUnits();
-    await refreshLocations();
+    await Promise.all([refreshLocations(), refreshStorageVessels()]);
     await refreshInventory(preferredBatchId);
   }
 
@@ -263,6 +283,17 @@
       }
     } catch {
       locations = [];
+    }
+  }
+
+  async function refreshStorageVessels() {
+    if (!session) {
+      return;
+    }
+    try {
+      storageVessels = await session.storageVesselsList();
+    } catch {
+      storageVessels = [];
     }
   }
 
@@ -524,6 +555,7 @@
     const fields = stockEditFields(batch);
     stockEditQuantity = fields.quantity;
     stockEditLocationId = fields.locationId;
+    stockEditStorageVesselId = fields.storageVesselId;
     stockEditExpiresOn = fields.expiresOn;
     stockEditProducedOn = fields.producedOn;
     stockEditOpenedOn = fields.openedOn;
@@ -552,6 +584,7 @@
     const fields = {
       quantity: stockEditQuantity,
       locationId: stockEditLocationId,
+      storageVesselId: stockEditStorageVesselId,
       expiresOn: stockEditExpiresOn,
       producedOn: stockEditProducedOn,
       openedOn: stockEditOpenedOn,
@@ -671,6 +704,8 @@
     addStockQuantity = '';
     addStockUnit = unitChoicesForFamily('mass', units)[0];
     addStockLocationId = preferredAddStockLocationId();
+    addStockStorageVesselId = '';
+    addStockQuantityIncludesStorageVessel = false;
     addStockExpiresOn = '';
     addStockProducedOn = '';
     addStockOpenedOn = '';
@@ -707,6 +742,7 @@
   function chooseProduct(product: Product) {
     selectedProduct = product;
     addStockUnit = productPreferredUnit(product, units);
+    addStockQuantityIncludesStorageVessel = false;
     addStockError = null;
     barcodeLookupError = null;
   }
@@ -812,6 +848,8 @@
         location_id: createdLocationId,
         quantity: addStockQuantity.trim(),
         unit: addStockUnit,
+        storage_vessel_id: addStockStorageVesselId || null,
+        quantity_includes_storage_vessel: addStockQuantityIncludesStorageVessel || null,
         produced_on: addStockProducedOn || null,
         expires_on: addStockExpiresOn || null,
         opened_on: addStockOpenedOn || null,
@@ -835,6 +873,7 @@
     batchDetailRefreshToken += 1;
     inventory = emptyInventoryState;
     locations = [];
+    storageVessels = [];
     units = [];
     selectedBatch = null;
     selectedBatchId = null;
@@ -1324,6 +1363,24 @@
                 {/each}
               </select>
             </label>
+            <label>
+              Storage vessel
+              <select bind:value={addStockStorageVesselId}>
+                <option value="">None</option>
+                {#each storageVessels as vessel}
+                  <option value={vessel.id}
+                    >{vessel.name} ({vessel.tare_weight ?? vessel.tareWeight}
+                    {vessel.tare_unit ?? vessel.tareUnit})</option
+                  >
+                {/each}
+              </select>
+            </label>
+            {#if addStockGrossVesselEligible}
+              <label>
+                <input type="checkbox" bind:checked={addStockQuantityIncludesStorageVessel} />
+                Entered weight includes vessel
+              </label>
+            {/if}
             {#if locations.length === 0}
               <p class="error-text">No locations are available for this household.</p>
             {/if}
@@ -1512,6 +1569,10 @@
               <dt>Location</dt>
               <dd>{displayLocation(selectedBatch)}</dd>
             </div>
+            <div>
+              <dt>Storage vessel</dt>
+              <dd>{stockStorageVesselLabel(selectedBatch)}</dd>
+            </div>
             {#if stockProducedValue(selectedBatch)}
               <div>
                 <dt>Prepared</dt>
@@ -1602,6 +1663,18 @@
                 <select bind:value={stockEditLocationId}>
                   {#each locations as location}
                     <option value={location.id}>{location.name}</option>
+                  {/each}
+                </select>
+              </label>
+              <label>
+                Storage vessel
+                <select bind:value={stockEditStorageVesselId}>
+                  <option value="">None</option>
+                  {#each storageVessels as vessel}
+                    <option value={vessel.id}
+                      >{vessel.name} ({vessel.tare_weight ?? vessel.tareWeight}
+                      {vessel.tare_unit ?? vessel.tareUnit})</option
+                    >
                   {/each}
                 </select>
               </label>

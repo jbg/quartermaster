@@ -24,6 +24,7 @@ use crate::reminders::ExpiryReminderPolicy;
 use crate::stock_events::{
     latest_for_batch_tx, EVENT_ADD, EVENT_ADJUST, EVENT_CONSUME, EVENT_DISCARD, EVENT_RESTORE,
 };
+use crate::storage_vessels::StorageVesselRow;
 use crate::{now_utc_rfc3339, Backend, Database};
 
 #[derive(Debug, Clone, Serialize)]
@@ -32,6 +33,7 @@ pub struct StockBatchRow {
     pub household_id: Uuid,
     pub product_id: Uuid,
     pub location_id: Uuid,
+    pub storage_vessel_id: Option<Uuid>,
     /// Amount the batch was originally added with. Immutable after creation.
     pub initial_quantity: String,
     /// Cached current balance; sum of stock_event.quantity_delta for this batch.
@@ -72,6 +74,7 @@ pub struct StockBatchWithProduct {
     pub batch: StockBatchRow,
     pub product: ProductRow,
     pub location_name: String,
+    pub storage_vessel: Option<StorageVesselRow>,
 }
 
 #[derive(Debug)]
@@ -113,7 +116,8 @@ pub async fn list(
     let mut sql = String::from(
         "SELECT \
             s.id AS s_id, s.household_id AS s_household_id, s.product_id AS s_product_id, \
-            s.location_id AS s_location_id, s.initial_quantity AS s_initial_quantity, \
+            s.location_id AS s_location_id, s.storage_vessel_id AS s_storage_vessel_id, \
+            s.initial_quantity AS s_initial_quantity, \
             s.quantity AS s_quantity, s.unit AS s_unit, \
             s.package_quantity AS s_package_quantity, s.package_unit AS s_package_unit, \
             s.produced_on AS s_produced_on, s.expires_on AS s_expires_on, \
@@ -125,10 +129,14 @@ pub async fn list(
             p.package_unit AS p_package_unit, p.fetched_at AS p_fetched_at, \
             p.created_by_household_id AS p_created_by_household_id, p.created_at AS p_created_at, \
             p.deleted_at AS p_deleted_at, p.max_open_days AS p_max_open_days, \
-            l.name AS l_name \
+            l.name AS l_name, \
+            v.id AS v_id, v.household_id AS v_household_id, v.name AS v_name, \
+            v.tare_weight AS v_tare_weight, v.tare_unit AS v_tare_unit, \
+            v.sort_order AS v_sort_order, v.created_at AS v_created_at, v.updated_at AS v_updated_at \
          FROM stock_batch s \
          INNER JOIN product p ON p.id = s.product_id \
          INNER JOIN location l ON l.id = s.location_id \
+         LEFT JOIN storage_vessel v ON v.id = s.storage_vessel_id \
          WHERE s.household_id = ? ",
     );
     if !filter.include_depleted {
@@ -191,7 +199,8 @@ async fn get_with_product_inner(
     let mut sql = String::from(
         "SELECT \
             s.id AS s_id, s.household_id AS s_household_id, s.product_id AS s_product_id, \
-            s.location_id AS s_location_id, s.initial_quantity AS s_initial_quantity, \
+            s.location_id AS s_location_id, s.storage_vessel_id AS s_storage_vessel_id, \
+            s.initial_quantity AS s_initial_quantity, \
             s.quantity AS s_quantity, s.unit AS s_unit, \
             s.package_quantity AS s_package_quantity, s.package_unit AS s_package_unit, \
             s.produced_on AS s_produced_on, s.expires_on AS s_expires_on, \
@@ -203,10 +212,14 @@ async fn get_with_product_inner(
             p.package_unit AS p_package_unit, p.fetched_at AS p_fetched_at, \
             p.created_by_household_id AS p_created_by_household_id, p.created_at AS p_created_at, \
             p.deleted_at AS p_deleted_at, p.max_open_days AS p_max_open_days, \
-            l.name AS l_name \
+            l.name AS l_name, \
+            v.id AS v_id, v.household_id AS v_household_id, v.name AS v_name, \
+            v.tare_weight AS v_tare_weight, v.tare_unit AS v_tare_unit, \
+            v.sort_order AS v_sort_order, v.created_at AS v_created_at, v.updated_at AS v_updated_at \
          FROM stock_batch s \
          INNER JOIN product p ON p.id = s.product_id \
          INNER JOIN location l ON l.id = s.location_id \
+         LEFT JOIN storage_vessel v ON v.id = s.storage_vessel_id \
          WHERE s.household_id = ? AND s.id = ?",
     );
     if !include_deleted_product {
@@ -226,7 +239,7 @@ pub async fn get(
     id: Uuid,
 ) -> Result<Option<StockBatchRow>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT id, household_id, product_id, location_id, initial_quantity, quantity, unit, \
+        "SELECT id, household_id, product_id, location_id, storage_vessel_id, initial_quantity, quantity, unit, \
                 package_quantity, package_unit, produced_on, expires_on, opened_on, note, \
                 created_at, created_by, depleted_at \
          FROM stock_batch WHERE id = ? AND household_id = ?",
@@ -256,19 +269,54 @@ pub async fn create(
     created_by: Uuid,
     reminder_policy: Option<&ExpiryReminderPolicy>,
 ) -> Result<StockBatchRow, sqlx::Error> {
+    create_with_storage_vessel(
+        db,
+        household_id,
+        product_id,
+        location_id,
+        None,
+        quantity,
+        unit,
+        produced_on,
+        expires_on,
+        opened_on,
+        note,
+        created_by,
+        reminder_policy,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn create_with_storage_vessel(
+    db: &Database,
+    household_id: Uuid,
+    product_id: Uuid,
+    location_id: Uuid,
+    storage_vessel_id: Option<Uuid>,
+    quantity: &str,
+    unit: &str,
+    produced_on: Option<&str>,
+    expires_on: Option<&str>,
+    opened_on: Option<&str>,
+    note: Option<&str>,
+    created_by: Uuid,
+    reminder_policy: Option<&ExpiryReminderPolicy>,
+) -> Result<StockBatchRow, sqlx::Error> {
     let id = Uuid::now_v7();
     let created_at = now_utc_rfc3339();
     let mut tx = db.pool.begin().await?;
 
     sqlx::query(
         "INSERT INTO stock_batch \
-         (id, household_id, product_id, location_id, initial_quantity, quantity, unit, package_quantity, package_unit, produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT package_quantity FROM product WHERE id = ?), (SELECT package_unit FROM product WHERE id = ?), ?, ?, ?, ?, ?, ?, NULL)",
+         (id, household_id, product_id, location_id, storage_vessel_id, initial_quantity, quantity, unit, package_quantity, package_unit, produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, (SELECT package_quantity FROM product WHERE id = ?), (SELECT package_unit FROM product WHERE id = ?), ?, ?, ?, ?, ?, ?, NULL)",
     )
     .bind(id.to_string())
     .bind(household_id.to_string())
     .bind(product_id.to_string())
     .bind(location_id.to_string())
+    .bind(storage_vessel_id.map(|id| id.to_string()))
     .bind(quantity)
     .bind(quantity)
     .bind(unit)
@@ -312,6 +360,7 @@ pub async fn create(
 #[derive(Debug, Default, Clone)]
 pub struct StockMetadataUpdate<'a> {
     pub location_id: Option<Uuid>,
+    pub storage_vessel_id: Option<Option<Uuid>>,
     pub produced_on: Option<Option<&'a str>>,
     pub expires_on: Option<Option<&'a str>>,
     pub opened_on: Option<Option<&'a str>>,
@@ -329,6 +378,10 @@ pub async fn update_metadata(
         .await?
         .ok_or(sqlx::Error::RowNotFound)?;
     let new_location = upd.location_id.unwrap_or(current.location_id);
+    let new_storage_vessel = match upd.storage_vessel_id {
+        Some(inner) => inner,
+        None => current.storage_vessel_id,
+    };
     let new_expires: Option<String> = match upd.expires_on {
         Some(inner) => inner.map(str::to_owned),
         None => current.expires_on.clone(),
@@ -348,10 +401,11 @@ pub async fn update_metadata(
 
     let mut tx = db.pool.begin().await?;
     sqlx::query(
-        "UPDATE stock_batch SET location_id = ?, produced_on = ?, expires_on = ?, opened_on = ?, note = ? \
+        "UPDATE stock_batch SET location_id = ?, storage_vessel_id = ?, produced_on = ?, expires_on = ?, opened_on = ?, note = ? \
          WHERE id = ? AND household_id = ?",
     )
     .bind(new_location.to_string())
+    .bind(new_storage_vessel.map(|id| id.to_string()))
     .bind(new_produced.as_deref())
     .bind(new_expires.as_deref())
     .bind(new_opened.as_deref())
@@ -684,7 +738,7 @@ pub async fn list_active_batches(
     location_id: Option<Uuid>,
 ) -> Result<Vec<StockBatchRow>, sqlx::Error> {
     let mut sql = String::from(
-        "SELECT id, household_id, product_id, location_id, initial_quantity, quantity, unit, \
+        "SELECT id, household_id, product_id, location_id, storage_vessel_id, initial_quantity, quantity, unit, \
                 package_quantity, package_unit, produced_on, expires_on, opened_on, note, \
                 created_at, created_by, depleted_at \
          FROM stock_batch \
@@ -805,7 +859,7 @@ pub async fn consume_and_store_remainder(
         household_id,
         source_batch_id,
         "id, household_id, product_id, location_id, initial_quantity, quantity, unit, \
-         package_quantity, package_unit, produced_on, expires_on, opened_on, note, \
+         storage_vessel_id, package_quantity, package_unit, produced_on, expires_on, opened_on, note, \
          created_at, created_by, depleted_at",
     )
     .await?
@@ -858,8 +912,8 @@ pub async fn consume_and_store_remainder(
     sqlx::query(
         "INSERT INTO stock_batch \
          (id, household_id, product_id, location_id, initial_quantity, quantity, unit, \
-          package_quantity, package_unit, produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+          storage_vessel_id, package_quantity, package_unit, produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
     )
     .bind(remainder_id.to_string())
     .bind(household_id.to_string())
@@ -1081,6 +1135,7 @@ fn row_to_batch(row: sqlx::any::AnyRow) -> Result<StockBatchRow, sqlx::Error> {
     let household_id: String = row.try_get("household_id")?;
     let product_id: String = row.try_get("product_id")?;
     let location_id: String = row.try_get("location_id")?;
+    let storage_vessel_id: Option<String> = row.try_get("storage_vessel_id")?;
     let created_by: String = row.try_get("created_by")?;
     Ok(StockBatchRow {
         id: Uuid::parse_str(&id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
@@ -1088,6 +1143,10 @@ fn row_to_batch(row: sqlx::any::AnyRow) -> Result<StockBatchRow, sqlx::Error> {
             .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         product_id: Uuid::parse_str(&product_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         location_id: Uuid::parse_str(&location_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+        storage_vessel_id: storage_vessel_id
+            .map(|s| Uuid::parse_str(&s))
+            .transpose()
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         initial_quantity: row.try_get("initial_quantity")?,
         quantity: row.try_get("quantity")?,
         unit: row.try_get("unit")?,
@@ -1109,6 +1168,11 @@ fn row_to_joined(row: sqlx::any::AnyRow) -> Result<StockBatchWithProduct, sqlx::
         household_id: uuid_from(&row, "s_household_id")?,
         product_id: uuid_from(&row, "s_product_id")?,
         location_id: uuid_from(&row, "s_location_id")?,
+        storage_vessel_id: row
+            .try_get::<Option<String>, _>("s_storage_vessel_id")?
+            .map(|s| Uuid::parse_str(&s))
+            .transpose()
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         initial_quantity: row.try_get("s_initial_quantity")?,
         quantity: row.try_get("s_quantity")?,
         unit: row.try_get("s_unit")?,
@@ -1151,10 +1215,25 @@ fn row_to_joined(row: sqlx::any::AnyRow) -> Result<StockBatchWithProduct, sqlx::
         deleted_at: row.try_get("p_deleted_at")?,
         max_open_days: row.try_get("p_max_open_days")?,
     };
+    let vessel_id: Option<String> = row.try_get("v_id")?;
+    let storage_vessel = match vessel_id {
+        Some(id) => Some(StorageVesselRow {
+            id: Uuid::parse_str(&id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+            household_id: uuid_from(&row, "v_household_id")?,
+            name: row.try_get("v_name")?,
+            tare_weight: row.try_get("v_tare_weight")?,
+            tare_unit: row.try_get("v_tare_unit")?,
+            sort_order: row.try_get("v_sort_order")?,
+            created_at: row.try_get("v_created_at")?,
+            updated_at: row.try_get("v_updated_at")?,
+        }),
+        None => None,
+    };
     Ok(StockBatchWithProduct {
         batch,
         product,
         location_name: row.try_get("l_name")?,
+        storage_vessel,
     })
 }
 

@@ -7,6 +7,7 @@ struct SettingsView: View {
   @State private var members: [Member] = []
   @State private var invites: [Invite] = []
   @State private var locations: [Location] = []
+  @State private var storageVessels: [StorageVessel] = []
 
   @State private var householdNameDraft: String = ""
   @State private var householdTimezoneDraft: String = TimeZone.autoupdatingCurrent.identifier
@@ -20,6 +21,8 @@ struct SettingsView: View {
 
   @State private var showLocationEditor = false
   @State private var editingLocation: Location?
+  @State private var showStorageVesselEditor = false
+  @State private var editingStorageVessel: StorageVessel?
 
   @State private var isLoading = true
   @State private var isSavingHousehold = false
@@ -30,6 +33,7 @@ struct SettingsView: View {
   @State private var invitePendingRevocation: Invite?
   @State private var memberPendingRemoval: Member?
   @State private var locationPendingDeletion: Location?
+  @State private var storageVesselPendingDeletion: StorageVessel?
   @State private var householdEntry = HouseholdEntryController()
 
   var body: some View {
@@ -88,6 +92,15 @@ struct SettingsView: View {
               "Locations",
               systemImage: "shippingbox",
               detail: locations.isEmpty ? "No locations" : "\(locations.count)"
+            )
+          }
+          NavigationLink {
+            storageVesselsView
+          } label: {
+            settingsLinkLabel(
+              "Storage Vessels",
+              systemImage: "scalemass",
+              detail: storageVessels.isEmpty ? "No vessels" : "\(storageVessels.count)"
             )
           }
           NavigationLink {
@@ -173,6 +186,13 @@ struct SettingsView: View {
         }
       }
     }
+    .sheet(isPresented: $showStorageVesselEditor) {
+      NavigationStack {
+        StorageVesselEditorView(vessel: editingStorageVessel) { name, tareWeight, tareUnit in
+          await saveStorageVessel(name: name, tareWeight: tareWeight, tareUnit: tareUnit)
+        }
+      }
+    }
     .alert(
       "Couldn't complete that action",
       isPresented: Binding(
@@ -248,6 +268,24 @@ struct SettingsView: View {
     } message: {
       if let locationPendingDeletion {
         Text("\(locationPendingDeletion.name) will be removed if it has no active stock.")
+      }
+    }
+    .confirmationDialog(
+      "Delete storage vessel?",
+      isPresented: Binding(
+        get: { storageVesselPendingDeletion != nil },
+        set: { if !$0 { storageVesselPendingDeletion = nil } }
+      ),
+      titleVisibility: .visible
+    ) {
+      Button("Delete Storage Vessel", role: .destructive) {
+        guard let storageVesselPendingDeletion else { return }
+        Task { await deleteStorageVessel(storageVesselPendingDeletion) }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      if let storageVesselPendingDeletion {
+        Text("\(storageVesselPendingDeletion.name) will be removed from future batch selection.")
       }
     }
   }
@@ -433,6 +471,41 @@ struct SettingsView: View {
       }
     }
     .navigationTitle("Locations")
+    .toolbar {
+      if isAdmin {
+        ToolbarItem(placement: .topBarTrailing) {
+          EditButton()
+        }
+      }
+    }
+  }
+
+  private var storageVesselsView: some View {
+    Form {
+      Section("Storage Vessels") {
+        if storageVessels.isEmpty {
+          Text("No storage vessels yet.")
+            .foregroundStyle(.secondary)
+        } else {
+          ForEach(storageVessels) { vessel in
+            storageVesselRow(vessel)
+          }
+          .onMove { source, destination in
+            Task { await moveStorageVessels(from: source, to: destination) }
+          }
+        }
+
+        if isAdmin {
+          Button {
+            editingStorageVessel = nil
+            showStorageVesselEditor = true
+          } label: {
+            Label("Add storage vessel", systemImage: "plus")
+          }
+        }
+      }
+    }
+    .navigationTitle("Storage Vessels")
     .toolbar {
       if isAdmin {
         ToolbarItem(placement: .topBarTrailing) {
@@ -699,6 +772,51 @@ struct SettingsView: View {
     }
   }
 
+  private func storageVesselRow(_ vessel: StorageVessel) -> some View {
+    HStack {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(vessel.name)
+        Text(vessel.displayTare)
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+      }
+      Spacer()
+      if isAdmin {
+        Image(systemName: "line.3.horizontal")
+          .foregroundStyle(.tertiary)
+          .accessibilityHidden(true)
+        Button {
+          editingStorageVessel = vessel
+          showStorageVesselEditor = true
+        } label: {
+          Image(systemName: "pencil")
+        }
+        Button(role: .destructive) {
+          storageVesselPendingDeletion = vessel
+        } label: {
+          Image(systemName: "trash")
+        }
+      }
+    }
+    .buttonStyle(.borderless)
+    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+      if isAdmin {
+        Button(role: .destructive) {
+          storageVesselPendingDeletion = vessel
+        } label: {
+          Label("Delete", systemImage: "trash")
+        }
+        Button {
+          editingStorageVessel = vessel
+          showStorageVesselEditor = true
+        } label: {
+          Label("Edit", systemImage: "pencil")
+        }
+        .tint(.accentColor)
+      }
+    }
+  }
+
   private func load(retryOnForbidden: Bool = true) async {
     guard let me else { return }
     guard me.currentHouseholdSummary != nil else {
@@ -707,6 +825,7 @@ struct SettingsView: View {
       members = []
       invites = []
       locations = []
+      storageVessels = []
       isLoading = false
       return
     }
@@ -716,15 +835,17 @@ struct SettingsView: View {
       async let householdReq = appState.api.currentHousehold()
       async let membersReq = appState.api.householdMembers()
       async let locationsReq = appState.api.locations()
+      async let storageVesselsReq = appState.api.storageVessels()
       async let offReq = appState.api.openFoodFactsCredentialStatus()
-      let (household, members, locations, offCredentialStatus) = try await (
-        householdReq, membersReq, locationsReq, offReq
+      let (household, members, locations, storageVessels, offCredentialStatus) = try await (
+        householdReq, membersReq, locationsReq, storageVesselsReq, offReq
       )
       self.household = household
       self.householdNameDraft = household.name
       self.householdTimezoneDraft = household.timezone
       self.members = members
       self.locations = locations.sorted { $0.sortOrder < $1.sortOrder }
+      self.storageVessels = storageVessels.sorted { $0.sortOrder < $1.sortOrder }
       self.offCredentialStatus = offCredentialStatus
       self.offUsernameDraft = offCredentialStatus.username ?? ""
       self.offPasswordDraft = ""
@@ -746,6 +867,7 @@ struct SettingsView: View {
           members = []
           invites = []
           locations = []
+          storageVessels = []
           isLoading = false
           return
         case .failed(let message):
@@ -894,6 +1016,35 @@ struct SettingsView: View {
     }
   }
 
+  private func saveStorageVessel(name: String, tareWeight: String, tareUnit: String) async {
+    do {
+      if let editingStorageVessel {
+        _ = try await appState.api.updateStorageVessel(
+          id: editingStorageVessel.id,
+          name: name,
+          tareWeight: tareWeight,
+          tareUnit: tareUnit,
+          sortOrder: Int(editingStorageVessel.sortOrder)
+        )
+      } else {
+        _ = try await appState.api.createStorageVessel(
+          name: name,
+          tareWeight: tareWeight,
+          tareUnit: tareUnit
+        )
+      }
+      showStorageVesselEditor = false
+      self.editingStorageVessel = nil
+      storageVessels = try await appState.api.storageVessels().sorted {
+        $0.sortOrder < $1.sortOrder
+      }
+    } catch let err as APIError {
+      errorMessage = err.userFacingMessage
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+  }
+
   private func moveLocations(from source: IndexSet, to destination: Int) async {
     var reordered = locations
     reordered.move(fromOffsets: source, toOffset: destination)
@@ -917,9 +1068,45 @@ struct SettingsView: View {
     }
   }
 
+  private func moveStorageVessels(from source: IndexSet, to destination: Int) async {
+    var reordered = storageVessels
+    reordered.move(fromOffsets: source, toOffset: destination)
+    storageVessels = reordered
+    do {
+      for (idx, vessel) in reordered.enumerated() {
+        _ = try await appState.api.updateStorageVessel(
+          id: vessel.id,
+          name: vessel.name,
+          tareWeight: vessel.tareWeight,
+          tareUnit: vessel.tareUnit,
+          sortOrder: idx
+        )
+      }
+      storageVessels = try await appState.api.storageVessels().sorted {
+        $0.sortOrder < $1.sortOrder
+      }
+    } catch let err as APIError {
+      errorMessage = err.userFacingMessage
+      await reloadStorageVesselsAfterFailedMove()
+    } catch {
+      errorMessage = error.localizedDescription
+      await reloadStorageVesselsAfterFailedMove()
+    }
+  }
+
   private func reloadLocationsAfterFailedMove() async {
     do {
       locations = try await appState.api.locations().sorted { $0.sortOrder < $1.sortOrder }
+    } catch {
+      // Keep the original reorder error visible.
+    }
+  }
+
+  private func reloadStorageVesselsAfterFailedMove() async {
+    do {
+      storageVessels = try await appState.api.storageVessels().sorted {
+        $0.sortOrder < $1.sortOrder
+      }
     } catch {
       // Keep the original reorder error visible.
     }
@@ -930,6 +1117,18 @@ struct SettingsView: View {
     do {
       try await appState.api.deleteLocation(id: location.id)
       locations.removeAll { $0.id == location.id }
+    } catch let err as APIError {
+      errorMessage = err.userFacingMessage
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+  }
+
+  private func deleteStorageVessel(_ vessel: StorageVessel) async {
+    defer { storageVesselPendingDeletion = nil }
+    do {
+      try await appState.api.deleteStorageVessel(id: vessel.id)
+      storageVessels.removeAll { $0.id == vessel.id }
     } catch let err as APIError {
       errorMessage = err.userFacingMessage
     } catch {
@@ -1038,5 +1237,63 @@ private struct LocationEditorView: View {
         .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
       }
     }
+  }
+}
+
+private struct StorageVesselEditorView: View {
+  @Environment(\.dismiss) private var dismiss
+
+  let vessel: StorageVessel?
+  let onSave: (String, String, String) async -> Void
+
+  @State private var name: String
+  @State private var tareWeight: String
+  @State private var tareUnit: String
+
+  init(vessel: StorageVessel?, onSave: @escaping (String, String, String) async -> Void) {
+    self.vessel = vessel
+    self.onSave = onSave
+    _name = State(initialValue: vessel?.name ?? "")
+    _tareWeight = State(initialValue: vessel?.tareWeight ?? "")
+    _tareUnit = State(initialValue: vessel?.tareUnit ?? "g")
+  }
+
+  var body: some View {
+    Form {
+      TextField("Name", text: $name)
+      DecimalField(title: "Tare weight", text: $tareWeight)
+      Picker("Tare unit", selection: $tareUnit) {
+        Text("g").tag("g")
+        Text("kg").tag("kg")
+        Text("oz").tag("oz")
+        Text("lb").tag("lb")
+      }
+    }
+    .navigationTitle(vessel == nil ? "New Storage Vessel" : "Edit Storage Vessel")
+    .toolbar {
+      ToolbarItem(placement: .cancellationAction) {
+        Button("Cancel") { dismiss() }
+      }
+      ToolbarItem(placement: .confirmationAction) {
+        Button("Save") {
+          Task {
+            await onSave(
+              name.trimmingCharacters(in: .whitespacesAndNewlines),
+              tareWeight.trimmingCharacters(in: .whitespacesAndNewlines),
+              tareUnit
+            )
+            dismiss()
+          }
+        }
+        .disabled(!canSave)
+      }
+    }
+  }
+
+  private var canSave: Bool {
+    let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedWeight = tareWeight.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedName.isEmpty, let weight = Decimal(string: trimmedWeight) else { return false }
+    return weight >= 0
   }
 }

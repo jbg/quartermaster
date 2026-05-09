@@ -19,6 +19,8 @@ struct AddStockView: View {
   @State private var quantity: String = ""
   @State private var unitCode: String = ""
   @State private var selectedLocationID: String?
+  @State private var selectedStorageVesselID: String?
+  @State private var quantityIncludesStorageVessel = false
   @State private var hasExpiry: Bool = false
   @State private var expiry: Date =
     Calendar.current.date(byAdding: .day, value: 30, to: .now) ?? .now
@@ -30,6 +32,7 @@ struct AddStockView: View {
   @State private var note: String = ""
 
   @State private var locations: [Location] = []
+  @State private var storageVessels: [StorageVessel] = []
   @State private var isSubmitting = false
   @State private var errorMessage: String?
 
@@ -70,6 +73,27 @@ struct AddStockView: View {
             ForEach(locations) { loc in
               Text(loc.name).tag(Optional(loc.id))
             }
+          }
+        }
+        Section {
+          Picker("Vessel", selection: $selectedStorageVesselID) {
+            Text("None").tag(Optional<String>.none)
+            ForEach(storageVessels) { vessel in
+              Text("\(vessel.name) (\(vessel.displayTare))").tag(Optional(vessel.id))
+            }
+          }
+          if grossVesselWeightEligible {
+            Toggle("Amount includes vessel", isOn: $quantityIncludesStorageVessel)
+          }
+        } header: {
+          Text("Storage Vessel")
+        } footer: {
+          if grossVesselWeightEligible, let vessel = selectedStorageVessel {
+            Text("Quartermaster will subtract \(vessel.displayTare) before saving this batch.")
+          } else if selectedStorageVesselID != nil && productPackageSize != nil {
+            Text(
+              "Vessel subtraction is only available for exact free-weight entries, not package entries."
+            )
           }
         }
         Section {
@@ -130,6 +154,11 @@ struct AddStockView: View {
         }
       }
       .task { await loadInitial() }
+      .onChange(of: grossVesselWeightEligible) { _, eligible in
+        if !eligible {
+          quantityIncludesStorageVessel = false
+        }
+      }
     }
   }
 
@@ -176,6 +205,16 @@ struct AddStockView: View {
     return (quantity, unit)
   }
 
+  private var selectedStorageVessel: StorageVessel? {
+    guard let selectedStorageVesselID else { return nil }
+    return storageVessels.first { $0.id == selectedStorageVesselID }
+  }
+
+  private var grossVesselWeightEligible: Bool {
+    entryMode == .exact && product.family == .mass && selectedStorageVessel != nil
+      && productPackageSize == nil
+  }
+
   private var canSubmit: Bool {
     guard selectedLocationID != nil else { return false }
     if entryMode == .package {
@@ -203,12 +242,13 @@ struct AddStockView: View {
     if unitCode.isEmpty {
       unitCode = product.preferredUnit
     }
-    if locations.isEmpty {
-      if let l = try? await appState.api.locations() {
-        locations = l.sorted { $0.sortOrder < $1.sortOrder }
-        if selectedLocationID == nil {
-          selectedLocationID = locations.first?.id
-        }
+    async let locationReq = appState.api.locations()
+    async let vesselReq = appState.api.storageVessels()
+    if let loaded = try? await (locationReq, vesselReq) {
+      locations = loaded.0.sorted { $0.sortOrder < $1.sortOrder }
+      storageVessels = loaded.1.sorted { $0.sortOrder < $1.sortOrder }
+      if selectedLocationID == nil {
+        selectedLocationID = locations.first?.id
       }
     }
   }
@@ -251,6 +291,9 @@ struct AddStockView: View {
       producedOn: hasProduced ? StockBatch.yyyymmdd.string(from: produced) : nil,
       productId: product.id,
       quantity: stockAmount.quantity,
+      quantityIncludesStorageVessel: grossVesselWeightEligible && quantityIncludesStorageVessel
+        ? true : nil,
+      storageVesselId: selectedStorageVesselID,
       unit: stockAmount.unit,
     )
     guard entryMode == .package, let count = wholePackageCount() else {

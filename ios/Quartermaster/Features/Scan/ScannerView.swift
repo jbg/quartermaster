@@ -127,6 +127,8 @@ struct ScanScreen: View {
     var quantity: String
     var unitCode: String
     var locationID: String?
+    var storageVesselID: String?
+    var quantityIncludesStorageVessel: Bool
     var expiryCandidate: ExpiryDateCandidate?
   }
 
@@ -139,6 +141,7 @@ struct ScanScreen: View {
   @State private var expiryCandidates: [ExpiryDateCandidate] = []
   @State private var scannedExpiryText = ""
   @State private var locations: [Location] = []
+  @State private var storageVessels: [StorageVessel] = []
   @State private var errorMessage: String?
   @State private var noticeMessage: String?
   @State private var suppressNextSheetDismissReset = false
@@ -415,6 +418,38 @@ struct ScanScreen: View {
           }
           .labelsHidden()
         }
+        storageVesselControls(for: draft)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func storageVesselControls(for draft: ScannedStockDraft) -> some View {
+    Picker(
+      "Storage vessel",
+      selection: Binding(
+        get: { self.draft?.storageVesselID },
+        set: { self.draft?.storageVesselID = $0 }
+      )
+    ) {
+      Text("None").tag(Optional<String>.none)
+      ForEach(storageVessels) { vessel in
+        Text("\(vessel.name) (\(vessel.displayTare))").tag(Optional(vessel.id))
+      }
+    }
+
+    if grossVesselWeightEligible(for: draft) {
+      Toggle(
+        "Amount includes vessel",
+        isOn: Binding(
+          get: { self.draft?.quantityIncludesStorageVessel ?? false },
+          set: { self.draft?.quantityIncludesStorageVessel = $0 }
+        )
+      )
+      if let vessel = selectedStorageVessel(for: draft) {
+        Text("Quartermaster will subtract \(vessel.displayTare) before saving this batch.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
     }
   }
@@ -565,6 +600,8 @@ struct ScanScreen: View {
       quantity: packageSize == nil ? "1" : "",
       unitCode: product.preferredUnit,
       locationID: locations.first?.id,
+      storageVesselID: nil,
+      quantityIncludesStorageVessel: false,
       expiryCandidate: nil,
     )
     showDraftReview()
@@ -617,6 +654,9 @@ struct ScanScreen: View {
       producedOn: nil,
       productId: draft.product.id,
       quantity: stockAmount.quantity,
+      quantityIncludesStorageVessel: grossVesselWeightEligible(for: draft)
+        && draft.quantityIncludesStorageVessel ? true : nil,
+      storageVesselId: draft.storageVesselID,
       unit: stockAmount.unit,
     )
     guard draft.entryMode == .package, let count = wholePackageCount(draft.packageCount) else {
@@ -648,6 +688,17 @@ struct ScanScreen: View {
     return (quantity, unit)
   }
 
+  private func selectedStorageVessel(for draft: ScannedStockDraft) -> StorageVessel? {
+    guard let storageVesselID = draft.storageVesselID else { return nil }
+    return storageVessels.first { $0.id == storageVesselID }
+  }
+
+  private func grossVesselWeightEligible(for draft: ScannedStockDraft) -> Bool {
+    draft.entryMode == .exact && draft.product.family == .mass
+      && selectedStorageVessel(for: draft) != nil
+      && productPackageSize(for: draft.product) == nil
+  }
+
   private func wholePackageCount(_ text: String) -> Int? {
     guard let value = Decimal(string: text), value > 0 else { return nil }
     var copy = value
@@ -659,9 +710,12 @@ struct ScanScreen: View {
   }
 
   private func ensureLocationsLoaded() async {
-    if !locations.isEmpty { return }
-    if let loaded = try? await appState.api.locations() {
-      locations = loaded.sorted { $0.sortOrder < $1.sortOrder }
+    if !locations.isEmpty && !storageVessels.isEmpty { return }
+    async let locationsReq = appState.api.locations()
+    async let vesselsReq = appState.api.storageVessels()
+    if let loaded = try? await (locationsReq, vesselsReq) {
+      locations = loaded.0.sorted { $0.sortOrder < $1.sortOrder }
+      storageVessels = loaded.1.sorted { $0.sortOrder < $1.sortOrder }
     }
   }
 

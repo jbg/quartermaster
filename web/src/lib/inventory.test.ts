@@ -428,6 +428,7 @@ describe('inventory helpers', () => {
         product: { name: 'Rice' },
         quantity: '2',
         locationId: 'pantry',
+        storageVessel: { id: 'jar-1', name: '1L jar' },
         producedOn: '2026-04-20',
         expiresOn: '2026-05-01',
         openedOn: '2026-04-01',
@@ -436,6 +437,7 @@ describe('inventory helpers', () => {
     ).toEqual({
       quantity: '2',
       locationId: 'pantry',
+      storageVesselId: 'jar-1',
       producedOn: '2026-04-20',
       expiresOn: '2026-05-01',
       openedOn: '2026-04-01',
@@ -447,6 +449,7 @@ describe('inventory helpers', () => {
     const valid = {
       quantity: '1.5',
       locationId: 'pantry',
+      storageVesselId: '',
       producedOn: '',
       expiresOn: '',
       openedOn: '',
@@ -477,6 +480,7 @@ describe('inventory helpers', () => {
       product: { name: 'Rice' },
       quantity: '2',
       location_id: 'pantry',
+      storage_vessel: { id: 'jar-1', name: '1L jar', tare_weight: '410', tare_unit: 'g' },
       produced_on: '2026-04-20',
       expires_on: '2026-05-01',
       opened_on: '2026-04-01',
@@ -487,6 +491,7 @@ describe('inventory helpers', () => {
       buildStockUpdateRequest(batch, {
         quantity: '1.5',
         locationId: 'freezer',
+        storageVesselId: '',
         producedOn: '',
         expiresOn: '2026-06-01',
         openedOn: '',
@@ -495,6 +500,7 @@ describe('inventory helpers', () => {
     ).toEqual([
       { op: 'replace', path: '/quantity', value: '1.5' },
       { op: 'replace', path: '/location_id', value: 'freezer' },
+      { op: 'remove', path: '/storage_vessel_id' },
       { op: 'replace', path: '/expires_on', value: '2026-06-01' },
       { op: 'remove', path: '/produced_on' },
       { op: 'remove', path: '/opened_on' },
@@ -508,6 +514,7 @@ describe('inventory helpers', () => {
         {
           quantity: '3',
           locationId: 'pantry',
+          storageVesselId: '',
           producedOn: '',
           expiresOn: '',
           openedOn: '',

@@ -712,6 +712,21 @@ private actor FakeAPI: AppStateAPI {
     -> Location
   { fatalError("unused") }
   func deleteLocation(id: String) async throws {}
+  func storageVessels() async throws -> [StorageVessel] { [] }
+  func createStorageVessel(
+    name: String,
+    tareWeight: String,
+    tareUnit: String,
+    sortOrder: Int?
+  ) async throws -> StorageVessel { fatalError("unused") }
+  func updateStorageVessel(
+    id: String,
+    name: String,
+    tareWeight: String,
+    tareUnit: String,
+    sortOrder: Int
+  ) async throws -> StorageVessel { fatalError("unused") }
+  func deleteStorageVessel(id: String) async throws {}
   func units() async throws -> [Quartermaster.Unit] { [] }
   func searchProducts(query: String, limit: Int, includeDeleted: Bool) async throws -> [Product] {
     []

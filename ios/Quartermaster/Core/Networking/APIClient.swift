@@ -629,6 +629,70 @@ actor APIClient: AppStateAPI {
     }
   }
 
+  // MARK: - Storage Vessels
+
+  func storageVessels() async throws -> [StorageVessel] {
+    let response = try await client.storageVesselsList(.init())
+    switch response {
+    case .ok(let ok): return try ok.body.json
+    case .unauthorized: throw APIError.unauthorized
+    case .undocumented(let statusCode, _):
+      throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
+  func createStorageVessel(
+    name: String,
+    tareWeight: String,
+    tareUnit: String,
+    sortOrder: Int? = nil,
+  ) async throws -> StorageVessel {
+    let request = CreateStorageVesselRequest(
+      name: name,
+      sortOrder: sortOrder.map(Int64.init),
+      tareUnit: tareUnit,
+      tareWeight: tareWeight,
+    )
+    let response = try await client.storageVesselsCreate(.init(body: .json(request)))
+    switch response {
+    case .created(let ok): return try ok.body.json
+    case .undocumented(let statusCode, _):
+      throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
+  func updateStorageVessel(
+    id: String,
+    name: String,
+    tareWeight: String,
+    tareUnit: String,
+    sortOrder: Int,
+  ) async throws -> StorageVessel {
+    let request = UpdateStorageVesselRequest(
+      name: name,
+      sortOrder: Int64(sortOrder),
+      tareUnit: tareUnit,
+      tareWeight: tareWeight,
+    )
+    let response = try await client.storageVesselsUpdate(
+      .init(path: .init(id: id), body: .json(request)))
+    switch response {
+    case .ok(let ok): return try ok.body.json
+    case .undocumented(let statusCode, _):
+      throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
+  func deleteStorageVessel(id: String) async throws {
+    let response = try await client.storageVesselsDelete(.init(path: .init(id: id)))
+    switch response {
+    case .noContent: return
+    case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
+    case .undocumented(let statusCode, _):
+      throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
   func consumeStock(_ request: ConsumeRequest) async throws -> ConsumeResponse {
     let response = try await client.stockConsume(.init(body: .json(request)))
     switch response {

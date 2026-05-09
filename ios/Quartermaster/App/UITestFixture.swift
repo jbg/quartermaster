@@ -101,6 +101,21 @@ import UIKit
       -> Location
     { throw APIError.unknown }
     func deleteLocation(id: String) async throws {}
+    func storageVessels() async throws -> [StorageVessel] { [] }
+    func createStorageVessel(
+      name: String,
+      tareWeight: String,
+      tareUnit: String,
+      sortOrder: Int?
+    ) async throws -> StorageVessel { throw APIError.unknown }
+    func updateStorageVessel(
+      id: String,
+      name: String,
+      tareWeight: String,
+      tareUnit: String,
+      sortOrder: Int
+    ) async throws -> StorageVessel { throw APIError.unknown }
+    func deleteStorageVessel(id: String) async throws {}
     func units() async throws -> [Unit] { try decodeFixture(from: unitsJSON) }
     func searchProducts(query: String, limit: Int, includeDeleted: Bool) async throws -> [Product] {
       []
