@@ -181,11 +181,12 @@ struct InventoryView: View {
       }
       let visibleSorted = visible.sorted(by: sortByExpiry)
       let allSorted = all.sorted(by: sortByExpiry)
+      let activeSorted = allSorted.filter { !isDepleted($0) }
       groups.append(
         ProductGroup(
           product: visibleSorted[0].product,
           visibleBatches: visibleSorted,
-          allBatches: allSorted,
+          allBatches: activeSorted,
         ))
     }
 

@@ -9,7 +9,10 @@ final class DepletedInventoryUITests: XCTestCase {
     let productRow = app.buttons["inventory.product.11111111-1111-1111-1111-111111111111"]
     XCTAssertTrue(productRow.waitForExistence(timeout: 5))
     XCTAssertTrue(productRow.isHittable)
-    productRow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    XCTAssertFalse(app.staticTexts["500 g matching"].exists)
+    XCTAssertFalse(app.staticTexts["500 g total"].exists)
+    XCTAssertFalse(app.staticTexts["· 1/2 batches"].exists)
+    productRow.tap()
 
     XCTAssertTrue(app.buttons["batch.consume"].waitForExistence(timeout: 5))
 
@@ -21,6 +24,12 @@ final class DepletedInventoryUITests: XCTestCase {
 
     let depletedRow =
       app.descendants(matching: .any)["batch.row.depleted.44444444-4444-4444-4444-444444444444"]
+    XCTAssertFalse(depletedRow.exists)
+
+    let toggle = app.buttons["batch.toggle-depleted"]
+    XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+    toggle.tap()
+
     XCTAssertTrue(depletedRow.waitForExistence(timeout: 5))
     depletedRow.tap()
 

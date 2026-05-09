@@ -18,6 +18,7 @@ struct ProductBatchesSheet: View {
   @State private var errorMessage: String?
   @State private var labelPrintingBatchID: String?
   @State private var labelPrintNotice: LabelPrintNotice?
+  @State private var showDepletedBatches: Bool
   /// Batch currently showing the "you came from here" flash. Cleared by a
   /// background task after ~1.5 s so the pulse feels transient.
   @State private var flashingBatchID: String?
@@ -35,6 +36,10 @@ struct ProductBatchesSheet: View {
     self.allLocations = allLocations
     _batches = State(initialValue: batches)
     self.highlightBatchID = highlightBatchID
+    let highlightedDepleted =
+      highlightBatchID.flatMap { id in batches.first(where: { $0.id == id }) }
+      .map(isDepleted) ?? false
+    _showDepletedBatches = State(initialValue: highlightedDepleted)
     self.onMutated = onMutated
   }
 
@@ -42,17 +47,41 @@ struct ProductBatchesSheet: View {
     NavigationStack {
       ScrollViewReader { proxy in
         List {
-          ForEach(batches) { batch in
+          ForEach(visibleBatches) { batch in
             batchListRow(batch)
+          }
+          if visibleBatches.isEmpty {
+            Section {
+              Text("No active batches in \(location.name).")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+          }
+          if !depletedBatches.isEmpty {
+            Section {
+              Button {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                  showDepletedBatches.toggle()
+                }
+              } label: {
+                Label(
+                  showDepletedBatches
+                    ? "Hide depleted batches"
+                    : "Show \(depletedBatches.count) depleted \(depletedBatches.count == 1 ? "batch" : "batches")",
+                  systemImage: showDepletedBatches ? "eye.slash" : "archivebox"
+                )
+              }
+              .accessibilityIdentifier("batch.toggle-depleted")
+            }
           }
           Section {
             Button {
-              consumeTarget = batches.first(where: { !isDepleted($0) })
+              consumeTarget = activeBatches.first
             } label: {
               Label("Use stock", systemImage: "minus.circle")
             }
             .accessibilityIdentifier("batch.consume")
-            .disabled(!batches.contains(where: { !isDepleted($0) }))
+            .disabled(activeBatches.isEmpty)
           }
         }
         .task(id: highlightBatchID) { await flashHighlight(proxy: proxy) }
@@ -172,6 +201,18 @@ struct ProductBatchesSheet: View {
     }
   }
 
+  private var activeBatches: [StockBatch] {
+    batches.filter { !isDepleted($0) }
+  }
+
+  private var depletedBatches: [StockBatch] {
+    batches.filter(isDepleted)
+  }
+
+  private var visibleBatches: [StockBatch] {
+    showDepletedBatches ? batches : activeBatches
+  }
+
   private func batchListRow(_ batch: StockBatch) -> some View {
     BatchRow(
       batch: batch,
@@ -217,8 +258,11 @@ struct ProductBatchesSheet: View {
 
   private func flashHighlight(proxy: ScrollViewProxy) async {
     guard let target = highlightBatchID,
-      batches.contains(where: { $0.id == target })
+      let highlightedBatch = batches.first(where: { $0.id == target })
     else { return }
+    if isDepleted(highlightedBatch) {
+      showDepletedBatches = true
+    }
     withAnimation {
       proxy.scrollTo(target, anchor: .center)
       flashingBatchID = target
@@ -233,7 +277,7 @@ struct ProductBatchesSheet: View {
       batches.removeAll { $0.id == batch.id }
       await appState.refreshRemindersAfterInventoryMutation()
       await onMutated()
-      if batches.isEmpty { dismiss() }
+      if activeBatches.isEmpty && depletedBatches.isEmpty { dismiss() }
     } catch let err as APIError {
       errorMessage = err.userFacingMessage
     } catch {
