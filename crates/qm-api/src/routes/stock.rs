@@ -8,7 +8,7 @@ use axum::{
     Json, Router,
 };
 use jiff::{civil::Date, tz, Timestamp, ToSpan};
-use qm_core::batch::plan_consumption;
+use qm_core::{batch::plan_consumption_with_measurement_system, units::MeasurementSystem};
 use qm_db::products::ProductRow;
 use qm_db::stock::{
     ConsumeAndStoreError, RestoreError, StockBatchRow, StockBatchWithProduct, StockFilter,
@@ -597,8 +597,14 @@ pub async fn consume(
 
     let quantity = Decimal::from_str(&req.quantity)
         .map_err(|_| ApiError::BadRequest("quantity not a valid decimal".into()))?;
+    let measurement_system = household_measurement_system(&state, household_id).await?;
 
-    let plan = match plan_consumption(refs, quantity, &req.unit) {
+    let plan = match plan_consumption_with_measurement_system(
+        refs,
+        quantity,
+        &req.unit,
+        measurement_system,
+    ) {
         Ok(p) => p,
         Err(qm_core::QmError::InsufficientStock {
             requested,
@@ -626,8 +632,13 @@ pub async fn consume(
     let mut consumed = Vec::with_capacity(plan.len());
     for (c, batch) in plan.into_iter().zip(batches.iter()) {
         // qm_core::units::convert returns quantity in the `to` unit.
-        let in_requested =
-            qm_core::units::convert(c.quantity, &batch.unit, &req.unit).unwrap_or(c.quantity);
+        let in_requested = qm_core::units::convert_with_measurement_system(
+            c.quantity,
+            &batch.unit,
+            &req.unit,
+            measurement_system,
+        )
+        .unwrap_or(c.quantity);
         consumed.push(ConsumedBatchDto {
             batch_id: c.batch_id,
             quantity: c.quantity.to_string(),
@@ -1031,6 +1042,16 @@ fn validate_unit_family(unit: &str, product_family: &str) -> ApiResult<()> {
         });
     }
     Ok(())
+}
+
+async fn household_measurement_system(
+    state: &AppState,
+    household_id: Uuid,
+) -> ApiResult<MeasurementSystem> {
+    let household = qm_db::households::find_by_id(&state.db, household_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    crate::routes::households::measurement_system_from_db(&household.measurement_system)
 }
 
 fn create_stock_quantity(

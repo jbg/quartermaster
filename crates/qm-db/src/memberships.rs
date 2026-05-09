@@ -25,6 +25,7 @@ pub struct MembershipWithHouseholdRow {
     pub membership: MembershipRow,
     pub household_name: String,
     pub household_timezone: String,
+    pub household_measurement_system: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,7 +126,8 @@ pub async fn list_for_user(
 ) -> Result<Vec<MembershipWithHouseholdRow>, sqlx::Error> {
     let rows = sqlx::query(
         "SELECT m.household_id, m.user_id, m.role, m.joined_at, \
-                h.name AS household_name, h.timezone AS household_timezone \
+                h.name AS household_name, h.timezone AS household_timezone, \
+                h.measurement_system AS household_measurement_system \
          FROM membership m \
          INNER JOIN household h ON h.id = m.household_id \
          WHERE m.user_id = ? \
@@ -140,6 +142,7 @@ pub async fn list_for_user(
                 membership: row_to_membership_ref(&row)?,
                 household_name: row.try_get("household_name")?,
                 household_timezone: row.try_get("household_timezone")?,
+                household_measurement_system: row.try_get("household_measurement_system")?,
             })
         })
         .collect()

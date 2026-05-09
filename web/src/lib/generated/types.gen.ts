@@ -85,6 +85,7 @@ export type ConsumedBatchDto = {
 };
 
 export type CreateHouseholdRequest = {
+    measurement_system?: null | MeasurementSystem;
     name: string;
     timezone: string;
 };
@@ -170,12 +171,14 @@ export type HealthResponse = {
 
 export type HouseholdDetailDto = {
     id: string;
+    measurement_system: MeasurementSystem;
     name: string;
     timezone: string;
 };
 
 export type HouseholdDto = {
     id: string;
+    measurement_system: MeasurementSystem;
     name: string;
     timezone: string;
 };
@@ -183,6 +186,7 @@ export type HouseholdDto = {
 export type HouseholdSummaryDto = {
     id: string;
     joined_at: string;
+    measurement_system: MeasurementSystem;
     name: string;
     role: MembershipRole;
     timezone: string;
@@ -263,6 +267,8 @@ export type MeResponse = {
     public_base_url?: string;
     user: UserDto;
 };
+
+export type MeasurementSystem = 'metric' | 'us_customary' | 'australian' | 'imperial';
 
 export type MemberDto = {
     joined_at: string;
@@ -585,6 +591,7 @@ export type UnitDto = {
 export type UnitFamily = 'mass' | 'volume' | 'count';
 
 export type UpdateHouseholdRequest = {
+    measurement_system: MeasurementSystem;
     name: string;
     timezone: string;
 };

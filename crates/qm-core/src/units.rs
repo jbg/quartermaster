@@ -40,6 +40,55 @@ pub struct Unit {
     pub to_base_milli: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MeasurementSystem {
+    Metric,
+    UsCustomary,
+    Australian,
+    Imperial,
+}
+
+impl MeasurementSystem {
+    pub const DEFAULT: Self = Self::Metric;
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Metric => "metric",
+            Self::UsCustomary => "us_customary",
+            Self::Australian => "australian",
+            Self::Imperial => "imperial",
+        }
+    }
+
+    pub fn from_str_ci(value: &str) -> Option<Self> {
+        match value {
+            "metric" => Some(Self::Metric),
+            "us_customary" | "us-customary" | "us" => Some(Self::UsCustomary),
+            "australian" | "au" => Some(Self::Australian),
+            "imperial" | "uk" => Some(Self::Imperial),
+            _ => None,
+        }
+    }
+
+    const fn teaspoon_to_base_milli(self) -> u64 {
+        match self {
+            Self::Metric | Self::Australian => 5_000,
+            Self::UsCustomary => 4_929,
+            Self::Imperial => 5_919,
+        }
+    }
+
+    const fn tablespoon_to_base_milli(self) -> u64 {
+        match self {
+            Self::Metric => 15_000,
+            Self::UsCustomary => 14_787,
+            Self::Australian => 20_000,
+            Self::Imperial => 17_758,
+        }
+    }
+}
+
 impl Unit {
     const fn new(code: &'static str, family: UnitFamily, to_base_milli: u64) -> Self {
         Self {
@@ -54,7 +103,7 @@ impl Unit {
     }
 }
 
-const UNITS: &[Unit] = &[
+const BASE_UNITS: &[Unit] = &[
     // Mass — base is gram (g)
     Unit::new("mg", UnitFamily::Mass, 1),         // 0.001 g
     Unit::new("g", UnitFamily::Mass, 1_000),      // 1 g
@@ -64,8 +113,8 @@ const UNITS: &[Unit] = &[
     // Volume — base is millilitre (ml)
     Unit::new("ml", UnitFamily::Volume, 1_000),     // 1 ml
     Unit::new("l", UnitFamily::Volume, 1_000_000),  // 1000 ml
-    Unit::new("tsp", UnitFamily::Volume, 4_929),    // 4.929 ml
-    Unit::new("tbsp", UnitFamily::Volume, 14_787),  // 14.787 ml
+    Unit::new("tsp", UnitFamily::Volume, 5_000),    // 5 ml
+    Unit::new("tbsp", UnitFamily::Volume, 15_000),  // 15 ml
     Unit::new("cup", UnitFamily::Volume, 236_588),  // 236.588 ml (US customary)
     Unit::new("fl_oz", UnitFamily::Volume, 29_574), // 29.574 ml (US customary)
     // Count — base is piece
@@ -73,22 +122,63 @@ const UNITS: &[Unit] = &[
 ];
 
 pub fn lookup(code: &str) -> Result<Unit, QmError> {
-    UNITS
+    lookup_with_measurement_system(code, MeasurementSystem::DEFAULT)
+}
+
+pub fn lookup_with_measurement_system(
+    code: &str,
+    measurement_system: MeasurementSystem,
+) -> Result<Unit, QmError> {
+    if code.eq_ignore_ascii_case("tsp") {
+        return Ok(Unit::new(
+            "tsp",
+            UnitFamily::Volume,
+            measurement_system.teaspoon_to_base_milli(),
+        ));
+    }
+    if code.eq_ignore_ascii_case("tbsp") {
+        return Ok(Unit::new(
+            "tbsp",
+            UnitFamily::Volume,
+            measurement_system.tablespoon_to_base_milli(),
+        ));
+    }
+
+    BASE_UNITS
         .iter()
         .copied()
         .find(|u| u.code.eq_ignore_ascii_case(code))
         .ok_or_else(|| QmError::UnknownUnit(code.to_owned()))
 }
 
-pub fn all_units() -> &'static [Unit] {
-    UNITS
+pub fn all_units() -> Vec<Unit> {
+    all_units_with_measurement_system(MeasurementSystem::DEFAULT)
+}
+
+pub fn all_units_with_measurement_system(measurement_system: MeasurementSystem) -> Vec<Unit> {
+    BASE_UNITS
+        .iter()
+        .map(|unit| {
+            lookup_with_measurement_system(unit.code, measurement_system)
+                .expect("built-in unit should be known")
+        })
+        .collect()
 }
 
 /// Convert `qty` expressed in unit `from` into unit `to`.
 /// Returns an error if the units belong to different families or are unknown.
 pub fn convert(qty: Decimal, from: &str, to: &str) -> Result<Decimal, QmError> {
-    let from_u = lookup(from)?;
-    let to_u = lookup(to)?;
+    convert_with_measurement_system(qty, from, to, MeasurementSystem::DEFAULT)
+}
+
+pub fn convert_with_measurement_system(
+    qty: Decimal,
+    from: &str,
+    to: &str,
+    measurement_system: MeasurementSystem,
+) -> Result<Decimal, QmError> {
+    let from_u = lookup_with_measurement_system(from, measurement_system)?;
+    let to_u = lookup_with_measurement_system(to, measurement_system)?;
     if from_u.family != to_u.family {
         return Err(QmError::IncompatibleUnits {
             from: from.to_owned(),
@@ -123,6 +213,31 @@ mod tests {
     #[test]
     fn ml_to_l() {
         assert_eq!(convert(d("250"), "ml", "l").unwrap(), d("0.25"));
+    }
+
+    #[test]
+    fn metric_spoons_to_ml() {
+        assert_eq!(convert(d("2"), "tbsp", "ml").unwrap(), d("30"));
+        assert_eq!(convert(d("3"), "tsp", "ml").unwrap(), d("15"));
+    }
+
+    #[test]
+    fn household_measurement_systems_to_ml() {
+        assert_eq!(
+            convert_with_measurement_system(d("2"), "tbsp", "ml", MeasurementSystem::UsCustomary)
+                .unwrap(),
+            d("29.574")
+        );
+        assert_eq!(
+            convert_with_measurement_system(d("2"), "tbsp", "ml", MeasurementSystem::Australian)
+                .unwrap(),
+            d("40")
+        );
+        assert_eq!(
+            convert_with_measurement_system(d("2"), "tbsp", "ml", MeasurementSystem::Imperial)
+                .unwrap(),
+            d("35.516")
+        );
     }
 
     #[test]

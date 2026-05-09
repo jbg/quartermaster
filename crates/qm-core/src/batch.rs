@@ -29,9 +29,23 @@ pub struct BatchConsumption {
 /// `created_at`). Mass↔mass and volume↔volume conversions are supported; any
 /// cross-family conversion returns an error.
 pub fn plan_consumption(
+    batches: Vec<BatchRef>,
+    requested: Decimal,
+    requested_unit: &str,
+) -> Result<Vec<BatchConsumption>, QmError> {
+    plan_consumption_with_measurement_system(
+        batches,
+        requested,
+        requested_unit,
+        units::MeasurementSystem::DEFAULT,
+    )
+}
+
+pub fn plan_consumption_with_measurement_system(
     mut batches: Vec<BatchRef>,
     requested: Decimal,
     requested_unit: &str,
+    measurement_system: units::MeasurementSystem,
 ) -> Result<Vec<BatchConsumption>, QmError> {
     if requested <= Decimal::ZERO {
         return Err(QmError::InvalidQuantity(requested.to_string()));
@@ -53,14 +67,22 @@ pub fn plan_consumption(
             break;
         }
 
-        let available_in_requested_unit =
-            units::convert(batch.quantity, &batch.unit, requested_unit)?;
+        let available_in_requested_unit = units::convert_with_measurement_system(
+            batch.quantity,
+            &batch.unit,
+            requested_unit,
+            measurement_system,
+        )?;
         total_available_in_requested_unit += available_in_requested_unit;
 
         if available_in_requested_unit >= remaining_requested {
             // This batch satisfies the rest of the request.
-            let taken_in_batch_unit =
-                units::convert(remaining_requested, requested_unit, &batch.unit)?;
+            let taken_in_batch_unit = units::convert_with_measurement_system(
+                remaining_requested,
+                requested_unit,
+                &batch.unit,
+                measurement_system,
+            )?;
             let depletes = taken_in_batch_unit >= batch.quantity;
             plan.push(BatchConsumption {
                 batch_id: batch.id,

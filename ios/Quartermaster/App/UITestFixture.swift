@@ -82,7 +82,9 @@ import UIKit
     func switchHousehold(householdID: String) async throws -> Me { try await me() }
     func createHousehold(name: String, timezone: String) async throws -> Me { try await me() }
     func currentHousehold() async throws -> HouseholdDetail { throw APIError.unknown }
-    func updateCurrentHousehold(name: String, timezone: String) async throws -> HouseholdDetail {
+    func updateCurrentHousehold(
+      name: String, timezone: String, measurementSystem: MeasurementSystem
+    ) async throws -> HouseholdDetail {
       throw APIError.unknown
     }
     func householdMembers() async throws -> [Member] { [] }
@@ -253,6 +255,7 @@ import UIKit
           "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
           "name": "Smoke Household",
           "timezone": "UTC",
+          "measurement_system": "metric",
           "role": "admin",
           "joined_at": "2026-04-22T12:00:00Z"
         },
@@ -260,6 +263,7 @@ import UIKit
           "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
           "name": "Smoke Household",
           "timezone": "UTC",
+          "measurement_system": "metric",
           "role": "admin",
           "joined_at": "2026-04-22T12:00:00Z"
         }],

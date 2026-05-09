@@ -13,6 +13,7 @@ use axum::{
 };
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use jiff::{SignedDuration, Timestamp};
+use qm_core::units::MeasurementSystem;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use utoipa::{
@@ -137,6 +138,7 @@ pub struct HouseholdDto {
     pub id: Uuid,
     pub name: String,
     pub timezone: String,
+    pub measurement_system: MeasurementSystem,
 }
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
@@ -144,6 +146,7 @@ pub struct HouseholdSummaryDto {
     pub id: Uuid,
     pub name: String,
     pub timezone: String,
+    pub measurement_system: MeasurementSystem,
     pub role: crate::types::MembershipRole,
     pub joined_at: String,
 }
@@ -1114,6 +1117,9 @@ pub(crate) async fn build_me_response(
                 id: row.membership.household_id,
                 name: row.household_name.clone(),
                 timezone: row.household_timezone.clone(),
+                measurement_system: crate::routes::households::measurement_system_from_db(
+                    &row.household_measurement_system,
+                )?,
                 role: crate::types::MembershipRole::from_str(&row.membership.role)?,
                 joined_at: row.membership.joined_at.clone(),
             })

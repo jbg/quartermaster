@@ -1408,6 +1408,7 @@ class QuartermasterAppStateTest {
           "id": "$id",
           "name": "$name",
           "timezone": "UTC",
+          "measurement_system": "metric",
           "role": "admin",
           "joined_at": "2026-04-22T12:00:00Z"
         }
@@ -1419,6 +1420,7 @@ class QuartermasterAppStateTest {
               "id": "66666666-6666-6666-6666-666666666666",
               "name": "Home",
               "timezone": "UTC",
+              "measurement_system": "metric",
               "members": []
             }
         """.trimIndent(),

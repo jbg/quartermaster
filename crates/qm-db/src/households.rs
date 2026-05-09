@@ -9,6 +9,7 @@ pub struct HouseholdRow {
     pub id: Uuid,
     pub name: String,
     pub timezone: String,
+    pub measurement_system: String,
     pub created_at: String,
 }
 
@@ -42,6 +43,9 @@ pub async fn create_in_tx(
         id,
         name: name.to_owned(),
         timezone: timezone.to_owned(),
+        measurement_system: qm_core::units::MeasurementSystem::DEFAULT
+            .as_str()
+            .to_owned(),
         created_at,
     })
 }
@@ -51,7 +55,7 @@ pub async fn find_for_user(
     user_id: Uuid,
 ) -> Result<Option<HouseholdRow>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT h.id, h.name, h.timezone, h.created_at \
+        "SELECT h.id, h.name, h.timezone, h.measurement_system, h.created_at \
          FROM household h \
          INNER JOIN membership m ON m.household_id = h.id \
          WHERE m.user_id = ? \
@@ -69,6 +73,7 @@ pub async fn find_for_user(
             id,
             name: r.try_get("name")?,
             timezone: r.try_get("timezone")?,
+            measurement_system: r.try_get("measurement_system")?,
             created_at: r.try_get("created_at")?,
         })
     })
@@ -76,10 +81,12 @@ pub async fn find_for_user(
 }
 
 pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<HouseholdRow>, sqlx::Error> {
-    let row = sqlx::query("SELECT id, name, timezone, created_at FROM household WHERE id = ?")
-        .bind(id.to_string())
-        .fetch_optional(&db.pool)
-        .await?;
+    let row = sqlx::query(
+        "SELECT id, name, timezone, measurement_system, created_at FROM household WHERE id = ?",
+    )
+    .bind(id.to_string())
+    .fetch_optional(&db.pool)
+    .await?;
     row.map(|r| {
         let id_str: String = r.try_get("id")?;
         let id = Uuid::parse_str(&id_str).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
@@ -87,6 +94,7 @@ pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<HouseholdRow>,
             id,
             name: r.try_get("name")?,
             timezone: r.try_get("timezone")?,
+            measurement_system: r.try_get("measurement_system")?,
             created_at: r.try_get("created_at")?,
         })
     })
@@ -98,13 +106,17 @@ pub async fn update(
     id: Uuid,
     name: &str,
     timezone: &str,
+    measurement_system: &str,
 ) -> Result<Option<HouseholdRow>, sqlx::Error> {
-    let res = sqlx::query("UPDATE household SET name = ?, timezone = ? WHERE id = ?")
-        .bind(name)
-        .bind(timezone)
-        .bind(id.to_string())
-        .execute(&db.pool)
-        .await?;
+    let res = sqlx::query(
+        "UPDATE household SET name = ?, timezone = ?, measurement_system = ? WHERE id = ?",
+    )
+    .bind(name)
+    .bind(timezone)
+    .bind(measurement_system)
+    .bind(id.to_string())
+    .execute(&db.pool)
+    .await?;
     if res.rows_affected() == 0 {
         return Ok(None);
     }

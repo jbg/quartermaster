@@ -7,6 +7,106 @@ use support::{me_current_household_id, TestApp};
 use uuid::Uuid;
 
 #[tokio::test]
+async fn household_measurement_system_controls_units_and_consumption() {
+    let app = TestApp::start(ApiConfig::default()).await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+
+    let me = app.me(&alice).await;
+    let household_id = Uuid::parse_str(me_current_household_id(&me).unwrap()).unwrap();
+    let pantry = qm_db::locations::list_for_household(&app.db, household_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|loc| loc.kind == "pantry")
+        .unwrap();
+    let pantry_id = pantry.id;
+
+    let (status, units) = app
+        .send(Method::GET, "/api/v1/units", None, Some(&alice))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(unit_factor(&units, "tsp"), 5_000);
+    assert_eq!(unit_factor(&units, "tbsp"), 15_000);
+
+    let metric_batch_id = create_sauce_batch(&app, &alice, pantry_id, "Metric soy").await;
+    let (status, _) = app
+        .send(
+            Method::POST,
+            "/api/v1/stock/consume",
+            Some(json!({
+                "product_id": product_id_for_batch(&app, household_id, &metric_batch_id).await,
+                "location_id": pantry_id,
+                "quantity": "2",
+                "unit": "tbsp",
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        app.send(
+            Method::GET,
+            &format!("/api/v1/stock/{metric_batch_id}"),
+            None,
+            Some(&alice),
+        )
+        .await
+        .1["quantity"],
+        "970"
+    );
+
+    let (status, household) = app
+        .send(
+            Method::PATCH,
+            "/api/v1/households/current",
+            Some(json!({
+                "name": "Alice's Household",
+                "timezone": "UTC",
+                "measurement_system": "us_customary",
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(household["measurement_system"], "us_customary");
+
+    let (status, units) = app
+        .send(Method::GET, "/api/v1/units", None, Some(&alice))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(unit_factor(&units, "tsp"), 4_929);
+    assert_eq!(unit_factor(&units, "tbsp"), 14_787);
+
+    let us_batch_id = create_sauce_batch(&app, &alice, pantry_id, "US soy").await;
+    let (status, _) = app
+        .send(
+            Method::POST,
+            "/api/v1/stock/consume",
+            Some(json!({
+                "product_id": product_id_for_batch(&app, household_id, &us_batch_id).await,
+                "location_id": pantry_id,
+                "quantity": "2",
+                "unit": "tbsp",
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        app.send(
+            Method::GET,
+            &format!("/api/v1/stock/{us_batch_id}"),
+            None,
+            Some(&alice),
+        )
+        .await
+        .1["quantity"],
+        "970.426"
+    );
+}
+
+#[tokio::test]
 async fn product_stock_history_lifecycle_flows_through_api() {
     let app = TestApp::start(ApiConfig::default()).await;
     assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
@@ -186,6 +286,66 @@ async fn product_stock_history_lifecycle_flows_through_api() {
     assert!(items.iter().any(|item| item["event_type"] == "consume"));
     assert!(items.iter().any(|item| item["event_type"] == "discard"));
     assert!(items.iter().any(|item| item["event_type"] == "restore"));
+}
+
+fn unit_factor(units: &serde_json::Value, code: &str) -> i64 {
+    units
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|unit| unit["code"] == code)
+        .unwrap()["to_base_milli"]
+        .as_i64()
+        .unwrap()
+}
+
+async fn create_sauce_batch(app: &TestApp, bearer: &str, pantry_id: Uuid, name: &str) -> String {
+    let (status, product) = app
+        .send(
+            Method::POST,
+            "/api/v1/products",
+            Some(json!({
+                "name": name,
+                "brand": null,
+                "family": "volume",
+                "preferred_unit": "ml",
+                "barcode": null,
+                "image_url": null,
+            })),
+            Some(bearer),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let product_id = product["id"].as_str().unwrap();
+
+    let (status, batch) = app
+        .send(
+            Method::POST,
+            "/api/v1/stock",
+            Some(json!({
+                "product_id": product_id,
+                "location_id": pantry_id,
+                "quantity": "1000",
+                "unit": "ml",
+                "produced_on": null,
+                "expires_on": null,
+                "opened_on": null,
+                "note": null,
+            })),
+            Some(bearer),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    batch["id"].as_str().unwrap().to_owned()
+}
+
+async fn product_id_for_batch(app: &TestApp, household_id: Uuid, batch_id: &str) -> String {
+    qm_db::stock::get(&app.db, household_id, Uuid::parse_str(batch_id).unwrap())
+        .await
+        .unwrap()
+        .unwrap()
+        .product_id
+        .to_string()
 }
 
 #[tokio::test]
