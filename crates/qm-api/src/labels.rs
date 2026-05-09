@@ -1,6 +1,10 @@
 use std::{future::Future, num::NonZeroU8, pin::Pin, time::Duration};
 
 use brother_ql::{media::Media, printjob::PrintJobBuilder};
+use freetype::{
+    face::{KerningMode, LoadFlag},
+    Bitmap as FreeTypeBitmap, Face, Library,
+};
 use image::{DynamicImage, ImageBuffer, RgbImage};
 use qrcode::{Color, EcLevel, QrCode};
 use tokio::{io::AsyncWriteExt, net::TcpStream, time::timeout};
@@ -91,6 +95,7 @@ pub struct BrotherQlRenderer;
 impl LabelRenderer for BrotherQlRenderer {
     fn render(&self, job: &LabelJob, media: LabelPrinterMedia) -> ApiResult<RenderedLabel> {
         let spec = BrotherMediaSpec::for_media(media);
+        let text = LabelTextRenderer::new()?;
         let mut bitmap = Bitmap::new(spec.width_px, spec.height_px);
         bitmap.draw_rect(0, 0, spec.width_px, spec.height_px, Pixel::White);
         bitmap.draw_rect(0, 0, spec.width_px, spec.height_px, Pixel::Black);
@@ -107,9 +112,9 @@ impl LabelRenderer for BrotherQlRenderer {
 
         let qr = batch_qr(&job.batch_url)?;
         if spec.is_portrait() {
-            render_portrait_label(&mut bitmap, &qr, job, &spec);
+            render_portrait_label(&mut bitmap, &text, &qr, job, &spec)?;
         } else {
-            render_landscape_label(&mut bitmap, &qr, job, &spec);
+            render_landscape_label(&mut bitmap, &text, &qr, job, &spec)?;
         }
 
         Ok(RenderedLabel {
@@ -204,10 +209,11 @@ impl BrotherMediaSpec {
 
 fn render_landscape_label(
     bitmap: &mut Bitmap,
+    text: &LabelTextRenderer,
     qr: &QrCode,
     job: &LabelJob,
     spec: &BrotherMediaSpec,
-) {
+) -> ApiResult<()> {
     let (actual_qr_px, module_px) = qr_size(qr, spec.qr_px.min(spec.height_px.saturating_sub(24)));
     let qr_x = 10;
     let qr_y = (spec.height_px.saturating_sub(actual_qr_px)) / 2;
@@ -216,39 +222,55 @@ fn render_landscape_label(
     let text_x = qr_x + actual_qr_px + 18;
     let text_width = spec.width_px.saturating_sub(text_x + 8);
     let mut y = if spec.supports_red { 24 } else { 16 };
-    y += draw_wrapped_text(bitmap, text_x, y, &job.product_name, text_width, 5, 2) + 12;
+    y += draw_wrapped_text(bitmap, text, text_x, y, &job.product_name, text_width, 5, 4)? + 12;
     if let Some(brand) = job.brand.as_deref().filter(|s| !s.trim().is_empty()) {
-        bitmap.draw_text(text_x, y, &truncate_for_width(brand, text_width, 3), 3);
+        text.draw_text(
+            bitmap,
+            text_x,
+            y,
+            &truncate_for_width(text, brand, text_width, 3)?,
+            3,
+        )?;
         y += 30;
     }
     if job.include_quantity {
-        bitmap.draw_text(
+        text.draw_text(
+            bitmap,
             text_x,
             y,
-            &truncate_for_width(&label_quantity(job), text_width, 3),
+            &truncate_for_width(text, &label_quantity(job), text_width, 3)?,
             3,
-        );
+        )?;
         y += 34;
     }
-    y += draw_primary_date(bitmap, text_x, y, text_width, job);
-    y += draw_secondary_dates(bitmap, text_x, y + 4, text_width, job, 3);
+    y += draw_primary_date(bitmap, text, text_x, y, text_width, job)?;
+    y += draw_secondary_dates(bitmap, text, text_x, y + 4, text_width, job, 3)?;
     if let Some(note) = job.note.as_deref().filter(|s| !s.trim().is_empty()) {
-        bitmap.draw_text(text_x, y + 6, &truncate_for_width(note, text_width, 2), 2);
+        text.draw_text(
+            bitmap,
+            text_x,
+            y + 6,
+            &truncate_for_width(text, note, text_width, 2)?,
+            2,
+        )?;
     }
-    bitmap.draw_text(
+    text.draw_text(
+        bitmap,
         text_x,
         spec.height_px.saturating_sub(16),
         &format!("BATCH {}", short_id(job.batch_id)),
         1,
-    );
+    )?;
+    Ok(())
 }
 
 fn render_portrait_label(
     bitmap: &mut Bitmap,
+    text: &LabelTextRenderer,
     qr: &QrCode,
     job: &LabelJob,
     spec: &BrotherMediaSpec,
-) {
+) -> ApiResult<()> {
     let (actual_qr_px, module_px) = qr_size(qr, spec.qr_px.min(spec.width_px.saturating_sub(28)));
     let qr_x = (spec.width_px.saturating_sub(actual_qr_px)) / 2;
     let qr_y = 18;
@@ -257,31 +279,46 @@ fn render_portrait_label(
     let text_x = 14;
     let text_width = spec.width_px.saturating_sub(text_x * 2);
     let mut y = qr_y + actual_qr_px + 28;
-    y += draw_wrapped_text(bitmap, text_x, y, &job.product_name, text_width, 4, 2) + 10;
+    y += draw_wrapped_text(bitmap, text, text_x, y, &job.product_name, text_width, 4, 4)? + 10;
     if let Some(brand) = job.brand.as_deref().filter(|s| !s.trim().is_empty()) {
-        bitmap.draw_text(text_x, y, &truncate_for_width(brand, text_width, 2), 2);
+        text.draw_text(
+            bitmap,
+            text_x,
+            y,
+            &truncate_for_width(text, brand, text_width, 2)?,
+            2,
+        )?;
         y += 24;
     }
     if job.include_quantity {
-        bitmap.draw_text(
+        text.draw_text(
+            bitmap,
             text_x,
             y,
-            &truncate_for_width(&label_quantity(job), text_width, 2),
+            &truncate_for_width(text, &label_quantity(job), text_width, 2)?,
             2,
-        );
+        )?;
         y += 32;
     }
-    y += draw_primary_date(bitmap, text_x, y, text_width, job);
-    y += draw_secondary_dates(bitmap, text_x, y + 8, text_width, job, 2);
+    y += draw_primary_date(bitmap, text, text_x, y, text_width, job)?;
+    y += draw_secondary_dates(bitmap, text, text_x, y + 8, text_width, job, 2)?;
     if let Some(note) = job.note.as_deref().filter(|s| !s.trim().is_empty()) {
-        bitmap.draw_text(text_x, y + 10, &truncate_for_width(note, text_width, 2), 2);
+        text.draw_text(
+            bitmap,
+            text_x,
+            y + 10,
+            &truncate_for_width(text, note, text_width, 2)?,
+            2,
+        )?;
     }
-    bitmap.draw_text(
+    text.draw_text(
+        bitmap,
         text_x,
         spec.height_px.saturating_sub(18),
         &format!("BATCH {}", short_id(job.batch_id)),
         1,
-    );
+    )?;
+    Ok(())
 }
 
 fn qr_size(qr: &QrCode, max_px: usize) -> (usize, usize) {
@@ -311,28 +348,34 @@ fn label_quantity(job: &LabelJob) -> String {
 
 fn draw_primary_date(
     bitmap: &mut Bitmap,
+    text: &LabelTextRenderer,
     x: usize,
     y: usize,
     width: usize,
     job: &LabelJob,
-) -> usize {
+) -> ApiResult<usize> {
     let Some((label, date)) = primary_date(job) else {
-        return 0;
+        return Ok(0);
     };
-    bitmap.draw_text(x, y, label, 2);
-    let date_scale = if text_width(date, 5) <= width { 5 } else { 4 };
-    bitmap.draw_text(x, y + 20, date, date_scale);
-    20 + line_height(date_scale) + 8
+    text.draw_text(bitmap, x, y, label, 2)?;
+    let date_scale = if text.text_width(date, 5)? <= width {
+        5
+    } else {
+        4
+    };
+    text.draw_text(bitmap, x, y + 20, date, date_scale)?;
+    Ok(20 + text.line_height(date_scale)? + 8)
 }
 
 fn draw_secondary_dates(
     bitmap: &mut Bitmap,
+    text: &LabelTextRenderer,
     x: usize,
     y: usize,
     width: usize,
     job: &LabelJob,
     scale: usize,
-) -> usize {
+) -> ApiResult<usize> {
     let mut lines = Vec::new();
     if job.expires_on.is_some() {
         if let Some(produced_on) = &job.produced_on {
@@ -344,59 +387,63 @@ fn draw_secondary_dates(
     }
     let mut consumed = 0;
     for line in lines {
-        bitmap.draw_text(
+        text.draw_text(
+            bitmap,
             x,
             y + consumed,
-            &truncate_for_width(&line, width, scale),
+            &truncate_for_width(text, &line, width, scale)?,
             scale,
-        );
-        consumed += line_height(scale) + 6;
+        )?;
+        consumed += text.line_height(scale)? + 6;
     }
-    consumed
+    Ok(consumed)
 }
 
 fn draw_wrapped_text(
     bitmap: &mut Bitmap,
+    text: &LabelTextRenderer,
     x: usize,
     y: usize,
     value: &str,
     width: usize,
     scale: usize,
     max_lines: usize,
-) -> usize {
-    let lines = wrap_for_width(value, width, scale, max_lines);
+) -> ApiResult<usize> {
+    let lines = wrap_for_width(text, value, width, scale, max_lines)?;
     let line_gap = (scale * 2).max(4);
     let mut consumed = 0;
     for line in lines {
-        bitmap.draw_text(x, y + consumed, &line, scale);
-        consumed += line_height(scale) + line_gap;
+        text.draw_text(bitmap, x, y + consumed, &line, scale)?;
+        consumed += text.line_height(scale)? + line_gap;
     }
-    consumed.saturating_sub(line_gap)
+    Ok(consumed.saturating_sub(line_gap))
 }
 
-fn wrap_for_width(value: &str, width: usize, scale: usize, max_lines: usize) -> Vec<String> {
+fn wrap_for_width(
+    text: &LabelTextRenderer,
+    value: &str,
+    width: usize,
+    scale: usize,
+    max_lines: usize,
+) -> ApiResult<Vec<String>> {
     if max_lines == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let max_chars = (width / (6 * scale.max(1))).max(1);
     let words = value.split_whitespace().collect::<Vec<_>>();
     if words.is_empty() {
-        return vec![String::new()];
+        return Ok(vec![String::new()]);
     }
 
     let mut lines = Vec::new();
     let mut current = String::new();
     for word in words {
-        let proposed_len = if current.is_empty() {
-            word.chars().count()
+        let proposed = if current.is_empty() {
+            word.to_owned()
         } else {
-            current.chars().count() + 1 + word.chars().count()
+            format!("{current} {word}")
         };
-        if proposed_len <= max_chars {
-            if !current.is_empty() {
-                current.push(' ');
-            }
-            current.push_str(word);
+        if text.text_width(&proposed, scale)? <= width {
+            current = proposed;
             continue;
         }
         if !current.is_empty() {
@@ -406,8 +453,8 @@ fn wrap_for_width(value: &str, width: usize, scale: usize, max_lines: usize) -> 
                 break;
             }
         }
-        if word.chars().count() > max_chars {
-            lines.push(truncate(word, max_chars));
+        if text.text_width(word, scale)? > width {
+            lines.push(truncate_for_width(text, word, width, scale)?);
             if lines.len() == max_lines {
                 break;
             }
@@ -418,7 +465,7 @@ fn wrap_for_width(value: &str, width: usize, scale: usize, max_lines: usize) -> 
     if !current.is_empty() && lines.len() < max_lines {
         lines.push(current);
     }
-    lines
+    Ok(lines)
 }
 
 fn primary_date(job: &LabelJob) -> Option<(&'static str, &str)> {
@@ -428,10 +475,191 @@ fn primary_date(job: &LabelJob) -> Option<(&'static str, &str)> {
         .or_else(|| job.produced_on.as_deref().map(|date| ("MADE", date)))
 }
 
+static B612_BOLD_TTF: &[u8] = include_bytes!("../assets/fonts/B612-Bold.ttf");
+
+struct LabelTextRenderer {
+    face: Face,
+    _library: Library,
+}
+
+impl LabelTextRenderer {
+    fn new() -> ApiResult<Self> {
+        let library = Library::init()
+            .map_err(|err| ApiError::Internal(anyhow::anyhow!("initializing FreeType: {err}")))?;
+        let face = library
+            .new_memory_face(B612_BOLD_TTF.to_vec(), 0)
+            .map_err(|err| ApiError::Internal(anyhow::anyhow!("loading B612 label font: {err}")))?;
+        Ok(Self {
+            face,
+            _library: library,
+        })
+    }
+
+    fn draw_text(
+        &self,
+        bitmap: &mut Bitmap,
+        x: usize,
+        y: usize,
+        text: &str,
+        scale: usize,
+    ) -> ApiResult<()> {
+        self.set_size(scale)?;
+        let baseline = y as isize + self.ascender(scale)? as isize;
+        let mut cursor_x = x as isize;
+        let mut previous = None;
+        for ch in normalized_label_chars(text) {
+            let glyph_index = self.face.get_char_index(ch as usize).unwrap_or(0);
+            if let Some(previous_index) = previous {
+                cursor_x += self.kerning(previous_index, glyph_index)?;
+            }
+            self.face
+                .load_char(ch as usize, LoadFlag::RENDER | LoadFlag::TARGET_NORMAL)
+                .map_err(|err| {
+                    ApiError::Internal(anyhow::anyhow!("rendering B612 glyph {ch:?}: {err}"))
+                })?;
+            let glyph = self.face.glyph();
+            draw_freetype_bitmap(
+                bitmap,
+                &glyph.bitmap(),
+                cursor_x + glyph.bitmap_left() as isize,
+                baseline - glyph.bitmap_top() as isize,
+            )?;
+            cursor_x += glyph.advance().x as isize >> 6;
+            previous = Some(glyph_index);
+        }
+        Ok(())
+    }
+
+    fn text_width(&self, text: &str, scale: usize) -> ApiResult<usize> {
+        self.set_size(scale)?;
+        let mut width = 0isize;
+        let mut previous = None;
+        for ch in normalized_label_chars(text) {
+            let glyph_index = self.face.get_char_index(ch as usize).unwrap_or(0);
+            if let Some(previous_index) = previous {
+                width += self.kerning(previous_index, glyph_index)?;
+            }
+            self.face
+                .load_char(ch as usize, LoadFlag::TARGET_NORMAL)
+                .map_err(|err| {
+                    ApiError::Internal(anyhow::anyhow!("measuring B612 glyph {ch:?}: {err}"))
+                })?;
+            width += self.face.glyph().advance().x as isize >> 6;
+            previous = Some(glyph_index);
+        }
+        Ok(width.max(0) as usize)
+    }
+
+    fn line_height(&self, scale: usize) -> ApiResult<usize> {
+        self.set_size(scale)?;
+        Ok((self.size_metrics(scale)?.height >> 6).max(1) as usize)
+    }
+
+    fn ascender(&self, scale: usize) -> ApiResult<usize> {
+        self.set_size(scale)?;
+        Ok((self.size_metrics(scale)?.ascender >> 6).max(1) as usize)
+    }
+
+    fn size_metrics(&self, scale: usize) -> ApiResult<freetype::ffi::FT_Size_Metrics> {
+        self.face.size_metrics().ok_or_else(|| {
+            ApiError::Internal(anyhow::anyhow!(
+                "B612 label font has no size metrics at scale {scale}"
+            ))
+        })
+    }
+
+    fn kerning(&self, left: u32, right: u32) -> ApiResult<isize> {
+        if left == 0 || right == 0 || !self.face.has_kerning() {
+            return Ok(0);
+        }
+        self.face
+            .get_kerning(left, right, KerningMode::KerningDefault)
+            .map(|vector| vector.x as isize >> 6)
+            .map_err(|err| ApiError::Internal(anyhow::anyhow!("reading B612 kerning: {err}")))
+    }
+
+    fn set_size(&self, scale: usize) -> ApiResult<()> {
+        self.face
+            .set_pixel_sizes(0, font_px(scale))
+            .map_err(|err| ApiError::Internal(anyhow::anyhow!("sizing B612 label font: {err}")))
+    }
+}
+
+fn normalized_label_chars(text: &str) -> impl Iterator<Item = char> + '_ {
+    text.chars()
+}
+
+fn font_px(scale: usize) -> u32 {
+    match scale {
+        0 | 1 => 10,
+        2 => 18,
+        3 => 25,
+        4 => 34,
+        5 => 42,
+        other => (other as u32).saturating_mul(8).max(10),
+    }
+}
+
+fn draw_freetype_bitmap(
+    bitmap: &mut Bitmap,
+    glyph: &FreeTypeBitmap,
+    x: isize,
+    y: isize,
+) -> ApiResult<()> {
+    match glyph.pixel_mode().map_err(|err| {
+        ApiError::Internal(anyhow::anyhow!("reading B612 glyph pixel mode: {err}"))
+    })? {
+        freetype::bitmap::PixelMode::Gray => {
+            for row in 0..glyph.rows().max(0) as usize {
+                for col in 0..glyph.width().max(0) as usize {
+                    let coverage = glyph_coverage(glyph, row, col);
+                    if coverage > 0 {
+                        bitmap.blend_black_coverage(x + col as isize, y + row as isize, coverage);
+                    }
+                }
+            }
+        }
+        freetype::bitmap::PixelMode::Mono => {
+            for row in 0..glyph.rows().max(0) as usize {
+                for col in 0..glyph.width().max(0) as usize {
+                    if glyph_mono_pixel(glyph, row, col) {
+                        bitmap.blend_black_coverage(x + col as isize, y + row as isize, 255);
+                    }
+                }
+            }
+        }
+        other => {
+            return Err(ApiError::Internal(anyhow::anyhow!(
+                "unsupported B612 glyph pixel mode {other:?}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn glyph_coverage(glyph: &FreeTypeBitmap, row: usize, col: usize) -> u8 {
+    glyph.buffer()[glyph_buffer_offset(glyph, row) + col]
+}
+
+fn glyph_mono_pixel(glyph: &FreeTypeBitmap, row: usize, col: usize) -> bool {
+    let byte = glyph.buffer()[glyph_buffer_offset(glyph, row) + col / 8];
+    byte & (0x80 >> (col % 8)) != 0
+}
+
+fn glyph_buffer_offset(glyph: &FreeTypeBitmap, row: usize) -> usize {
+    let pitch = glyph.pitch();
+    if pitch >= 0 {
+        row * pitch as usize
+    } else {
+        (glyph.rows().max(0) as usize - 1 - row) * pitch.unsigned_abs() as usize
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Pixel {
     White,
     Black,
+    Gray(u8),
     Red,
 }
 
@@ -455,6 +683,37 @@ impl Bitmap {
         if x < self.width && y < self.height {
             self.pixels[y * self.width + x] = pixel;
         }
+    }
+
+    fn blend_black_coverage(&mut self, x: isize, y: isize, coverage: u8) {
+        if x < 0 || y < 0 || coverage == 0 {
+            return;
+        }
+        let x = x as usize;
+        let y = y as usize;
+        if x >= self.width || y >= self.height {
+            return;
+        }
+        let covered = 199u8.saturating_sub(((coverage as u16 * 199) / 255) as u8);
+        let pixel = &mut self.pixels[y * self.width + x];
+        *pixel = match *pixel {
+            Pixel::White => {
+                if covered == 0 {
+                    Pixel::Black
+                } else {
+                    Pixel::Gray(covered)
+                }
+            }
+            Pixel::Gray(existing) => Pixel::Gray(existing.min(covered)),
+            Pixel::Black => Pixel::Black,
+            Pixel::Red => {
+                if coverage > 190 {
+                    Pixel::Black
+                } else {
+                    Pixel::Red
+                }
+            }
+        };
     }
 
     fn get(&self, x: usize, y: usize) -> Pixel {
@@ -607,23 +866,13 @@ impl Bitmap {
         }
     }
 
-    fn draw_text(&mut self, x: usize, y: usize, text: &str, scale: usize) {
-        let mut cursor = x;
-        for ch in text.chars().flat_map(char::to_uppercase) {
-            if cursor + 6 * scale >= self.width {
-                break;
-            }
-            draw_char(self, cursor, y, ch, scale.max(1));
-            cursor += 6 * scale.max(1);
-        }
-    }
-
     fn into_image(self) -> DynamicImage {
         let image: RgbImage =
             ImageBuffer::from_fn(self.width as u32, self.height as u32, |x, y| {
                 match self.get(x as usize, y as usize) {
                     Pixel::White => image::Rgb([255, 255, 255]),
                     Pixel::Black => image::Rgb([0, 0, 0]),
+                    Pixel::Gray(level) => image::Rgb([level, level, level]),
                     Pixel::Red => image::Rgb([220, 0, 0]),
                 }
             });
@@ -644,78 +893,25 @@ fn compile_brother_ql_job(label: &RenderedLabel, copies: u8) -> ApiResult<Vec<u8
     Ok(job.compile())
 }
 
-fn draw_char(bitmap: &mut Bitmap, x: usize, y: usize, ch: char, scale: usize) {
-    let glyph = glyph(ch);
-    for (row, bits) in glyph.iter().enumerate() {
-        for col in 0..5 {
-            if bits & (1 << (4 - col)) != 0 {
-                bitmap.draw_rect(x + col * scale, y + row * scale, scale, scale, Pixel::Black);
-            }
+fn truncate_for_width(
+    text: &LabelTextRenderer,
+    value: &str,
+    width: usize,
+    scale: usize,
+) -> ApiResult<String> {
+    let mut truncated = String::new();
+    for ch in value.chars() {
+        let candidate = format!("{truncated}{ch}");
+        if text.text_width(&candidate, scale)? > width {
+            break;
         }
+        truncated = candidate;
     }
-}
-
-fn glyph(ch: char) -> [u8; 7] {
-    match ch {
-        'A' => [0x0e, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11],
-        'B' => [0x1e, 0x11, 0x11, 0x1e, 0x11, 0x11, 0x1e],
-        'C' => [0x0e, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0e],
-        'D' => [0x1e, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1e],
-        'E' => [0x1f, 0x10, 0x10, 0x1e, 0x10, 0x10, 0x1f],
-        'F' => [0x1f, 0x10, 0x10, 0x1e, 0x10, 0x10, 0x10],
-        'G' => [0x0e, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0f],
-        'H' => [0x11, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11],
-        'I' => [0x1f, 0x04, 0x04, 0x04, 0x04, 0x04, 0x1f],
-        'J' => [0x01, 0x01, 0x01, 0x01, 0x11, 0x11, 0x0e],
-        'K' => [0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11],
-        'L' => [0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1f],
-        'M' => [0x11, 0x1b, 0x15, 0x15, 0x11, 0x11, 0x11],
-        'N' => [0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11],
-        'O' => [0x0e, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0e],
-        'P' => [0x1e, 0x11, 0x11, 0x1e, 0x10, 0x10, 0x10],
-        'Q' => [0x0e, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0d],
-        'R' => [0x1e, 0x11, 0x11, 0x1e, 0x14, 0x12, 0x11],
-        'S' => [0x0f, 0x10, 0x10, 0x0e, 0x01, 0x01, 0x1e],
-        'T' => [0x1f, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04],
-        'U' => [0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0e],
-        'V' => [0x11, 0x11, 0x11, 0x11, 0x11, 0x0a, 0x04],
-        'W' => [0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0a],
-        'X' => [0x11, 0x11, 0x0a, 0x04, 0x0a, 0x11, 0x11],
-        'Y' => [0x11, 0x11, 0x0a, 0x04, 0x04, 0x04, 0x04],
-        'Z' => [0x1f, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1f],
-        '0' => [0x0e, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0e],
-        '1' => [0x04, 0x0c, 0x04, 0x04, 0x04, 0x04, 0x0e],
-        '2' => [0x0e, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1f],
-        '3' => [0x1e, 0x01, 0x01, 0x0e, 0x01, 0x01, 0x1e],
-        '4' => [0x02, 0x06, 0x0a, 0x12, 0x1f, 0x02, 0x02],
-        '5' => [0x1f, 0x10, 0x10, 0x1e, 0x01, 0x01, 0x1e],
-        '6' => [0x0e, 0x10, 0x10, 0x1e, 0x11, 0x11, 0x0e],
-        '7' => [0x1f, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08],
-        '8' => [0x0e, 0x11, 0x11, 0x0e, 0x11, 0x11, 0x0e],
-        '9' => [0x0e, 0x11, 0x11, 0x0f, 0x01, 0x01, 0x0e],
-        '-' => [0x00, 0x00, 0x00, 0x1f, 0x00, 0x00, 0x00],
-        '/' => [0x01, 0x01, 0x02, 0x04, 0x08, 0x10, 0x10],
-        '.' => [0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x0c],
-        ':' => [0x00, 0x0c, 0x0c, 0x00, 0x0c, 0x0c, 0x00],
-        ' ' => [0; 7],
-        _ => [0x1f, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04],
+    if truncated.is_empty() {
+        Ok(value.chars().take(1).collect())
+    } else {
+        Ok(truncated)
     }
-}
-
-fn truncate(value: &str, max_chars: usize) -> String {
-    value.chars().take(max_chars).collect()
-}
-
-fn truncate_for_width(value: &str, width: usize, scale: usize) -> String {
-    truncate(value, (width / (6 * scale.max(1))).max(1))
-}
-
-fn text_width(value: &str, scale: usize) -> usize {
-    value.chars().flat_map(char::to_uppercase).count() * 6 * scale.max(1)
-}
-
-fn line_height(scale: usize) -> usize {
-    7 * scale.max(1)
 }
 
 fn short_id(id: Uuid) -> String {
@@ -862,9 +1058,27 @@ mod tests {
 
     #[test]
     fn product_name_wraps_into_large_label_headline() {
+        let text = LabelTextRenderer::new().unwrap();
         assert_eq!(
-            wrap_for_width("Red Pepper Flakes", 360, 5, 2),
+            wrap_for_width(&text, "Red Pepper Flakes", 360, 5, 2).unwrap(),
             vec!["Red Pepper", "Flakes"]
+        );
+    }
+
+    #[test]
+    fn product_name_wraps_without_dropping_later_words() {
+        let text = LabelTextRenderer::new().unwrap();
+        let lines = wrap_for_width(&text, "Kashmiri red chilli powder", 220, 5, 4).unwrap();
+        assert!(lines.len() > 2);
+        assert_eq!(lines.join(" "), "Kashmiri red chilli powder");
+    }
+
+    #[test]
+    fn label_text_preserves_source_case() {
+        let text = LabelTextRenderer::new().unwrap();
+        assert_eq!(
+            wrap_for_width(&text, "Black pepper (tellicherry)", 360, 5, 2).unwrap(),
+            vec!["Black pepper", "(tellicherry)"]
         );
     }
 
