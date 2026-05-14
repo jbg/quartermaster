@@ -13,6 +13,7 @@ import dev.quartermaster.android.generated.models.CreateLocationRequest
 import dev.quartermaster.android.generated.models.CreateOnboardingHouseholdRequest
 import dev.quartermaster.android.generated.models.CreateProductRequest
 import dev.quartermaster.android.generated.models.CreateStockRequest
+import dev.quartermaster.android.generated.models.CreateStorageVesselRequest
 import dev.quartermaster.android.generated.models.HouseholdDetailDto
 import dev.quartermaster.android.generated.models.InviteDto
 import dev.quartermaster.android.generated.models.JoinInviteRequest
@@ -42,10 +43,12 @@ import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventListResponse
 import dev.quartermaster.android.generated.models.StockListResponse
+import dev.quartermaster.android.generated.models.StorageVesselDto
 import dev.quartermaster.android.generated.models.SwitchHouseholdRequest
 import dev.quartermaster.android.generated.models.TokenPair
 import dev.quartermaster.android.generated.models.UnitDto
 import dev.quartermaster.android.generated.models.UpdateLocationRequest
+import dev.quartermaster.android.generated.models.UpdateStorageVesselRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -290,6 +293,27 @@ class QuartermasterApi(
 
     suspend fun deleteLocation(id: String) {
         authedUnit("DELETE", "/locations/${id.urlEncode()}")
+    }
+
+    suspend fun storageVessels(): List<StorageVesselDto> = authedJson("GET", "/storage-vessels")
+
+    suspend fun createStorageVessel(request: CreateStorageVesselRequest): StorageVesselDto = authedJson(
+        method = "POST",
+        path = "/storage-vessels",
+        body = request,
+    )
+
+    suspend fun updateStorageVessel(
+        id: String,
+        request: UpdateStorageVesselRequest,
+    ): StorageVesselDto = authedJson(
+        method = "PATCH",
+        path = "/storage-vessels/${id.urlEncode()}",
+        body = request,
+    )
+
+    suspend fun deleteStorageVessel(id: String) {
+        authedUnit("DELETE", "/storage-vessels/${id.urlEncode()}")
     }
 
     suspend fun units(): List<UnitDto> = authedJson("GET", "/units")
@@ -601,6 +625,7 @@ class QuartermasterApi(
         is CreateLocationRequest -> json.encodeToString(body)
         is CreateProductRequest -> json.encodeToString(body)
         is CreateStockRequest -> json.encodeToString(body)
+        is CreateStorageVesselRequest -> json.encodeToString(body)
         is ConsumeRequest -> json.encodeToString(body)
         is LoginRequest -> json.encodeToString(body)
         is RefreshRequest -> json.encodeToString(body)
@@ -611,6 +636,7 @@ class QuartermasterApi(
         is RegisterRequest -> json.encodeToString(body)
         is SwitchHouseholdRequest -> json.encodeToString(body)
         is UpdateLocationRequest -> json.encodeToString(body)
+        is UpdateStorageVesselRequest -> json.encodeToString(body)
         is ProductUpdateRequest -> patchJson.encodeToString(body.operations)
         is StockUpdateRequest -> patchJson.encodeToString(body.operations)
         else -> error("Unsupported request body type: ${body::class.qualifiedName}")

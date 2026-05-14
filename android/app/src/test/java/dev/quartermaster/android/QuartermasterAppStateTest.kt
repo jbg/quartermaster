@@ -11,6 +11,7 @@ import dev.quartermaster.android.generated.models.CreateInviteRequest
 import dev.quartermaster.android.generated.models.CreateLocationRequest
 import dev.quartermaster.android.generated.models.CreateProductRequest
 import dev.quartermaster.android.generated.models.CreateStockRequest
+import dev.quartermaster.android.generated.models.CreateStorageVesselRequest
 import dev.quartermaster.android.generated.models.HouseholdDetailDto
 import dev.quartermaster.android.generated.models.InviteDto
 import dev.quartermaster.android.generated.models.LocationDto
@@ -27,9 +28,11 @@ import dev.quartermaster.android.generated.models.SaveOpenFoodFactsCredentialsRe
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventType
+import dev.quartermaster.android.generated.models.StorageVesselDto
 import dev.quartermaster.android.generated.models.UnitDto
 import dev.quartermaster.android.generated.models.UnitFamily
 import dev.quartermaster.android.generated.models.UpdateLocationRequest
+import dev.quartermaster.android.generated.models.UpdateStorageVesselRequest
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -582,6 +585,8 @@ class QuartermasterAppStateTest {
             locationId = "22222222-2222-2222-2222-222222222222",
             quantity = "500",
             unit = "g",
+            storageVesselId = null,
+            quantityIncludesStorageVessel = false,
             expiresOn = "2026-05-01",
             note = "Restocked",
         )
@@ -590,6 +595,36 @@ class QuartermasterAppStateTest {
         assertTrue(appState.searchResults.isEmpty())
         assertNull(appState.selectedProduct)
         assertEquals(1, backend.addStockRequests.size)
+    }
+
+    @Test
+    fun `addStock can send storage vessel gross-weight fields`() = runTest {
+        val vessel = storageVesselJson()
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                stock = listOf(stockBatchJson()),
+                locations = listOf(locationJson()),
+                units = listOf(unitJson("g", "mass")),
+                storageVessels = listOf(vessel),
+            )
+        val appState = QuartermasterAppState(FakeSessionStore(), backend)
+
+        appState.bootstrap()
+        appState.addStock(
+            productId = "44444444-4444-4444-4444-444444444444",
+            locationId = "22222222-2222-2222-2222-222222222222",
+            quantity = "900",
+            unit = "g",
+            storageVesselId = vessel.id.toString(),
+            quantityIncludesStorageVessel = true,
+            expiresOn = null,
+            note = null,
+        )
+
+        val request = backend.addStockRequests.single()
+        assertEquals(vessel.id, request.storageVesselId)
+        assertEquals(true, request.quantityIncludesStorageVessel)
     }
 
     @Test
@@ -711,6 +746,108 @@ class QuartermasterAppStateTest {
         assertEquals(pantry.id.toString(), updates[1].first)
         assertEquals(1L, updates[1].second.sortOrder)
         assertEquals(listOf("Fridge", "Pantry"), appState.sortedLocations().map { it.name })
+    }
+
+    @Test
+    fun `createStorageVessel validates trims and refreshes vessel state`() = runTest {
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                units = listOf(unitJson("g", "mass")),
+                storageVessels = listOf(storageVesselJson()),
+                createdStorageVessel = storageVesselJson(
+                    id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                    name = "Flour bin",
+                    tareWeight = "1200",
+                    sortOrder = 1,
+                ),
+            )
+        val appState = QuartermasterAppState(FakeSessionStore(), backend)
+
+        appState.bootstrap()
+        appState.createStorageVessel(StorageVesselFormFields(name = "  Flour bin  ", tareWeight = "1200", tareUnit = "g", sortOrder = 1))
+
+        assertNull(appState.storageVesselActionInFlight)
+        assertEquals("Flour bin", backend.createStorageVesselRequests.single().name)
+        assertEquals("1200", backend.createStorageVesselRequests.single().tareWeight)
+        assertEquals(listOf("Mason jar", "Flour bin"), appState.sortedStorageVessels().map { it.name })
+    }
+
+    @Test
+    fun `createStorageVessel stores validation errors without calling backend`() = runTest {
+        val backend = FakeBackend(meResponse = meResponseJson(), units = listOf(unitJson("g", "mass")))
+        val appState = QuartermasterAppState(FakeSessionStore(), backend)
+
+        appState.bootstrap()
+        appState.createStorageVessel(StorageVesselFormFields(name = "Jar", tareWeight = "-1", tareUnit = "g"))
+
+        assertEquals("Enter a positive tare weight.", appState.settingsError)
+        assertTrue(backend.createStorageVesselRequests.isEmpty())
+    }
+
+    @Test
+    fun `updateStorageVessel sends full request and refreshes vessels`() = runTest {
+        val updated = storageVesselJson(name = "Big jar", tareWeight = "500", sortOrder = 7)
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                units = listOf(unitJson("g", "mass")),
+                storageVessels = listOf(storageVesselJson()),
+                updatedStorageVessel = updated,
+            )
+        val appState = QuartermasterAppState(FakeSessionStore(), backend)
+
+        appState.bootstrap()
+        appState.updateStorageVessel(
+            updated.id.toString(),
+            StorageVesselFormFields(name = "Big jar", tareWeight = "500", tareUnit = "g", sortOrder = 7),
+        )
+
+        val request = backend.updateStorageVesselRequests.single().second
+        assertEquals("Big jar", request.name)
+        assertEquals("500", request.tareWeight)
+        assertEquals(7L, request.sortOrder)
+        assertEquals(listOf(updated), appState.storageVessels)
+    }
+
+    @Test
+    fun `deleteStorageVessel removes vessel after refresh`() = runTest {
+        val jar = storageVesselJson()
+        val bin = storageVesselJson(
+            id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            name = "Bin",
+            sortOrder = 1,
+        )
+        val backend = FakeBackend(meResponse = meResponseJson(), units = listOf(unitJson("g", "mass")), storageVessels = listOf(jar, bin))
+        val appState = QuartermasterAppState(FakeSessionStore(), backend)
+
+        appState.bootstrap()
+        appState.deleteStorageVessel(bin.id.toString())
+
+        assertEquals(listOf("Mason jar"), appState.storageVessels.map { it.name })
+        assertEquals(listOf(bin.id.toString()), backend.deletedStorageVesselIds)
+    }
+
+    @Test
+    fun `moveStorageVessel swaps target and neighbor sort orders`() = runTest {
+        val jar = storageVesselJson(name = "Mason jar", sortOrder = 0)
+        val bin = storageVesselJson(
+            id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            name = "Bin",
+            sortOrder = 1,
+        )
+        val backend = FakeBackend(meResponse = meResponseJson(), units = listOf(unitJson("g", "mass")), storageVessels = listOf(jar, bin))
+        val appState = QuartermasterAppState(FakeSessionStore(), backend)
+
+        appState.bootstrap()
+        appState.moveStorageVessel(bin.id.toString(), -1)
+
+        val updates = backend.updateStorageVesselRequests
+        assertEquals(bin.id.toString(), updates[0].first)
+        assertEquals(0L, updates[0].second.sortOrder)
+        assertEquals(jar.id.toString(), updates[1].first)
+        assertEquals(1L, updates[1].second.sortOrder)
+        assertEquals(listOf("Bin", "Mason jar"), appState.sortedStorageVessels().map { it.name })
     }
 
     @Test
@@ -1442,6 +1579,24 @@ class QuartermasterAppStateTest {
         """.trimIndent(),
     )
 
+    private fun storageVesselJson(
+        id: String = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        name: String = "Mason jar",
+        tareWeight: String = "410",
+        tareUnit: String = "g",
+        sortOrder: Long = 0,
+    ): StorageVesselDto = json.decodeFromString(
+        """
+            {
+              "id": "$id",
+              "name": "$name",
+              "tare_weight": "$tareWeight",
+              "tare_unit": "$tareUnit",
+              "sort_order": $sortOrder
+            }
+        """.trimIndent(),
+    )
+
     private fun unitJson(
         code: String,
         family: String,
@@ -1609,11 +1764,14 @@ class QuartermasterAppStateTest {
         stock: List<StockBatchDto> = emptyList(),
         reminders: List<ReminderDto> = emptyList(),
         locations: List<LocationDto> = emptyList(),
+        storageVessels: List<StorageVesselDto> = emptyList(),
         private val units: List<UnitDto> = emptyList(),
         private val householdDetail: HouseholdDetailDto? = null,
         products: List<ProductDto> = emptyList(),
         private val createdLocation: LocationDto? = null,
         private val updatedLocation: LocationDto? = null,
+        private val createdStorageVessel: StorageVesselDto? = null,
+        private val updatedStorageVessel: StorageVesselDto? = null,
         private val createdProduct: ProductDto? = null,
         private val updatedProduct: ProductDto? = null,
         private val deletedProduct: ProductDto? = null,
@@ -1636,6 +1794,7 @@ class QuartermasterAppStateTest {
         private val stockState = stock.toMutableList()
         private val reminderState = reminders.toMutableList()
         private val locationState = locations.toMutableList()
+        private val storageVesselState = storageVessels.toMutableList()
         private val productState = products.toMutableList()
         private val batchEventState = batchEvents.mapValues { it.value.toMutableList() }.toMutableMap()
 
@@ -1645,6 +1804,9 @@ class QuartermasterAppStateTest {
         val createLocationRequests = mutableListOf<CreateLocationRequest>()
         val updateLocationRequests = mutableListOf<Pair<String, UpdateLocationRequest>>()
         val deletedLocationIds = mutableListOf<String>()
+        val createStorageVesselRequests = mutableListOf<CreateStorageVesselRequest>()
+        val updateStorageVesselRequests = mutableListOf<Pair<String, UpdateStorageVesselRequest>>()
+        val deletedStorageVesselIds = mutableListOf<String>()
         val createProductRequests = mutableListOf<CreateProductRequest>()
         val updateProductRequests = mutableListOf<ProductUpdateRequest>()
         val deletedProductIds = mutableListOf<String>()
@@ -1774,6 +1936,44 @@ class QuartermasterAppStateTest {
             deleteLocationFailure?.let { throw it }
             deletedLocationIds += id
             locationState.removeAll { it.id.toString() == id }
+        }
+
+        override suspend fun storageVessels(): List<StorageVesselDto> = storageVesselState.toList()
+
+        override suspend fun createStorageVessel(request: CreateStorageVesselRequest): StorageVesselDto {
+            createStorageVesselRequests += request
+            val vessel = createdStorageVessel ?: storageVesselJson(
+                id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                name = request.name,
+                tareWeight = request.tareWeight,
+                tareUnit = request.tareUnit,
+                sortOrder = request.sortOrder ?: ((storageVesselState.maxOfOrNull { it.sortOrder } ?: -1L) + 1L),
+            )
+            storageVesselState.removeAll { it.id == vessel.id }
+            storageVesselState += vessel
+            return vessel
+        }
+
+        override suspend fun updateStorageVessel(
+            id: String,
+            request: UpdateStorageVesselRequest,
+        ): StorageVesselDto {
+            updateStorageVesselRequests += id to request
+            val vessel = updatedStorageVessel?.takeIf { it.id.toString() == id } ?: storageVesselJson(
+                id = id,
+                name = request.name,
+                tareWeight = request.tareWeight,
+                tareUnit = request.tareUnit,
+                sortOrder = request.sortOrder,
+            )
+            storageVesselState.removeAll { it.id.toString() == id }
+            storageVesselState += vessel
+            return vessel
+        }
+
+        override suspend fun deleteStorageVessel(id: String) {
+            deletedStorageVesselIds += id
+            storageVesselState.removeAll { it.id.toString() == id }
         }
 
         override suspend fun units(): List<UnitDto> = units

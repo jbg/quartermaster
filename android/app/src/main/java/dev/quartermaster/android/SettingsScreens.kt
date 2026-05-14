@@ -28,6 +28,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.quartermaster.android.generated.models.LocationDto
+import dev.quartermaster.android.generated.models.StorageVesselDto
 import kotlinx.coroutines.launch
 
 @Composable
@@ -45,6 +46,9 @@ internal fun SettingsScreen(
     var recoveryCode by remember { mutableStateOf("") }
     var offUsername by remember { mutableStateOf("") }
     var offPassword by remember { mutableStateOf("") }
+    var storageVesselFields by remember { mutableStateOf(StorageVesselFormFields()) }
+    var editingStorageVesselId by remember { mutableStateOf<String?>(null) }
+    var pendingStorageVesselDeleteId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(appState.currentHouseholdId) { appState.loadSettings() }
     LaunchedEffect(appState.offCredentialStatus?.username) {
@@ -53,6 +57,12 @@ internal fun SettingsScreen(
     LaunchedEffect(appState.pendingInviteContext) {
         if (!appState.pendingInviteContext?.inviteCode.isNullOrBlank()) {
             redeemInviteCode = appState.pendingInviteContext?.inviteCode.orEmpty()
+        }
+    }
+    LaunchedEffect(appState.storageVesselUnitSymbols()) {
+        val choices = appState.storageVesselUnitSymbols()
+        if (choices.isNotEmpty() && storageVesselFields.tareUnit !in choices) {
+            storageVesselFields = storageVesselFields.copy(tareUnit = choices.first())
         }
     }
 
@@ -332,6 +342,92 @@ internal fun SettingsScreen(
                     onDelete = { onDeleteLocation(location.id.toString()) },
                     onMove = { delta -> scope.launch { appState.moveLocation(location.id.toString(), delta) } },
                 )
+            }
+        }
+        item {
+            SectionHeader(
+                title = "Storage vessels",
+                body = "Track tare weights for jars, bins, and containers used during stocktake.",
+            )
+        }
+        val settingsStorageVessels = appState.sortedStorageVessels()
+        item {
+            SectionHeader(
+                title = "Vessel list",
+                body = "${settingsStorageVessels.size} ${if (settingsStorageVessels.size == 1) "vessel" else "vessels"} configured.",
+            )
+        }
+        if (settingsStorageVessels.isEmpty()) {
+            item { StatusCard("No storage vessels yet", "Weigh an empty container, then add it here before using gross-weight stocktake.") }
+        } else {
+            items(settingsStorageVessels, key = { it.id }) { vessel ->
+                StorageVesselRow(
+                    appState = appState,
+                    vessel = vessel,
+                    isFirst = vessel == settingsStorageVessels.first(),
+                    isLast = vessel == settingsStorageVessels.last(),
+                    onEdit = {
+                        editingStorageVesselId = vessel.id.toString()
+                        pendingStorageVesselDeleteId = null
+                        storageVesselFields = appState.storageVesselFormFields(vessel)
+                    },
+                    onDelete = {
+                        pendingStorageVesselDeleteId = vessel.id.toString()
+                        editingStorageVesselId = null
+                    },
+                    onMove = { delta -> scope.launch { appState.moveStorageVessel(vessel.id.toString(), delta) } },
+                )
+            }
+        }
+        item {
+            StorageVesselFormCard(
+                fields = storageVesselFields,
+                isEditing = editingStorageVesselId != null,
+                unitChoices = appState.storageVesselUnitSymbols(),
+                actionInFlight = appState.storageVesselActionInFlight,
+                onFieldsChange = { storageVesselFields = it },
+                onSubmit = {
+                    scope.launch {
+                        val saved = editingStorageVesselId?.let { id ->
+                            appState.updateStorageVessel(id, storageVesselFields)
+                        } ?: appState.createStorageVessel(
+                            storageVesselFields.copy(
+                                sortOrder = (settingsStorageVessels.maxOfOrNull { it.sortOrder } ?: -1L) + 1L,
+                            ),
+                        )
+                        if (saved) {
+                            editingStorageVesselId = null
+                            storageVesselFields = StorageVesselFormFields(
+                                sortOrder = (appState.sortedStorageVessels().maxOfOrNull { it.sortOrder } ?: -1L) + 1L,
+                            )
+                        }
+                    }
+                },
+                onCancel = {
+                    editingStorageVesselId = null
+                    storageVesselFields = StorageVesselFormFields(
+                        sortOrder = (settingsStorageVessels.maxOfOrNull { it.sortOrder } ?: -1L) + 1L,
+                    )
+                },
+            )
+        }
+        pendingStorageVesselDeleteId?.let { deleteId ->
+            val vessel = settingsStorageVessels.firstOrNull { it.id.toString() == deleteId }
+            if (vessel != null) {
+                item {
+                    StorageVesselDeleteCard(
+                        vessel = vessel,
+                        actionInFlight = appState.storageVesselActionInFlight,
+                        onConfirm = {
+                            scope.launch {
+                                if (appState.deleteStorageVessel(vessel.id.toString())) {
+                                    pendingStorageVesselDeleteId = null
+                                }
+                            }
+                        },
+                        onCancel = { pendingStorageVesselDeleteId = null },
+                    )
+                }
             }
         }
         item {
@@ -632,6 +728,108 @@ private fun LocationDeleteCard(
 }
 
 @Composable
+private fun StorageVesselFormCard(
+    fields: StorageVesselFormFields,
+    isEditing: Boolean,
+    unitChoices: List<String>,
+    actionInFlight: StorageVesselAction?,
+    onFieldsChange: (StorageVesselFormFields) -> Unit,
+    onSubmit: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SectionHeader(
+                title = if (isEditing) "Edit storage vessel" else "Add storage vessel",
+                body = "Save the empty-container weight so Scan can subtract it from gross mass entries.",
+            )
+            OutlinedTextField(
+                value = fields.name,
+                onValueChange = { onFieldsChange(fields.copy(name = it)) },
+                label = { Text("Vessel name") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = fields.tareWeight,
+                onValueChange = { onFieldsChange(fields.copy(tareWeight = it)) },
+                label = { Text("Tare weight") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text("Tare unit", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                unitChoices.forEach { unit ->
+                    if (fields.tareUnit == unit) {
+                        Button(onClick = { onFieldsChange(fields.copy(tareUnit = unit)) }) {
+                            Text(unit)
+                        }
+                    } else {
+                        TextButton(onClick = { onFieldsChange(fields.copy(tareUnit = unit)) }) {
+                            Text(unit)
+                        }
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onSubmit,
+                    enabled = actionInFlight == null,
+                ) {
+                    Text(
+                        when (actionInFlight) {
+                            StorageVesselAction.Create -> "Creating..."
+                            StorageVesselAction.Update -> "Saving..."
+                            else -> if (isEditing) "Save vessel" else "Create vessel"
+                        },
+                    )
+                }
+                TextButton(onClick = onCancel, enabled = actionInFlight == null) {
+                    Text(if (isEditing) "Cancel" else "Clear")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StorageVesselDeleteCard(
+    vessel: StorageVesselDto,
+    actionInFlight: StorageVesselAction?,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SectionHeader(
+                title = "Delete ${vessel.name}?",
+                body = "Batches that already reference this vessel keep their saved stock quantity.",
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onConfirm,
+                    enabled = actionInFlight == null,
+                ) {
+                    Text(if (actionInFlight == StorageVesselAction.Delete) "Deleting..." else "Delete vessel")
+                }
+                TextButton(onClick = onCancel, enabled = actionInFlight == null) {
+                    Text("Cancel")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun LocationRow(
     appState: QuartermasterAppState,
     location: LocationDto,
@@ -676,6 +874,55 @@ private fun LocationRow(
                     modifier = Modifier.testTag(SmokeTag.locationDelete(location.id.toString())),
                     onClick = onDelete,
                     enabled = appState.locationActionInFlight == null,
+                ) {
+                    Text("Delete")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StorageVesselRow(
+    appState: QuartermasterAppState,
+    vessel: StorageVesselDto,
+    isFirst: Boolean,
+    isLast: Boolean,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onMove: (Int) -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(vessel.name, style = MaterialTheme.typography.titleMedium)
+            Text("${vessel.tareWeight} ${vessel.tareUnit} tare · position ${vessel.sortOrder}", style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = { onMove(-1) },
+                    enabled = !isFirst && appState.storageVesselActionInFlight == null,
+                ) {
+                    Text("Up")
+                }
+                TextButton(
+                    onClick = { onMove(1) },
+                    enabled = !isLast && appState.storageVesselActionInFlight == null,
+                ) {
+                    Text("Down")
+                }
+                TextButton(
+                    onClick = onEdit,
+                    enabled = appState.storageVesselActionInFlight == null,
+                ) {
+                    Text("Edit")
+                }
+                TextButton(
+                    onClick = onDelete,
+                    enabled = appState.storageVesselActionInFlight == null,
                 ) {
                     Text("Delete")
                 }
