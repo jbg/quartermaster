@@ -16,6 +16,7 @@ import dev.quartermaster.android.generated.models.CreateInviteRequest
 import dev.quartermaster.android.generated.models.CreateLocationRequest
 import dev.quartermaster.android.generated.models.CreateProductRequest
 import dev.quartermaster.android.generated.models.CreateStockRequest
+import dev.quartermaster.android.generated.models.CreateStorageVesselRequest
 import dev.quartermaster.android.generated.models.HouseholdDetailDto
 import dev.quartermaster.android.generated.models.InviteDto
 import dev.quartermaster.android.generated.models.LocationDto
@@ -34,9 +35,11 @@ import dev.quartermaster.android.generated.models.SaveOpenFoodFactsCredentialsRe
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventType
+import dev.quartermaster.android.generated.models.StorageVesselDto
 import dev.quartermaster.android.generated.models.UnitDto
 import dev.quartermaster.android.generated.models.UnitFamily
 import dev.quartermaster.android.generated.models.UpdateLocationRequest
+import dev.quartermaster.android.generated.models.UpdateStorageVesselRequest
 import java.net.URI
 import java.net.URLDecoder
 import java.time.LocalDate
@@ -73,6 +76,13 @@ enum class ProductAction {
 }
 
 enum class LocationAction {
+    Create,
+    Update,
+    Delete,
+    Reorder,
+}
+
+enum class StorageVesselAction {
     Create,
     Update,
     Delete,
@@ -123,6 +133,13 @@ data class ProductFormFields(
 data class LocationFormFields(
     val name: String = "",
     val kind: String = "pantry",
+    val sortOrder: Long? = null,
+)
+
+data class StorageVesselFormFields(
+    val name: String = "",
+    val tareWeight: String = "",
+    val tareUnit: String = "g",
     val sortOrder: Long? = null,
 )
 
@@ -191,6 +208,10 @@ interface QuartermasterBackend {
     suspend fun createLocation(request: CreateLocationRequest): LocationDto
     suspend fun updateLocation(id: String, request: UpdateLocationRequest): LocationDto
     suspend fun deleteLocation(id: String)
+    suspend fun storageVessels(): List<StorageVesselDto>
+    suspend fun createStorageVessel(request: CreateStorageVesselRequest): StorageVesselDto
+    suspend fun updateStorageVessel(id: String, request: UpdateStorageVesselRequest): StorageVesselDto
+    suspend fun deleteStorageVessel(id: String)
     suspend fun units(): List<UnitDto>
     suspend fun listStock(includeDepleted: Boolean = false): List<StockBatchDto>
     suspend fun getStock(id: String): StockBatchDto
@@ -307,6 +328,13 @@ class QuartermasterApiBackend(
     override suspend fun createLocation(request: CreateLocationRequest): LocationDto = api.createLocation(request)
     override suspend fun updateLocation(id: String, request: UpdateLocationRequest): LocationDto = api.updateLocation(id, request)
     override suspend fun deleteLocation(id: String) = api.deleteLocation(id)
+    override suspend fun storageVessels(): List<StorageVesselDto> = api.storageVessels()
+    override suspend fun createStorageVessel(request: CreateStorageVesselRequest): StorageVesselDto = api.createStorageVessel(request)
+    override suspend fun updateStorageVessel(
+        id: String,
+        request: UpdateStorageVesselRequest,
+    ): StorageVesselDto = api.updateStorageVessel(id, request)
+    override suspend fun deleteStorageVessel(id: String) = api.deleteStorageVessel(id)
     override suspend fun units(): List<UnitDto> = api.units()
     override suspend fun listStock(includeDepleted: Boolean): List<StockBatchDto> = api.listStock(includeDepleted)
     override suspend fun getStock(id: String): StockBatchDto = api.getStock(id)
@@ -372,6 +400,8 @@ class QuartermasterAppState(
     var units by mutableStateOf<List<UnitDto>>(emptyList())
         private set
     var locations by mutableStateOf<List<LocationDto>>(emptyList())
+        private set
+    var storageVessels by mutableStateOf<List<StorageVesselDto>>(emptyList())
         private set
     var batches by mutableStateOf<List<StockBatchDto>>(emptyList())
         private set
@@ -450,6 +480,8 @@ class QuartermasterAppState(
     var productActionInFlight by mutableStateOf<ProductAction?>(null)
         private set
     var locationActionInFlight by mutableStateOf<LocationAction?>(null)
+        private set
+    var storageVesselActionInFlight by mutableStateOf<StorageVesselAction?>(null)
         private set
     private var stockActionInFlight by mutableStateOf<Map<String, StockAction>>(emptyMap())
     var scanActionInFlight by mutableStateOf<ScanAction?>(null)
@@ -771,6 +803,98 @@ class QuartermasterAppState(
         }
     }
 
+    suspend fun createStorageVessel(fields: StorageVesselFormFields): Boolean {
+        validateStorageVesselForm(fields)?.let {
+            settingsError = it
+            lastError = it
+            return false
+        }
+        var saved = false
+        runStorageVesselAction(StorageVesselAction.Create) {
+            backend.createStorageVessel(
+                CreateStorageVesselRequest(
+                    name = fields.name.trim(),
+                    tareWeight = fields.tareWeight.trim(),
+                    tareUnit = fields.tareUnit,
+                    sortOrder = fields.sortOrder,
+                ),
+            )
+            refreshStorageVesselsAndInventory()
+            saved = true
+        }
+        return saved
+    }
+
+    suspend fun updateStorageVessel(
+        id: String,
+        fields: StorageVesselFormFields,
+    ): Boolean {
+        validateStorageVesselForm(fields)?.let {
+            settingsError = it
+            lastError = it
+            return false
+        }
+        val sortOrder = fields.sortOrder ?: storageVessels.firstOrNull { it.id.toString() == id }?.sortOrder ?: return false
+        var saved = false
+        runStorageVesselAction(StorageVesselAction.Update) {
+            backend.updateStorageVessel(
+                id,
+                UpdateStorageVesselRequest(
+                    name = fields.name.trim(),
+                    tareWeight = fields.tareWeight.trim(),
+                    tareUnit = fields.tareUnit,
+                    sortOrder = sortOrder,
+                ),
+            )
+            refreshStorageVesselsAndInventory()
+            saved = true
+        }
+        return saved
+    }
+
+    suspend fun deleteStorageVessel(id: String): Boolean {
+        var deleted = false
+        runStorageVesselAction(StorageVesselAction.Delete) {
+            backend.deleteStorageVessel(id)
+            refreshStorageVesselsAndInventory()
+            deleted = true
+        }
+        return deleted
+    }
+
+    suspend fun moveStorageVessel(
+        id: String,
+        delta: Int,
+    ) {
+        val sorted = sortedStorageVessels()
+        val index = sorted.indexOfFirst { it.id.toString() == id }
+        val targetIndex = index + delta
+        if (index !in sorted.indices || targetIndex !in sorted.indices) return
+        val current = sorted[index]
+        val neighbor = sorted[targetIndex]
+        runStorageVesselAction(StorageVesselAction.Reorder) {
+            backend.updateStorageVessel(
+                current.id.toString(),
+                UpdateStorageVesselRequest(
+                    name = current.name,
+                    tareWeight = current.tareWeight,
+                    tareUnit = current.tareUnit,
+                    sortOrder = neighbor.sortOrder,
+                ),
+            )
+            backend.updateStorageVessel(
+                neighbor.id.toString(),
+                UpdateStorageVesselRequest(
+                    name = neighbor.name,
+                    tareWeight = neighbor.tareWeight,
+                    tareUnit = neighbor.tareUnit,
+                    sortOrder = current.sortOrder,
+                ),
+            )
+            refreshStorageVesselsAndInventory()
+        }
+    }
+
     suspend fun refreshInventory(force: Boolean = false) = guardHouseholdScope(
         onStart = {
             inventoryLoadState = LoadState.Loading
@@ -783,6 +907,7 @@ class QuartermasterAppState(
             units = backend.units().sortedBy { it.code }
         }
         locations = sortLocations(backend.locations())
+        storageVessels = sortStorageVessels(backend.storageVessels())
         batches = backend.listStock(includeDepleted = true).sortedWith(
             compareBy<StockBatchDto> { isBatchDepleted(it) }
                 .thenBy { it.locationId }
@@ -824,6 +949,7 @@ class QuartermasterAppState(
     ) {
         householdDetail = backend.currentHousehold()
         invites = backend.householdInvites().sortedByDescending { it.createdAt }
+        storageVessels = sortStorageVessels(backend.storageVessels())
         offCredentialStatus = backend.openFoodFactsCredentialStatus()
         hasLoadedSettingsOnce = true
     }
@@ -1081,9 +1207,12 @@ class QuartermasterAppState(
         locationId: String,
         quantity: String,
         unit: String,
+        storageVesselId: String?,
+        quantityIncludesStorageVessel: Boolean,
         expiresOn: String?,
         note: String?,
     ) = runScanAction(ScanAction.AddStock) {
+        val vesselId = storageVesselId?.takeIf(String::isNotBlank)
         backend.addStock(
             CreateStockRequest(
                 locationId = UUID.fromString(locationId),
@@ -1093,6 +1222,8 @@ class QuartermasterAppState(
                 expiresOn = expiresOn,
                 openedOn = null,
                 note = note,
+                storageVesselId = vesselId?.let(UUID::fromString),
+                quantityIncludesStorageVessel = quantityIncludesStorageVessel.takeIf { it },
             ),
         )
         searchResults = emptyList()
@@ -1234,10 +1365,19 @@ class QuartermasterAppState(
 
     fun sortedLocations(): List<LocationDto> = sortLocations(locations)
 
+    fun sortedStorageVessels(): List<StorageVesselDto> = sortStorageVessels(storageVessels)
+
     fun locationFormFields(location: LocationDto): LocationFormFields = LocationFormFields(
         name = location.name,
         kind = location.kind,
         sortOrder = location.sortOrder,
+    )
+
+    fun storageVesselFormFields(vessel: StorageVesselDto): StorageVesselFormFields = StorageVesselFormFields(
+        name = vessel.name,
+        tareWeight = vessel.tareWeight,
+        tareUnit = vessel.tareUnit,
+        sortOrder = vessel.sortOrder,
     )
 
     fun stockEditFields(batch: StockBatchDto): StockEditFields = StockEditFields(
@@ -1300,6 +1440,8 @@ class QuartermasterAppState(
 
     fun defaultProductUnitFor(family: UnitFamily): String = productUnitSymbolsFor(family).first()
 
+    fun storageVesselUnitSymbols(): List<String> = productUnitSymbolsFor(UnitFamily.MASS)
+
     fun productFormFields(product: ProductDto): ProductFormFields = ProductFormFields(
         name = product.name,
         brand = product.brand.orEmpty(),
@@ -1348,6 +1490,19 @@ class QuartermasterAppState(
             name.isEmpty() -> "Enter a location name."
             name.length > 64 -> "Location name must be 64 characters or fewer."
             fields.kind !in LOCATION_KINDS -> "Choose pantry, fridge, or freezer."
+            else -> null
+        }
+    }
+
+    fun validateStorageVesselForm(fields: StorageVesselFormFields): String? {
+        val name = fields.name.trim()
+        val tareWeight = fields.tareWeight.trim()
+        return when {
+            name.isEmpty() -> "Enter a vessel name."
+            name.length > 80 -> "Vessel name must be 80 characters or fewer."
+            tareWeight.isEmpty() -> "Enter the vessel tare weight."
+            tareWeight.toBigDecimalOrNull()?.let { it > java.math.BigDecimal.ZERO } != true -> "Enter a positive tare weight."
+            fields.tareUnit !in storageVesselUnitSymbols() -> "Choose a mass unit for the tare weight."
             else -> null
         }
     }
@@ -1565,6 +1720,11 @@ class QuartermasterAppState(
         refreshInventory(force = true)
     }
 
+    private suspend fun refreshStorageVesselsAndInventory() {
+        storageVessels = sortStorageVessels(backend.storageVessels())
+        refreshInventory(force = true)
+    }
+
     private suspend fun runLocationAction(
         action: LocationAction,
         block: suspend () -> Unit,
@@ -1596,6 +1756,40 @@ class QuartermasterAppState(
             }
         } finally {
             locationActionInFlight = null
+        }
+    }
+
+    private suspend fun runStorageVesselAction(
+        action: StorageVesselAction,
+        block: suspend () -> Unit,
+    ) {
+        if (storageVesselActionInFlight != null) return
+        storageVesselActionInFlight = action
+        settingsError = null
+        lastError = null
+        try {
+            block()
+        } catch (failure: Throwable) {
+            if (failure is ApiFailure && failure.status == 403) {
+                when (resolveHouseholdScopedForbidden()) {
+                    HouseholdScopedResolution.Retry -> {
+                        storageVesselActionInFlight = null
+                        runStorageVesselAction(action, block)
+                        return
+                    }
+                    HouseholdScopedResolution.FallbackToNoHousehold -> clearHouseholdScopedData()
+                    is HouseholdScopedResolution.Failed -> Unit
+                }
+            } else if (failure is ApiFailure && failure.status == 401) {
+                clearSession()
+                phase = AppPhase.Unauthenticated
+            } else {
+                val message = failure.userFacingMessage()
+                settingsError = message
+                lastError = message
+            }
+        } finally {
+            storageVesselActionInFlight = null
         }
     }
 
@@ -1753,6 +1947,7 @@ class QuartermasterAppState(
 
     private fun clearHouseholdScopedData() {
         locations = emptyList()
+        storageVessels = emptyList()
         batches = emptyList()
         reminders = emptyList()
         history = emptyList()
@@ -1782,6 +1977,7 @@ class QuartermasterAppState(
         stockActionInFlight = emptyMap()
         scanActionInFlight = null
         locationActionInFlight = null
+        storageVesselActionInFlight = null
         returnToScanAfterProductCreate = false
     }
 
@@ -1810,6 +2006,10 @@ class QuartermasterAppState(
 
         private fun sortLocations(locations: List<LocationDto>): List<LocationDto> = locations.sortedWith(
             compareBy<LocationDto> { it.sortOrder }.thenBy { it.name.lowercase() },
+        )
+
+        private fun sortStorageVessels(vessels: List<StorageVesselDto>): List<StorageVesselDto> = vessels.sortedWith(
+            compareBy<StorageVesselDto> { it.sortOrder }.thenBy { it.name.lowercase() },
         )
 
         fun fromContext(context: Context): QuartermasterAppState {

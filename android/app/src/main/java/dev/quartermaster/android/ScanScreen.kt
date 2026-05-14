@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -40,6 +41,8 @@ internal fun ScanScreen(
     var query by remember { mutableStateOf("") }
     var quantity by remember { mutableStateOf("") }
     var unit by remember { mutableStateOf("") }
+    var storageVesselId by remember { mutableStateOf("") }
+    var quantityIncludesStorageVessel by remember { mutableStateOf(false) }
     var selectedLocationId by remember { mutableStateOf<String?>(null) }
     var expiresOn by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
@@ -53,6 +56,14 @@ internal fun ScanScreen(
     val unitChoices = selectedProduct?.let(appState::unitSymbolsFor).orEmpty()
     val selectedUnit = unit.ifBlank { selectedProduct?.let(appState::defaultUnitSymbolFor).orEmpty() }
     val selectedLocation = selectedLocationId?.let { id -> locations.firstOrNull { it.id.toString() == id } }
+    val storageVessels = appState.sortedStorageVessels()
+    val selectedStorageVessel = storageVesselId.takeIf(String::isNotBlank)
+        ?.let { id -> storageVessels.firstOrNull { it.id.toString() == id } }
+    val storageVesselEligible = selectedProduct?.let { product ->
+        product.family == dev.quartermaster.android.generated.models.UnitFamily.MASS &&
+            selectedStorageVessel != null &&
+            product.packageQuantity == null
+    } == true
     val addDisabledReason = when {
         selectedProduct == null -> "Choose a product before you try to add stock."
         locations.isEmpty() -> "Create a household location in Settings before adding stock."
@@ -65,6 +76,21 @@ internal fun ScanScreen(
     LaunchedEffect(locations.map { it.id }) {
         if (selectedLocationId == null || locations.none { it.id.toString() == selectedLocationId }) {
             selectedLocationId = locations.firstOrNull()?.id?.toString()
+        }
+    }
+
+    LaunchedEffect(selectedProduct?.id, storageVessels.map { it.id }) {
+        if (storageVesselId.isNotBlank() && storageVessels.none { it.id.toString() == storageVesselId }) {
+            storageVesselId = ""
+        }
+        if (selectedProduct?.family != dev.quartermaster.android.generated.models.UnitFamily.MASS || selectedProduct.packageQuantity != null) {
+            quantityIncludesStorageVessel = false
+        }
+    }
+
+    LaunchedEffect(storageVesselEligible) {
+        if (!storageVesselEligible) {
+            quantityIncludesStorageVessel = false
         }
     }
 
@@ -190,6 +216,35 @@ internal fun ScanScreen(
                             },
                             style = MaterialTheme.typography.bodySmall,
                         )
+                        SelectionCard(
+                            title = "Storage vessel",
+                            options = listOf("" to "No vessel") + storageVessels.map {
+                                it.id.toString() to "${it.name} (${it.tareWeight} ${it.tareUnit})"
+                            },
+                            selected = storageVesselId,
+                            emptyText = "No storage vessels yet. Add one from Settings after weighing it empty.",
+                            onSelect = { storageVesselId = it },
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Checkbox(
+                                checked = quantityIncludesStorageVessel,
+                                onCheckedChange = { quantityIncludesStorageVessel = it },
+                                enabled = storageVesselEligible,
+                            )
+                            Column {
+                                Text("Entered weight includes vessel")
+                                Text(
+                                    if (storageVesselEligible) {
+                                        "Quartermaster will subtract the selected tare weight before saving stock."
+                                    } else {
+                                        "Available for exact mass entries with a selected storage vessel."
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
                         OutlinedTextField(
                             value = expiresOn,
                             onValueChange = { expiresOn = it },
@@ -212,11 +267,15 @@ internal fun ScanScreen(
                                             locationId = location.id.toString(),
                                             quantity = quantity.trim(),
                                             unit = selectedUnit.trim(),
+                                            storageVesselId = storageVesselId.takeIf(String::isNotBlank),
+                                            quantityIncludesStorageVessel = quantityIncludesStorageVessel,
                                             expiresOn = expiresOn.takeIf(String::isNotBlank),
                                             note = note.takeIf(String::isNotBlank),
                                         )
                                         quantity = ""
                                         unit = ""
+                                        storageVesselId = ""
+                                        quantityIncludesStorageVessel = false
                                         expiresOn = ""
                                         note = ""
                                         selectedLocationId = null

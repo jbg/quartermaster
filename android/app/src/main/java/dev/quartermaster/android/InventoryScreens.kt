@@ -541,6 +541,9 @@ private fun BatchMetadata(batch: StockBatchDto) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         MetadataRow("Created", batch.createdAt)
         MetadataRow("Initial quantity", "${batch.initialQuantity} ${batch.unit}")
+        batch.storageVessel?.let {
+            MetadataRow("Storage vessel", "${it.name} (${it.tareWeight} ${it.tareUnit} tare)")
+        }
         MetadataRow("Expiry", batch.expiresOn ?: "No expiry date")
         MetadataRow("Opened", batch.openedOn ?: "Not marked opened")
         batch.note?.takeIf(String::isNotBlank)?.let {
