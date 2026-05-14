@@ -73,7 +73,7 @@ jiff = { version = "0.2", default-features = false, features = [
 ] }
 rust_decimal = { version = "1", default-features = false, features = ["serde", "std"] }
 qrcode = { version = "0.14", default-features = false }
-brother_ql = { version = "3.0.0", default-features = false }
+brother_ql = { version = "3.0.1", default-features = false }
 freetype-rs = { version = "0.38", default-features = false, features = ["bundled"] }
 image = { version = "0.25", default-features = false }
 
