@@ -7,19 +7,18 @@ COPY xtask ./xtask
 
 RUN cargo build --release -p qm-server
 
-FROM node:26-bookworm AS web-builder
+FROM node:26.1.0-bookworm AS web-builder
 WORKDIR /src
 
 ENV VOLTA_HOME=/root/.volta
 ENV VOLTA_FEATURE_PNPM=1
 ENV PATH=$VOLTA_HOME/bin:$PATH
 
-RUN curl https://get.volta.sh | bash \
-    && volta install node@25.9.0 pnpm@10.33.2
-
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY openapi.json ./openapi.json
 COPY web ./web
+
+RUN curl https://get.volta.sh | bash
 
 RUN pnpm install --frozen-lockfile
 RUN pnpm -C web generate:api
