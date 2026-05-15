@@ -56,6 +56,7 @@ pub struct SmokeReminderSeed {
 #[derive(Debug, Serialize)]
 pub struct SeedSmokeResponse {
     pub username: String,
+    pub email: String,
     pub password: String,
     pub invite_code: String,
     pub server_url: String,
@@ -228,6 +229,7 @@ async fn build_smoke_fixture(state: &AppState) -> Result<SeedSmokeResponse, ApiE
 
     Ok(SeedSmokeResponse {
         username: SMOKE_USERNAME.into(),
+        email: SMOKE_EMAIL.into(),
         password: SMOKE_PASSWORD.into(),
         invite_code: invite.code,
         server_url: state
