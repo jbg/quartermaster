@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.0](https://github.com/jbg/quartermaster/compare/1.24.0...1.25.0) (2026-05-15)
+
+
+### Features
+
+* prepare hosted multi-tenant tenancy ([e20c783](https://github.com/jbg/quartermaster/commit/e20c7834eda43bf6d7ebad80d38f12eb2fb290d6))
+
 ## [1.24.0](https://github.com/jbg/quartermaster/compare/1.23.0...1.24.0) (2026-05-15)
 
 
