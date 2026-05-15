@@ -853,6 +853,86 @@
         ]
       }
     },
+    "/api/v1/households/current/deletion": {
+      "post": {
+        "tags": [
+          "households"
+        ],
+        "operationId": "household_current_deletion_request",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteHouseholdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteHouseholdResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/households/current/export": {
+      "get": {
+        "tags": [
+          "households"
+        ],
+        "operationId": "household_current_export",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdExportDocument"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/households/current/invites": {
       "get": {
         "tags": [
@@ -984,6 +1064,51 @@
             }
           },
           "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/households/import": {
+      "post": {
+        "tags": [
+          "households"
+        ],
+        "operationId": "household_import",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HouseholdExportDocument"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "400": {
             "description": "",
             "content": {
               "application/json": {
@@ -3948,6 +4073,542 @@
           }
         }
       },
+      "DeleteHouseholdRequest": {
+        "type": "object",
+        "required": [
+          "confirmation_name"
+        ],
+        "properties": {
+          "confirmation_name": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteHouseholdResponse": {
+        "type": "object",
+        "required": [
+          "household_id",
+          "purge_job_id",
+          "status"
+        ],
+        "properties": {
+          "household_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "purge_job_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "ExportBarcodeCacheEntry": {
+        "type": "object",
+        "required": [
+          "barcode",
+          "fetched_at",
+          "miss"
+        ],
+        "properties": {
+          "barcode": {
+            "type": "string"
+          },
+          "fetched_at": {
+            "type": "string"
+          },
+          "miss": {
+            "type": "boolean"
+          },
+          "product_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "raw_off_json": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ExportHousehold": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "timezone",
+          "measurement_system",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "measurement_system": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          }
+        }
+      },
+      "ExportLabelPrinter": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "driver",
+          "address",
+          "port",
+          "media",
+          "enabled",
+          "is_default",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "driver": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "is_default": {
+            "type": "boolean"
+          },
+          "media": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "ExportLocation": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "sort_order",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ExportProduct": {
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "name",
+          "family",
+          "default_unit",
+          "created_at",
+          "package_size_local_override",
+          "name_local_override",
+          "brand_local_override",
+          "family_local_override"
+        ],
+        "properties": {
+          "brand": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "brand_local_override": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "default_unit": {
+            "type": "string"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "family": {
+            "type": "string"
+          },
+          "family_local_override": {
+            "type": "boolean"
+          },
+          "fetched_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "image_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "max_open_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "name_local_override": {
+            "type": "boolean"
+          },
+          "off_barcode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "off_brand": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "off_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "off_package_quantity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "off_package_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "package_quantity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "package_size_local_override": {
+            "type": "boolean"
+          },
+          "package_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          }
+        }
+      },
+      "ExportStockBatch": {
+        "type": "object",
+        "required": [
+          "id",
+          "product_id",
+          "location_id",
+          "initial_quantity",
+          "quantity",
+          "unit",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "depleted_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "initial_quantity": {
+            "type": "string"
+          },
+          "location_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "opened_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "package_quantity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "package_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "produced_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "storage_vessel_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
+      "ExportStockEvent": {
+        "type": "object",
+        "required": [
+          "id",
+          "batch_id",
+          "event_type",
+          "quantity_delta",
+          "created_at"
+        ],
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "consume_request_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "package_quantity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "package_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quantity_delta": {
+            "type": "string"
+          }
+        }
+      },
+      "ExportStockReminder": {
+        "type": "object",
+        "required": [
+          "id",
+          "batch_id",
+          "product_id",
+          "location_id",
+          "kind",
+          "fire_at",
+          "title",
+          "body",
+          "household_timezone",
+          "household_fire_local_at",
+          "created_at"
+        ],
+        "properties": {
+          "acked_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "batch_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "expires_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fire_at": {
+            "type": "string"
+          },
+          "household_fire_local_at": {
+            "type": "string"
+          },
+          "household_timezone": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "location_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "ExportStorageVessel": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "tare_weight",
+          "tare_unit",
+          "sort_order",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tare_unit": {
+            "type": "string"
+          },
+          "tare_weight": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
       "HealthResponse": {
         "type": "object",
         "required": [
@@ -4004,6 +4665,82 @@
           },
           "timezone": {
             "type": "string"
+          }
+        }
+      },
+      "HouseholdExportDocument": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "exported_at",
+          "household",
+          "locations",
+          "storage_vessels",
+          "label_printers",
+          "products",
+          "barcode_cache",
+          "stock_batches",
+          "stock_events",
+          "stock_reminders"
+        ],
+        "properties": {
+          "barcode_cache": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportBarcodeCacheEntry"
+            }
+          },
+          "exported_at": {
+            "type": "string"
+          },
+          "household": {
+            "$ref": "#/components/schemas/ExportHousehold"
+          },
+          "label_printers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportLabelPrinter"
+            }
+          },
+          "locations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportLocation"
+            }
+          },
+          "products": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportProduct"
+            }
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "stock_batches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportStockBatch"
+            }
+          },
+          "stock_events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportStockEvent"
+            }
+          },
+          "stock_reminders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportStockReminder"
+            }
+          },
+          "storage_vessels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportStorageVessel"
+            }
           }
         }
       },

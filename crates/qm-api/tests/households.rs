@@ -447,6 +447,252 @@ async fn create_household_restores_active_context_after_last_membership_is_remov
 }
 
 #[tokio::test]
+async fn household_export_import_round_trips_inventory_audit_data() {
+    let app = TestApp::start(ApiConfig {
+        registration_mode: RegistrationMode::InviteOnly,
+        ..ApiConfig::default()
+    })
+    .await;
+    let (source_household, alice_id) = app.seed_household_admin("alice").await;
+    let alice = app.login("alice").await;
+    let bob_id = app.seed_user_without_household("bob").await;
+    let bob = app.login("bob").await;
+
+    let pantry = qm_db::locations::list_for_household(&app.db, source_household)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|loc| loc.kind == "pantry")
+        .unwrap();
+    let product = qm_db::products::create_manual(
+        &app.db,
+        source_household,
+        "Rice",
+        Some("Acme"),
+        "mass",
+        Some("g"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    qm_db::barcode_cache::put_hit(&app.db, source_household, "1234567890123", product.id)
+        .await
+        .unwrap();
+    let batch = qm_db::stock::create(
+        &app.db,
+        source_household,
+        product.id,
+        pantry.id,
+        "100",
+        "g",
+        None,
+        None,
+        None,
+        Some("export me"),
+        alice_id,
+        None,
+    )
+    .await
+    .unwrap();
+    qm_db::stock::adjust(
+        &app.db,
+        source_household,
+        batch.id,
+        "75",
+        alice_id,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let (export_status, document) = app
+        .send(
+            Method::GET,
+            "/api/v1/households/current/export",
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(export_status, StatusCode::OK);
+    assert_eq!(document["schema_version"], 1);
+    assert_eq!(document["products"].as_array().unwrap().len(), 1);
+    assert_eq!(document["stock_events"].as_array().unwrap().len(), 2);
+    assert!(document.get("memberships").is_none());
+
+    let (import_status, imported_me) = app
+        .send(
+            Method::POST,
+            "/api/v1/households/import",
+            Some(document),
+            Some(&bob),
+        )
+        .await;
+    assert_eq!(import_status, StatusCode::CREATED);
+    let imported_household =
+        Uuid::parse_str(me_current_household_id(&imported_me).unwrap()).unwrap();
+    assert_ne!(imported_household, source_household);
+    assert_eq!(imported_me["households"].as_array().unwrap().len(), 1);
+    assert_eq!(imported_me["households"][0]["role"], "admin");
+
+    let imported_stock = qm_db::stock::list(
+        &app.db,
+        imported_household,
+        &qm_db::stock::StockFilter {
+            include_depleted: true,
+            ..qm_db::stock::StockFilter::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(imported_stock.len(), 1);
+    assert_eq!(imported_stock[0].batch.quantity, "75");
+    assert_eq!(imported_stock[0].batch.created_by, bob_id);
+    assert_eq!(imported_stock[0].product.name, "Rice");
+
+    let imported_events = qm_db::stock_events::list_for_household(&app.db, imported_household, 10)
+        .await
+        .unwrap();
+    assert_eq!(imported_events.len(), 2);
+    assert!(imported_events
+        .iter()
+        .all(|event| event.created_by == bob_id));
+}
+
+#[tokio::test]
+async fn household_import_rejects_invalid_documents() {
+    let app = TestApp::start(ApiConfig {
+        registration_mode: RegistrationMode::InviteOnly,
+        ..ApiConfig::default()
+    })
+    .await;
+    let (_, _) = app.seed_household_admin("alice").await;
+    let alice = app.login("alice").await;
+
+    let (_, mut document) = app
+        .send(
+            Method::GET,
+            "/api/v1/households/current/export",
+            None,
+            Some(&alice),
+        )
+        .await;
+    let locations = document["locations"].as_array().unwrap().clone();
+    document["locations"] = json!([locations[0].clone(), locations[0].clone()]);
+
+    let (status, body) = app
+        .send(
+            Method::POST,
+            "/api/v1/households/import",
+            Some(document),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "bad_request");
+}
+
+#[tokio::test]
+async fn household_export_and_deletion_are_admin_only() {
+    let app = TestApp::start(ApiConfig {
+        registration_mode: RegistrationMode::InviteOnly,
+        ..ApiConfig::default()
+    })
+    .await;
+    let (household_id, _) = app.seed_household_admin("alice").await;
+    let bob_id = app.seed_user_without_household("bob").await;
+    qm_db::memberships::insert(&app.db, household_id, bob_id, "read_write")
+        .await
+        .unwrap();
+    let bob = app.login("bob").await;
+
+    assert_eq!(
+        app.send(
+            Method::GET,
+            "/api/v1/households/current/export",
+            None,
+            Some(&bob),
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.send(
+            Method::POST,
+            "/api/v1/households/current/deletion",
+            Some(json!({ "confirmation_name": "Home" })),
+            Some(&bob),
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[tokio::test]
+async fn household_deletion_hides_household_and_queues_purge() {
+    let app = TestApp::start(ApiConfig {
+        registration_mode: RegistrationMode::InviteOnly,
+        ..ApiConfig::default()
+    })
+    .await;
+    let (household_id, _) = app.seed_household_admin("alice").await;
+    let alice = app.login("alice").await;
+
+    let (wrong_status, wrong_body) = app
+        .send(
+            Method::POST,
+            "/api/v1/households/current/deletion",
+            Some(json!({ "confirmation_name": "Not Home" })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(wrong_status, StatusCode::BAD_REQUEST);
+    assert_eq!(wrong_body["code"], "bad_request");
+
+    let (delete_status, delete_body) = app
+        .send(
+            Method::POST,
+            "/api/v1/households/current/deletion",
+            Some(json!({ "confirmation_name": "Home" })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(delete_status, StatusCode::ACCEPTED);
+    assert_eq!(delete_body["household_id"], household_id.to_string());
+    assert_eq!(delete_body["status"], "queued");
+    assert!(delete_body["purge_job_id"].as_str().is_some());
+
+    let me_after_delete = app.me(&alice).await;
+    assert!(me_after_delete["current_household"].is_null());
+    assert!(me_after_delete["households"].as_array().unwrap().is_empty());
+    assert_eq!(
+        app.send(
+            Method::POST,
+            "/api/v1/auth/switch-household",
+            Some(json!({ "household_id": household_id })),
+            Some(&alice),
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+
+    let queued: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM background_job WHERE kind = ? AND dedupe_key = ? AND status = ?",
+    )
+    .bind(qm_db::jobs::KIND_HOUSEHOLD_PURGE)
+    .bind(household_id.to_string())
+    .bind(qm_db::jobs::STATUS_PENDING)
+    .fetch_one(&app.db.pool)
+    .await
+    .unwrap();
+    assert_eq!(queued, 1);
+}
+
+#[tokio::test]
 async fn logout_revokes_tokens_and_deletes_auth_session_row() {
     let app = TestApp::start(ApiConfig::default()).await;
     let _ = app.register("alice", None).await;

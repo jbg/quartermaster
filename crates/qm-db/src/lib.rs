@@ -14,6 +14,7 @@ use std::sync::Arc;
 pub mod auth_sessions;
 pub mod barcode_cache;
 pub mod devices;
+pub mod household_exports;
 pub mod households;
 pub mod invites;
 pub mod jobs;

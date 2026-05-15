@@ -23,9 +23,15 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/households", post(create_household))
+        .route("/households/import", post(import_household))
         .route(
             "/households/current",
             get(get_current_household).patch(update_current_household),
+        )
+        .route("/households/current/export", get(export_current_household))
+        .route(
+            "/households/current/deletion",
+            post(request_current_household_deletion),
         )
         .route("/households/current/members", get(list_members))
         .route(
@@ -89,6 +95,18 @@ pub struct CreateInviteRequest {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct RedeemInviteRequest {
     pub invite_code: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct DeleteHouseholdRequest {
+    pub confirmation_name: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct DeleteHouseholdResponse {
+    pub household_id: Uuid,
+    pub purge_job_id: Uuid,
+    pub status: String,
 }
 
 #[utoipa::path(
@@ -193,6 +211,93 @@ pub async fn update_current_household(
         timezone: household.timezone,
         measurement_system: req.measurement_system,
     }))
+}
+
+#[utoipa::path(
+    get,
+    path = "/households/current/export",
+    operation_id = "household_current_export",
+    tag = "households",
+    responses((status = 200, body = qm_db::household_exports::HouseholdExportDocument), (status = 403, body = crate::error::ApiErrorBody)),
+    security(("bearer" = [])),
+)]
+pub async fn export_current_household(
+    State(state): State<AppState>,
+    current: CurrentUser,
+) -> ApiResult<Json<qm_db::household_exports::HouseholdExportDocument>> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_admin(&current)?;
+    let document = qm_db::household_exports::export_household(&state.db, household_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok(Json(document))
+}
+
+#[utoipa::path(
+    post,
+    path = "/households/import",
+    operation_id = "household_import",
+    tag = "households",
+    request_body = qm_db::household_exports::HouseholdExportDocument,
+    responses((status = 201, body = MeResponse), (status = 400, body = crate::error::ApiErrorBody)),
+    security(("bearer" = [])),
+)]
+pub async fn import_household(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Json(document): Json<qm_db::household_exports::HouseholdExportDocument>,
+) -> ApiResult<(StatusCode, Json<MeResponse>)> {
+    let outcome = qm_db::household_exports::import_household(&state.db, &document, current.user_id)
+        .await
+        .map_err(import_error_to_api)?;
+    qm_db::auth_sessions::upsert(
+        &state.db,
+        current.session_id,
+        current.user_id,
+        Some(outcome.household_id),
+    )
+    .await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(
+            accounts::build_me_response(&state, current.user_id, Some(outcome.household_id))
+                .await?,
+        ),
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/households/current/deletion",
+    operation_id = "household_current_deletion_request",
+    tag = "households",
+    request_body = DeleteHouseholdRequest,
+    responses((status = 202, body = DeleteHouseholdResponse), (status = 403, body = crate::error::ApiErrorBody)),
+    security(("bearer" = [])),
+)]
+pub async fn request_current_household_deletion(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Json(req): Json<DeleteHouseholdRequest>,
+) -> ApiResult<(StatusCode, Json<DeleteHouseholdResponse>)> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_admin(&current)?;
+    let outcome = qm_db::household_exports::request_household_deletion(
+        &state.db,
+        household_id,
+        current.user_id,
+        &req.confirmation_name,
+    )
+    .await
+    .map_err(delete_error_to_api)?;
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(DeleteHouseholdResponse {
+            household_id,
+            purge_job_id: outcome.purge_job_id,
+            status: "queued".into(),
+        }),
+    ))
 }
 
 #[utoipa::path(
@@ -413,4 +518,26 @@ fn invite_to_dto(row: qm_db::invites::InviteRow) -> ApiResult<InviteDto> {
         use_count: row.use_count,
         created_at: row.created_at,
     })
+}
+
+fn import_error_to_api(err: qm_db::household_exports::ImportError) -> ApiError {
+    match err {
+        qm_db::household_exports::ImportError::UnsupportedSchemaVersion(_)
+        | qm_db::household_exports::ImportError::DuplicateId(_)
+        | qm_db::household_exports::ImportError::DanglingReference(_)
+        | qm_db::household_exports::ImportError::InvalidValue(_) => {
+            ApiError::BadRequest(err.to_string())
+        }
+        qm_db::household_exports::ImportError::Database(err) => ApiError::Database(err),
+    }
+}
+
+fn delete_error_to_api(err: qm_db::household_exports::DeleteRequestError) -> ApiError {
+    match err {
+        qm_db::household_exports::DeleteRequestError::NotFound => ApiError::NotFound,
+        qm_db::household_exports::DeleteRequestError::ConfirmationMismatch => {
+            ApiError::BadRequest(err.to_string())
+        }
+        qm_db::household_exports::DeleteRequestError::Database(err) => ApiError::Database(err),
+    }
 }
