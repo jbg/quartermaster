@@ -10,7 +10,7 @@ There is no hosted Quartermaster service today. To use it, you run your own Quar
 
 Quartermaster is usable today for adventurous self-hosters and is still evolving quickly. Expect occasional breaking changes between releases and read [CHANGELOG.md](CHANGELOG.md) before upgrading a running household.
 
-- **Server:** Rust API, SQLite by default, optional Postgres, Docker image support, local accounts, browser cookie auth, verified recovery-email state, invite-based household sharing, OpenFoodFacts barcode lookup/cache/contribution, stock history, reminders, push-worker support, Brother QL label printing, and optional Prometheus metrics.
+- **Server:** Rust API, SQLite by default, optional Postgres, Docker image support, local accounts, browser cookie auth, verified recovery-email state, invite-based household sharing, OpenFoodFacts barcode lookup/cache/contribution, stock history, reminders, background worker support, Brother QL label printing, and optional Prometheus metrics.
 - **iOS:** Native SwiftUI client is the primary client. It supports onboarding, sign-in, household switching, inventory, stock creation/editing/consumption, product editing, OpenFoodFacts correction contribution, barcode scanning on physical devices, history, recovery-email setup, settings, invite links, reminder push/inbox flows, and printing stock labels through configured server-side printers.
 - **Android:** Native Jetpack Compose client exists and can connect to self-hosted servers. It supports the core account, inventory, product, location, reminder, recovery-email, barcode, OpenFoodFacts credential/contribution, scan/add-stock, and invite flows, with push configuration available for self-hosters who provide Firebase details.
 - **Web:** A SvelteKit web client is included and can be served by the API process. It supports core inventory, batch deep links, consume-and-store remainder, location, product, OpenFoodFacts credential/contribution, barcode, history, invite, settings, label-printer administration, mobile setup QR, and reminder flows. The native mobile apps remain the most complete experience.
@@ -130,8 +130,8 @@ Reminder settings:
 | `QM_EXPIRY_REMINDER_LEAD_DAYS`              | `1`     | Days before expiry when reminders fire                       |
 | `QM_EXPIRY_REMINDER_FIRE_HOUR`              | `9`     | Household-local reminder hour                                |
 | `QM_EXPIRY_REMINDER_FIRE_MINUTE`            | `0`     | Household-local reminder minute                              |
-| `QM_EXPIRY_REMINDER_SWEEP_INTERVAL_SECONDS` | `0`     | In-process reminder reconciliation interval; `0` disables it |
-| `QM_EXPIRY_REMINDER_TRIGGER_SECRET`         | unset   | Enables the internal manual reminder sweep endpoint          |
+| `QM_EXPIRY_REMINDER_RECONCILE_INTERVAL_SECONDS` | `0`     | Interval for API pods to enqueue household reminder reconcile jobs |
+| `QM_EXPIRY_REMINDER_TRIGGER_SECRET`             | unset   | Enables the internal manual reminder job enqueue endpoint          |
 
 Household expiry dates are calendar dates in the household timezone. Reminder fire times are computed in that same household-local timezone and stored as UTC instants.
 
@@ -139,27 +139,21 @@ Household expiry dates are calendar dates in the household timezone. Reminder fi
 
 Quartermaster has a durable reminder inbox even without push notifications. Clients can poll due reminders and users explicitly acknowledge them.
 
-Push delivery is optional. It can run in the main API process:
+Push delivery is optional. Run it from the background worker process:
 
 ```sh
-QM_PUSH_WORKER_ENABLED=true cargo run -p qm-server
+cargo run -p qm-server -- worker
 ```
 
-Or as a separate worker process:
-
-```sh
-cargo run -p qm-server -- push-worker
-```
-
-Push-related settings:
+Worker and push-related settings:
 
 | Variable                               | Default   | Meaning                                                             |
 | -------------------------------------- | --------- | ------------------------------------------------------------------- |
-| `QM_PUSH_WORKER_ENABLED`               | `false`   | Run the push worker inside the API process                          |
-| `QM_PUSH_WORKER_POLL_INTERVAL_SECONDS` | `30`      | Worker polling interval                                             |
-| `QM_PUSH_WORKER_BATCH_SIZE`            | `25`      | Max deliveries claimed per cycle                                    |
-| `QM_PUSH_WORKER_CLAIM_TTL_SECONDS`     | `60`      | Claim timeout before retry                                          |
-| `QM_PUSH_WORKER_RETRY_BACKOFF_SECONDS` | `300`     | Retry delay after retryable failures                                |
+| `QM_WORKER_POLL_INTERVAL_SECONDS`      | `30`      | Worker polling interval                                             |
+| `QM_WORKER_BATCH_SIZE`                 | `25`      | Max jobs or push deliveries claimed per cycle                       |
+| `QM_WORKER_LEASE_TTL_SECONDS`          | `60`      | Claim timeout before retry                                          |
+| `QM_WORKER_RETRY_BACKOFF_SECONDS`      | `300`     | Retry delay after retryable failures                                |
+| `QM_WORKER_ID`                         | generated | Optional stable worker identity for leases                          |
 | `QM_APNS_ENABLED`                      | `false`   | Enable iOS APNs delivery                                            |
 | `QM_APNS_ENVIRONMENT`                  | `sandbox` | `sandbox` or `production`                                           |
 | `QM_APNS_TOPIC`                        | unset     | APNs topic / bundle identifier                                      |
@@ -190,8 +184,8 @@ Quartermaster exposes a small set of internal maintenance hooks when you configu
 
 | Variable                                 | Default          | Meaning                                                |
 | ---------------------------------------- | ---------------- | ------------------------------------------------------ |
-| `QM_AUTH_SESSION_SWEEP_INTERVAL_SECONDS` | `0`              | Periodic stale-session sweep interval; `0` disables it |
-| `QM_AUTH_SESSION_SWEEP_TRIGGER_SECRET`   | unset            | Enables manual auth-session sweeping                   |
+| `QM_AUTH_SESSION_CLEANUP_INTERVAL_SECONDS` | `0`              | Interval for API pods to enqueue stale-session cleanup jobs |
+| `QM_AUTH_SESSION_SWEEP_TRIGGER_SECRET`     | unset            | Enables manual auth-session cleanup job enqueueing          |
 | `QM_SMOKE_SEED_TRIGGER_SECRET`           | unset            | Enables the internal local smoke-fixture seed route    |
 | `QM_METRICS_ENABLED`                     | `false`          | Enables internal Prometheus metrics                    |
 | `QM_METRICS_BIND`                        | `127.0.0.1:9091` | Dedicated metrics/health bind for split worker mode    |

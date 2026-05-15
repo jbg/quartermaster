@@ -30,13 +30,12 @@ const SMOKE_PRODUCTS: [(&str, &str); 2] = [
 
 #[derive(Debug, Serialize)]
 pub struct SweepAuthSessionsResponse {
-    pub deleted_sessions: u64,
+    pub queued: bool,
 }
 
 #[derive(Debug, Serialize)]
 pub struct SweepExpiryRemindersResponse {
-    pub inserted: u64,
-    pub deleted: u64,
+    pub queued_jobs: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -96,14 +95,8 @@ async fn sweep_auth_sessions(
         return Err(ApiError::Unauthorized);
     }
 
-    let deleted_sessions = match qm_db::auth_sessions::delete_stale_sessions(
-        &state.db,
-        &qm_db::now_utc_rfc3339(),
-        qm_db::auth_sessions::STALE_SESSION_SWEEP_BATCH_SIZE,
-    )
-    .await
-    {
-        Ok(deleted_sessions) => deleted_sessions,
+    let queued = match qm_db::jobs::enqueue_auth_session_cleanup(&state.db).await {
+        Ok(queued) => queued,
         Err(err) => {
             counter!("qm_auth_session_sweeps_total", "surface" => "manual", "outcome" => "failure")
                 .increment(1);
@@ -112,13 +105,8 @@ async fn sweep_auth_sessions(
     };
     counter!("qm_auth_session_sweeps_total", "surface" => "manual", "outcome" => "success")
         .increment(1);
-    counter!("qm_auth_session_swept_sessions_total", "surface" => "manual")
-        .increment(deleted_sessions);
 
-    Ok((
-        StatusCode::OK,
-        Json(SweepAuthSessionsResponse { deleted_sessions }),
-    ))
+    Ok((StatusCode::OK, Json(SweepAuthSessionsResponse { queued })))
 }
 
 async fn sweep_expiry_reminders(
@@ -130,13 +118,8 @@ async fn sweep_expiry_reminders(
         state.config.expiry_reminder_trigger_secret.as_deref(),
     )?;
 
-    let stats = match qm_db::reminders::reconcile_all(
-        &state.db,
-        &state.config.expiry_reminder_policy,
-    )
-    .await
-    {
-        Ok(stats) => stats,
+    let queued_jobs = match qm_db::jobs::enqueue_expiry_reconcile_all(&state.db).await {
+        Ok(queued_jobs) => queued_jobs,
         Err(err) => {
             counter!("qm_expiry_reminder_sweeps_total", "surface" => "manual", "outcome" => "failure")
                 .increment(1);
@@ -145,16 +128,9 @@ async fn sweep_expiry_reminders(
     };
     counter!("qm_expiry_reminder_sweeps_total", "surface" => "manual", "outcome" => "success")
         .increment(1);
-    counter!("qm_expiry_reminder_sweep_inserted_total", "surface" => "manual")
-        .increment(stats.inserted);
-    counter!("qm_expiry_reminder_sweep_deleted_total", "surface" => "manual")
-        .increment(stats.deleted);
     Ok((
         StatusCode::OK,
-        Json(SweepExpiryRemindersResponse {
-            inserted: stats.inserted,
-            deleted: stats.deleted,
-        }),
+        Json(SweepExpiryRemindersResponse { queued_jobs }),
     ))
 }
 

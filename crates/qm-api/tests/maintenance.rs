@@ -28,7 +28,7 @@ async fn sweep_auth_sessions_requires_shared_secret() {
 }
 
 #[tokio::test]
-async fn sweep_auth_sessions_deletes_stale_rows_with_valid_secret() {
+async fn sweep_auth_sessions_queues_cleanup_with_valid_secret() {
     let app = TestApp::start(ApiConfig {
         auth_session_sweep_trigger_secret: Some("secret-token".into()),
         ..ApiConfig::default()
@@ -71,11 +71,18 @@ async fn sweep_auth_sessions_deletes_stale_rows_with_valid_secret() {
         .await;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["deleted_sessions"], 1);
+    assert_eq!(body["queued"], true);
+    assert!(qm_db::jobs::active_job_exists(
+        &app.db,
+        qm_db::jobs::KIND_AUTH_SESSION_CLEANUP,
+        "stale-sessions"
+    )
+    .await
+    .unwrap());
     assert!(qm_db::auth_sessions::find(&app.db, session_id)
         .await
         .unwrap()
-        .is_none());
+        .is_some());
 }
 
 #[tokio::test]
@@ -106,7 +113,7 @@ async fn maintenance_route_is_unmounted_without_secret() {
 }
 
 #[tokio::test]
-async fn sweep_expiry_reminders_reconciles_rows_with_valid_secret() {
+async fn sweep_expiry_reminders_queues_reconcile_rows_with_valid_secret() {
     let app = TestApp::start(ApiConfig {
         expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy {
             enabled: true,
@@ -180,8 +187,14 @@ async fn sweep_expiry_reminders_reconciles_rows_with_valid_secret() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["inserted"], 1);
-    assert_eq!(body["deleted"], 0);
+    assert_eq!(body["queued_jobs"], 1);
+    assert!(qm_db::jobs::active_job_exists(
+        &app.db,
+        qm_db::jobs::KIND_EXPIRY_REMINDER_RECONCILE,
+        &household.id.to_string()
+    )
+    .await
+    .unwrap());
 }
 
 #[tokio::test]

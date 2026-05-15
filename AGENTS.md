@@ -76,7 +76,7 @@ These are enforced in code, but the _why_ lives here. Respect them.
 ## Hosted and release rules
 
 - **Reverse-proxy trust is explicit.** Trusted CIDRs are required before honoring `X-Forwarded-For`. Don't loosen that without a deliberate replacement model such as `Forwarded` header support or trusted-hop handling.
-- **Home Assistant options are intentionally whitelisted.** The container entrypoint reads only current non-secret app options from `/data/options.json`. If the HA app grows APNs/FCM credentials, maintenance secrets, reverse-proxy settings, or push-worker mode, add those deliberately and avoid logging secrets.
+- **Home Assistant options are intentionally whitelisted.** The container entrypoint reads only current non-secret app options from `/data/options.json`. If the HA app grows APNs/FCM credentials, maintenance secrets, reverse-proxy settings, or worker mode, add those deliberately and avoid logging secrets.
 - **The HA app repo owns its own metadata.** `scripts/update-ha-app-repo.sh` edits the checked-out app repo in place instead of copying a template. Keep `quartermaster/config.yaml`, docs, icons, option schema, and validation workflow in `jbg/quartermaster-home-assistant-apps`; the main repo should only bump `version` and prepend changelog notes.
 - **Release identity is env-driven and split by surface.** `QM_IOS_*` configures the server AASA payload and `QUARTERMASTER_IOS_*` configures the app build. Use `cargo xtask verify-release-config` as the drift check instead of committing official Apple identity to the repo.
 

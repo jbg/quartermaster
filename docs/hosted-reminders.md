@@ -3,20 +3,20 @@
 Quartermaster's reminder system has one supported v1 operating model:
 
 - the backend owns reminder timing, wording, and inbox state
-- the API process owns stock mutations, reminder reconciliation, and the durable inbox API
-- the push worker owns APNs and FCM delivery attempts
-- the reminder sweeper is a repair tool, not the primary delivery loop
+- API pods own stock mutations, the durable inbox API, and enqueueing bounded background jobs
+- worker pods own leased background jobs plus APNs and FCM delivery attempts
+- Postgres is the hosted coordination point for job leases and idempotent state transitions
 
-Use this guide when running reminders in a self-hosted or small hosted deployment.
+Use this guide when running reminders in a hosted deployment with multiple API and worker pods.
 
 ## Deployment Shapes
 
-You can run the worker in either supported shape:
+Run API pods and worker pods as separate processes:
 
-- integrated mode: run `cargo run -p qm-server` with `QM_PUSH_WORKER_ENABLED=true`
-- split mode: run the API normally and start a second process with `cargo run -p qm-server -- push-worker`
+- API process: `cargo run -p qm-server`
+- worker process: `cargo run -p qm-server -- worker`
 
-Split mode is the recommended hosted shape because it keeps reminder delivery work isolated from the main API process while preserving the same database-backed coordination model.
+Hosted mode should use Postgres. SQLite is still useful for local single-node development, but it is not the multi-pod worker coordination target.
 
 ## Production-Shaped Example
 
@@ -24,12 +24,20 @@ Example environment split:
 
 - API process
   - `QM_PUBLIC_BASE_URL=https://quartermaster.example.com`
+  - `QM_DATABASE_URL=postgres://...`
   - `QM_EXPIRY_REMINDERS_ENABLED=true`
+  - `QM_EXPIRY_REMINDER_RECONCILE_INTERVAL_SECONDS=300`
   - `QM_EXPIRY_REMINDER_TRIGGER_SECRET=<shared-maintenance-secret>`
+  - `QM_AUTH_SESSION_CLEANUP_INTERVAL_SECONDS=300`
   - `QM_AUTH_SESSION_SWEEP_TRIGGER_SECRET=<shared-maintenance-secret>`
   - `QM_METRICS_ENABLED=true`
   - `QM_METRICS_TRIGGER_SECRET=<shared-maintenance-secret>`
 - worker process
+  - `QM_DATABASE_URL=postgres://...`
+  - `QM_WORKER_POLL_INTERVAL_SECONDS=30`
+  - `QM_WORKER_BATCH_SIZE=25`
+  - `QM_WORKER_LEASE_TTL_SECONDS=60`
+  - `QM_WORKER_RETRY_BACKOFF_SECONDS=300`
   - `QM_APNS_ENABLED=true`
   - `QM_APNS_ENVIRONMENT=production`
   - `QM_APNS_TOPIC=com.example.quartermaster`
@@ -55,7 +63,7 @@ curl -X POST \
   https://quartermaster.example.com/internal/maintenance/sweep-expiry-reminders
 ```
 
-The sweeper endpoints are useful for drift repair and low-frequency maintenance. They are not a replacement for the running push worker.
+The maintenance endpoints enqueue background jobs. They are useful for drift repair and low-frequency maintenance, but the worker process must be running to drain the queued work.
 
 ## Metrics and Health
 
@@ -88,7 +96,7 @@ If no reminders appear due:
 - confirm `QM_EXPIRY_REMINDERS_ENABLED=true`
 - confirm batches actually have `expires_on`
 - confirm the household timezone is set correctly
-- run the expiry reminder sweep once to repair drift
+- enqueue expiry reminder reconcile jobs once to repair drift
 
 If due reminders keep backing up:
 
@@ -177,6 +185,6 @@ cargo test --workspace
 If you changed reminder delivery or deployment wiring, also validate split worker mode locally:
 
 1. Run the API normally.
-2. Run `cargo run -p qm-server -- push-worker`.
+2. Run `cargo run -p qm-server -- worker`.
 3. Confirm `GET /internal/metrics` and worker `/healthz` behave as expected.
 4. Exercise one reminder end-to-end with a registered iOS device or a local APNs test setup.
