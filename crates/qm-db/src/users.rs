@@ -8,7 +8,8 @@ use crate::{now_utc_rfc3339, Database};
 pub struct UserRow {
     pub id: Uuid,
     pub username: String,
-    pub email: Option<String>,
+    pub email: String,
+    pub display_name: String,
     pub email_verified_at: Option<String>,
     pub password_hash: String,
     pub created_at: String,
@@ -33,31 +34,33 @@ pub struct PasswordResetRow {
 
 pub async fn create(
     db: &Database,
-    username: &str,
-    email: Option<&str>,
+    email: &str,
+    display_name: &str,
     password_hash: &str,
 ) -> Result<UserRow, sqlx::Error> {
     let mut tx = db.pool.begin().await?;
-    let user = create_in_tx(&mut tx, username, email, password_hash).await?;
+    let user = create_in_tx(&mut tx, email, display_name, password_hash).await?;
     tx.commit().await?;
     Ok(user)
 }
 
 pub async fn create_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
-    username: &str,
-    email: Option<&str>,
+    email: &str,
+    display_name: &str,
     password_hash: &str,
 ) -> Result<UserRow, sqlx::Error> {
     let id = Uuid::now_v7();
     let created_at = now_utc_rfc3339();
+    let legacy_username = email;
     sqlx::query(
-        "INSERT INTO users (id, username, email, password_hash, created_at) \
-         VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO users (id, username, email, display_name, password_hash, created_at) \
+         VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(id.to_string())
-    .bind(username)
+    .bind(legacy_username)
     .bind(email)
+    .bind(display_name)
     .bind(password_hash)
     .bind(&created_at)
     .execute(&mut **tx)
@@ -65,8 +68,9 @@ pub async fn create_in_tx(
 
     Ok(UserRow {
         id,
-        username: username.to_owned(),
-        email: email.map(str::to_owned),
+        username: legacy_username.to_owned(),
+        email: email.to_owned(),
+        display_name: display_name.to_owned(),
         email_verified_at: None,
         password_hash: password_hash.to_owned(),
         created_at,
@@ -78,7 +82,7 @@ pub async fn find_by_username(
     username: &str,
 ) -> Result<Option<UserRow>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT id, username, email, email_verified_at, password_hash, created_at FROM users WHERE username = ?",
+        "SELECT id, username, email, display_name, email_verified_at, password_hash, created_at FROM users WHERE username = ?",
     )
     .bind(username)
     .fetch_optional(&db.pool)
@@ -87,9 +91,21 @@ pub async fn find_by_username(
     row.map(row_to_user).transpose()
 }
 
+pub async fn find_by_email(db: &Database, email: &str) -> Result<Option<UserRow>, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT id, username, email, display_name, email_verified_at, password_hash, created_at \
+         FROM users WHERE email = ?",
+    )
+    .bind(email)
+    .fetch_optional(&db.pool)
+    .await?;
+
+    row.map(row_to_user).transpose()
+}
+
 pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<UserRow>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT id, username, email, email_verified_at, password_hash, created_at FROM users WHERE id = ?",
+        "SELECT id, username, email, display_name, email_verified_at, password_hash, created_at FROM users WHERE id = ?",
     )
     .bind(id.to_string())
     .fetch_optional(&db.pool)
@@ -112,6 +128,20 @@ pub async fn create_email_verification(
     code_hash: &str,
     expires_at: &str,
 ) -> Result<PendingEmailVerificationRow, sqlx::Error> {
+    let mut tx = db.pool.begin().await?;
+    let row =
+        create_email_verification_in_tx(&mut tx, user_id, email, code_hash, expires_at).await?;
+    tx.commit().await?;
+    Ok(row)
+}
+
+pub async fn create_email_verification_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    user_id: Uuid,
+    email: &str,
+    code_hash: &str,
+    expires_at: &str,
+) -> Result<PendingEmailVerificationRow, sqlx::Error> {
     let id = Uuid::now_v7();
     let created_at = now_utc_rfc3339();
     sqlx::query(
@@ -125,7 +155,7 @@ pub async fn create_email_verification(
     .bind(code_hash)
     .bind(expires_at)
     .bind(&created_at)
-    .execute(&db.pool)
+    .execute(&mut **tx)
     .await?;
 
     Ok(PendingEmailVerificationRow {
@@ -182,7 +212,8 @@ pub async fn confirm_email_verification(
         return Ok(None);
     };
 
-    sqlx::query("UPDATE users SET email = ?, email_verified_at = ? WHERE id = ?")
+    sqlx::query("UPDATE users SET email = ?, username = ?, email_verified_at = ? WHERE id = ?")
+        .bind(&pending.email)
         .bind(&pending.email)
         .bind(now)
         .bind(user_id.to_string())
@@ -199,7 +230,7 @@ pub async fn confirm_email_verification(
     .await?;
 
     let row = sqlx::query(
-        "SELECT id, username, email, email_verified_at, password_hash, created_at \
+        "SELECT id, username, email, display_name, email_verified_at, password_hash, created_at \
          FROM users WHERE id = ?",
     )
     .bind(user_id.to_string())
@@ -213,7 +244,7 @@ pub async fn confirm_email_verification(
 pub async fn clear_recovery_email(db: &Database, user_id: Uuid) -> Result<(), sqlx::Error> {
     let mut tx = db.pool.begin().await?;
     let now = now_utc_rfc3339();
-    sqlx::query("UPDATE users SET email = NULL, email_verified_at = NULL WHERE id = ?")
+    sqlx::query("UPDATE users SET email_verified_at = NULL WHERE id = ?")
         .bind(user_id.to_string())
         .execute(&mut *tx)
         .await?;
@@ -262,7 +293,7 @@ pub async fn create_password_reset(
 
 pub async fn reset_password_by_code_or_token(
     db: &Database,
-    username: &str,
+    email: &str,
     code_hash: Option<&str>,
     token_hash: Option<&str>,
     password_hash: &str,
@@ -270,10 +301,10 @@ pub async fn reset_password_by_code_or_token(
 ) -> Result<Option<UserRow>, sqlx::Error> {
     let mut tx = db.pool.begin().await?;
     let Some(user) = sqlx::query(
-        "SELECT id, username, email, email_verified_at, password_hash, created_at \
-         FROM users WHERE username = ?",
+        "SELECT id, username, email, display_name, email_verified_at, password_hash, created_at \
+         FROM users WHERE email = ?",
     )
-    .bind(username)
+    .bind(email)
     .fetch_optional(&mut *tx)
     .await?
     .map(row_to_user)
@@ -359,7 +390,7 @@ pub async fn reset_password_by_code_or_token(
         .await?;
 
     let row = sqlx::query(
-        "SELECT id, username, email, email_verified_at, password_hash, created_at \
+        "SELECT id, username, email, display_name, email_verified_at, password_hash, created_at \
          FROM users WHERE id = ?",
     )
     .bind(reset.user_id.to_string())
@@ -377,6 +408,7 @@ fn row_to_user(row: sqlx::any::AnyRow) -> Result<UserRow, sqlx::Error> {
         id,
         username: row.try_get("username")?,
         email: row.try_get("email")?,
+        display_name: row.try_get("display_name")?,
         email_verified_at: row.try_get("email_verified_at")?,
         password_hash: row.try_get("password_hash")?,
         created_at: row.try_get("created_at")?,
@@ -415,16 +447,15 @@ mod tests {
     #[tokio::test]
     async fn create_and_find() {
         let db = crate::test_db().await;
-        let u = create(&db, "alice", Some("a@example.com"), "hash")
-            .await
-            .unwrap();
-        assert_eq!(u.username, "alice");
+        let u = create(&db, "a@example.com", "Alice", "hash").await.unwrap();
+        assert_eq!(u.email, "a@example.com");
+        assert_eq!(u.display_name, "Alice");
 
-        let by_name = find_by_username(&db, "alice").await.unwrap().unwrap();
-        assert_eq!(by_name.id, u.id);
+        let by_email = find_by_email(&db, "a@example.com").await.unwrap().unwrap();
+        assert_eq!(by_email.id, u.id);
 
         let by_id = find_by_id(&db, u.id).await.unwrap().unwrap();
-        assert_eq!(by_id.username, "alice");
+        assert_eq!(by_id.email, "a@example.com");
 
         assert_eq!(count(&db).await.unwrap(), 1);
     }
@@ -432,6 +463,9 @@ mod tests {
     #[tokio::test]
     async fn find_missing_returns_none() {
         let db = crate::test_db().await;
-        assert!(find_by_username(&db, "nobody").await.unwrap().is_none());
+        assert!(find_by_email(&db, "nobody@example.com")
+            .await
+            .unwrap()
+            .is_none());
     }
 }

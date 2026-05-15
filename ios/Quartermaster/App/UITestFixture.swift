@@ -46,21 +46,24 @@ import UIKit
     private let activeBatchID = "33333333-3333-3333-3333-333333333333"
     private let depletedBatchID = "44444444-4444-4444-4444-444444444444"
 
-    func register(username: String, password: String, inviteCode: String?)
+    func register(email: String, displayName: String, password: String, inviteCode: String?)
       async throws -> TokenPair
     { try decodeFixture(from: tokenPairJSON) }
     func onboardingStatus() async throws -> OnboardingStatus { throw APIError.unknown }
     func createOnboardingHousehold(
-      username: String,
+      email: String,
+      displayName: String,
       password: String,
       householdName: String,
       timezone: String
     ) async throws -> TokenPair { try decodeFixture(from: tokenPairJSON) }
-    func joinOnboardingInvite(username: String, password: String, inviteCode: String)
+    func joinOnboardingInvite(
+      email: String, displayName: String, password: String, inviteCode: String
+    )
       async throws -> TokenPair
     { try decodeFixture(from: tokenPairJSON) }
 
-    func login(username: String, password: String) async throws -> TokenPair {
+    func login(email: String, password: String) async throws -> TokenPair {
       try decodeFixture(from: tokenPairJSON)
     }
 
@@ -73,9 +76,9 @@ import UIKit
     func confirmEmailVerification(code: String) async throws -> Me { try await me() }
     func clearRecoveryEmail() async throws -> Me { try await me() }
 
-    func requestPasswordReset(username: String) async throws {}
+    func requestPasswordReset(email: String) async throws {}
 
-    func confirmPasswordReset(username: String, newPassword: String, code: String) async throws {}
+    func confirmPasswordReset(email: String, newPassword: String, code: String) async throws {}
 
     func logout() async throws {}
     func me() async throws -> Me { try decodeFixture(from: meJSON) }
@@ -245,8 +248,8 @@ import UIKit
       {
         "user": {
           "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-          "username": "ui-smoke",
-          "email": null,
+          "display_name": "UI Smoke",
+          "email": "ui-smoke@example.com",
           "email_verified_at": null,
           "pending_email": null,
           "pending_email_verification_expires_at": null

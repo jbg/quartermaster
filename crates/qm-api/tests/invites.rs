@@ -13,7 +13,7 @@ use uuid::Uuid;
 fn invite_body(max_uses: i64) -> serde_json::Value {
     json!({
         "max_uses": max_uses,
-        "role_granted": "member",
+        "role_granted": "read_write",
     })
 }
 
@@ -226,7 +226,7 @@ async fn invalid_invite_registration_does_not_create_orphaned_user() {
         app.register("carol", Some(&code)).await.0,
         StatusCode::BAD_REQUEST
     );
-    assert!(qm_db::users::find_by_username(&app.db, "carol")
+    assert!(qm_db::users::find_by_email(&app.db, "carol@example.com")
         .await
         .unwrap()
         .is_none());
@@ -417,11 +417,11 @@ async fn concurrent_single_use_registration_creates_no_orphaned_user() {
         .unwrap();
     assert_eq!(invite_row.use_count, 1);
     assert_eq!(qm_db::users::count(&app.db).await.unwrap(), 2);
-    let bob_exists = qm_db::users::find_by_username(&app.db, "bob")
+    let bob_exists = qm_db::users::find_by_email(&app.db, "bob@example.com")
         .await
         .unwrap()
         .is_some();
-    let carol_exists = qm_db::users::find_by_username(&app.db, "carol")
+    let carol_exists = qm_db::users::find_by_email(&app.db, "carol@example.com")
         .await
         .unwrap()
         .is_some();

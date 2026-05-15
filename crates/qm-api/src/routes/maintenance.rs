@@ -182,7 +182,7 @@ async fn build_smoke_fixture(state: &AppState) -> Result<SeedSmokeResponse, ApiE
     let user = find_or_create_smoke_user(&state.db).await?;
     let household_id = find_or_create_smoke_household(&state.db, user.id).await?;
     let pantry = ensure_pantry_location(&state.db, household_id).await?;
-    ensure_smoke_barcode_product(&state.db).await?;
+    ensure_smoke_barcode_product(&state.db, household_id).await?;
     reset_smoke_fixture_artifacts(&state.db, household_id).await?;
 
     let policy = smoke_reminder_policy(&state.config.expiry_reminder_policy);
@@ -245,13 +245,13 @@ async fn build_smoke_fixture(state: &AppState) -> Result<SeedSmokeResponse, ApiE
 async fn find_or_create_smoke_user(
     db: &qm_db::Database,
 ) -> Result<qm_db::users::UserRow, ApiError> {
-    if let Some(existing) = qm_db::users::find_by_username(db, SMOKE_USERNAME).await? {
+    if let Some(existing) = qm_db::users::find_by_email(db, SMOKE_EMAIL).await? {
         return Ok(existing);
     }
 
     let password_hash = crate::auth::hash_password(SMOKE_PASSWORD)
         .map_err(|err| ApiError::BadRequest(format!("failed to hash smoke password: {err}")))?;
-    qm_db::users::create(db, SMOKE_USERNAME, Some(SMOKE_EMAIL), &password_hash)
+    qm_db::users::create(db, SMOKE_EMAIL, SMOKE_USERNAME, &password_hash)
         .await
         .map_err(Into::into)
 }
@@ -453,9 +453,11 @@ async fn find_or_create_smoke_product(
 
 async fn ensure_smoke_barcode_product(
     db: &qm_db::Database,
+    household_id: Uuid,
 ) -> Result<qm_db::products::ProductRow, ApiError> {
     let product = qm_db::products::upsert_from_off(
         db,
+        household_id,
         SMOKE_BARCODE,
         "Retry Beans",
         Some("Acme"),
@@ -466,7 +468,7 @@ async fn ensure_smoke_barcode_product(
         Some("g"),
     )
     .await?;
-    qm_db::barcode_cache::put_hit(db, SMOKE_BARCODE, product.id).await?;
+    qm_db::barcode_cache::put_hit(db, household_id, SMOKE_BARCODE, product.id).await?;
     Ok(product)
 }
 
@@ -499,7 +501,7 @@ async fn find_or_create_smoke_invite(
         created_by,
         SMOKE_INVITE_EXPIRES_AT,
         2,
-        "member",
+        "read_write",
     )
     .await
     .map_err(Into::into)

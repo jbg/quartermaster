@@ -12,7 +12,7 @@ struct SettingsView: View {
   @State private var householdNameDraft: String = ""
   @State private var householdTimezoneDraft: String = TimeZone.autoupdatingCurrent.identifier
   @State private var householdMeasurementSystemDraft: MeasurementSystem = .metric
-  @State private var newInviteRole: MembershipRole = .member
+  @State private var newInviteRole: MembershipRole = .readWrite
   @State private var recoveryEmailDraft: String = ""
   @State private var recoveryCodeDraft: String = ""
   @State private var offCredentialStatus: OpenFoodFactsCredentialStatusResponse?
@@ -118,15 +118,15 @@ struct SettingsView: View {
             accountView(for: me)
           } label: {
             settingsLinkLabel(
-              "Profile", systemImage: "person.crop.circle", detail: me.user.username)
+              "Profile", systemImage: "person.crop.circle", detail: me.user.displayName)
           }
           NavigationLink {
             recoveryEmailView(for: me)
           } label: {
             settingsLinkLabel(
-              "Recovery Email",
+              "Email",
               systemImage: "envelope",
-              detail: me.user.email ?? me.user.pendingEmail ?? "Not configured"
+              detail: me.user.email
             )
           }
           NavigationLink {
@@ -250,7 +250,7 @@ struct SettingsView: View {
       Button("Cancel", role: .cancel) {}
     } message: {
       if let memberPendingRemoval {
-        Text("\(memberPendingRemoval.user.username) will lose access to this household.")
+        Text("\(memberPendingRemoval.user.displayName) will lose access to this household.")
       }
     }
     .confirmationDialog(
@@ -368,7 +368,7 @@ struct SettingsView: View {
       if let household {
         Section("Current Household") {
           LabeledContent("Name", value: household.name)
-          LabeledContent("Role", value: currentRole?.displayName ?? "Member")
+          LabeledContent("Role", value: currentRole?.displayName ?? "Read-write")
           LabeledContent("Timezone", value: household.timezone)
           LabeledContent("Measurement system", value: household.measurementSystem.displayName)
           Text(household.measurementSystem.detail)
@@ -419,7 +419,8 @@ struct SettingsView: View {
     Form {
       Section("New Invite") {
         Picker("Role", selection: $newInviteRole) {
-          Text("Member").tag(MembershipRole.member)
+          Text("Read-only").tag(MembershipRole.readOnly)
+          Text("Read-write").tag(MembershipRole.readWrite)
           Text("Admin").tag(MembershipRole.admin)
         }
         Button {
@@ -537,10 +538,8 @@ struct SettingsView: View {
   private func accountView(for me: Me) -> some View {
     Form {
       Section("Account") {
-        LabeledContent("Username", value: me.user.username)
-        if let email = me.user.email {
-          LabeledContent("Email", value: email)
-        }
+        LabeledContent("Display name", value: me.user.displayName)
+        LabeledContent("Email", value: me.user.email)
       }
     }
     .navigationTitle("Profile")
@@ -548,11 +547,11 @@ struct SettingsView: View {
 
   private func recoveryEmailView(for me: Me) -> some View {
     Form {
-      Section("Recovery Email") {
+      Section("Email") {
         recoveryEmailContent(for: me)
       }
     }
-    .navigationTitle("Recovery Email")
+    .navigationTitle("Email")
   }
 
   private var openFoodFactsCredentialsView: some View {
@@ -631,19 +630,16 @@ struct SettingsView: View {
 
   @ViewBuilder
   private func recoveryEmailContent(for me: Me) -> some View {
-    if let email = me.user.email {
-      LabeledContent("Verified", value: email)
-    } else if let pending = me.user.pendingEmail {
+    if let pending = me.user.pendingEmail {
       LabeledContent("Pending", value: pending)
       if let expiresAt = me.user.pendingEmailVerificationExpiresAt {
         LabeledContent("Code expires", value: expiresAt)
       }
     } else {
-      Text("No recovery email configured.")
-        .foregroundStyle(.secondary)
+      LabeledContent("Email", value: me.user.email)
     }
 
-    TextField("Recovery email", text: $recoveryEmailDraft)
+    TextField("Email", text: $recoveryEmailDraft)
       .textContentType(.emailAddress)
       .textInputAutocapitalization(.never)
       .keyboardType(.emailAddress)
@@ -679,14 +675,7 @@ struct SettingsView: View {
           || recoveryCodeDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
-    if me.user.email != nil || me.user.pendingEmail != nil {
-      Button("Remove recovery email", role: .destructive) {
-        Task { await clearRecoveryEmail() }
-      }
-      .disabled(isSavingRecoveryEmail)
-    }
-
-    Text("Verification codes are delivered to the recovery email.")
+    Text("Verification codes are delivered to the account email.")
       .font(.footnote)
       .foregroundStyle(.secondary)
   }
@@ -722,12 +711,10 @@ struct SettingsView: View {
   private func memberRow(_ member: Member) -> some View {
     HStack {
       VStack(alignment: .leading, spacing: 2) {
-        Text(member.user.username)
-        if let email = member.user.email {
-          Text(email)
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-        }
+        Text(member.user.displayName)
+        Text(member.user.email)
+          .font(.footnote)
+          .foregroundStyle(.secondary)
       }
       Spacer()
       Text(member.role.displayName)

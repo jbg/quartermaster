@@ -155,7 +155,7 @@ async fn seed_ledger_fixture() -> anyhow::Result<()> {
         .into_iter()
         .find(|loc| loc.kind == "pantry")
         .context("finding pantry location")?;
-    let user = qm_db::users::create(&db, "fixture-admin", Some("fixture@example.com"), "hash")
+    let user = qm_db::users::create(&db, "fixture@example.com", "Fixture Admin", "hash")
         .await
         .context("creating user")?;
     qm_db::memberships::insert(&db, household.id, user.id, "admin")

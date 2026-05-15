@@ -129,14 +129,16 @@ mod tests {
     use crate::{memberships, test_support, users};
 
     async fn assert_current_household_ordering(db: &Database) {
-        let user = users::create(db, "alice", None, "hash").await.unwrap();
+        let user = users::create(db, "alice@example.com", "Alice", "hash")
+            .await
+            .unwrap();
         let older = create(db, "Older", "UTC").await.unwrap();
         let newer = create(db, "Newer", "UTC").await.unwrap();
 
-        memberships::insert(db, older.id, user.id, "member")
+        memberships::insert(db, older.id, user.id, "read_write")
             .await
             .unwrap();
-        memberships::insert(db, newer.id, user.id, "member")
+        memberships::insert(db, newer.id, user.id, "read_write")
             .await
             .unwrap();
 

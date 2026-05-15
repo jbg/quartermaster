@@ -18,7 +18,8 @@ async fn register_login_and_refresh_set_browser_cookies() {
             Method::POST,
             "/api/v1/onboarding/create-household",
             Some(json!({
-                "username": "alice",
+                "email": "alice@example.com",
+                "display_name": "Alice",
                 "password": "password123",
                 "household_name": "Alice's Household",
                 "timezone": "UTC",
@@ -36,7 +37,7 @@ async fn register_login_and_refresh_set_browser_cookies() {
             Method::POST,
             "/api/v1/auth/login",
             Some(json!({
-                "username": "alice",
+                "email": "alice@example.com",
                 "password": "password123",
             })),
             None,
@@ -101,7 +102,7 @@ async fn cookie_auth_requires_csrf_for_unsafe_requests_and_keeps_bearer_working(
             Method::POST,
             "/api/v1/auth/login",
             Some(json!({
-                "username": "alice",
+                "email": "alice@example.com",
                 "password": "password123",
             })),
             None,
@@ -176,7 +177,7 @@ async fn logout_clears_browser_cookies() {
             Method::POST,
             "/api/v1/auth/login",
             Some(json!({
-                "username": "alice",
+                "email": "alice@example.com",
                 "password": "password123",
             })),
             None,
@@ -285,7 +286,7 @@ async fn public_base_url_does_not_force_secure_browser_cookies() {
             Method::POST,
             "/api/v1/auth/login",
             Some(json!({
-                "username": "alice",
+                "email": "alice@example.com",
                 "password": "password123",
             })),
             None,
@@ -313,7 +314,7 @@ async fn cross_origin_web_auth_uses_secure_browser_cookies() {
             Method::POST,
             "/api/v1/auth/login",
             Some(json!({
-                "username": "alice",
+                "email": "alice@example.com",
                 "password": "password123",
             })),
             None,

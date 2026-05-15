@@ -195,14 +195,9 @@ mod tests {
         expires_at: Timestamp,
         revoked_at: Option<&str>,
     ) {
-        let user = users::create(
-            db,
-            username,
-            Some(&format!("{username}@example.com")),
-            "hash",
-        )
-        .await
-        .unwrap();
+        let user = users::create(db, &format!("{username}@example.com"), username, "hash")
+            .await
+            .unwrap();
         upsert(db, session_id, user.id, None).await.unwrap();
         let token_id = tokens::create(
             db,

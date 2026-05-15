@@ -191,19 +191,20 @@ interface QuartermasterBackend {
     suspend fun me(): MeResponse
     suspend fun onboardingStatus(): OnboardingStatusResponse
     suspend fun createOnboardingHousehold(
-        username: String,
+        email: String,
+        displayName: String,
         password: String,
         householdName: String,
         timezone: String,
     ): Unit
-    suspend fun joinOnboardingInvite(username: String, password: String, inviteCode: String): Unit
-    suspend fun login(username: String, password: String): Unit
-    suspend fun register(username: String, password: String, inviteCode: String?): Unit
+    suspend fun joinOnboardingInvite(email: String, displayName: String, password: String, inviteCode: String): Unit
+    suspend fun login(email: String, password: String): Unit
+    suspend fun register(email: String, displayName: String, password: String, inviteCode: String?): Unit
     suspend fun requestEmailVerification(email: String): RequestEmailVerificationResponse
     suspend fun confirmEmailVerification(code: String): MeResponse
     suspend fun clearRecoveryEmail(): MeResponse
-    suspend fun requestPasswordReset(username: String)
-    suspend fun confirmPasswordReset(username: String, newPassword: String, code: String)
+    suspend fun requestPasswordReset(email: String)
+    suspend fun confirmPasswordReset(email: String, newPassword: String, code: String)
     suspend fun logout()
     suspend fun switchHousehold(householdId: String): MeResponse
     suspend fun createHousehold(name: String, timezone: String): MeResponse
@@ -269,34 +270,38 @@ class QuartermasterApiBackend(
     override suspend fun me(): MeResponse = api.me()
     override suspend fun onboardingStatus(): OnboardingStatusResponse = api.onboardingStatus()
     override suspend fun createOnboardingHousehold(
-        username: String,
+        email: String,
+        displayName: String,
         password: String,
         householdName: String,
         timezone: String,
     ) {
         api.createOnboardingHousehold(
-            username = username,
+            email = email,
+            displayName = displayName,
             password = password,
             householdName = householdName,
             timezone = timezone,
         )
     }
 
-    override suspend fun joinOnboardingInvite(username: String, password: String, inviteCode: String) {
-        api.joinOnboardingInvite(username = username, password = password, inviteCode = inviteCode)
+    override suspend fun joinOnboardingInvite(email: String, displayName: String, password: String, inviteCode: String) {
+        api.joinOnboardingInvite(email = email, displayName = displayName, password = password, inviteCode = inviteCode)
     }
 
-    override suspend fun login(username: String, password: String) {
-        api.login(username = username, password = password)
+    override suspend fun login(email: String, password: String) {
+        api.login(email = email, password = password)
     }
 
     override suspend fun register(
-        username: String,
+        email: String,
+        displayName: String,
         password: String,
         inviteCode: String?,
     ) {
         api.register(
-            username = username,
+            email = email,
+            displayName = displayName,
             password = password,
             inviteCode = inviteCode,
         )
@@ -308,12 +313,12 @@ class QuartermasterApiBackend(
 
     override suspend fun clearRecoveryEmail(): MeResponse = api.clearRecoveryEmail()
 
-    override suspend fun requestPasswordReset(username: String) {
-        api.requestPasswordReset(username)
+    override suspend fun requestPasswordReset(email: String) {
+        api.requestPasswordReset(email)
     }
 
-    override suspend fun confirmPasswordReset(username: String, newPassword: String, code: String) {
-        api.confirmPasswordReset(username, newPassword, code)
+    override suspend fun confirmPasswordReset(email: String, newPassword: String, code: String) {
+        api.confirmPasswordReset(email, newPassword, code)
     }
 
     override suspend fun logout() {
@@ -618,27 +623,29 @@ class QuartermasterAppState(
         onboardingStatus = null
     }
 
-    suspend fun signIn(username: String, password: String) = runAuthAction {
-        backend.login(username = username, password = password)
+    suspend fun signIn(email: String, password: String) = runAuthAction {
+        backend.login(email = email, password = password)
         applyAuthenticated(backend.me())
     }
 
-    suspend fun requestPasswordReset(username: String) = runAuthAction {
-        backend.requestPasswordReset(username.trim())
+    suspend fun requestPasswordReset(email: String) = runAuthAction {
+        backend.requestPasswordReset(email.trim())
     }
 
-    suspend fun confirmPasswordReset(username: String, newPassword: String, code: String) = runAuthAction {
-        backend.confirmPasswordReset(username.trim(), newPassword, code.trim())
+    suspend fun confirmPasswordReset(email: String, newPassword: String, code: String) = runAuthAction {
+        backend.confirmPasswordReset(email.trim(), newPassword, code.trim())
     }
 
     suspend fun createOnboardingHousehold(
-        username: String,
+        email: String,
+        displayName: String,
         password: String,
         householdName: String,
         timezone: String,
     ) = runAuthAction {
         backend.createOnboardingHousehold(
-            username = username,
+            email = email,
+            displayName = displayName,
             password = password,
             householdName = householdName,
             timezone = timezone,
@@ -646,19 +653,21 @@ class QuartermasterAppState(
         applyAuthenticated(backend.me())
     }
 
-    suspend fun joinOnboardingInvite(username: String, password: String, inviteCode: String) = runAuthAction {
-        backend.joinOnboardingInvite(username = username, password = password, inviteCode = inviteCode)
+    suspend fun joinOnboardingInvite(email: String, displayName: String, password: String, inviteCode: String) = runAuthAction {
+        backend.joinOnboardingInvite(email = email, displayName = displayName, password = password, inviteCode = inviteCode)
         pendingInviteContext = null
         applyAuthenticated(backend.me())
     }
 
     suspend fun register(
-        username: String,
+        email: String,
+        displayName: String,
         password: String,
         inviteCode: String?,
     ) = runAuthAction {
         backend.register(
-            username = username,
+            email = email,
+            displayName = displayName,
             password = password,
             inviteCode = inviteCode,
         )
@@ -716,7 +725,7 @@ class QuartermasterAppState(
         val invite = backend.createInvite(
             CreateInviteRequest(
                 maxUses = maxUses,
-                roleGranted = MembershipRole.MEMBER,
+                roleGranted = MembershipRole.READ_WRITE,
             ),
         )
         invites = listOf(invite) + invites

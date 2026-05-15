@@ -71,17 +71,19 @@ impl StockEventType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum MembershipRole {
     Admin,
-    Member,
+    ReadOnly,
+    ReadWrite,
 }
 
 impl MembershipRole {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Admin => "admin",
-            Self::Member => "member",
+            Self::ReadOnly => "read_only",
+            Self::ReadWrite => "read_write",
         }
     }
 }
@@ -97,7 +99,8 @@ impl FromStr for MembershipRole {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "admin" => Ok(Self::Admin),
-            "member" => Ok(Self::Member),
+            "read_only" => Ok(Self::ReadOnly),
+            "read_write" | "member" => Ok(Self::ReadWrite),
             other => Err(ApiError::Internal(anyhow::anyhow!(
                 "unknown membership role in DB row: {other}",
             ))),

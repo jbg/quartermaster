@@ -83,7 +83,8 @@ pub struct OnboardingStatusResponse {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateOnboardingHouseholdRequest {
-    pub username: String,
+    pub email: String,
+    pub display_name: String,
     pub password: String,
     pub household_name: String,
     pub timezone: String,
@@ -92,7 +93,8 @@ pub struct CreateOnboardingHouseholdRequest {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct JoinInviteRequest {
-    pub username: String,
+    pub email: String,
+    pub display_name: String,
     pub password: String,
     pub invite_code: String,
     pub device_label: Option<String>,
@@ -127,9 +129,12 @@ pub async fn create_household(
     State(state): State<AppState>,
     Json(req): Json<CreateOnboardingHouseholdRequest>,
 ) -> ApiResult<(StatusCode, HeaderMap, Json<accounts::TokenPair>)> {
-    accounts::validate_credentials(&req.username, &req.password)?;
+    let email = accounts::validate_email(&req.email)?;
+    let display_name = accounts::validate_display_name(&req.display_name)?;
+    accounts::validate_credentials(&email, &req.password)?;
     let household_name = households::validate_household_name(&req.household_name)?;
     let timezone = households::validate_household_timezone(&req.timezone)?;
+    let verification = accounts::signup_verification(&state, &email).await?;
 
     let existing_count = qm_db::users::count(&state.db).await?;
     match (state.config.registration_mode, existing_count) {
@@ -142,10 +147,12 @@ pub async fn create_household(
     let password_hash = auth::hash_password(&req.password)?;
     let (user_id, household_id) = create_user_household(
         &state,
-        &req.username,
+        &email,
+        display_name,
         &password_hash,
         household_name,
         timezone,
+        &verification,
     )
     .await?;
     let pair = accounts::issue_token_pair(
@@ -178,18 +185,24 @@ pub async fn join_invite(
     State(state): State<AppState>,
     Json(req): Json<JoinInviteRequest>,
 ) -> ApiResult<(StatusCode, HeaderMap, Json<accounts::TokenPair>)> {
-    accounts::validate_credentials(&req.username, &req.password)?;
+    let email = accounts::validate_email(&req.email)?;
+    let display_name = accounts::validate_display_name(&req.display_name)?;
+    accounts::validate_credentials(&email, &req.password)?;
     let code = req.invite_code.trim().to_ascii_uppercase();
     if code.is_empty() {
         return Err(ApiError::BadRequest("invite_code is required".into()));
     }
+    let verification = accounts::signup_verification(&state, &email).await?;
     let password_hash = auth::hash_password(&req.password)?;
-    let registered = match qm_db::invites::register_user_with_invite(
+    let mut tx = qm_db::invites::begin_invite_tx(&state.db).await?;
+    let registered = match qm_db::invites::register_user_with_invite_in_tx(
         &state.db,
+        &mut tx,
         &code,
-        &req.username,
-        None,
+        &email,
+        display_name,
         &password_hash,
+        Some((&verification.code_hash, &verification.expires_at)),
     )
     .await
     {
@@ -197,13 +210,21 @@ pub async fn join_invite(
         Err(qm_db::invites::RegisterWithInviteError::InvalidInvite) => {
             return Err(ApiError::InvalidInvite);
         }
-        Err(qm_db::invites::RegisterWithInviteError::UsernameTaken) => {
-            return Err(ApiError::Conflict("username already taken".into()));
+        Err(qm_db::invites::RegisterWithInviteError::EmailTaken) => {
+            return Err(ApiError::Conflict("email already registered".into()));
         }
         Err(qm_db::invites::RegisterWithInviteError::Database(err)) => {
             return Err(ApiError::Database(err));
         }
     };
+    accounts::send_signup_verification(
+        &state,
+        &email,
+        &verification.code,
+        &verification.expires_at,
+    )
+    .await?;
+    tx.commit().await?;
     let pair = accounts::issue_token_pair(
         &state,
         registered.user.id,
@@ -257,22 +278,34 @@ async fn build_status(state: &AppState) -> ApiResult<OnboardingStatusResponse> {
 
 async fn create_user_household(
     state: &AppState,
-    username: &str,
+    email: &str,
+    display_name: &str,
     password_hash: &str,
     household_name: &str,
     timezone: &str,
+    verification: &accounts::SignupVerification,
 ) -> ApiResult<(Uuid, Uuid)> {
     let mut tx = state.db.pool.begin().await?;
-    let user = match qm_db::users::create_in_tx(&mut tx, username, None, password_hash).await {
+    let user = match qm_db::users::create_in_tx(&mut tx, email, display_name, password_hash).await {
         Ok(user) => user,
         Err(err) if qm_db::memberships::is_unique_violation(&err) => {
-            return Err(ApiError::Conflict("username already taken".into()));
+            return Err(ApiError::Conflict("email already registered".into()));
         }
         Err(err) => return Err(ApiError::Database(err)),
     };
+    qm_db::users::create_email_verification_in_tx(
+        &mut tx,
+        user.id,
+        email,
+        &verification.code_hash,
+        &verification.expires_at,
+    )
+    .await?;
     let household = qm_db::households::create_in_tx(&mut tx, household_name, timezone).await?;
     qm_db::locations::seed_defaults_in_tx(&mut tx, household.id).await?;
     qm_db::memberships::insert_in_tx(&mut tx, household.id, user.id, ROLE_ADMIN).await?;
+    accounts::send_signup_verification(state, email, &verification.code, &verification.expires_at)
+        .await?;
     tx.commit().await?;
     Ok((user.id, household.id))
 }

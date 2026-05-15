@@ -111,8 +111,8 @@ internal fun SettingsScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    MetadataRow("Username", appState.meOrNull?.user?.username ?: "Unknown")
-                    appState.meOrNull?.user?.email?.let { MetadataRow("Email", it) }
+                    MetadataRow("Display name", appState.meOrNull?.user?.displayName ?: "Unknown")
+                    MetadataRow("Email", appState.meOrNull?.user?.email ?: "Unknown")
                     MetadataRow("Household", appState.meOrNull?.currentHousehold?.name ?: "None")
                     MetadataRow("Timezone", appState.meOrNull?.currentHousehold?.timezone ?: "UTC")
                     MetadataRow("Server", appState.serverUrl)
@@ -173,8 +173,8 @@ internal fun SettingsScreen(
         }
         item {
             SectionHeader(
-                title = "Recovery email",
-                body = "Set a verified email for future account recovery. Verification codes are delivered by the server email transport.",
+                title = "Email",
+                body = "Verify the account email used for future account recovery.",
             )
         }
         item {
@@ -187,15 +187,15 @@ internal fun SettingsScreen(
                 ) {
                     val user = appState.meOrNull?.user
                     when {
-                        user?.email != null -> MetadataRow("Verified", user.email)
                         user?.pendingEmail != null -> MetadataRow("Pending", user.pendingEmail)
-                        else -> Text("No recovery email configured.", style = MaterialTheme.typography.bodyMedium)
+                        user?.email != null -> MetadataRow("Email", user.email)
+                        else -> Text("No account email loaded.", style = MaterialTheme.typography.bodyMedium)
                     }
                     user?.pendingEmailVerificationExpiresAt?.let { MetadataRow("Code expires", it) }
                     OutlinedTextField(
                         value = recoveryEmail,
                         onValueChange = { recoveryEmail = it },
-                        label = { Text("Recovery email") },
+                        label = { Text("Email") },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Button(
@@ -216,17 +216,6 @@ internal fun SettingsScreen(
                             enabled = appState.settingsLoadState != LoadState.Loading && recoveryCode.isNotBlank(),
                         ) {
                             Text(if (appState.settingsLoadState == LoadState.Loading) "Working..." else "Confirm email")
-                        }
-                    }
-                    if (user?.email != null || user?.pendingEmail != null) {
-                        TextButton(
-                            onClick = {
-                                recoveryCode = ""
-                                scope.launch { appState.clearRecoveryEmail() }
-                            },
-                            enabled = appState.settingsLoadState != LoadState.Loading,
-                        ) {
-                            Text("Remove recovery email")
                         }
                     }
                 }

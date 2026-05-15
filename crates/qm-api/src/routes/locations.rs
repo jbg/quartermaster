@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
-    auth::CurrentUser,
+    auth::{self, CurrentUser},
     error::{ApiError, ApiResult},
     AppState,
 };
@@ -61,6 +61,7 @@ pub async fn list_locations(
     current: CurrentUser,
 ) -> ApiResult<Json<Vec<LocationDto>>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
     let rows = qm_db::locations::list_for_household(&state.db, household_id).await?;
     Ok(Json(
         rows.into_iter()
@@ -89,6 +90,7 @@ pub async fn create_location(
     Json(req): Json<CreateLocationRequest>,
 ) -> ApiResult<(StatusCode, Json<LocationDto>)> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
     let name = req.name.trim();
     if name.is_empty() || name.len() > 64 {
         return Err(ApiError::BadRequest(
@@ -122,6 +124,7 @@ pub async fn update_location(
     Json(req): Json<UpdateLocationRequest>,
 ) -> ApiResult<Json<LocationDto>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
     let name = req.name.trim();
     if name.is_empty() || name.len() > 64 {
         return Err(ApiError::BadRequest(

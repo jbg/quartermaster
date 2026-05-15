@@ -19,7 +19,9 @@ export interface MeResponse {
   public_base_url?: string | null;
   publicBaseUrl?: string | null;
   user?: {
-    username?: string;
+    display_name?: string;
+    displayName?: string;
+    email?: string;
   };
 }
 
@@ -408,30 +410,32 @@ export interface OnboardingStatus {
 
 export interface SessionTransport {
   configure(session: StoredSession): void;
-  login(body: { username: string; password: string }): Promise<ApiResult<TokenPair>>;
-  passwordResetRequest?(body: { username: string }): Promise<ApiResult<{ status: string }>>;
+  login(body: { email: string; password: string }): Promise<ApiResult<TokenPair>>;
+  passwordResetRequest?(body: { email: string }): Promise<ApiResult<{ status: string }>>;
   passwordResetConfirm?(body: {
-    username: string;
+    email: string;
     new_password: string;
     code?: string | null;
     token?: string | null;
   }): Promise<ApiResult<void>>;
   onboardingStatus(): Promise<ApiResult<OnboardingStatus>>;
   createOnboardingHousehold(body: {
-    username: string;
+    email: string;
+    display_name: string;
     password: string;
     household_name: string;
     timezone: string;
   }): Promise<ApiResult<TokenPair>>;
   joinOnboardingInvite(body: {
-    username: string;
+    email: string;
+    display_name: string;
     password: string;
     invite_code: string;
   }): Promise<ApiResult<TokenPair>>;
   register(body: {
-    username: string;
+    email: string;
+    display_name: string;
     password: string;
-    email?: string | null;
     invite_code?: string | null;
   }): Promise<ApiResult<TokenPair>>;
   refresh(body?: { refresh_token?: string | null }): Promise<ApiResult<TokenPair>>;
@@ -612,20 +616,18 @@ export class QuartermasterSession {
     this.persist();
   }
 
-  async login(username: string, password: string): Promise<void> {
-    const result = await this.transport.login({ username, password });
+  async login(email: string, password: string): Promise<void> {
+    const result = await this.transport.login({ email, password });
     unwrap(result);
     await this.ensureBrowserDeviceRegistered();
   }
 
-  async requestPasswordReset(username: string): Promise<void> {
-    unwrap(
-      await required(this.transport.passwordResetRequest, 'passwordResetRequest')({ username })
-    );
+  async requestPasswordReset(email: string): Promise<void> {
+    unwrap(await required(this.transport.passwordResetRequest, 'passwordResetRequest')({ email }));
   }
 
   async confirmPasswordReset(
-    username: string,
+    email: string,
     newPassword: string,
     secret: { code?: string | null; token?: string | null }
   ): Promise<void> {
@@ -634,7 +636,7 @@ export class QuartermasterSession {
         this.transport.passwordResetConfirm,
         'passwordResetConfirm'
       )({
-        username,
+        email,
         new_password: newPassword,
         code: secret.code ?? null,
         token: secret.token ?? null
@@ -647,13 +649,15 @@ export class QuartermasterSession {
   }
 
   async createOnboardingHousehold(
-    username: string,
+    email: string,
+    displayName: string,
     password: string,
     householdName: string,
     timezone: string
   ): Promise<void> {
     const result = await this.transport.createOnboardingHousehold({
-      username,
+      email,
+      display_name: displayName,
       password,
       household_name: householdName,
       timezone

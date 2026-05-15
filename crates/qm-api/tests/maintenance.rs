@@ -129,7 +129,7 @@ async fn sweep_expiry_reminders_reconciles_rows_with_valid_secret() {
         .find(|row| row.kind == "pantry")
         .unwrap()
         .id;
-    let user = qm_db::users::create(&app.db, "alice", None, "hash")
+    let user = qm_db::users::create(&app.db, "alice@example.com", "Alice", "hash")
         .await
         .unwrap();
     qm_db::memberships::insert(&app.db, household.id, user.id, "admin")
@@ -251,7 +251,7 @@ async fn seed_smoke_returns_deterministic_fixture() {
 
     let household_id = Uuid::parse_str(body["household_id"].as_str().unwrap()).unwrap();
     let location_id = Uuid::parse_str(body["location_id"].as_str().unwrap()).unwrap();
-    let user = qm_db::users::find_by_username(&app.db, "quartermaster_smoke_18423")
+    let user = qm_db::users::find_by_email(&app.db, "quartermaster-smoke@example.com")
         .await
         .unwrap()
         .unwrap();
@@ -334,7 +334,7 @@ async fn seed_smoke_returns_deterministic_fixture() {
         0
     );
 
-    let user = qm_db::users::find_by_username(&app.db, "quartermaster_smoke_18423")
+    let user = qm_db::users::find_by_email(&app.db, "quartermaster-smoke@example.com")
         .await
         .unwrap()
         .unwrap();

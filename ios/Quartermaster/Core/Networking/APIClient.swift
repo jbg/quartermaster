@@ -43,7 +43,8 @@ actor APIClient: AppStateAPI {
   }
 
   func createOnboardingHousehold(
-    username: String,
+    email: String,
+    displayName: String,
     password: String,
     householdName: String,
     timezone: String
@@ -51,10 +52,11 @@ actor APIClient: AppStateAPI {
     let body = Operations.OnboardingCreateHousehold.Input.Body.json(
       .init(
         deviceLabel: Self.deviceLabel,
+        displayName: displayName,
+        email: email,
         householdName: householdName,
         password: password,
         timezone: timezone,
-        username: username,
       ))
     let response = try await client.onboardingCreateHousehold(.init(body: body))
     switch response {
@@ -68,15 +70,18 @@ actor APIClient: AppStateAPI {
     }
   }
 
-  func joinOnboardingInvite(username: String, password: String, inviteCode: String)
+  func joinOnboardingInvite(
+    email: String, displayName: String, password: String, inviteCode: String
+  )
     async throws -> TokenPair
   {
     let body = Operations.OnboardingJoinInvite.Input.Body.json(
       .init(
         deviceLabel: Self.deviceLabel,
+        displayName: displayName,
+        email: email,
         inviteCode: inviteCode,
         password: password,
-        username: username,
       ))
     let response = try await client.onboardingJoinInvite(.init(body: body))
     switch response {
@@ -90,15 +95,16 @@ actor APIClient: AppStateAPI {
     }
   }
 
-  func register(username: String, password: String, inviteCode: String? = nil)
+  func register(email: String, displayName: String, password: String, inviteCode: String? = nil)
     async throws -> TokenPair
   {
     let body = Operations.AuthRegister.Input.Body.json(
       .init(
         deviceLabel: Self.deviceLabel,
+        displayName: displayName,
+        email: email,
         inviteCode: inviteCode,
         password: password,
-        username: username,
       ))
     let response = try await client.authRegister(.init(body: body))
     switch response {
@@ -117,12 +123,12 @@ actor APIClient: AppStateAPI {
     }
   }
 
-  func login(username: String, password: String) async throws -> TokenPair {
+  func login(email: String, password: String) async throws -> TokenPair {
     let body = Operations.AuthLogin.Input.Body.json(
       .init(
         deviceLabel: Self.deviceLabel,
+        email: email,
         password: password,
-        username: username,
       ))
     let response = try await client.authLogin(.init(body: body))
     switch response {
@@ -133,8 +139,8 @@ actor APIClient: AppStateAPI {
     }
   }
 
-  func requestPasswordReset(username: String) async throws {
-    let body = Operations.AuthPasswordResetRequest.Input.Body.json(.init(username: username))
+  func requestPasswordReset(email: String) async throws {
+    let body = Operations.AuthPasswordResetRequest.Input.Body.json(.init(email: email))
     let response = try await client.authPasswordResetRequest(.init(body: body))
     switch response {
     case .accepted: return
@@ -144,13 +150,13 @@ actor APIClient: AppStateAPI {
     }
   }
 
-  func confirmPasswordReset(username: String, newPassword: String, code: String) async throws {
+  func confirmPasswordReset(email: String, newPassword: String, code: String) async throws {
     let body = Operations.AuthPasswordResetConfirm.Input.Body.json(
       .init(
         code: code,
+        email: email,
         newPassword: newPassword,
-        token: nil,
-        username: username
+        token: nil
       ))
     let response = try await client.authPasswordResetConfirm(.init(body: body))
     switch response {

@@ -6,7 +6,7 @@
   import { createBrowserSessionStorage, QuartermasterSession } from '$lib/session-core';
 
   let session: QuartermasterSession | null = $state(null);
-  let username = $state('');
+  let email = $state('');
   let token = $state('');
   let code = $state('');
   let newPassword = $state('');
@@ -22,7 +22,7 @@
       createBrowserSessionStorage(window.localStorage, window.location),
       generatedTransport()
     );
-    username = page.url.searchParams.get('username') ?? '';
+    email = page.url.searchParams.get('email') ?? '';
     token = page.url.searchParams.get('token') ?? '';
   });
 
@@ -34,7 +34,7 @@
     message = null;
     error = null;
     try {
-      await session.confirmPasswordReset(username, newPassword, {
+      await session.confirmPasswordReset(email, newPassword, {
         token: token.trim() || null,
         code: code.trim() || null
       });
@@ -64,8 +64,8 @@
   >
     <h1>Reset password</h1>
     <label>
-      Username
-      <input bind:value={username} autocomplete="username" required />
+      Email
+      <input bind:value={email} type="email" autocomplete="email" required />
     </label>
     {#if !token}
       <label>
@@ -92,7 +92,7 @@
     <button
       class="primary-action"
       type="submit"
-      disabled={busy || !username || newPassword.length < 8 || (!token && !code)}
+      disabled={busy || !email || newPassword.length < 8 || (!token && !code)}
     >
       {busy ? 'Working...' : 'Reset password'}
     </button>

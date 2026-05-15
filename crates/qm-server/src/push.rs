@@ -835,7 +835,7 @@ mod tests {
             .find(|row| row.kind == "pantry")
             .unwrap()
             .id;
-        let user = users::create(&db, "alice", Some("alice@example.com"), "hash")
+        let user = users::create(&db, "alice@example.com", "Alice", "hash")
             .await
             .unwrap();
         memberships::insert(&db, household.id, user.id, "admin")
@@ -1677,7 +1677,7 @@ mod tests {
             .unwrap()
             .id;
         let hash = qm_api::auth::hash_password("password123").unwrap();
-        let user = users::create(&db, "alice", Some("alice@example.com"), &hash)
+        let user = users::create(&db, "alice@example.com", "Alice", &hash)
             .await
             .unwrap();
         memberships::insert(&db, household.id, user.id, "admin")
@@ -1727,7 +1727,7 @@ mod tests {
                     .header("content-type", "application/json")
                     .body(Body::from(
                         json!({
-                            "username": "alice",
+                            "email": "alice@example.com",
                             "password": "password123",
                             "device_label": "Android",
                         })
@@ -1793,10 +1793,10 @@ mod tests {
             "ios-success",
         )
         .await;
-        let android_user = users::create(&db, "bob", Some("bob@example.com"), "hash")
+        let android_user = users::create(&db, "bob@example.com", "Bob", "hash")
             .await
             .unwrap();
-        memberships::insert(&db, household_id, android_user.id, "member")
+        memberships::insert(&db, household_id, android_user.id, "read_write")
             .await
             .unwrap();
         let android_session = Uuid::now_v7();

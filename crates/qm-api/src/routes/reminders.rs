@@ -10,7 +10,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::{
-    auth::CurrentUser,
+    auth::{self, CurrentUser},
     error::{ApiError, ApiResult},
     types::{ReminderKind, ReminderUrgency},
     AppState,
@@ -223,6 +223,7 @@ pub async fn present(
     Path(id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
     let found = qm_db::reminders::mark_presented(
         &state.db,
         household_id,
@@ -257,6 +258,7 @@ pub async fn open(
     Path(id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
     let found = qm_db::reminders::mark_opened(
         &state.db,
         household_id,
@@ -291,6 +293,7 @@ pub async fn ack(
     Path(id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
     let found = qm_db::reminders::dismiss_for_device(
         &state.db,
         household_id,

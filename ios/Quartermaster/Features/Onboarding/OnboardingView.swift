@@ -11,7 +11,8 @@ struct OnboardingView: View {
   @Environment(AppState.self) private var appState
   @State private var status: OnboardingStatus?
   @State private var authMode: AuthMode = .signIn
-  @State private var username: String = ""
+  @State private var email: String = ""
+  @State private var displayName: String = ""
   @State private var password: String = ""
   @State private var resetCode: String = ""
   @State private var resetMode = false
@@ -160,8 +161,9 @@ struct OnboardingView: View {
   private var signInSection: some View {
     Section("Sign in") {
       if resetMode {
-        TextField("Username", text: $username)
-          .textContentType(.username)
+        TextField("Email", text: $email)
+          .textContentType(.emailAddress)
+          .keyboardType(.emailAddress)
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled()
         TextField("Reset code", text: $resetCode)
@@ -171,7 +173,7 @@ struct OnboardingView: View {
         SecureField("New password", text: $password)
           .textContentType(.newPassword)
       } else {
-        accountFields(passwordContentType: .password)
+        accountFields(passwordContentType: .password, includeDisplayName: false)
       }
       Button(resetMode ? "Back to sign in" : "Forgot password?") {
         resetMode.toggle()
@@ -201,7 +203,7 @@ struct OnboardingView: View {
 
   private func createHouseholdSection(title: String, buttonTitle: String) -> some View {
     Section(title) {
-      accountFields(passwordContentType: .newPassword)
+      accountFields(passwordContentType: .newPassword, includeDisplayName: true)
       TextField("Household name", text: $householdName)
         .textContentType(.organizationName)
       TextField("Timezone", text: $timezone)
@@ -219,22 +221,29 @@ struct OnboardingView: View {
   private func joinInviteSection(inviteCode: String) -> some View {
     Section("Join household") {
       LabeledContent("Invite", value: inviteCode)
-      accountFields(passwordContentType: .newPassword)
+      accountFields(passwordContentType: .newPassword, includeDisplayName: true)
       Button {
         Task { await submitJoinInvite(inviteCode: inviteCode) }
       } label: {
         submitLabel("Join household")
       }
-      .disabled(!canSubmitAccount || isSubmitting)
+      .disabled(!canSubmitDisplayAccount || isSubmitting)
     }
   }
 
-  private func accountFields(passwordContentType: UITextContentType) -> some View {
+  private func accountFields(passwordContentType: UITextContentType, includeDisplayName: Bool)
+    -> some View
+  {
     Group {
-      TextField("Username", text: $username)
-        .textContentType(.username)
+      TextField("Email", text: $email)
+        .textContentType(.emailAddress)
+        .keyboardType(.emailAddress)
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
+      if includeDisplayName {
+        TextField("Display name", text: $displayName)
+          .textContentType(.name)
+      }
       SecureField("Password", text: $password)
         .textContentType(passwordContentType)
     }
@@ -253,7 +262,7 @@ struct OnboardingView: View {
   }
 
   private var canSubmitAccount: Bool {
-    !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && password.count >= 8
+    !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && password.count >= 8
   }
 
   private var canSubmitResetOrSignIn: Bool {
@@ -261,15 +270,20 @@ struct OnboardingView: View {
       return canSubmitAccount
     }
     if resetCode.trimmed.isEmpty {
-      return !username.trimmed.isEmpty
+      return !email.trimmed.isEmpty
     }
     return canSubmitAccount
   }
 
   private var canSubmitHousehold: Bool {
     canSubmitAccount
+      && !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       && !householdName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       && !timezone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  private var canSubmitDisplayAccount: Bool {
+    canSubmitAccount && !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
   private func availableAuthModes(status: OnboardingStatus) -> [AuthMode] {
@@ -320,15 +334,15 @@ struct OnboardingView: View {
   private func submitSignIn() async {
     isSubmitting = true
     defer { isSubmitting = false }
-    await appState.login(username: username.trimmed, password: password)
+    await appState.login(email: email.trimmed, password: password)
   }
 
   private func requestResetCode() async {
     isSubmitting = true
     defer { isSubmitting = false }
-    await appState.requestPasswordReset(username: username.trimmed)
+    await appState.requestPasswordReset(email: email.trimmed)
     if appState.lastError == nil {
-      resetMessage = "If that account has a verified recovery email, a reset code is on its way."
+      resetMessage = "If that account has a verified email, a reset code is on its way."
     }
   }
 
@@ -336,7 +350,7 @@ struct OnboardingView: View {
     isSubmitting = true
     defer { isSubmitting = false }
     await appState.confirmPasswordReset(
-      username: username.trimmed,
+      email: email.trimmed,
       newPassword: password,
       code: resetCode.trimmed
     )
@@ -352,7 +366,8 @@ struct OnboardingView: View {
     isSubmitting = true
     defer { isSubmitting = false }
     await appState.createOnboardingHousehold(
-      username: username.trimmed,
+      email: email.trimmed,
+      displayName: displayName.trimmed,
       password: password,
       householdName: householdName.trimmed,
       timezone: timezone.trimmed
@@ -363,7 +378,8 @@ struct OnboardingView: View {
     isSubmitting = true
     defer { isSubmitting = false }
     await appState.joinOnboardingInvite(
-      username: username.trimmed,
+      email: email.trimmed,
+      displayName: displayName.trimmed,
       password: password,
       inviteCode: inviteCode
     )

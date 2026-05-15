@@ -55,7 +55,7 @@ async fn request_recovery_email_exposes_pending_state_on_me() {
     assert!(body["expires_at"].as_str().is_some());
 
     let me = app.me(&alice).await;
-    assert_eq!(me["user"]["email"], serde_json::Value::Null);
+    assert_eq!(me["user"]["email"], "alice@example.com");
     assert_eq!(me["user"]["email_verified_at"], serde_json::Value::Null);
     assert_eq!(me["user"]["pending_email"], "alice@example.com");
     assert!(me["user"]["pending_email_verification_expires_at"]
@@ -69,7 +69,9 @@ async fn request_recovery_email_exposes_pending_state_on_me() {
 
 #[tokio::test]
 async fn request_recovery_email_requires_configured_transport() {
-    let app = TestApp::start(ApiConfig::default()).await;
+    let app =
+        TestApp::start_with_http_and_email(ApiConfig::default(), reqwest::Client::new(), None)
+            .await;
     app.seed_household_admin("alice").await;
     let alice = app.login("alice").await;
 
@@ -175,7 +177,7 @@ async fn confirm_recovery_email_rejects_wrong_or_expired_codes() {
 }
 
 #[tokio::test]
-async fn clear_recovery_email_removes_verified_and_pending_email() {
+async fn clear_recovery_email_is_rejected() {
     let email = Arc::new(CaptureEmailTransport::default());
     let app = TestApp::start_with_email(ApiConfig::default(), email).await;
     let (_, user_id) = app.seed_household_admin("alice").await;
@@ -220,10 +222,8 @@ async fn clear_recovery_email_removes_verified_and_pending_email() {
     let (status, body) = app
         .send(Method::DELETE, "/api/v1/auth/email", None, Some(&alice))
         .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["user"]["email"], serde_json::Value::Null);
-    assert_eq!(body["user"]["email_verified_at"], serde_json::Value::Null);
-    assert_eq!(body["user"]["pending_email"], serde_json::Value::Null);
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "bad_request");
 }
 
 #[tokio::test]
@@ -265,12 +265,12 @@ async fn password_reset_request_is_generic_and_sends_when_recoverable() {
         StatusCode::OK
     );
 
-    for username in ["alice", "missing"] {
+    for email in ["alice@example.com", "missing@example.com"] {
         let (status, body) = app
             .send(
                 Method::POST,
                 "/api/v1/auth/password-reset/request",
-                Some(json!({ "username": username })),
+                Some(json!({ "email": email })),
                 None,
             )
             .await;
@@ -282,7 +282,7 @@ async fn password_reset_request_is_generic_and_sends_when_recoverable() {
     assert_eq!(messages.len(), 1);
     assert!(messages[0]
         .text_body
-        .contains("/reset-password?username=alice&token="));
+        .contains("/reset-password?email=alice%40example%2Ecom&token="));
 }
 
 #[tokio::test]
@@ -311,7 +311,7 @@ async fn password_reset_confirm_updates_password_and_revokes_sessions() {
             Method::POST,
             "/api/v1/auth/password-reset/confirm",
             Some(json!({
-                "username": "alice",
+                "email": "alice@example.com",
                 "new_password": "newpassword123",
                 "code": "reset-12345"
             })),
@@ -361,7 +361,7 @@ async fn password_reset_confirm_rejects_bad_or_consumed_secret() {
             Method::POST,
             "/api/v1/auth/password-reset/confirm",
             Some(json!({
-                "username": "alice",
+                "email": "alice@example.com",
                 "new_password": "newpassword123",
                 "code": "WRONGCODE1"
             })),
@@ -375,7 +375,7 @@ async fn password_reset_confirm_rejects_bad_or_consumed_secret() {
             Method::POST,
             "/api/v1/auth/password-reset/confirm",
             Some(json!({
-                "username": "alice",
+                "email": "alice@example.com",
                 "new_password": "newpassword123",
                 "token": "right-token"
             })),
@@ -389,7 +389,7 @@ async fn password_reset_confirm_rejects_bad_or_consumed_secret() {
             Method::POST,
             "/api/v1/auth/password-reset/confirm",
             Some(json!({
-                "username": "alice",
+                "email": "alice@example.com",
                 "new_password": "anotherpassword123",
                 "token": "right-token"
             })),

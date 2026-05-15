@@ -1237,7 +1237,9 @@ mod tests {
             .find(|row| row.kind == "pantry")
             .unwrap()
             .id;
-        let user = users::create(&db, "alice", None, "hash").await.unwrap();
+        let user = users::create(&db, "alice@example.com", "Alice", "hash")
+            .await
+            .unwrap();
         memberships::insert(&db, household.id, user.id, "admin")
             .await
             .unwrap();

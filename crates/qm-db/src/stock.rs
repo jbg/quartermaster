@@ -1255,7 +1255,9 @@ mod tests {
 
     async fn setup_with_db(db: &Database) -> (Uuid, Uuid, Uuid, Uuid) {
         let h = households::create(db, "h", "UTC").await.unwrap();
-        let u = users::create(db, "u", None, "hash").await.unwrap();
+        let u = users::create(db, "u@example.com", "User", "hash")
+            .await
+            .unwrap();
         memberships::insert(db, h.id, u.id, "admin").await.unwrap();
         locations::seed_defaults(db, h.id).await.unwrap();
         let locs = locations::list_for_household(db, h.id).await.unwrap();
@@ -1421,6 +1423,7 @@ mod tests {
         let (db, hid, uid, lid, _pid) = setup().await;
         let product = products::upsert_from_off(
             &db,
+            hid,
             "1234567890123",
             "Beans",
             None,
@@ -1443,6 +1446,7 @@ mod tests {
 
         products::upsert_from_off(
             &db,
+            hid,
             "1234567890123",
             "Beans",
             None,
