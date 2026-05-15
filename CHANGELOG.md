@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.24.0](https://github.com/jbg/quartermaster/compare/1.23.0...1.24.0) (2026-05-15)
+
+
+### Features
+
+* add package-aware consume parity ([fc8283e](https://github.com/jbg/quartermaster/commit/fc8283e1cbd9af45f77697cfc7481c6908dea106))
+* **android:** add storage vessel stocktake ([3a9c174](https://github.com/jbg/quartermaster/commit/3a9c1743e6ed1fdf09450a8389ce0d9d7b0dfc62))
+* **ios:** add manual barcode scan fallback ([5d84ad4](https://github.com/jbg/quartermaster/commit/5d84ad4ca5c8d818b4dc40576f8240bc4bbf0213))
+
 ## [1.23.0](https://github.com/jbg/quartermaster/compare/1.22.0...1.23.0) (2026-05-09)
 
 
