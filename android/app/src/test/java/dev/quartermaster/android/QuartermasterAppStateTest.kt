@@ -36,6 +36,7 @@ import dev.quartermaster.android.generated.models.UpdateStorageVesselRequest
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -1950,6 +1951,12 @@ class QuartermasterAppStateTest {
         override suspend fun redeemInvite(inviteCode: String) = Unit
 
         override suspend fun currentHousehold(): HouseholdDetailDto = householdDetail ?: error("Unused in test")
+
+        override suspend fun exportCurrentHousehold(): String = error("Unused in test")
+
+        override suspend fun importHousehold(document: JsonElement): MeResponse = meResponse
+
+        override suspend fun requestCurrentHouseholdDeletion(confirmationName: String) = Unit
 
         override suspend fun householdInvites(): List<InviteDto> = emptyList()
 

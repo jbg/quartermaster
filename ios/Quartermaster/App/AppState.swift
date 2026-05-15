@@ -39,6 +39,10 @@ protocol AppStateAPI: Actor {
   func updateCurrentHousehold(
     name: String, timezone: String, measurementSystem: MeasurementSystem
   ) async throws -> HouseholdDetail
+  func exportCurrentHousehold() async throws -> HouseholdExportDocument
+  func importHousehold(_ document: HouseholdExportDocument) async throws -> Me
+  func requestCurrentHouseholdDeletion(confirmationName: String) async throws
+    -> DeleteHouseholdResponse
   func householdMembers() async throws -> [Member]
   func removeHouseholdMember(userID: String) async throws
   func householdInvites() async throws -> [Invite]
@@ -536,6 +540,22 @@ final class AppState {
     let updatedMe = try await api.switchHousehold(householdID: householdID)
     applyAuthenticated(updatedMe)
     return updatedMe
+  }
+
+  func importHouseholdBackup(_ document: HouseholdExportDocument) async throws -> Me {
+    let updatedMe = try await api.importHousehold(document)
+    applyAuthenticated(updatedMe)
+    return updatedMe
+  }
+
+  func requestCurrentHouseholdDeletion(confirmationName: String) async throws
+    -> DeleteHouseholdResponse
+  {
+    let response = try await api.requestCurrentHouseholdDeletion(
+      confirmationName: confirmationName)
+    let updatedMe = try await authenticatedMe()
+    applyAuthenticated(updatedMe)
+    return response
   }
 
   var householdTimeZoneID: String? {

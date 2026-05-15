@@ -53,6 +53,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -80,6 +81,12 @@ data class ProductUpdateRequest(
 @Serializable
 data class StockUpdateRequest(
     val operations: List<JsonPatchOperation>,
+)
+
+@Serializable
+data class DeleteHouseholdRequest(
+    @SerialName("confirmation_name")
+    val confirmationName: String,
 )
 
 @Serializable
@@ -269,6 +276,22 @@ class QuartermasterApi(
     }
 
     suspend fun currentHousehold(): HouseholdDetailDto = authedJson("GET", "/households/current")
+
+    suspend fun exportCurrentHousehold(): String = authedRaw("GET", "/households/current/export")
+
+    suspend fun importHousehold(document: JsonElement): MeResponse = authedJson(
+        method = "POST",
+        path = "/households/import",
+        body = document,
+    )
+
+    suspend fun requestCurrentHouseholdDeletion(confirmationName: String) {
+        authedUnit(
+            method = "POST",
+            path = "/households/current/deletion",
+            body = DeleteHouseholdRequest(confirmationName = confirmationName),
+        )
+    }
 
     suspend fun householdMembers(): List<MemberDto> = authedJson("GET", "/households/current/members")
 
@@ -503,6 +526,14 @@ class QuartermasterApi(
         jsonRequest<T>(method = method, path = path, body = body, requiresAuth = true)
     }
 
+    private suspend fun authedRaw(
+        method: String,
+        path: String,
+        body: Any? = null,
+    ): String = withAuthRetry {
+        rawRequest(method = method, path = path, body = body, requiresAuth = true)
+    }
+
     private suspend fun authedUnit(
         method: String,
         path: String,
@@ -551,6 +582,15 @@ class QuartermasterApi(
             throw ApiFailure(500, null, "Expected a JSON response")
         }
         json.decodeFromString<T>(raw)
+    }
+
+    private suspend fun rawRequest(
+        method: String,
+        path: String,
+        body: Any? = null,
+        requiresAuth: Boolean,
+    ): String = withContext(Dispatchers.IO) {
+        execute(method, path, body, requiresAuth)
     }
 
     private suspend fun unitRequest(
@@ -632,7 +672,9 @@ class QuartermasterApi(
         is CreateProductRequest -> json.encodeToString(body)
         is CreateStockRequest -> json.encodeToString(body)
         is CreateStorageVesselRequest -> json.encodeToString(body)
+        is DeleteHouseholdRequest -> json.encodeToString(body)
         is ConsumeRequest -> json.encodeToString(body)
+        is JsonElement -> json.encodeToString(JsonElement.serializer(), body)
         is LoginRequest -> json.encodeToString(body)
         is RefreshRequest -> json.encodeToString(body)
         is RedeemInviteRequest -> json.encodeToString(body)

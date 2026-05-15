@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   import AppFrame from '$lib/components/AppFrame.svelte';
   import { generatedTransport } from '$lib/api';
+  import type { HouseholdExportDocument } from '$lib/generated/types.gen';
   import { appPath } from '$lib/paths';
   import {
     batchProductId,
@@ -92,6 +93,7 @@
   let authError = $state<string | null>(null);
   let authMessage = $state<string | null>(null);
   let authBusy = $state(false);
+  let importInput: HTMLInputElement | null = $state(null);
   let authenticated = $state(false);
   let inventory = $state<InventoryState>(emptyInventoryState);
   let inventoryFilter = $state<InventoryFilterMode>('active');
@@ -472,6 +474,38 @@
       await refreshWorkspace(null);
     } catch {
       authError = 'Household could not be switched.';
+    }
+  }
+
+  function beginImportBackup() {
+    authError = null;
+    authMessage = null;
+    importInput?.click();
+  }
+
+  async function importBackupFile(file: File | null | undefined) {
+    if (!session || !file) {
+      return;
+    }
+    authBusy = true;
+    authError = null;
+    authMessage = null;
+    try {
+      const text = await file.text();
+      const document = JSON.parse(text) as HouseholdExportDocument;
+      me = await session.householdImport(document);
+      clearHouseholdState();
+      if (currentHousehold(me)) {
+        await refreshWorkspace(null);
+      }
+      authMessage = 'Backup imported.';
+    } catch {
+      authError = 'Backup could not be imported.';
+    } finally {
+      authBusy = false;
+      if (importInput) {
+        importInput.value = '';
+      }
     }
   }
 
@@ -1053,8 +1087,16 @@
   {activeHousehold}
   {households}
   onhouseholdchange={switchHousehold}
+  onimportbackup={beginImportBackup}
   onlogout={logout}
 >
+  <input
+    class="visually-hidden"
+    type="file"
+    accept="application/json,.json"
+    bind:this={importInput}
+    onchange={(event) => importBackupFile(event.currentTarget.files?.[0])}
+  />
   {#if !authenticated}
     <section class="auth-layout">
       <form
@@ -1189,8 +1231,16 @@
           {/each}
         </div>
       {:else}
-        <p class="muted">Create or join a household from a native app for now.</p>
+        <p class="muted">Create a household from a native app or import a backup here.</p>
       {/if}
+      <button
+        class="secondary-action"
+        type="button"
+        onclick={beginImportBackup}
+        disabled={authBusy}
+      >
+        Import backup
+      </button>
     </section>
   {:else if me && activeHousehold}
     {#if addStockOpen}

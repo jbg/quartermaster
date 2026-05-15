@@ -11,6 +11,9 @@ import {
   authRegister,
   authSwitchHousehold,
   deviceRegister,
+  householdCurrentDeletionRequest,
+  householdCurrentExport,
+  householdImport,
   labelPrintersCreate,
   labelPrintersDelete,
   labelPrintersList,
@@ -107,6 +110,15 @@ export function generatedTransport(): SessionTransport {
     },
     switchHousehold(body) {
       return authSwitchHousehold({ body });
+    },
+    householdCurrentExport() {
+      return householdCurrentExport();
+    },
+    householdImport(body) {
+      return householdImport({ body });
+    },
+    householdCurrentDeletionRequest(body) {
+      return householdCurrentDeletionRequest({ body });
     },
     registerDevice(body) {
       return deviceRegister({ body });

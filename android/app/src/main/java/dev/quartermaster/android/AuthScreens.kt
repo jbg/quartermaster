@@ -633,5 +633,8 @@ internal fun NoHouseholdScreen(appState: QuartermasterAppState, modifier: Modifi
                 }
             }
         }
+        item {
+            HouseholdBackupControls(appState = appState)
+        }
     }
 }

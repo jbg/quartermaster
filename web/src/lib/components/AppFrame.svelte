@@ -20,6 +20,7 @@
     activeHousehold = null,
     households = [],
     onhouseholdchange,
+    onimportbackup,
     onlogout,
     children
   }: {
@@ -30,6 +31,7 @@
     activeHousehold?: HouseholdSummary | null;
     households?: HouseholdSummary[];
     onhouseholdchange?: (householdId: string) => void | Promise<void>;
+    onimportbackup?: () => void | Promise<void>;
     onlogout?: () => void | Promise<void>;
     children?: Snippet;
   } = $props();
@@ -71,6 +73,9 @@
               <strong>{activeHousehold.name}</strong>
             {/if}
           </div>
+        {/if}
+        {#if onimportbackup}
+          <button class="ghost-button" type="button" onclick={onimportbackup}>Import backup</button>
         {/if}
         <nav class="app-nav" aria-label="Primary">
           {#each navItems as item}
