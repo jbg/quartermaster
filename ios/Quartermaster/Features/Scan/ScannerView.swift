@@ -144,6 +144,7 @@ struct ScanScreen: View {
   @State private var storageVessels: [StorageVessel] = []
   @State private var errorMessage: String?
   @State private var noticeMessage: String?
+  @State private var manualBarcode = ""
   @State private var suppressNextSheetDismissReset = false
   @State private var isLooking = false
   @State private var isSubmitting = false
@@ -179,12 +180,14 @@ struct ScanScreen: View {
         }
         overlayPanel
       } else {
-        ContentUnavailableView {
-          Label("Camera scanning unavailable", systemImage: "camera.slash")
-        } description: {
-          Text(
-            "Barcode scanning requires a physical device with a camera. In the simulator, tap + on the Inventory tab to add stock by product search."
-          )
+        VStack(spacing: 24) {
+          ContentUnavailableView {
+            Label("Camera scanning unavailable", systemImage: "camera.slash")
+          } description: {
+            Text("Type the barcode below to look up the product and add stock.")
+          }
+          manualBarcodePanel
+            .padding(.horizontal)
         }
         .padding()
       }
@@ -249,16 +252,53 @@ struct ScanScreen: View {
         expiryScanPanel
       } else if draft != nil {
         draftPanel
-      } else if let noticeMessage {
-        Text(noticeMessage)
-          .font(.subheadline.weight(.medium))
-          .padding(.horizontal, 14)
-          .padding(.vertical, 10)
-          .background(.regularMaterial, in: Capsule())
-          .padding(.bottom, 20)
+      } else {
+        VStack(spacing: 12) {
+          if let noticeMessage {
+            Text(noticeMessage)
+              .font(.subheadline.weight(.medium))
+              .padding(.horizontal, 14)
+              .padding(.vertical, 10)
+              .background(.regularMaterial, in: Capsule())
+          }
+          manualBarcodePanel
+        }
+        .padding(.bottom, 20)
       }
     }
     .frame(maxWidth: .infinity)
+  }
+
+  private var manualBarcodePanel: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Barcode")
+        .font(.headline)
+      TextField("Enter barcode", text: $manualBarcode)
+        .keyboardType(.numberPad)
+        .textContentType(.none)
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled()
+        .textFieldStyle(.roundedBorder)
+      Button {
+        submitManualBarcode()
+      } label: {
+        if isLooking {
+          ProgressView()
+            .frame(maxWidth: .infinity)
+        } else {
+          Label("Look up barcode", systemImage: "barcode.viewfinder")
+            .fontWeight(.semibold)
+            .frame(maxWidth: .infinity)
+        }
+      }
+      .buttonStyle(.borderedProminent)
+      .disabled(manualBarcode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLooking)
+    }
+    .padding()
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    .shadow(color: .black.opacity(0.14), radius: 14, y: 6)
+    .padding(.horizontal, 12)
   }
 
   private var draftPanel: some View {
@@ -543,19 +583,34 @@ struct ScanScreen: View {
   }
 
   private func handleBarcode(_ code: String) {
-    if scannerMode != .barcode || draft != nil || sheet != nil || code == lastHandled || isLooking {
+    startBarcodeLookup(code, debounce: true)
+  }
+
+  private func submitManualBarcode() {
+    startBarcodeLookup(
+      manualBarcode.trimmingCharacters(in: .whitespacesAndNewlines), debounce: false)
+  }
+
+  private func startBarcodeLookup(_ code: String, debounce: Bool) {
+    if scannerMode != .barcode || draft != nil || sheet != nil || code.isEmpty
+      || code == lastHandled
+      || isLooking
+    {
       return
     }
     lastHandled = code
     lookupTask?.cancel()
     lookupTask = Task {
-      try? await Task.sleep(for: .milliseconds(200))
+      if debounce {
+        try? await Task.sleep(for: .milliseconds(200))
+      }
       if Task.isCancelled { return }
       isLooking = true
       defer { isLooking = false }
       do {
         let response = try await appState.api.lookupBarcode(code)
         await ensureLocationsLoaded()
+        manualBarcode = ""
         beginDraft(for: response.product)
       } catch let err as APIError {
         if case .server(let status, _) = err, status == 404 {
@@ -745,6 +800,7 @@ struct ScanScreen: View {
     isLooking = false
     isSubmitting = false
     lastHandled = ""
+    manualBarcode = ""
     scannerMode = .barcode
     draft = nil
     expiryCandidates = []
