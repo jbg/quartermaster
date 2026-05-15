@@ -18,15 +18,15 @@
   "dependencies": {
     "qrcode": "1.5.4",
     "@sveltejs/adapter-static": "3.0.10",
-    "@sveltejs/kit": "2.59.1",
+    "@sveltejs/kit": "2.60.1",
     "@sveltejs/vite-plugin-svelte": "7.1.2",
     "svelte": "5.55.5",
-    "vite": "8.0.12"
+    "vite": "8.0.13"
   },
   "devDependencies": {
     "@hey-api/openapi-ts": "0.97.1",
     "@types/qrcode": "1.5.6",
-    "@types/node": "25.7.0",
+    "@types/node": "25.8.0",
     "svelte-check": "4.4.8",
     "typescript": "6.0.3",
     "prettier": "3.8.3",
