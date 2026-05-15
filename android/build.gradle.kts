@@ -3,7 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose") version "2.3.21" apply false
     id("org.jetbrains.kotlin.plugin.serialization") version "2.3.21" apply false
     id("org.openapi.generator") version "7.22.0" apply false
-    id("com.diffplug.spotless") version "8.4.0"
+    id("com.diffplug.spotless") version "8.5.0"
 }
 
 spotless {
