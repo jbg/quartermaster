@@ -118,10 +118,15 @@ pub async fn resolve_active_household(
                 if let Some(membership) =
                     qm_db::memberships::find(db, active_household_id, user_id).await?
                 {
-                    return Ok(ResolvedHousehold {
-                        household_id: Some(active_household_id),
-                        role: Some(membership.role),
-                    });
+                    if qm_db::households::find_by_id(db, active_household_id)
+                        .await?
+                        .is_some()
+                    {
+                        return Ok(ResolvedHousehold {
+                            household_id: Some(active_household_id),
+                            role: Some(membership.role),
+                        });
+                    }
                 }
             }
         }

@@ -44,6 +44,10 @@ testcontainers-modules = { version = "0.15", default-features = false, features 
     "postgres",
 ], optional = true }
 tracing = { workspace = true, default-features = false, features = ["std", "attributes"] }
+utoipa = { workspace = true, default-features = false, features = [
+    "macros",
+    "uuid",
+] }
 uuid = { workspace = true, default-features = false, features = ["std", "v7", "serde"] }
 
 [dev-dependencies]

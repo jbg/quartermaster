@@ -132,6 +132,7 @@ async fn run_job(
             debug!(job_id = %job.id, "reserved billing sync job kind has no handler yet");
             Ok(JobOutcome::Done)
         }
+        jobs::KIND_HOUSEHOLD_PURGE => run_household_purge(db, job).await,
         other => anyhow::bail!("unknown background job kind: {other}"),
     }
 }
@@ -163,6 +164,14 @@ async fn run_expiry_reminder_reconcile(
         .increment(stats.inserted);
     counter!("qm_expiry_reminder_sweep_deleted_total", "surface" => "worker")
         .increment(stats.deleted);
+    Ok(JobOutcome::Done)
+}
+
+async fn run_household_purge(db: &Database, job: &jobs::JobRow) -> anyhow::Result<JobOutcome> {
+    let payload: HouseholdJobPayload =
+        serde_json::from_str(&job.payload_json).context("parsing household purge job payload")?;
+    qm_db::household_exports::purge_household(db, payload.household_id).await?;
+    counter!("qm_household_purges_total").increment(1);
     Ok(JobOutcome::Done)
 }
 

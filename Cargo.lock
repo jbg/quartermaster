@@ -3099,6 +3099,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "utoipa",
  "uuid",
 ]
 

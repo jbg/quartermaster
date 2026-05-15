@@ -11,6 +11,8 @@ pub struct HouseholdRow {
     pub timezone: String,
     pub measurement_system: String,
     pub created_at: String,
+    pub deletion_requested_at: Option<String>,
+    pub deletion_requested_by: Option<Uuid>,
 }
 
 pub async fn create(
@@ -47,6 +49,8 @@ pub async fn create_in_tx(
             .as_str()
             .to_owned(),
         created_at,
+        deletion_requested_at: None,
+        deletion_requested_by: None,
     })
 }
 
@@ -55,10 +59,11 @@ pub async fn find_for_user(
     user_id: Uuid,
 ) -> Result<Option<HouseholdRow>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT h.id, h.name, h.timezone, h.measurement_system, h.created_at \
+        "SELECT h.id, h.name, h.timezone, h.measurement_system, h.created_at, \
+                h.deletion_requested_at, h.deletion_requested_by \
          FROM household h \
          INNER JOIN membership m ON m.household_id = h.id \
-         WHERE m.user_id = ? \
+         WHERE m.user_id = ? AND h.deletion_requested_at IS NULL \
          ORDER BY m.joined_at DESC, h.id DESC \
          LIMIT 1",
     )
@@ -68,35 +73,23 @@ pub async fn find_for_user(
 
     row.map(|r| {
         let id_str: String = r.try_get("id")?;
-        let id = Uuid::parse_str(&id_str).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-        Ok::<_, sqlx::Error>(HouseholdRow {
-            id,
-            name: r.try_get("name")?,
-            timezone: r.try_get("timezone")?,
-            measurement_system: r.try_get("measurement_system")?,
-            created_at: r.try_get("created_at")?,
-        })
+        row_to_household(id_str, r)
     })
     .transpose()
 }
 
 pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<HouseholdRow>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT id, name, timezone, measurement_system, created_at FROM household WHERE id = ?",
+        "SELECT id, name, timezone, measurement_system, created_at, \
+                deletion_requested_at, deletion_requested_by \
+         FROM household WHERE id = ? AND deletion_requested_at IS NULL",
     )
     .bind(id.to_string())
     .fetch_optional(&db.pool)
     .await?;
     row.map(|r| {
         let id_str: String = r.try_get("id")?;
-        let id = Uuid::parse_str(&id_str).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-        Ok::<_, sqlx::Error>(HouseholdRow {
-            id,
-            name: r.try_get("name")?,
-            timezone: r.try_get("timezone")?,
-            measurement_system: r.try_get("measurement_system")?,
-            created_at: r.try_get("created_at")?,
-        })
+        row_to_household(id_str, r)
     })
     .transpose()
 }
@@ -109,7 +102,8 @@ pub async fn update(
     measurement_system: &str,
 ) -> Result<Option<HouseholdRow>, sqlx::Error> {
     let res = sqlx::query(
-        "UPDATE household SET name = ?, timezone = ?, measurement_system = ? WHERE id = ?",
+        "UPDATE household SET name = ?, timezone = ?, measurement_system = ? \
+         WHERE id = ? AND deletion_requested_at IS NULL",
     )
     .bind(name)
     .bind(timezone)
@@ -121,6 +115,22 @@ pub async fn update(
         return Ok(None);
     }
     find_by_id(db, id).await
+}
+
+fn row_to_household(id_str: String, row: sqlx::any::AnyRow) -> Result<HouseholdRow, sqlx::Error> {
+    let deleted_by: Option<String> = row.try_get("deletion_requested_by")?;
+    Ok(HouseholdRow {
+        id: Uuid::parse_str(&id_str).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+        name: row.try_get("name")?,
+        timezone: row.try_get("timezone")?,
+        measurement_system: row.try_get("measurement_system")?,
+        created_at: row.try_get("created_at")?,
+        deletion_requested_at: row.try_get("deletion_requested_at")?,
+        deletion_requested_by: deleted_by
+            .map(|s| Uuid::parse_str(&s))
+            .transpose()
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+    })
 }
 
 #[cfg(test)]

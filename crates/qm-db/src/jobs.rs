@@ -12,6 +12,7 @@ pub const STATUS_FAILED: &str = "failed";
 pub const KIND_AUTH_SESSION_CLEANUP: &str = "auth_session_cleanup";
 pub const KIND_EXPIRY_REMINDER_RECONCILE: &str = "expiry_reminder_reconcile";
 pub const KIND_BILLING_SYNC: &str = "billing_sync";
+pub const KIND_HOUSEHOLD_PURGE: &str = "household_purge";
 
 #[derive(Debug, Clone)]
 pub struct JobRow {
