@@ -315,6 +315,31 @@ export function stockPackageUnit(batch: StockBatch): string | null {
   return batch.package_unit ?? batch.packageUnit ?? stockUnit(batch) ?? null;
 }
 
+export function stockPackageSize(batch: StockBatch): { quantity: string; unit: string } | null {
+  const quantity = stockPackageQuantity(batch);
+  const unit = stockPackageUnit(batch);
+  const parsedQuantity = Number(quantity);
+  if (!quantity || !unit || !Number.isFinite(parsedQuantity) || parsedQuantity <= 0) {
+    return null;
+  }
+  return { quantity, unit };
+}
+
+export function packageConsumeAmount(
+  batch: StockBatch,
+  packageCount: string
+): { quantity: string; unit: string } | null {
+  const packageSize = stockPackageSize(batch);
+  const count = Number(packageCount.trim());
+  if (!packageSize || !Number.isFinite(count) || count <= 0) {
+    return null;
+  }
+  return {
+    quantity: formatQuantity(count * Number(packageSize.quantity)),
+    unit: packageSize.unit
+  };
+}
+
 export function isDepleted(batch: StockBatch): boolean {
   return Boolean(batch.depleted_at ?? batch.depletedAt);
 }
@@ -646,7 +671,11 @@ function sumQuantities(batches: StockBatch[], unit: string): string | null {
     return null;
   }
   const total = values.reduce((sum, value) => sum + value, 0);
-  return Number.isInteger(total) ? String(total) : String(Number(total.toFixed(3)));
+  return formatQuantity(total);
+}
+
+function formatQuantity(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(3)));
 }
 
 function earliestExpiry(batches: StockBatch[]): string | null {
