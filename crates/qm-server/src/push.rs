@@ -152,6 +152,7 @@ impl FcmConfig {
 pub struct PushWorkerConfig {
     pub poll_interval: Duration,
     pub batch_size: i64,
+    pub worker_id: String,
     pub claim_ttl: Duration,
     pub retry_backoff: Duration,
 }
@@ -311,8 +312,14 @@ pub async fn run_push_cycle(
     );
 
     let expired = reminders::expire_stale_push_claims(db, &now_rfc3339, &retry_at).await?;
-    let claimed =
-        reminders::claim_due_push_work(db, &now_rfc3339, worker.batch_size, &claim_until).await?;
+    let claimed = reminders::claim_due_push_work(
+        db,
+        &now_rfc3339,
+        worker.batch_size,
+        &worker.worker_id,
+        &claim_until,
+    )
+    .await?;
     metrics::record_expired_claims(expired);
     metrics::record_claimed(claimed.items.len() as u64);
     metrics::record_claim_conflicts(claimed.claim_conflicts);
@@ -916,6 +923,7 @@ mod tests {
         PushWorkerConfig {
             poll_interval: Duration::from_secs(1),
             batch_size: 10,
+            worker_id: "test-worker".into(),
             claim_ttl: Duration::from_secs(60),
             retry_backoff: Duration::from_secs(300),
         }
@@ -1113,6 +1121,7 @@ mod tests {
     fn dummy_item(channel: &str) -> reminders::PushWorkItem {
         reminders::PushWorkItem {
             attempt_id: Uuid::now_v7(),
+            lease_owner: "test-worker".into(),
             channel: channel.into(),
             reminder_id: Uuid::now_v7(),
             household_id: Uuid::now_v7(),
@@ -1632,6 +1641,7 @@ mod tests {
             &db,
             "2000-01-01T00:00:00.000Z",
             10,
+            "worker-a",
             "2000-01-01T00:01:00.000Z",
         )
         .await
@@ -1771,6 +1781,7 @@ mod tests {
             &db,
             "2000-01-01T00:00:00.000Z",
             10,
+            "worker-a",
             "2000-01-01T00:01:00.000Z",
         )
         .await
@@ -1820,9 +1831,10 @@ mod tests {
 
         let now = "2000-01-01T00:00:00.000Z";
         let _ = metrics::refresh_delivery_gauges(&db, now).await.unwrap();
-        let claimed = reminders::claim_due_push_work(&db, now, 10, "2000-01-01T00:01:00.000Z")
-            .await
-            .unwrap();
+        let claimed =
+            reminders::claim_due_push_work(&db, now, 10, "worker-a", "2000-01-01T00:01:00.000Z")
+                .await
+                .unwrap();
         assert_eq!(claimed.items.len(), 2);
 
         for item in &claimed.items {

@@ -18,7 +18,7 @@ Use small, focused pull requests and Conventional Commits:
 |   |-- qm-core/            domain logic; no I/O
 |   |-- qm-db/              SQLx repositories and migrations
 |   |-- qm-api/             Axum handlers, middleware, OpenAPI, integration tests
-|   `-- qm-server/          shipped binary and push-worker mode
+|   `-- qm-server/          shipped API and background worker binary
 |-- xtask/                  developer tasks
 |-- openapi.json            canonical generated API spec
 |-- android/                Jetpack Compose app and generated Retrofit client
@@ -168,11 +168,11 @@ cargo run -p qm-server
 
 Then register and log in through a client or `curl`, and verify `GET /auth/me` returns `current_household` plus the household membership list. The native apps against a running backend are the real integration test.
 
-If you changed reminder scheduling, reminder delivery, or push-worker wiring, run `cargo test --workspace` and then do one split-worker smoke test locally:
+If you changed reminder scheduling, reminder delivery, or worker wiring, run `cargo test --workspace` and then do one split-worker smoke test locally:
 
 ```sh
 cargo run -p qm-server
-cargo run -p qm-server -- push-worker
+cargo run -p qm-server -- worker
 ```
 
 ## Project Conventions

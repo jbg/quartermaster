@@ -97,6 +97,7 @@ struct BatchReminderContext {
 #[derive(Debug, Clone)]
 pub struct PushWorkItem {
     pub attempt_id: Uuid,
+    pub lease_owner: String,
     pub channel: String,
     pub reminder_id: Uuid,
     pub household_id: Uuid,
@@ -404,7 +405,7 @@ pub async fn expire_stale_push_claims(
         let channel: String = row.try_get("channel")?;
         sqlx::query(
             "UPDATE reminder_delivery \
-             SET status = ?, finished_at = ?, claim_until = NULL, error_code = ?, error_message = ? \
+             SET status = ?, finished_at = ?, claim_until = NULL, lease_owner = NULL, error_code = ?, error_message = ? \
              WHERE id = ? AND status = ?",
         )
         .bind(DELIVERY_STATUS_FAILED_RETRYABLE)
@@ -437,6 +438,7 @@ pub async fn claim_due_push_work(
     db: &Database,
     now_rfc3339: &str,
     limit: i64,
+    lease_owner: &str,
     claim_until_rfc3339: &str,
 ) -> Result<PushClaimResult, sqlx::Error> {
     let rows = sqlx::query(
@@ -510,8 +512,8 @@ pub async fn claim_due_push_work(
         let attempt_id = Uuid::now_v7();
         let inserted = sqlx::query(
             "INSERT INTO reminder_delivery \
-             (id, reminder_id, device_id, channel, status, created_at, attempted_at, claim_until) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+             (id, reminder_id, device_id, channel, status, created_at, attempted_at, claim_until, lease_owner) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(attempt_id.to_string())
         .bind(reminder_id.to_string())
@@ -521,6 +523,7 @@ pub async fn claim_due_push_work(
         .bind(now_rfc3339)
         .bind(now_rfc3339)
         .bind(claim_until_rfc3339)
+        .bind(lease_owner)
         .execute(&db.pool)
         .await;
         match inserted {
@@ -540,6 +543,7 @@ pub async fn claim_due_push_work(
                 .await?;
                 claimed.push(PushWorkItem {
                     attempt_id,
+                    lease_owner: lease_owner.into(),
                     channel: channel.into(),
                     reminder_id,
                     household_id: uuid_from(&row, "household_id")?,
@@ -574,11 +578,11 @@ pub async fn complete_push_attempt(
     work: &PushWorkItem,
     outcome: &PushDeliveryResult,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
+    let updated = sqlx::query(
         "UPDATE reminder_delivery \
-         SET status = ?, finished_at = ?, claim_until = NULL, provider_message_id = ?, \
+         SET status = ?, finished_at = ?, claim_until = NULL, lease_owner = NULL, provider_message_id = ?, \
              error_code = ?, error_message = ? \
-         WHERE id = ?",
+         WHERE id = ? AND status = ? AND lease_owner = ?",
     )
     .bind(outcome.status)
     .bind(&outcome.finished_at)
@@ -586,8 +590,13 @@ pub async fn complete_push_attempt(
     .bind(&outcome.error_code)
     .bind(&outcome.error_message)
     .bind(work.attempt_id.to_string())
+    .bind(DELIVERY_STATUS_SENDING)
+    .bind(&work.lease_owner)
     .execute(&db.pool)
     .await?;
+    if updated.rows_affected() == 0 {
+        return Ok(());
+    }
     upsert_device_state_delivery(
         db,
         work.reminder_id,
@@ -624,6 +633,16 @@ pub async fn reconcile_all(
     db: &Database,
     policy: &ExpiryReminderPolicy,
 ) -> Result<ReconcileStats, sqlx::Error> {
+    let mut total = ReconcileStats::default();
+    for household_id in list_reconcile_household_ids(db).await? {
+        let stats = reconcile_household(db, household_id, policy).await?;
+        total.inserted += stats.inserted;
+        total.deleted += stats.deleted;
+    }
+    Ok(total)
+}
+
+pub async fn list_reconcile_household_ids(db: &Database) -> Result<Vec<Uuid>, sqlx::Error> {
     let household_rows = sqlx::query(
         "SELECT household_id FROM stock_batch \
          UNION \
@@ -632,16 +651,13 @@ pub async fn reconcile_all(
     .fetch_all(&db.pool)
     .await?;
 
-    let mut total = ReconcileStats::default();
-    for row in household_rows {
-        let household_id: String = row.try_get("household_id")?;
-        let household_id =
-            Uuid::parse_str(&household_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-        let stats = reconcile_household(db, household_id, policy).await?;
-        total.inserted += stats.inserted;
-        total.deleted += stats.deleted;
-    }
-    Ok(total)
+    household_rows
+        .into_iter()
+        .map(|row| {
+            let household_id: String = row.try_get("household_id")?;
+            Uuid::parse_str(&household_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))
+        })
+        .collect()
 }
 
 pub async fn push_delivery_metrics_summary(
@@ -1617,6 +1633,7 @@ mod tests {
                 &db1,
                 "2000-01-01T00:00:00.000Z",
                 10,
+                "worker-a",
                 "2000-01-01T00:01:00.000Z",
             )
             .await
@@ -1627,6 +1644,7 @@ mod tests {
                 &db2,
                 "2000-01-01T00:00:00.000Z",
                 10,
+                "worker-b",
                 "2000-01-01T00:01:00.000Z",
             )
             .await
@@ -1676,6 +1694,7 @@ mod tests {
             &db,
             "2000-01-01T00:00:00.000Z",
             10,
+            "worker-a",
             "2000-01-01T00:01:00.000Z",
         )
         .await
@@ -1701,6 +1720,7 @@ mod tests {
             &db,
             "2000-01-01T00:30:00.000Z",
             10,
+            "worker-b",
             "2000-01-01T00:31:00.000Z",
         )
         .await
@@ -1711,6 +1731,7 @@ mod tests {
             &db,
             "2000-01-01T01:00:00.000Z",
             10,
+            "worker-c",
             "2000-01-01T01:01:00.000Z",
         )
         .await
@@ -1735,6 +1756,7 @@ mod tests {
             &db,
             "2000-01-01T00:00:00.000Z",
             10,
+            "worker-a",
             "2000-01-01T00:01:00.000Z",
         )
         .await
@@ -1750,11 +1772,87 @@ mod tests {
             &db,
             "2000-01-01T00:05:00.000Z",
             10,
+            "worker-b",
             "2000-01-01T00:06:00.000Z",
         )
         .await
         .unwrap();
         assert_eq!(reclaimed.items.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn stale_push_claim_completion_does_not_update_device_state() {
+        let (db, household_id, user_id, pantry, product_id) = setup().await;
+        let (_reminder_id, _device_id, _) = seed_due_reminder_with_device(
+            &db,
+            household_id,
+            user_id,
+            pantry,
+            product_id,
+            "token-1",
+        )
+        .await;
+
+        let first = claim_due_push_work(
+            &db,
+            "2000-01-01T00:00:00.000Z",
+            10,
+            "worker-a",
+            "2000-01-01T00:01:00.000Z",
+        )
+        .await
+        .unwrap();
+        assert_eq!(first.items.len(), 1);
+        let stale_work = first.items[0].clone();
+
+        expire_stale_push_claims(&db, "2000-01-01T00:02:00.000Z", "2000-01-01T00:05:00.000Z")
+            .await
+            .unwrap();
+        let reclaimed = claim_due_push_work(
+            &db,
+            "2000-01-01T00:05:00.000Z",
+            10,
+            "worker-b",
+            "2000-01-01T00:06:00.000Z",
+        )
+        .await
+        .unwrap();
+        assert_eq!(reclaimed.items.len(), 1);
+
+        complete_push_attempt(
+            &db,
+            &stale_work,
+            &PushDeliveryResult {
+                channel: stale_work.channel.clone(),
+                status: DELIVERY_STATUS_SUCCEEDED,
+                finished_at: "2000-01-01T00:05:10.000Z".into(),
+                next_retry_at: None,
+                provider_message_id: Some("late-success".into()),
+                error_code: None,
+                error_message: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let row = sqlx::query(
+            "SELECT last_push_status, last_push_channel \
+             FROM reminder_device_state \
+             WHERE reminder_id = ? AND device_id = ?",
+        )
+        .bind(stale_work.reminder_id.to_string())
+        .bind(stale_work.device_row_id.to_string())
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            row.try_get::<String, _>("last_push_status").unwrap(),
+            DELIVERY_STATUS_SENDING
+        );
+        assert_eq!(
+            row.try_get::<String, _>("last_push_channel").unwrap(),
+            CHANNEL_APNS
+        );
     }
 
     #[tokio::test]
@@ -1774,6 +1872,7 @@ mod tests {
             &db,
             "2000-01-01T00:00:00.000Z",
             10,
+            "worker-a",
             "2000-01-01T00:01:00.000Z",
         )
         .await
@@ -1798,6 +1897,7 @@ mod tests {
             &db,
             "2000-01-02T00:00:00.000Z",
             10,
+            "worker-b",
             "2000-01-02T00:01:00.000Z",
         )
         .await
@@ -1822,6 +1922,7 @@ mod tests {
             &db,
             "2000-01-01T00:00:00.000Z",
             10,
+            "worker-a",
             "2000-01-01T00:01:00.000Z",
         )
         .await
@@ -1846,6 +1947,7 @@ mod tests {
             &db,
             "2000-01-02T00:00:00.000Z",
             10,
+            "worker-b",
             "2000-01-02T00:01:00.000Z",
         )
         .await
@@ -1870,6 +1972,7 @@ mod tests {
             &db,
             "2000-01-01T00:00:00.000Z",
             10,
+            "worker-a",
             "2000-01-01T00:01:00.000Z",
         )
         .await
@@ -1917,6 +2020,7 @@ mod tests {
             &db,
             "2000-01-02T00:00:00.000Z",
             10,
+            "worker-b",
             "2000-01-02T00:01:00.000Z",
         )
         .await
@@ -1942,6 +2046,7 @@ mod tests {
             &db,
             "2000-01-01T00:00:00.000Z",
             10,
+            "worker-a",
             "2000-01-01T00:01:00.000Z",
         )
         .await

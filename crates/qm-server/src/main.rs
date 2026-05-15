@@ -17,6 +17,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 mod email;
 mod metrics;
 mod push;
+mod worker;
 
 const USER_AGENT: &str = concat!(
     "Quartermaster/",
@@ -54,20 +55,20 @@ struct RawConfig {
     off_circuit_breaker_open_seconds: u64,
     ios_team_id: Option<String>,
     ios_bundle_id: Option<String>,
-    auth_session_sweep_interval_seconds: u64,
+    auth_session_cleanup_interval_seconds: u64,
     auth_session_sweep_trigger_secret: Option<String>,
     smoke_seed_trigger_secret: Option<String>,
     expiry_reminders_enabled: bool,
     expiry_reminder_lead_days: i64,
     expiry_reminder_fire_hour: u32,
     expiry_reminder_fire_minute: u32,
-    expiry_reminder_sweep_interval_seconds: u64,
+    expiry_reminder_reconcile_interval_seconds: u64,
     expiry_reminder_trigger_secret: Option<String>,
-    push_worker_enabled: bool,
-    push_worker_poll_interval_seconds: u64,
-    push_worker_batch_size: i64,
-    push_worker_claim_ttl_seconds: u64,
-    push_worker_retry_backoff_seconds: u64,
+    worker_poll_interval_seconds: u64,
+    worker_batch_size: i64,
+    worker_lease_ttl_seconds: u64,
+    worker_retry_backoff_seconds: u64,
+    worker_id: Option<String>,
     apns_enabled: bool,
     apns_environment: String,
     apns_topic: Option<String>,
@@ -133,20 +134,20 @@ impl Default for RawConfig {
             off_circuit_breaker_open_seconds: 60,
             ios_team_id: None,
             ios_bundle_id: None,
-            auth_session_sweep_interval_seconds: 0,
+            auth_session_cleanup_interval_seconds: 0,
             auth_session_sweep_trigger_secret: None,
             smoke_seed_trigger_secret: None,
             expiry_reminders_enabled: false,
             expiry_reminder_lead_days: 1,
             expiry_reminder_fire_hour: 9,
             expiry_reminder_fire_minute: 0,
-            expiry_reminder_sweep_interval_seconds: 0,
+            expiry_reminder_reconcile_interval_seconds: 0,
             expiry_reminder_trigger_secret: None,
-            push_worker_enabled: false,
-            push_worker_poll_interval_seconds: 30,
-            push_worker_batch_size: 25,
-            push_worker_claim_ttl_seconds: 60,
-            push_worker_retry_backoff_seconds: 300,
+            worker_poll_interval_seconds: 30,
+            worker_batch_size: 25,
+            worker_lease_ttl_seconds: 60,
+            worker_retry_backoff_seconds: 300,
+            worker_id: None,
             apns_enabled: false,
             apns_environment: "sandbox".into(),
             apns_topic: None,
@@ -197,9 +198,9 @@ struct LoadedConfig {
     database_url: String,
     log_format: LogFormat,
     api_config: Arc<ApiConfig>,
-    auth_session_sweep_interval: Option<Duration>,
-    expiry_reminder_sweep_interval: Option<Duration>,
-    push_worker_enabled: bool,
+    auth_session_cleanup_interval: Option<Duration>,
+    expiry_reminder_reconcile_interval: Option<Duration>,
+    job_worker_config: worker::JobWorkerConfig,
     push_worker_config: push::PushWorkerConfig,
     apns_config: push::ApnsConfig,
     fcm_config: push::FcmConfig,
@@ -210,7 +211,7 @@ struct LoadedConfig {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ProcessMode {
     Serve,
-    PushWorker,
+    Worker,
 }
 
 fn load_config() -> anyhow::Result<RawConfig> {
@@ -244,7 +245,7 @@ impl FromStr for ProcessMode {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "serve" => Ok(Self::Serve),
-            "push-worker" => Ok(Self::PushWorker),
+            "worker" => Ok(Self::Worker),
             other => Err(format!("unknown process mode: {other}")),
         }
     }
@@ -259,7 +260,7 @@ fn parse_process_mode(args: &[String]) -> anyhow::Result<ProcessMode> {
                 return ProcessMode::from_str(value).map_err(anyhow::Error::msg);
             }
             "serve" => return Ok(ProcessMode::Serve),
-            "push-worker" => return Ok(ProcessMode::PushWorker),
+            "worker" => return Ok(ProcessMode::Worker),
             _ => {}
         }
     }
@@ -324,8 +325,8 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
     if raw.invite_ttl_seconds <= 0 {
         anyhow::bail!("QM_INVITE_TTL_SECONDS must be >= 1");
     }
-    if raw.push_worker_batch_size <= 0 {
-        anyhow::bail!("QM_PUSH_WORKER_BATCH_SIZE must be >= 1");
+    if raw.worker_batch_size <= 0 {
+        anyhow::bail!("QM_WORKER_BATCH_SIZE must be >= 1");
     }
 
     let apns_environment =
@@ -401,6 +402,7 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
             .build()
             .context("building email HTTP client")?,
     })?;
+    let worker_id = worker_id(raw.worker_id);
 
     let api_config = Arc::new(ApiConfig {
         registration_mode: RegistrationMode::from_str(&raw.registration_mode)
@@ -455,16 +457,23 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         database_url: raw.database_url,
         log_format,
         api_config,
-        auth_session_sweep_interval: (raw.auth_session_sweep_interval_seconds > 0)
-            .then(|| Duration::from_secs(raw.auth_session_sweep_interval_seconds)),
-        expiry_reminder_sweep_interval: (raw.expiry_reminder_sweep_interval_seconds > 0)
-            .then(|| Duration::from_secs(raw.expiry_reminder_sweep_interval_seconds)),
-        push_worker_enabled: raw.push_worker_enabled,
+        auth_session_cleanup_interval: (raw.auth_session_cleanup_interval_seconds > 0)
+            .then(|| Duration::from_secs(raw.auth_session_cleanup_interval_seconds)),
+        expiry_reminder_reconcile_interval: (raw.expiry_reminder_reconcile_interval_seconds > 0)
+            .then(|| Duration::from_secs(raw.expiry_reminder_reconcile_interval_seconds)),
+        job_worker_config: worker::JobWorkerConfig {
+            poll_interval: Duration::from_secs(raw.worker_poll_interval_seconds.max(1)),
+            batch_size: raw.worker_batch_size,
+            lease_ttl: Duration::from_secs(raw.worker_lease_ttl_seconds.max(1)),
+            retry_backoff: Duration::from_secs(raw.worker_retry_backoff_seconds.max(1)),
+            worker_id: worker_id.clone(),
+        },
         push_worker_config: push::PushWorkerConfig {
-            poll_interval: Duration::from_secs(raw.push_worker_poll_interval_seconds.max(1)),
-            batch_size: raw.push_worker_batch_size,
-            claim_ttl: Duration::from_secs(raw.push_worker_claim_ttl_seconds.max(1)),
-            retry_backoff: Duration::from_secs(raw.push_worker_retry_backoff_seconds.max(1)),
+            poll_interval: Duration::from_secs(raw.worker_poll_interval_seconds.max(1)),
+            batch_size: raw.worker_batch_size,
+            worker_id,
+            claim_ttl: Duration::from_secs(raw.worker_lease_ttl_seconds.max(1)),
+            retry_backoff: Duration::from_secs(raw.worker_retry_backoff_seconds.max(1)),
         },
         apns_config: push::ApnsConfig {
             enabled: raw.apns_enabled,
@@ -518,6 +527,17 @@ fn normalize_web_auth_allowed_origins(raw: Option<String>) -> anyhow::Result<Vec
             Ok(url.origin().ascii_serialization())
         })
         .collect()
+}
+
+fn worker_id(configured: Option<String>) -> String {
+    if let Some(value) = configured
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+    {
+        return value;
+    }
+    let host = std::env::var("HOSTNAME").unwrap_or_else(|_| "worker".into());
+    format!("{host}-{}", uuid::Uuid::now_v7())
 }
 
 fn normalize_public_base_url(raw: Option<String>) -> anyhow::Result<Option<String>> {
@@ -634,15 +654,6 @@ async fn main() -> anyhow::Result<()> {
         .build()
         .context("building HTTP client")?;
 
-    if process_mode == ProcessMode::PushWorker
-        && !loaded.apns_config.is_ready()
-        && !loaded.fcm_config.is_ready()
-    {
-        anyhow::bail!(
-            "push-worker mode requires at least one configured push provider (APNs or FCM)"
-        );
-    }
-
     let state = AppState {
         db: db.clone(),
         config: loaded.api_config.clone(),
@@ -655,31 +666,17 @@ async fn main() -> anyhow::Result<()> {
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let mut tasks = Vec::new();
     if process_mode == ProcessMode::Serve {
-        if let Some(interval) = loaded.auth_session_sweep_interval {
-            tasks.push(tokio::spawn(spawn_auth_session_sweeper(
+        if let Some(interval) = loaded.auth_session_cleanup_interval {
+            tasks.push(tokio::spawn(spawn_auth_session_cleanup_enqueuer(
                 state.db.clone(),
                 interval,
                 shutdown_rx.clone(),
             )));
         }
-        if let Some(interval) = loaded.expiry_reminder_sweep_interval {
-            tasks.push(tokio::spawn(spawn_expiry_reminder_sweeper(
+        if let Some(interval) = loaded.expiry_reminder_reconcile_interval {
+            tasks.push(tokio::spawn(spawn_expiry_reminder_reconcile_enqueuer(
                 state.db.clone(),
-                loaded.api_config.expiry_reminder_policy.clone(),
                 interval,
-                shutdown_rx.clone(),
-            )));
-        }
-        if loaded.push_worker_enabled
-            && (loaded.apns_config.is_ready() || loaded.fcm_config.is_ready())
-        {
-            tasks.push(tokio::spawn(push::run_push_worker(
-                state.db.clone(),
-                http.clone(),
-                loaded.apns_config.clone(),
-                loaded.fcm_config.clone(),
-                loaded.push_worker_config.clone(),
-                loaded.metrics_config.handle.clone(),
                 shutdown_rx.clone(),
             )));
         }
@@ -713,15 +710,24 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("serving HTTP")?;
     } else {
-        let worker = tokio::spawn(push::run_push_worker(
+        let job_worker = tokio::spawn(worker::run_job_worker(
             db.clone(),
-            http.clone(),
-            loaded.apns_config.clone(),
-            loaded.fcm_config.clone(),
-            loaded.push_worker_config.clone(),
-            loaded.metrics_config.handle.clone(),
+            loaded.api_config.expiry_reminder_policy.clone(),
+            loaded.job_worker_config.clone(),
             shutdown_rx.clone(),
         ));
+        let push_worker =
+            (loaded.apns_config.is_ready() || loaded.fcm_config.is_ready()).then(|| {
+                tokio::spawn(push::run_push_worker(
+                    db.clone(),
+                    http.clone(),
+                    loaded.apns_config.clone(),
+                    loaded.fcm_config.clone(),
+                    loaded.push_worker_config.clone(),
+                    loaded.metrics_config.handle.clone(),
+                    shutdown_rx.clone(),
+                ))
+            });
         let worker_http = if loaded.metrics_config.enabled {
             Some(tokio::spawn(run_worker_http_server(
                 loaded.metrics_config.clone(),
@@ -731,8 +737,16 @@ async fn main() -> anyhow::Result<()> {
             None
         };
         tokio::select! {
-            result = worker => {
-                result.context("joining push worker task")?;
+            result = job_worker => {
+                result.context("joining background job worker task")?;
+            }
+            result = async {
+                if let Some(task) = push_worker {
+                    task.await.context("joining push worker task")?;
+                }
+                Ok::<(), anyhow::Error>(())
+            } => {
+                result?;
             }
             result = async {
                 if let Some(task) = worker_http {
@@ -776,7 +790,7 @@ async fn run_worker_http_server(
         .context("serving worker metrics HTTP")
 }
 
-async fn spawn_auth_session_sweeper(
+async fn spawn_auth_session_cleanup_enqueuer(
     db: Database,
     interval: Duration,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
@@ -787,30 +801,23 @@ async fn spawn_auth_session_sweeper(
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                match qm_db::auth_sessions::delete_stale_sessions(
-                    &db,
-                    &qm_db::now_utc_rfc3339(),
-                    qm_db::auth_sessions::STALE_SESSION_SWEEP_BATCH_SIZE,
-                )
-                .await
+                match worker::enqueue_auth_session_cleanup(&db).await
                 {
-                    Ok(deleted) => {
+                    Ok(queued) => {
                         counter!("qm_auth_session_sweeps_total", "surface" => "scheduled", "outcome" => "success")
                             .increment(1);
-                        counter!("qm_auth_session_swept_sessions_total", "surface" => "scheduled")
-                            .increment(deleted);
-                        tracing::info!(deleted_sessions = deleted, "completed auth session sweep")
+                        tracing::info!(queued, "queued auth session cleanup job")
                     }
                     Err(err) => {
                         counter!("qm_auth_session_sweeps_total", "surface" => "scheduled", "outcome" => "failure")
                             .increment(1);
-                        tracing::error!(?err, "auth session sweep failed")
+                        tracing::error!(?err, "queueing auth session cleanup failed")
                     }
                 }
             }
             changed = shutdown.changed() => {
                 if changed.is_ok() && *shutdown.borrow() {
-                    tracing::info!("auth session sweeper shutting down");
+                    tracing::info!("auth session cleanup enqueuer shutting down");
                     break;
                 }
             }
@@ -818,9 +825,8 @@ async fn spawn_auth_session_sweeper(
     }
 }
 
-async fn spawn_expiry_reminder_sweeper(
+async fn spawn_expiry_reminder_reconcile_enqueuer(
     db: Database,
-    policy: qm_db::reminders::ExpiryReminderPolicy,
     interval: Duration,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
@@ -830,30 +836,25 @@ async fn spawn_expiry_reminder_sweeper(
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                match qm_db::reminders::reconcile_all(&db, &policy).await {
-                    Ok(stats) => {
+                match worker::enqueue_expiry_reconcile_all(&db).await {
+                    Ok(queued) => {
                         counter!("qm_expiry_reminder_sweeps_total", "surface" => "scheduled", "outcome" => "success")
                             .increment(1);
-                        counter!("qm_expiry_reminder_sweep_inserted_total", "surface" => "scheduled")
-                            .increment(stats.inserted);
-                        counter!("qm_expiry_reminder_sweep_deleted_total", "surface" => "scheduled")
-                            .increment(stats.deleted);
                         tracing::info!(
-                            inserted = stats.inserted,
-                            deleted = stats.deleted,
-                            "completed expiry reminder sweep"
+                            queued,
+                            "queued expiry reminder reconcile jobs"
                         )
                     }
                     Err(err) => {
                         counter!("qm_expiry_reminder_sweeps_total", "surface" => "scheduled", "outcome" => "failure")
                             .increment(1);
-                        tracing::error!(?err, "expiry reminder sweep failed")
+                        tracing::error!(?err, "queueing expiry reminder reconcile jobs failed")
                     }
                 }
             }
             changed = shutdown.changed() => {
                 if changed.is_ok() && *shutdown.borrow() {
-                    tracing::info!("expiry reminder sweeper shutting down");
+                    tracing::info!("expiry reminder reconcile enqueuer shutting down");
                     break;
                 }
             }
@@ -1000,16 +1001,16 @@ mod tests {
     }
 
     #[test]
-    fn parses_sweep_interval_and_secret() {
+    fn parses_cleanup_interval_and_secret() {
         let loaded = build_config(RawConfig {
-            auth_session_sweep_interval_seconds: 60,
+            auth_session_cleanup_interval_seconds: 60,
             auth_session_sweep_trigger_secret: Some("secret".into()),
             smoke_seed_trigger_secret: Some("smoke-secret".into()),
             ..RawConfig::default()
         })
         .unwrap();
         assert_eq!(
-            loaded.auth_session_sweep_interval,
+            loaded.auth_session_cleanup_interval,
             Some(Duration::from_secs(60))
         );
         assert_eq!(
