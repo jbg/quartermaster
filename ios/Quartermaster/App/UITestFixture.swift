@@ -90,6 +90,13 @@ import UIKit
     ) async throws -> HouseholdDetail {
       throw APIError.unknown
     }
+    func exportCurrentHousehold() async throws -> HouseholdExportDocument { throw APIError.unknown }
+    func importHousehold(_ document: HouseholdExportDocument) async throws -> Me { try await me() }
+    func requestCurrentHouseholdDeletion(confirmationName: String) async throws
+      -> DeleteHouseholdResponse
+    {
+      throw APIError.unknown
+    }
     func householdMembers() async throws -> [Member] { [] }
     func removeHouseholdMember(userID: String) async throws {}
     func householdInvites() async throws -> [Invite] { [] }

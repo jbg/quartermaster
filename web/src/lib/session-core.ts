@@ -1,4 +1,5 @@
 import { trimTrailingSlashes, webBasePath, type BrowserLocationLike } from '$lib/paths';
+import type { DeleteHouseholdResponse, HouseholdExportDocument } from './generated/types.gen';
 
 export interface TokenPair {
   access_token?: string;
@@ -10,6 +11,7 @@ export interface TokenPair {
 export interface HouseholdSummary {
   id: string;
   name: string;
+  role?: string;
 }
 
 export interface MeResponse {
@@ -442,6 +444,11 @@ export interface SessionTransport {
   logout(): Promise<ApiResult<void>>;
   me(): Promise<ApiResult<MeResponse>>;
   switchHousehold(body: { household_id: string }): Promise<ApiResult<MeResponse>>;
+  householdCurrentExport?(): Promise<ApiResult<HouseholdExportDocument>>;
+  householdImport?(body: HouseholdExportDocument): Promise<ApiResult<MeResponse>>;
+  householdCurrentDeletionRequest?(body: {
+    confirmation_name: string;
+  }): Promise<ApiResult<DeleteHouseholdResponse>>;
   registerDevice?(body: {
     device_id: string;
     platform: string;
@@ -677,6 +684,25 @@ export class QuartermasterSession {
 
   switchHousehold(householdId: string): Promise<MeResponse> {
     return this.authed(() => this.transport.switchHousehold({ household_id: householdId }));
+  }
+
+  householdCurrentExport(): Promise<HouseholdExportDocument> {
+    return this.authed(() =>
+      required(this.transport.householdCurrentExport, 'householdCurrentExport')()
+    );
+  }
+
+  householdImport(document: HouseholdExportDocument): Promise<MeResponse> {
+    return this.authed(() => required(this.transport.householdImport, 'householdImport')(document));
+  }
+
+  householdCurrentDeletionRequest(confirmationName: string): Promise<DeleteHouseholdResponse> {
+    return this.authed(() =>
+      required(
+        this.transport.householdCurrentDeletionRequest,
+        'householdCurrentDeletionRequest'
+      )({ confirmation_name: confirmationName })
+    );
   }
 
   locationsList(): Promise<Location[]> {

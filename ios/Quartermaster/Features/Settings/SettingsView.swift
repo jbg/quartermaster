@@ -29,6 +29,11 @@ struct SettingsView: View {
   @State private var isSavingHousehold = false
   @State private var isCreatingInvite = false
   @State private var isSavingRecoveryEmail = false
+  @State private var isExportingBackup = false
+  @State private var isDeletingHousehold = false
+  @State private var deletionConfirmationName = ""
+  @State private var exportedBackupURL: URL?
+  @State private var householdDataMessage: String?
   @State private var errorMessage: String?
   @State private var showRenameConfirmation = false
   @State private var invitePendingRevocation: Invite?
@@ -71,6 +76,17 @@ struct SettingsView: View {
                 "Invites",
                 systemImage: "person.2.badge.plus",
                 detail: invites.isEmpty ? "No active invites" : "\(invites.count) active"
+              )
+            }
+          }
+          if isAdmin {
+            NavigationLink {
+              householdDataView
+            } label: {
+              settingsLinkLabel(
+                "Backup & deletion",
+                systemImage: "externaldrive.badge.timemachine",
+                detail: householdDataMessage
               )
             }
           }
@@ -413,6 +429,67 @@ struct SettingsView: View {
       }
     }
     .navigationTitle("Household")
+  }
+
+  private var householdDataView: some View {
+    Form {
+      Section {
+        Button {
+          Task { await exportBackup() }
+        } label: {
+          if isExportingBackup {
+            ProgressView()
+          } else {
+            Label("Export backup", systemImage: "square.and.arrow.up")
+          }
+        }
+        .disabled(isExportingBackup)
+
+        if let exportedBackupURL {
+          ShareLink(item: exportedBackupURL) {
+            Label("Share exported backup", systemImage: "square.and.arrow.up")
+          }
+        }
+
+        HouseholdBackupImportButton(title: "Import backup")
+
+        if let householdDataMessage {
+          Text(householdDataMessage)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+      } header: {
+        Text("Backup")
+      } footer: {
+        Text("Backups are JSON files that restore into a new household copy.")
+      }
+
+      if let household {
+        Section {
+          Text("Export a backup first if you want to keep this data.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+          TextField("Type \(household.name)", text: $deletionConfirmationName)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+          Button(role: .destructive) {
+            Task { await deleteCurrentHousehold() }
+          } label: {
+            if isDeletingHousehold {
+              ProgressView()
+            } else {
+              Text("Delete household")
+            }
+          }
+          .disabled(isDeletingHousehold || deletionConfirmationName != household.name)
+        } header: {
+          Text("Delete Household")
+        } footer: {
+          Text("Deletion is queued on the server and removes this household from your account.")
+        }
+      }
+    }
+    .navigationTitle("Household Data")
   }
 
   private var invitesView: some View {
@@ -944,6 +1021,42 @@ struct SettingsView: View {
     }
   }
 
+  private func exportBackup() async {
+    guard let household else { return }
+    isExportingBackup = true
+    defer { isExportingBackup = false }
+    do {
+      let document = try await appState.api.exportCurrentHousehold()
+      let data = try JSONEncoder().encode(document)
+      let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent(backupFileName(for: household.name))
+      try data.write(to: url, options: .atomic)
+      exportedBackupURL = url
+      householdDataMessage = "Backup exported."
+    } catch let err as APIError {
+      errorMessage = err.userFacingMessage
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+  }
+
+  private func deleteCurrentHousehold() async {
+    guard let household, deletionConfirmationName == household.name else { return }
+    isDeletingHousehold = true
+    defer { isDeletingHousehold = false }
+    do {
+      _ = try await appState.requestCurrentHouseholdDeletion(
+        confirmationName: deletionConfirmationName)
+      self.household = nil
+      deletionConfirmationName = ""
+      householdDataMessage = "Household deletion queued."
+    } catch let err as APIError {
+      errorMessage = err.userFacingMessage
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+  }
+
   private func createInvite() async {
     isCreatingInvite = true
     defer { isCreatingInvite = false }
@@ -1161,6 +1274,20 @@ struct SettingsView: View {
 
       On supported iPhone installs the link can open Quartermaster directly. If it doesn’t, open Quartermaster and choose “Redeem invite”.
       """
+  }
+
+  private func backupFileName(for householdName: String) -> String {
+    let safeName =
+      householdName
+      .lowercased()
+      .components(separatedBy: CharacterSet.alphanumerics.inverted)
+      .filter { !$0.isEmpty }
+      .joined(separator: "-")
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withFullDate]
+    let name = safeName.isEmpty ? "household" : safeName
+    let date = formatter.string(from: Date())
+    return "quartermaster-\(name)-\(date).json"
   }
 
   private func inviteJoinURL(_ invite: Invite) -> URL? {

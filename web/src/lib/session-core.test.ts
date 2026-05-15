@@ -7,6 +7,7 @@ import {
   type SessionTransport,
   type StoredSession
 } from './session-core';
+import type { HouseholdExportDocument } from './generated/types.gen';
 import { appPath } from './paths';
 
 function memoryStorage(initial: StoredSession): SessionStorage & { value: StoredSession } {
@@ -678,5 +679,69 @@ describe('QuartermasterSession', () => {
       'stock:product-2:2:kg',
       'update:batch-1:1.5:2026-05-01'
     ]);
+  });
+
+  it('proxies household backup and deletion calls through the transport', async () => {
+    const storage = memoryStorage({
+      serverUrl: 'http://localhost:8080'
+    });
+    const calls: unknown[] = [];
+    const document = {
+      schema_version: 1,
+      exported_at: '2026-05-15T00:00:00Z',
+      household: {
+        id: 'household-1',
+        name: 'Home',
+        timezone: 'Europe/Madrid',
+        measurement_system: 'metric',
+        created_at: '2026-05-15T00:00:00Z'
+      },
+      locations: [],
+      storage_vessels: [],
+      products: [],
+      stock_batches: [],
+      stock_events: [],
+      stock_reminders: [],
+      label_printers: [],
+      barcode_cache: []
+    } satisfies HouseholdExportDocument;
+    const transport = {
+      configure() {},
+      async refresh() {
+        throw new Error('unused');
+      },
+      async householdCurrentExport() {
+        calls.push('export');
+        return { data: document, response: { status: 200 } };
+      },
+      async householdImport(body: HouseholdExportDocument) {
+        calls.push(['import', body.household.name]);
+        return {
+          data: {
+            current_household: { id: 'imported', name: body.household.name },
+            households: [{ id: 'imported', name: body.household.name, role: 'admin' }]
+          },
+          response: { status: 201 }
+        };
+      },
+      async householdCurrentDeletionRequest(body: { confirmation_name: string }) {
+        calls.push(['delete', body.confirmation_name]);
+        return {
+          data: { household_id: 'imported', purge_job_id: 'job-1', status: 'queued' },
+          response: { status: 202 }
+        };
+      }
+    } as Partial<SessionTransport> as SessionTransport;
+
+    const session = new QuartermasterSession(storage, transport);
+
+    await expect(session.householdCurrentExport()).resolves.toEqual(document);
+    await expect(session.householdImport(document)).resolves.toMatchObject({
+      current_household: { id: 'imported', name: 'Home' }
+    });
+    await expect(session.householdCurrentDeletionRequest('Home')).resolves.toMatchObject({
+      status: 'queued'
+    });
+    expect(calls).toEqual(['export', ['import', 'Home'], ['delete', 'Home']]);
   });
 });

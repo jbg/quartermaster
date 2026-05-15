@@ -36,6 +36,10 @@ struct NoHouseholdView: View {
         onChanged: nil,
       )
 
+      Section("Restore") {
+        HouseholdBackupImportButton(title: "Import backup")
+      }
+
       Section("Server") {
         LabeledContent("URL", value: appState.serverURL.absoluteString)
       }

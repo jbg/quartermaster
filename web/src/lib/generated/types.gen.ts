@@ -166,6 +166,134 @@ export type CreateStorageVesselRequest = {
     tare_weight: string;
 };
 
+export type DeleteHouseholdRequest = {
+    confirmation_name: string;
+};
+
+export type DeleteHouseholdResponse = {
+    household_id: string;
+    purge_job_id: string;
+    status: string;
+};
+
+export type ExportBarcodeCacheEntry = {
+    barcode: string;
+    fetched_at: string;
+    miss: boolean;
+    product_id?: string | null;
+    raw_off_json?: string | null;
+};
+
+export type ExportHousehold = {
+    created_at: string;
+    id: string;
+    measurement_system: string;
+    name: string;
+    timezone: string;
+};
+
+export type ExportLabelPrinter = {
+    address: string;
+    created_at: string;
+    driver: string;
+    enabled: boolean;
+    id: string;
+    is_default: boolean;
+    media: string;
+    name: string;
+    port: number;
+    updated_at: string;
+};
+
+export type ExportLocation = {
+    created_at: string;
+    id: string;
+    kind: string;
+    name: string;
+    sort_order: number;
+};
+
+export type ExportProduct = {
+    brand?: string | null;
+    brand_local_override: boolean;
+    created_at: string;
+    default_unit: string;
+    deleted_at?: string | null;
+    family: string;
+    family_local_override: boolean;
+    fetched_at?: string | null;
+    id: string;
+    image_url?: string | null;
+    max_open_days?: number | null;
+    name: string;
+    name_local_override: boolean;
+    off_barcode?: string | null;
+    off_brand?: string | null;
+    off_name?: string | null;
+    off_package_quantity?: string | null;
+    off_package_unit?: string | null;
+    package_quantity?: string | null;
+    package_size_local_override: boolean;
+    package_unit?: string | null;
+    source: string;
+};
+
+export type ExportStockBatch = {
+    created_at: string;
+    depleted_at?: string | null;
+    expires_on?: string | null;
+    id: string;
+    initial_quantity: string;
+    location_id: string;
+    note?: string | null;
+    opened_on?: string | null;
+    package_quantity?: string | null;
+    package_unit?: string | null;
+    produced_on?: string | null;
+    product_id: string;
+    quantity: string;
+    storage_vessel_id?: string | null;
+    unit: string;
+};
+
+export type ExportStockEvent = {
+    batch_id: string;
+    consume_request_id?: string | null;
+    created_at: string;
+    event_type: string;
+    id: string;
+    note?: string | null;
+    package_quantity?: string | null;
+    package_unit?: string | null;
+    quantity_delta: string;
+};
+
+export type ExportStockReminder = {
+    acked_at?: string | null;
+    batch_id: string;
+    body: string;
+    created_at: string;
+    expires_on?: string | null;
+    fire_at: string;
+    household_fire_local_at: string;
+    household_timezone: string;
+    id: string;
+    kind: string;
+    location_id: string;
+    product_id: string;
+    title: string;
+};
+
+export type ExportStorageVessel = {
+    created_at: string;
+    id: string;
+    name: string;
+    sort_order: number;
+    tare_unit: string;
+    tare_weight: string;
+    updated_at: string;
+};
+
 export type HealthResponse = {
     status: string;
 };
@@ -182,6 +310,20 @@ export type HouseholdDto = {
     measurement_system: MeasurementSystem;
     name: string;
     timezone: string;
+};
+
+export type HouseholdExportDocument = {
+    barcode_cache: Array<ExportBarcodeCacheEntry>;
+    exported_at: string;
+    household: ExportHousehold;
+    label_printers: Array<ExportLabelPrinter>;
+    locations: Array<ExportLocation>;
+    products: Array<ExportProduct>;
+    schema_version: number;
+    stock_batches: Array<ExportStockBatch>;
+    stock_events: Array<ExportStockEvent>;
+    stock_reminders: Array<ExportStockReminder>;
+    storage_vessels: Array<ExportStorageVessel>;
 };
 
 export type HouseholdSummaryDto = {
@@ -998,6 +1140,44 @@ export type HouseholdCurrentUpdateResponses = {
 
 export type HouseholdCurrentUpdateResponse = HouseholdCurrentUpdateResponses[keyof HouseholdCurrentUpdateResponses];
 
+export type HouseholdCurrentDeletionRequestData = {
+    body: DeleteHouseholdRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/households/current/deletion';
+};
+
+export type HouseholdCurrentDeletionRequestErrors = {
+    403: ApiErrorBody;
+};
+
+export type HouseholdCurrentDeletionRequestError = HouseholdCurrentDeletionRequestErrors[keyof HouseholdCurrentDeletionRequestErrors];
+
+export type HouseholdCurrentDeletionRequestResponses = {
+    202: DeleteHouseholdResponse;
+};
+
+export type HouseholdCurrentDeletionRequestResponse = HouseholdCurrentDeletionRequestResponses[keyof HouseholdCurrentDeletionRequestResponses];
+
+export type HouseholdCurrentExportData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/households/current/export';
+};
+
+export type HouseholdCurrentExportErrors = {
+    403: ApiErrorBody;
+};
+
+export type HouseholdCurrentExportError = HouseholdCurrentExportErrors[keyof HouseholdCurrentExportErrors];
+
+export type HouseholdCurrentExportResponses = {
+    200: HouseholdExportDocument;
+};
+
+export type HouseholdCurrentExportResponse = HouseholdCurrentExportResponses[keyof HouseholdCurrentExportResponses];
+
 export type HouseholdInvitesListData = {
     body?: never;
     path?: never;
@@ -1064,6 +1244,25 @@ export type HouseholdMemberRemoveResponses = {
 };
 
 export type HouseholdMemberRemoveResponse = HouseholdMemberRemoveResponses[keyof HouseholdMemberRemoveResponses];
+
+export type HouseholdImportData = {
+    body: HouseholdExportDocument;
+    path?: never;
+    query?: never;
+    url: '/api/v1/households/import';
+};
+
+export type HouseholdImportErrors = {
+    400: ApiErrorBody;
+};
+
+export type HouseholdImportError = HouseholdImportErrors[keyof HouseholdImportErrors];
+
+export type HouseholdImportResponses = {
+    201: MeResponse;
+};
+
+export type HouseholdImportResponse = HouseholdImportResponses[keyof HouseholdImportResponses];
 
 export type InviteRedeemData = {
     body: RedeemInviteRequest;

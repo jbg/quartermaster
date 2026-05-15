@@ -40,6 +40,8 @@ import dev.quartermaster.android.generated.models.UnitDto
 import dev.quartermaster.android.generated.models.UnitFamily
 import dev.quartermaster.android.generated.models.UpdateLocationRequest
 import dev.quartermaster.android.generated.models.UpdateStorageVesselRequest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.net.URI
@@ -210,6 +212,9 @@ interface QuartermasterBackend {
     suspend fun createHousehold(name: String, timezone: String): MeResponse
     suspend fun redeemInvite(inviteCode: String)
     suspend fun currentHousehold(): HouseholdDetailDto
+    suspend fun exportCurrentHousehold(): String
+    suspend fun importHousehold(document: JsonElement): MeResponse
+    suspend fun requestCurrentHouseholdDeletion(confirmationName: String)
     suspend fun householdInvites(): List<InviteDto>
     suspend fun createInvite(body: CreateInviteRequest): InviteDto
     suspend fun locations(): List<LocationDto>
@@ -334,6 +339,9 @@ class QuartermasterApiBackend(
     }
 
     override suspend fun currentHousehold(): HouseholdDetailDto = api.currentHousehold()
+    override suspend fun exportCurrentHousehold(): String = api.exportCurrentHousehold()
+    override suspend fun importHousehold(document: JsonElement): MeResponse = api.importHousehold(document)
+    override suspend fun requestCurrentHouseholdDeletion(confirmationName: String) = api.requestCurrentHouseholdDeletion(confirmationName)
     override suspend fun householdInvites(): List<InviteDto> = api.householdInvites()
     override suspend fun createInvite(body: CreateInviteRequest): InviteDto = api.createInvite(body)
     override suspend fun locations(): List<LocationDto> = api.locations()
@@ -1001,6 +1009,34 @@ class QuartermasterAppState(
         }
     }
 
+    suspend fun exportHouseholdBackup(): String? {
+        var backup: String? = null
+        runSettingsAction {
+            backup = backend.exportCurrentHousehold()
+        }
+        return backup
+    }
+
+    suspend fun importHouseholdBackup(jsonText: String): Boolean {
+        var imported = false
+        runSettingsAction {
+            val document = Json.parseToJsonElement(jsonText)
+            applyAuthenticated(backend.importHousehold(document))
+            imported = true
+        }
+        return imported
+    }
+
+    suspend fun deleteCurrentHousehold(confirmationName: String): Boolean {
+        var deleted = false
+        runSettingsAction {
+            backend.requestCurrentHouseholdDeletion(confirmationName)
+            applyAuthenticated(backend.me())
+            deleted = true
+        }
+        return deleted
+    }
+
     suspend fun applyProductFilters(
         query: String,
         filter: ProductIncludeFilter,
@@ -1603,6 +1639,17 @@ class QuartermasterAppState(
 
     val hasPendingInviteHandoff: Boolean
         get() = pendingInviteContext != null
+
+    fun currentUserIsHouseholdAdmin(): Boolean {
+        val householdId = currentHouseholdId ?: return false
+        return meOrNull
+            ?.households
+            .orEmpty()
+            .firstOrNull { it.id.toString() == householdId }
+            ?.role
+            ?.name
+            ?.equals("ADMIN", ignoreCase = true) == true
+    }
 
     suspend fun resolveHouseholdScopedForbidden(): HouseholdScopedResolution = try {
         val me = backend.me()

@@ -1,5 +1,9 @@
 package dev.quartermaster.android
 
+import android.content.Context
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -30,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.StorageVesselDto
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 @Composable
 internal fun SettingsScreen(
@@ -118,6 +124,14 @@ internal fun SettingsScreen(
                     MetadataRow("Server", appState.serverUrl)
                 }
             }
+        }
+        item {
+            val canManageHouseholdData = appState.currentUserIsHouseholdAdmin()
+            HouseholdBackupControls(
+                appState = appState,
+                allowExport = canManageHouseholdData,
+                allowDelete = canManageHouseholdData,
+            )
         }
         item {
             SectionHeader(
@@ -485,6 +499,136 @@ internal fun SettingsScreen(
             }
         }
     }
+}
+
+@Composable
+internal fun HouseholdBackupControls(
+    appState: QuartermasterAppState,
+    modifier: Modifier = Modifier,
+    allowExport: Boolean = false,
+    allowDelete: Boolean = false,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val householdName = appState.meOrNull?.currentHousehold?.name.orEmpty()
+    var confirmationName by remember(householdName) { mutableStateOf("") }
+    var pendingExport by remember { mutableStateOf<String?>(null) }
+    val importLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri ?: return@rememberLauncherForActivityResult
+            scope.launch {
+                val text = context.readTextDocument(uri)
+                appState.importHouseholdBackup(text)
+            }
+        }
+    val exportLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/json"),
+        ) { uri ->
+            val json = pendingExport
+            pendingExport = null
+            if (uri != null && json != null) {
+                scope.launch {
+                    context.writeTextDocument(uri, json)
+                }
+            }
+        }
+
+    Card(modifier = modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SectionHeader(
+                title = "Household backup",
+                body = "Export this household or import a JSON backup as a new household copy.",
+            )
+            appState.settingsError?.let { ErrorCard("Backup action failed", it) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (allowExport) {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                val json = appState.exportHouseholdBackup()
+                                if (json != null) {
+                                    pendingExport = json
+                                    exportLauncher.launch(backupFileName(householdName))
+                                }
+                            }
+                        },
+                        enabled = appState.settingsLoadState != LoadState.Loading,
+                    ) {
+                        Text(
+                            if (appState.settingsLoadState == LoadState.Loading) {
+                                "Working..."
+                            } else {
+                                "Export backup"
+                            },
+                        )
+                    }
+                }
+                Button(
+                    onClick = {
+                        importLauncher.launch(arrayOf("application/json", "text/json", "*/*"))
+                    },
+                    enabled = appState.settingsLoadState != LoadState.Loading,
+                ) {
+                    Text("Import backup")
+                }
+            }
+            if (allowDelete && householdName.isNotBlank()) {
+                SectionHeader(
+                    title = "Delete household",
+                    body =
+                    "Export a backup first if you want to keep this data. Type the household name to queue deletion.",
+                )
+                OutlinedTextField(
+                    value = confirmationName,
+                    onValueChange = { confirmationName = it },
+                    label = { Text("Household name") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Button(
+                    onClick = {
+                        scope.launch {
+                            if (appState.deleteCurrentHousehold(confirmationName)) {
+                                confirmationName = ""
+                            }
+                        }
+                    },
+                    enabled =
+                    appState.settingsLoadState != LoadState.Loading &&
+                        confirmationName == householdName,
+                ) {
+                    Text(
+                        if (appState.settingsLoadState == LoadState.Loading) {
+                            "Working..."
+                        } else {
+                            "Delete household"
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun backupFileName(householdName: String): String {
+    val safeName =
+        householdName
+            .lowercase()
+            .replace(Regex("[^a-z0-9]+"), "-")
+            .trim('-')
+            .ifBlank { "household" }
+    return "quartermaster-$safeName-${LocalDate.now()}.json"
+}
+
+private fun Context.readTextDocument(uri: Uri): String = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+    ?: error("Backup file could not be opened.")
+
+private fun Context.writeTextDocument(uri: Uri, text: String) {
+    contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(text) }
+        ?: error("Backup file could not be written.")
 }
 
 @Composable

@@ -29,6 +29,7 @@
     type OpenFoodFactsCredentialStatusResponse,
     type StorageVessel
   } from '$lib/session-core';
+  import type { HouseholdExportDocument } from '$lib/generated/types.gen';
 
   let session: QuartermasterSession | null = $state(null);
   let me = $state<MeResponse | null>(null);
@@ -50,6 +51,10 @@
   let offMessage = $state<string | null>(null);
   let offError = $state<string | null>(null);
   let deleteError = $state<string | null>(null);
+  let householdDataMessage = $state<string | null>(null);
+  let householdDataError = $state<string | null>(null);
+  let deletionConfirmationName = $state('');
+  let importInput: HTMLInputElement | null = $state(null);
   let editingLocation = $state<Location | null>(null);
   let editingVessel = $state<StorageVessel | null>(null);
   let editingPrinter = $state<LabelPrinter | null>(null);
@@ -70,6 +75,10 @@
 
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
   const households = $derived(me?.households ?? []);
+  const currentMembership = $derived(
+    activeHousehold ? households.find((household) => household.id === activeHousehold.id) : null
+  );
+  const isAdmin = $derived(currentMembership?.role === 'admin');
   const sortedLocations = $derived(sortLocations(locations));
   const sortedStorageVessels = $derived(sortStorageVessels(storageVessels));
   const inventoryHref = $derived(appPath('/', page.url));
@@ -173,6 +182,86 @@
       await loadSettings();
     } catch {
       error = 'Household could not be switched.';
+    }
+  }
+
+  function beginImportBackup() {
+    householdDataError = null;
+    householdDataMessage = null;
+    importInput?.click();
+  }
+
+  async function importBackupFile(file: File | null | undefined) {
+    if (!session || !file) {
+      return;
+    }
+    actionBusy = 'household:import';
+    householdDataError = null;
+    householdDataMessage = null;
+    try {
+      const document = JSON.parse(await file.text()) as HouseholdExportDocument;
+      me = await session.householdImport(document);
+      householdDataMessage = 'Backup imported.';
+      await loadSettings();
+    } catch (err) {
+      householdDataError =
+        err instanceof SyntaxError
+          ? 'Choose a valid Quartermaster JSON backup.'
+          : err instanceof Error
+            ? err.message
+            : 'Backup could not be imported.';
+    } finally {
+      actionBusy = null;
+      if (importInput) {
+        importInput.value = '';
+      }
+    }
+  }
+
+  async function exportBackup() {
+    if (!session || !activeHousehold) {
+      return;
+    }
+    actionBusy = 'household:export';
+    householdDataError = null;
+    householdDataMessage = null;
+    try {
+      const document = await session.householdCurrentExport();
+      const json = JSON.stringify(document, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = documentLink(url, backupFileName(activeHousehold.name));
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      householdDataMessage = 'Backup exported.';
+    } catch (err) {
+      householdDataError = err instanceof Error ? err.message : 'Backup could not be exported.';
+    } finally {
+      actionBusy = null;
+    }
+  }
+
+  async function deleteHousehold() {
+    if (!session || !activeHousehold || deletionConfirmationName !== activeHousehold.name) {
+      return;
+    }
+    actionBusy = 'household:delete';
+    householdDataError = null;
+    householdDataMessage = null;
+    try {
+      await session.householdCurrentDeletionRequest(deletionConfirmationName);
+      me = await session.me();
+      locations = [];
+      storageVessels = [];
+      printers = [];
+      offCredentialStatus = null;
+      deletionConfirmationName = '';
+      householdDataMessage = 'Household deletion queued.';
+    } catch (err) {
+      householdDataError = err instanceof Error ? err.message : 'Household could not be deleted.';
+    } finally {
+      actionBusy = null;
     }
   }
 
@@ -635,6 +724,24 @@
       return order !== 0 ? order : a.name.localeCompare(b.name);
     });
   }
+
+  function backupFileName(householdName: string): string {
+    const safeName = householdName
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    return `quartermaster-${safeName || 'household'}-${new Date().toISOString().slice(0, 10)}.json`;
+  }
+
+  function documentLink(url: string, filename: string): HTMLAnchorElement {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.rel = 'noopener';
+    document.body.append(link);
+    return link;
+  }
 </script>
 
 <svelte:head>
@@ -648,8 +755,18 @@
   {activeHousehold}
   {households}
   onhouseholdchange={switchHousehold}
+  onimportbackup={beginImportBackup}
   onlogout={logout}
 >
+  <input
+    bind:this={importInput}
+    class="visually-hidden"
+    type="file"
+    accept="application/json,.json"
+    onchange={(event) => {
+      void importBackupFile(event.currentTarget.files?.[0]);
+    }}
+  />
   {#if loading}
     <section class="panel empty-state">
       <p class="muted">Loading settings...</p>
@@ -666,8 +783,17 @@
   {:else if me && !activeHousehold}
     <section class="panel empty-state">
       <h2>No household selected</h2>
-      <p class="muted">Switch to a household from the inventory screen before editing locations.</p>
+      <p class="muted">Switch to a household from the inventory screen or import a backup.</p>
       <a class="primary-action" href={inventoryHref}>Go to inventory</a>
+      <button
+        class="secondary-action"
+        type="button"
+        disabled={actionBusy !== null}
+        onclick={beginImportBackup}>Import backup</button
+      >
+      {#if householdDataError}
+        <p class="error-text">{householdDataError}</p>
+      {/if}
     </section>
   {:else}
     <section class="settings-layout">
@@ -969,6 +1095,56 @@
       </section>
 
       <aside class="panel settings-panel">
+        <section class="pairing-panel" aria-labelledby="household-data-heading">
+          <div class="section-heading compact">
+            <div>
+              <p class="eyebrow">Backup</p>
+              <h2 id="household-data-heading">Household data</h2>
+            </div>
+          </div>
+          {#if householdDataMessage}
+            <p class="muted">{householdDataMessage}</p>
+          {/if}
+          {#if householdDataError}
+            <p class="error-text">{householdDataError}</p>
+          {/if}
+          <div class="row-actions">
+            {#if isAdmin}
+              <button
+                class="primary-action"
+                type="button"
+                disabled={actionBusy !== null}
+                onclick={exportBackup}>Export backup</button
+              >
+            {/if}
+            <button
+              class="secondary-action"
+              type="button"
+              disabled={actionBusy !== null}
+              onclick={beginImportBackup}>Import backup</button
+            >
+          </div>
+          {#if isAdmin && activeHousehold}
+            <div class="delete-confirmation">
+              <h2>Delete {activeHousehold.name}?</h2>
+              <p class="muted">
+                Export a backup first if you want to keep this data. Type the household name to
+                queue deletion.
+              </p>
+              <label>
+                Household name
+                <input bind:value={deletionConfirmationName} autocomplete="off" />
+              </label>
+              <button
+                class="ghost-button danger"
+                type="button"
+                disabled={actionBusy !== null || deletionConfirmationName !== activeHousehold.name}
+                onclick={deleteHousehold}>Delete household</button
+              >
+            </div>
+          {/if}
+        </section>
+
         <section class="pairing-panel" aria-labelledby="pairing-heading">
           <div class="section-heading compact">
             <div>

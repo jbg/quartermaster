@@ -275,6 +275,39 @@ actor APIClient: AppStateAPI {
     }
   }
 
+  func exportCurrentHousehold() async throws -> HouseholdExportDocument {
+    let response = try await client.householdCurrentExport(.init())
+    switch response {
+    case .ok(let ok): return try ok.body.json
+    case .forbidden(let err): throw APIError.server(status: 403, body: try? err.body.json)
+    case .undocumented(let statusCode, _):
+      throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
+  func importHousehold(_ document: HouseholdExportDocument) async throws -> Me {
+    let response = try await client.householdImport(.init(body: .json(document)))
+    switch response {
+    case .created(let created): return try created.body.json
+    case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+    case .undocumented(let statusCode, _):
+      throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
+  func requestCurrentHouseholdDeletion(confirmationName: String) async throws
+    -> DeleteHouseholdResponse
+  {
+    let response = try await client.householdCurrentDeletionRequest(
+      .init(body: .json(.init(confirmationName: confirmationName))))
+    switch response {
+    case .accepted(let accepted): return try accepted.body.json
+    case .forbidden(let err): throw APIError.server(status: 403, body: try? err.body.json)
+    case .undocumented(let statusCode, _):
+      throw APIError.server(status: statusCode, body: nil)
+    }
+  }
+
   func householdMembers() async throws -> [Member] {
     let response = try await client.householdMembersList(.init())
     switch response {
