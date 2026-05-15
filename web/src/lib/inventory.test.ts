@@ -8,6 +8,7 @@ import {
   isDepleted,
   loadInventory,
   matchesInventorySearch,
+  packageConsumeAmount,
   productPreferredUnit,
   productSource,
   selectBatchAfterRefresh,
@@ -16,6 +17,7 @@ import {
   stockExpiry,
   stockLocation,
   stockName,
+  stockPackageSize,
   stockProducedValue,
   stockUnit,
   unitChoicesForFamily,
@@ -64,6 +66,21 @@ describe('inventory helpers', () => {
     expect(stockExpiry(batch)).toBe('2026-05-01');
     expect(isDepleted(batch)).toBe(true);
     expect(isDepleted({ id: 'batch-2', product: { name: 'Flour' }, quantity: '0' })).toBe(false);
+  });
+
+  it('derives whole-package consume amounts from saved package size', () => {
+    const batch = {
+      id: 'batch-1',
+      product: { name: 'Yogurt' },
+      quantity: '1.5',
+      unit: 'kg',
+      package_quantity: '500',
+      package_unit: 'g'
+    };
+
+    expect(stockPackageSize(batch)).toEqual({ quantity: '500', unit: 'g' });
+    expect(packageConsumeAmount(batch, '2')).toEqual({ quantity: '1000', unit: 'g' });
+    expect(packageConsumeAmount(batch, '0')).toBeNull();
   });
 
   it('gates restore to depleted batches whose latest event is discard', () => {

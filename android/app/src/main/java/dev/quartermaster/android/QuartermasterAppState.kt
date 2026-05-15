@@ -40,6 +40,8 @@ import dev.quartermaster.android.generated.models.UnitDto
 import dev.quartermaster.android.generated.models.UnitFamily
 import dev.quartermaster.android.generated.models.UpdateLocationRequest
 import dev.quartermaster.android.generated.models.UpdateStorageVesselRequest
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.net.URI
 import java.net.URLDecoder
 import java.time.LocalDate
@@ -157,6 +159,11 @@ data class ConsumeAndStoreFields(
     val openedOn: String = "",
     val remainderExpiresOn: String = "",
     val note: String = "",
+)
+
+data class ConsumePackageSize(
+    val quantity: String,
+    val unit: String,
 )
 
 data class BatchCounts(
@@ -1233,14 +1240,17 @@ class QuartermasterAppState(
         selectedTab = MainTab.Inventory
     }
 
-    suspend fun consumeSelectedBatch(quantity: String) {
+    suspend fun consumeSelectedBatch(
+        quantity: String,
+        unit: String? = null,
+    ) {
         val batch = selectedBatch ?: return
         runStockAction(batch.id.toString(), StockAction.Consume) {
             backend.consumeStock(
                 ConsumeRequest(
                     productId = batch.product.id,
                     quantity = quantity,
-                    unit = batch.unit,
+                    unit = unit ?: batch.unit,
                     locationId = batch.locationId,
                 ),
             )
@@ -1392,6 +1402,25 @@ class QuartermasterAppState(
         remainderLocationId = batch.locationId.toString(),
         openedOn = todayLocalDate(),
     )
+
+    fun packageSizeFor(batch: StockBatchDto): ConsumePackageSize? {
+        val quantity = batch.packageQuantity ?: return null
+        val unit = batch.packageUnit ?: return null
+        val parsedQuantity = quantity.toBigDecimalOrNull() ?: return null
+        if (parsedQuantity <= BigDecimal.ZERO) return null
+        return ConsumePackageSize(quantity = quantity, unit = unit)
+    }
+
+    fun packageConsumeAmount(
+        batch: StockBatchDto,
+        packageCount: String,
+    ): ConsumePackageSize? {
+        val packageSize = packageSizeFor(batch) ?: return null
+        val count = packageCount.trim().toBigDecimalOrNull() ?: return null
+        if (count <= BigDecimal.ZERO) return null
+        val quantity = count * packageSize.quantity.toBigDecimal()
+        return ConsumePackageSize(quantity = formatQuantity(quantity), unit = packageSize.unit)
+    }
 
     fun isBatchDepleted(batch: StockBatchDto): Boolean = batch.depletedAt != null
 
@@ -2003,6 +2032,11 @@ class QuartermasterAppState(
         private val LOCAL_DATE = Regex("""\d{4}-\d{2}-\d{2}""")
 
         private fun todayLocalDate(): String = LocalDate.now().toString()
+
+        private fun formatQuantity(value: BigDecimal): String = value
+            .setScale(3, RoundingMode.HALF_UP)
+            .stripTrailingZeros()
+            .toPlainString()
 
         private fun sortLocations(locations: List<LocationDto>): List<LocationDto> = locations.sortedWith(
             compareBy<LocationDto> { it.sortOrder }.thenBy { it.name.lowercase() },

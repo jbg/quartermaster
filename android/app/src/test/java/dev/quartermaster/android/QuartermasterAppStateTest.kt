@@ -1122,6 +1122,53 @@ class QuartermasterAppStateTest {
     }
 
     @Test
+    fun `package consume amount uses saved package size and unit`() = runTest {
+        val batch = stockBatchJson(packageQuantity = "400", packageUnit = "g")
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    stock = listOf(batch),
+                    locations = listOf(locationJson()),
+                ),
+            )
+
+        appState.bootstrap()
+
+        assertEquals(ConsumePackageSize("400", "g"), appState.packageSizeFor(batch))
+        assertEquals(ConsumePackageSize("1000", "g"), appState.packageConsumeAmount(batch, "2.5"))
+        assertEquals(null, appState.packageConsumeAmount(batch, "0"))
+    }
+
+    @Test
+    fun `consumeSelectedBatch can consume in saved package unit`() = runTest {
+        val batch = stockBatchJson(packageQuantity = "0.5", packageUnit = "kg")
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                stock = listOf(batch),
+                reminders = listOf(reminderJson()),
+                locations = listOf(locationJson()),
+            )
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend = backend,
+            )
+
+        appState.bootstrap()
+        appState.selectBatch(batch.id.toString())
+        val packageAmount = appState.packageConsumeAmount(batch, "2") ?: error("missing package amount")
+        appState.consumeSelectedBatch(packageAmount.quantity, packageAmount.unit)
+
+        val request = backend.consumeStockRequests.single()
+        assertEquals("1", request.quantity)
+        assertEquals("kg", request.unit)
+    }
+
+    @Test
     fun `consumeAndStoreSelectedBatch records request and selects remainder`() = runTest {
         val pantry = locationJson()
         val fridge = locationJson(id = "55555555-5555-5555-5555-555555555555", name = "Fridge", kind = "fridge", sortOrder = 1)
@@ -1618,6 +1665,8 @@ class QuartermasterAppStateTest {
         expiresOn: String? = null,
         openedOn: String? = null,
         note: String? = null,
+        packageQuantity: String? = null,
+        packageUnit: String? = null,
     ): StockBatchDto = json.decodeFromString(
         """
             {
@@ -1639,6 +1688,8 @@ class QuartermasterAppStateTest {
               ${expiresOn?.let { ""","expires_on": "$it"""" } ?: ""}
               ${openedOn?.let { ""","opened_on": "$it"""" } ?: ""}
               ${note?.let { ""","note": "$it"""" } ?: ""}
+              ${packageQuantity?.let { ""","package_quantity": "$it"""" } ?: ""}
+              ${packageUnit?.let { ""","package_unit": "$it"""" } ?: ""}
             }
         """.trimIndent(),
     )

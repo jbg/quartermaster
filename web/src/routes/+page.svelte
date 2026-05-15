@@ -18,6 +18,7 @@
     inventoryFilterLabel,
     isDepleted,
     loadInventory,
+    packageConsumeAmount,
     productBrand,
     productPreferredUnit,
     productSource,
@@ -31,6 +32,7 @@
     stockLocationId,
     stockName,
     stockOpened,
+    stockPackageSize,
     stockProduced,
     stockProducedValue,
     stockStorageVesselLabel,
@@ -100,6 +102,8 @@
   let selectedBatch = $state<StockBatch | null>(null);
   let batchDetailRefreshToken = 0;
   let history = $state<HistoryState>(emptyHistoryState);
+  let consumeEntryMode = $state<'package' | 'exact'>('exact');
+  let packageCount = $state('');
   let consumeQuantity = $state('');
   let storeRemainderQuantity = $state('');
   let storeRemainderLocationId = $state('');
@@ -315,7 +319,7 @@
     selectedBatch = nextSelection;
     selectedBatchId = nextSelection?.id ?? null;
     if (nextSelection) {
-      hydrateStoreRemainder(nextSelection);
+      resetConsumeFields(nextSelection);
     }
     if (nextSelection) {
       await refreshBatchDetail(nextSelection.id);
@@ -340,6 +344,7 @@
       }
       selectedBatch = batch;
       selectedBatchId = batch.id;
+      resetConsumeFields(batch);
       history = {
         status: 'loaded',
         items: events.items ?? [],
@@ -468,7 +473,7 @@
     selectedBatch = batch;
     selectedBatchId = batch.id;
     stockActionError = null;
-    hydrateStoreRemainder(batch);
+    resetConsumeFields(batch);
     closeStockEdit();
     await refreshBatchDetail(batch.id);
   }
@@ -481,8 +486,11 @@
     if (!session || !selectedBatch) {
       return;
     }
-    const quantity = consumeQuantity.trim();
-    if (!quantity || Number(quantity) <= 0) {
+    const amount =
+      consumeEntryMode === 'package'
+        ? packageConsumeAmount(selectedBatch, packageCount)
+        : { quantity: consumeQuantity.trim(), unit: stockUnit(selectedBatch) };
+    if (!amount || !amount.quantity || Number(amount.quantity) <= 0) {
       stockActionError = 'Enter a positive quantity to consume.';
       return;
     }
@@ -492,9 +500,10 @@
       await session.stockConsume({
         product_id: batchProductId(selectedBatch),
         location_id: stockLocationId(selectedBatch),
-        quantity,
-        unit: stockUnit(selectedBatch)
+        quantity: amount.quantity,
+        unit: amount.unit
       });
+      packageCount = '';
       consumeQuantity = '';
       await refreshWorkspace(selectedBatch.id);
     } catch {
@@ -510,6 +519,13 @@
     storeRemainderOpenedOn = localDateKey(new Date());
     storeRemainderExpiresOn = '';
     storeRemainderNote = '';
+  }
+
+  function resetConsumeFields(batch: StockBatch) {
+    consumeEntryMode = stockPackageSize(batch) ? 'package' : 'exact';
+    packageCount = '';
+    consumeQuantity = '';
+    hydrateStoreRemainder(batch);
   }
 
   async function consumeAndStoreSelected() {
@@ -879,6 +895,8 @@
     selectedBatchId = null;
     history = emptyHistoryState;
     consumeQuantity = '';
+    packageCount = '';
+    consumeEntryMode = 'exact';
     storeRemainderQuantity = '';
     storeRemainderLocationId = '';
     storeRemainderOpenedOn = '';
@@ -1721,15 +1739,46 @@
               void consumeSelected();
             }}
           >
+            {#if stockPackageSize(selectedBatch)}
+              <div class="segmented-control" aria-label="Consume entry mode">
+                <button
+                  type="button"
+                  class:active={consumeEntryMode === 'package'}
+                  disabled={isDepleted(selectedBatch) || stockEditBusy}
+                  onclick={() => (consumeEntryMode = 'package')}>Packages</button
+                >
+                <button
+                  type="button"
+                  class:active={consumeEntryMode === 'exact'}
+                  disabled={isDepleted(selectedBatch) || stockEditBusy}
+                  onclick={() => (consumeEntryMode = 'exact')}>Exact amount</button
+                >
+              </div>
+            {/if}
             <label>
-              Consume quantity
-              <input
-                bind:value={consumeQuantity}
-                inputmode="decimal"
-                placeholder={`Amount in ${stockUnit(selectedBatch)}`}
-                disabled={isDepleted(selectedBatch) || stockEditBusy}
-              />
+              {consumeEntryMode === 'package' ? 'Packages' : 'Consume quantity'}
+              {#if consumeEntryMode === 'package' && stockPackageSize(selectedBatch)}
+                <input
+                  bind:value={packageCount}
+                  inputmode="decimal"
+                  placeholder={`Each ${stockPackageSize(selectedBatch)?.quantity} ${stockPackageSize(selectedBatch)?.unit}`}
+                  disabled={isDepleted(selectedBatch) || stockEditBusy}
+                />
+              {:else}
+                <input
+                  bind:value={consumeQuantity}
+                  inputmode="decimal"
+                  placeholder={`Amount in ${stockUnit(selectedBatch)}`}
+                  disabled={isDepleted(selectedBatch) || stockEditBusy}
+                />
+              {/if}
             </label>
+            {#if consumeEntryMode === 'package' && stockPackageSize(selectedBatch)}
+              <p class="muted">
+                Uses the saved package size of {stockPackageSize(selectedBatch)?.quantity}
+                {stockPackageSize(selectedBatch)?.unit}.
+              </p>
+            {/if}
             <div class="stock-actions">
               <button
                 class="primary-action"
@@ -1757,7 +1806,7 @@
             {/if}
           </form>
 
-          {#if !isDepleted(selectedBatch)}
+          {#if !isDepleted(selectedBatch) && consumeEntryMode === 'exact'}
             <form
               class="action-panel"
               onsubmit={(event) => {

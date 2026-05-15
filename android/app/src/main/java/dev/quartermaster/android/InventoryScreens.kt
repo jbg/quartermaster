@@ -35,6 +35,11 @@ import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import kotlinx.coroutines.launch
 
+private enum class ConsumeEntryMode {
+    Package,
+    Exact,
+}
+
 @Composable
 internal fun InventoryScreen(
     appState: QuartermasterAppState,
@@ -333,7 +338,7 @@ internal fun BatchDetailScreen(
                     appState = appState,
                     batch = batch,
                     onEdit = onEditBatch,
-                    onConsume = { quantity -> scope.launch { appState.consumeSelectedBatch(quantity) } },
+                    onConsume = { quantity, unit -> scope.launch { appState.consumeSelectedBatch(quantity, unit) } },
                     onConsumeAndStore = { fields -> scope.launch { appState.consumeAndStoreSelectedBatch(fields) } },
                     onDiscard = { scope.launch { appState.discardBatch(batch.id.toString()) } },
                     onRestore = { scope.launch { appState.restoreBatch(batch.id.toString()) } },
@@ -349,24 +354,33 @@ private fun BatchDetailCard(
     appState: QuartermasterAppState,
     batch: StockBatchDto,
     onEdit: () -> Unit,
-    onConsume: (String) -> Unit,
+    onConsume: (String, String) -> Unit,
     onConsumeAndStore: (ConsumeAndStoreFields) -> Unit,
     onDiscard: () -> Unit,
     onRestore: () -> Unit,
     onClose: () -> Unit,
 ) {
     var consumeQuantity by remember(batch.id) { mutableStateOf("") }
+    var packageCount by remember(batch.id) { mutableStateOf("") }
     var remainderFields by remember(batch.id) {
         mutableStateOf(appState.consumeAndStoreFields(batch))
     }
     val batchId = batch.id.toString()
+    val packageSize = appState.packageSizeFor(batch)
+    var consumeEntryMode by remember(batch.id) {
+        mutableStateOf(if (packageSize != null) ConsumeEntryMode.Package else ConsumeEntryMode.Exact)
+    }
     val depleted = appState.isBatchDepleted(batch)
     val action = appState.stockActionFor(batchId)
-    val consumeQuantityNumber = consumeQuantity.trim().toDoubleOrNull()
+    val consumeAmount = when (consumeEntryMode) {
+        ConsumeEntryMode.Package -> appState.packageConsumeAmount(batch, packageCount)
+        ConsumeEntryMode.Exact -> ConsumePackageSize(consumeQuantity.trim(), batch.unit)
+    }
     val consumeDisabledReason = when {
         depleted -> "This batch is depleted."
-        consumeQuantity.isBlank() -> "Enter an amount to consume."
-        consumeQuantityNumber == null || consumeQuantityNumber <= 0 -> "Enter a positive amount."
+        consumeEntryMode == ConsumeEntryMode.Package && packageCount.isBlank() -> "Enter packages to consume."
+        consumeEntryMode == ConsumeEntryMode.Exact && consumeQuantity.isBlank() -> "Enter an amount to consume."
+        consumeAmount?.quantity?.toDoubleOrNull()?.let { it > 0 } != true -> "Enter a positive amount."
         else -> null
     }
     val remainderValidation = appState.validateConsumeAndStoreFields(remainderFields)
@@ -418,96 +432,141 @@ private fun BatchDetailCard(
                 ) {
                     Text(if (action == StockAction.Update) "Saving..." else "Edit")
                 }
+                if (packageSize != null) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { consumeEntryMode = ConsumeEntryMode.Package },
+                            enabled = action == null,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("Packages")
+                        }
+                        Button(
+                            onClick = { consumeEntryMode = ConsumeEntryMode.Exact },
+                            enabled = action == null,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("Exact amount")
+                        }
+                    }
+                }
                 OutlinedTextField(
-                    value = consumeQuantity,
-                    onValueChange = { consumeQuantity = it },
-                    label = { Text("Use quantity (${batch.unit})") },
+                    value = if (consumeEntryMode == ConsumeEntryMode.Package) packageCount else consumeQuantity,
+                    onValueChange = {
+                        if (consumeEntryMode == ConsumeEntryMode.Package) {
+                            packageCount = it
+                        } else {
+                            consumeQuantity = it
+                        }
+                    },
+                    label = {
+                        Text(
+                            if (consumeEntryMode == ConsumeEntryMode.Package) {
+                                "Packages"
+                            } else {
+                                "Use quantity (${batch.unit})"
+                            },
+                        )
+                    },
+                    placeholder = {
+                        if (consumeEntryMode == ConsumeEntryMode.Package && packageSize != null) {
+                            Text("Each ${packageSize.quantity} ${packageSize.unit}")
+                        }
+                    },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier
                         .testTag(SmokeTag.batchConsumeField(batchId))
                         .fillMaxWidth(),
                 )
+                if (consumeEntryMode == ConsumeEntryMode.Package && packageSize != null) {
+                    Text(
+                        "Uses the saved package size of ${packageSize.quantity} ${packageSize.unit}.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 consumeDisabledReason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 Button(
-                    onClick = { onConsume(consumeQuantity.trim()) },
+                    onClick = { consumeAmount?.let { onConsume(it.quantity, it.unit) } },
                     enabled = consumeDisabledReason == null && action == null,
                     modifier = Modifier.testTag(SmokeTag.batchConsumeButton(batchId)),
                 ) {
                     Text(if (action == StockAction.Consume) "Using..." else "Use stock")
                 }
-                SectionHeader(
-                    title = "Open and store remainder",
-                    body = "Use part of this batch and create a new open batch for what is left.",
-                )
-                OutlinedTextField(
-                    value = remainderFields.usedQuantity,
-                    onValueChange = { remainderFields = remainderFields.copy(usedQuantity = it) },
-                    label = { Text("Used quantity (${batch.unit})") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier
-                        .testTag(SmokeTag.batchRemainderUsedQuantity(batchId))
-                        .fillMaxWidth(),
-                )
-                Card {
-                    Column(
+                if (consumeEntryMode == ConsumeEntryMode.Exact) {
+                    SectionHeader(
+                        title = "Open and store remainder",
+                        body = "Use part of this batch and create a new open batch for what is left.",
+                    )
+                    OutlinedTextField(
+                        value = remainderFields.usedQuantity,
+                        onValueChange = { remainderFields = remainderFields.copy(usedQuantity = it) },
+                        label = { Text("Used quantity (${batch.unit})") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text("Remainder location", style = MaterialTheme.typography.titleSmall)
-                        appState.sortedLocations().forEach { location ->
-                            val locationId = location.id.toString()
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Text(location.name)
-                                if (remainderFields.remainderLocationId == locationId) {
-                                    Text("Selected", style = MaterialTheme.typography.labelMedium)
-                                } else {
-                                    TextButton(
-                                        modifier = Modifier.testTag(SmokeTag.batchRemainderLocation(batchId, locationId)),
-                                        onClick = { remainderFields = remainderFields.copy(remainderLocationId = locationId) },
-                                    ) {
-                                        Text("Select")
+                            .testTag(SmokeTag.batchRemainderUsedQuantity(batchId))
+                            .fillMaxWidth(),
+                    )
+                    Card {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text("Remainder location", style = MaterialTheme.typography.titleSmall)
+                            appState.sortedLocations().forEach { location ->
+                                val locationId = location.id.toString()
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Text(location.name)
+                                    if (remainderFields.remainderLocationId == locationId) {
+                                        Text("Selected", style = MaterialTheme.typography.labelMedium)
+                                    } else {
+                                        TextButton(
+                                            modifier = Modifier.testTag(SmokeTag.batchRemainderLocation(batchId, locationId)),
+                                            onClick = { remainderFields = remainderFields.copy(remainderLocationId = locationId) },
+                                        ) {
+                                            Text("Select")
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-                OutlinedTextField(
-                    value = remainderFields.openedOn,
-                    onValueChange = { remainderFields = remainderFields.copy(openedOn = it) },
-                    label = { Text("Opened on (YYYY-MM-DD)") },
-                    modifier = Modifier
-                        .testTag(SmokeTag.batchRemainderOpened(batchId))
-                        .fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = remainderFields.remainderExpiresOn,
-                    onValueChange = { remainderFields = remainderFields.copy(remainderExpiresOn = it) },
-                    label = { Text("Remainder expiry override (YYYY-MM-DD)") },
-                    modifier = Modifier
-                        .testTag(SmokeTag.batchRemainderExpires(batchId))
-                        .fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = remainderFields.note,
-                    onValueChange = { remainderFields = remainderFields.copy(note = it) },
-                    label = { Text("Remainder note") },
-                    modifier = Modifier
-                        .testTag(SmokeTag.batchRemainderNote(batchId))
-                        .fillMaxWidth(),
-                )
-                remainderValidation?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                Button(
-                    onClick = { onConsumeAndStore(remainderFields) },
-                    enabled = remainderValidation == null && action == null,
-                    modifier = Modifier.testTag(SmokeTag.batchRemainderButton(batchId)),
-                ) {
-                    Text(if (action == StockAction.ConsumeAndStore) "Storing..." else "Open and store remainder")
+                    OutlinedTextField(
+                        value = remainderFields.openedOn,
+                        onValueChange = { remainderFields = remainderFields.copy(openedOn = it) },
+                        label = { Text("Opened on (YYYY-MM-DD)") },
+                        modifier = Modifier
+                            .testTag(SmokeTag.batchRemainderOpened(batchId))
+                            .fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = remainderFields.remainderExpiresOn,
+                        onValueChange = { remainderFields = remainderFields.copy(remainderExpiresOn = it) },
+                        label = { Text("Remainder expiry override (YYYY-MM-DD)") },
+                        modifier = Modifier
+                            .testTag(SmokeTag.batchRemainderExpires(batchId))
+                            .fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = remainderFields.note,
+                        onValueChange = { remainderFields = remainderFields.copy(note = it) },
+                        label = { Text("Remainder note") },
+                        modifier = Modifier
+                            .testTag(SmokeTag.batchRemainderNote(batchId))
+                            .fillMaxWidth(),
+                    )
+                    remainderValidation?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    Button(
+                        onClick = { onConsumeAndStore(remainderFields) },
+                        enabled = remainderValidation == null && action == null,
+                        modifier = Modifier.testTag(SmokeTag.batchRemainderButton(batchId)),
+                    ) {
+                        Text(if (action == StockAction.ConsumeAndStore) "Storing..." else "Open and store remainder")
+                    }
                 }
                 TextButton(
                     onClick = onDiscard,

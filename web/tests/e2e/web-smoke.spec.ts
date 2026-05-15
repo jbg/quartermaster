@@ -234,6 +234,7 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
   await expect(page.getByRole('heading', { name: /Smoke/ }).last()).toBeVisible();
   await expect(page.getByRole('heading', { name: 'History' })).toBeVisible();
 
+  await page.getByRole('button', { name: 'Exact amount' }).click();
   await page.getByLabel('Consume quantity').fill('10');
   await page.getByRole('button', { name: 'Consume' }).click();
   await expect(page.getByTestId('detail-quantity')).toHaveText('490 g');
