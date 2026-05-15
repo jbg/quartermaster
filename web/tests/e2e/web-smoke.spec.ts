@@ -16,6 +16,7 @@ let fixture: SmokeFixture;
 
 interface SmokeFixture {
   username: string;
+  email: string;
   password: string;
   invite_code: string;
   barcode: string;
@@ -279,7 +280,7 @@ test('renders the join browser fallback from the served app', async ({ page }) =
 
 async function login(page: Page) {
   await page.goto('/');
-  await page.getByLabel('Username').fill(fixture.username);
+  await page.getByLabel('Email').fill(fixture.email);
   await page.getByLabel('Password').fill(fixture.password);
   await page.getByRole('button', { name: 'Log in' }).click();
 }
