@@ -1,2 +1,8 @@
 packages:
   - web
+
+overrides:
+  cookie@<0.7.0: ">=0.7.0 <0.8.0"
+
+allowBuilds:
+  lefthook: true

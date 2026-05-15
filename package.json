@@ -2,7 +2,6 @@
   "name": "quartermaster",
   "version": "1.23.0",
   "private": true,
-  "packageManager": "pnpm@10.33.2",
   "scripts": {
     "format": "pnpm format:rust && pnpm format:swift && pnpm format:kotlin && pnpm format:shell && pnpm format:web",
     "format:check": "pnpm format:rust:check && pnpm format:swift:check && pnpm format:kotlin:check && pnpm format:shell:check && pnpm format:web:check",
@@ -24,13 +23,8 @@
     "web:test:e2e": "pnpm -C web test:e2e"
   },
   "volta": {
-    "node": "25.9.0",
-    "pnpm": "10.33.2"
-  },
-  "pnpm": {
-    "overrides": {
-      "cookie@<0.7.0": ">=0.7.0 <0.8.0"
-    }
+    "node": "26.1.0",
+    "pnpm": "11.1.2"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.1",
