@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.26.0](https://github.com/jbg/quartermaster/compare/1.25.0...1.26.0) (2026-05-15)
+
+
+### Features
+
+* add hosted household data lifecycle ([e391dd5](https://github.com/jbg/quartermaster/commit/e391dd538436228afc8b8fd930aa11e5634c07fe))
+* add household data management UI ([72c6451](https://github.com/jbg/quartermaster/commit/72c6451042bc8d53d5a97cd6dbde37f8458b0f6e))
+* make background workers horizontally safe ([e791623](https://github.com/jbg/quartermaster/commit/e791623017cfa294c87867f60205a04a3df865b9))
+
 ## [1.25.0](https://github.com/jbg/quartermaster/compare/1.24.0...1.25.0) (2026-05-15)
 
 
