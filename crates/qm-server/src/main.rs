@@ -46,8 +46,23 @@ struct RawConfig {
     rate_limit_auth_burst: u32,
     rate_limit_barcode_per_minute: u32,
     rate_limit_barcode_burst: u32,
+    rate_limit_barcode_household_per_minute: u32,
+    rate_limit_barcode_household_burst: u32,
+    rate_limit_barcode_user_per_minute: u32,
+    rate_limit_barcode_user_burst: u32,
+    rate_limit_invite_household_per_minute: u32,
+    rate_limit_invite_household_burst: u32,
+    rate_limit_invite_user_per_minute: u32,
+    rate_limit_invite_user_burst: u32,
     rate_limit_history_per_minute: u32,
     rate_limit_history_burst: u32,
+    plan_limit_members_per_household: i64,
+    plan_limit_households_per_billing_account: i64,
+    plan_limit_products_per_household: i64,
+    plan_limit_stock_batches_per_household: i64,
+    plan_limit_reminders_per_household: i64,
+    plan_limit_invites_per_household: i64,
+    plan_limit_push_devices_per_user: i64,
     off_timeout_seconds: u64,
     off_max_retries: u32,
     off_retry_base_delay_ms: u64,
@@ -125,8 +140,23 @@ impl Default for RawConfig {
             rate_limit_auth_burst: 5,
             rate_limit_barcode_per_minute: 60,
             rate_limit_barcode_burst: 20,
+            rate_limit_barcode_household_per_minute: 0,
+            rate_limit_barcode_household_burst: 0,
+            rate_limit_barcode_user_per_minute: 0,
+            rate_limit_barcode_user_burst: 0,
+            rate_limit_invite_household_per_minute: 0,
+            rate_limit_invite_household_burst: 0,
+            rate_limit_invite_user_per_minute: 0,
+            rate_limit_invite_user_burst: 0,
             rate_limit_history_per_minute: 120,
             rate_limit_history_burst: 40,
+            plan_limit_members_per_household: -1,
+            plan_limit_households_per_billing_account: -1,
+            plan_limit_products_per_household: -1,
+            plan_limit_stock_batches_per_household: -1,
+            plan_limit_reminders_per_household: -1,
+            plan_limit_invites_per_household: -1,
+            plan_limit_push_devices_per_user: -1,
             off_timeout_seconds: 5,
             off_max_retries: 2,
             off_retry_base_delay_ms: 200,
@@ -219,6 +249,10 @@ fn load_config() -> anyhow::Result<RawConfig> {
         .merge(Env::prefixed("QM_"))
         .extract()
         .context("loading config")
+}
+
+fn plan_limit(value: i64) -> Option<i64> {
+    (value >= 0).then_some(value)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -429,9 +463,36 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
             requests_per_minute: raw.rate_limit_barcode_per_minute,
             burst: raw.rate_limit_barcode_burst,
         },
+        rate_limit_barcode_household: qm_api::RateLimitConfig {
+            requests_per_minute: raw.rate_limit_barcode_household_per_minute,
+            burst: raw.rate_limit_barcode_household_burst,
+        },
+        rate_limit_barcode_user: qm_api::RateLimitConfig {
+            requests_per_minute: raw.rate_limit_barcode_user_per_minute,
+            burst: raw.rate_limit_barcode_user_burst,
+        },
+        rate_limit_invite_household: qm_api::RateLimitConfig {
+            requests_per_minute: raw.rate_limit_invite_household_per_minute,
+            burst: raw.rate_limit_invite_household_burst,
+        },
+        rate_limit_invite_user: qm_api::RateLimitConfig {
+            requests_per_minute: raw.rate_limit_invite_user_per_minute,
+            burst: raw.rate_limit_invite_user_burst,
+        },
         rate_limit_history: qm_api::RateLimitConfig {
             requests_per_minute: raw.rate_limit_history_per_minute,
             burst: raw.rate_limit_history_burst,
+        },
+        plan_limits: qm_api::PlanLimits {
+            members_per_household: plan_limit(raw.plan_limit_members_per_household),
+            households_per_billing_account: plan_limit(
+                raw.plan_limit_households_per_billing_account,
+            ),
+            products_per_household: plan_limit(raw.plan_limit_products_per_household),
+            stock_batches_per_household: plan_limit(raw.plan_limit_stock_batches_per_household),
+            reminders_per_household: plan_limit(raw.plan_limit_reminders_per_household),
+            invites_per_household: plan_limit(raw.plan_limit_invites_per_household),
+            push_devices_per_user: plan_limit(raw.plan_limit_push_devices_per_user),
         },
         off_timeout: Duration::from_secs(raw.off_timeout_seconds),
         off_max_retries: raw.off_max_retries,

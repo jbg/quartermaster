@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 pub mod auth_sessions;
 pub mod barcode_cache;
+pub mod billing;
 pub mod devices;
 pub mod household_exports;
 pub mod households;
@@ -23,6 +24,7 @@ pub mod locations;
 pub mod memberships;
 pub mod off_credentials;
 pub mod products;
+pub mod quotas;
 pub mod reminders;
 pub mod stock;
 pub mod stock_events;

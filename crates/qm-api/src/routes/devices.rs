@@ -2,7 +2,7 @@ use axum::{http::StatusCode, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{auth::CurrentUser, error::ApiResult, AppState};
+use crate::{auth::CurrentUser, error::ApiResult, quotas, AppState};
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/devices/register", post(register))
@@ -51,6 +51,12 @@ pub async fn register(
     current: CurrentUser,
     Json(req): Json<RegisterDeviceRequest>,
 ) -> ApiResult<StatusCode> {
+    if qm_db::devices::find_by_session_device(&state.db, current.session_id, &req.device_id)
+        .await?
+        .is_none()
+    {
+        quotas::ensure_can_add_push_device(&state, current.user_id).await?;
+    }
     qm_db::devices::upsert(
         &state.db,
         &qm_db::devices::DeviceUpsert {
