@@ -30,6 +30,7 @@ pub mod email;
 pub mod error;
 pub mod labels;
 pub mod openfoodfacts;
+pub mod quotas;
 pub mod rate_limit;
 pub mod routes;
 pub mod types;
@@ -71,7 +72,12 @@ pub struct ApiConfig {
     pub rate_limit_trusted_proxy_cidrs: Vec<TrustedProxyNet>,
     pub rate_limit_auth: RateLimitConfig,
     pub rate_limit_barcode: RateLimitConfig,
+    pub rate_limit_barcode_household: RateLimitConfig,
+    pub rate_limit_barcode_user: RateLimitConfig,
+    pub rate_limit_invite_household: RateLimitConfig,
+    pub rate_limit_invite_user: RateLimitConfig,
     pub rate_limit_history: RateLimitConfig,
+    pub plan_limits: PlanLimits,
     pub off_timeout: Duration,
     pub off_max_retries: u32,
     pub off_retry_base_delay: Duration,
@@ -147,6 +153,17 @@ pub struct RateLimitConfig {
     pub burst: u32,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct PlanLimits {
+    pub members_per_household: Option<i64>,
+    pub households_per_billing_account: Option<i64>,
+    pub products_per_household: Option<i64>,
+    pub stock_batches_per_household: Option<i64>,
+    pub reminders_per_household: Option<i64>,
+    pub invites_per_household: Option<i64>,
+    pub push_devices_per_user: Option<i64>,
+}
+
 impl Default for ApiConfig {
     fn default() -> Self {
         Self {
@@ -170,10 +187,27 @@ impl Default for ApiConfig {
                 requests_per_minute: 60,
                 burst: 20,
             },
+            rate_limit_barcode_household: RateLimitConfig {
+                requests_per_minute: 0,
+                burst: 0,
+            },
+            rate_limit_barcode_user: RateLimitConfig {
+                requests_per_minute: 0,
+                burst: 0,
+            },
             rate_limit_history: RateLimitConfig {
                 requests_per_minute: 120,
                 burst: 40,
             },
+            rate_limit_invite_household: RateLimitConfig {
+                requests_per_minute: 0,
+                burst: 0,
+            },
+            rate_limit_invite_user: RateLimitConfig {
+                requests_per_minute: 0,
+                burst: 0,
+            },
+            plan_limits: PlanLimits::default(),
             off_timeout: Duration::from_secs(5),
             off_max_retries: 2,
             off_retry_base_delay: Duration::from_millis(200),

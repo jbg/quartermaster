@@ -112,7 +112,11 @@ pub fn parse_trusted_proxy_cidrs(value: &str) -> Result<Vec<TrustedProxyNet>, St
 pub enum RateLimitTarget {
     Auth,
     Barcode,
+    BarcodeHousehold,
+    BarcodeUser,
     History,
+    InviteHousehold,
+    InviteUser,
 }
 
 #[derive(Clone)]
@@ -131,7 +135,11 @@ impl RateLimitLayerState {
 pub struct RateLimiters {
     auth: KeyedRateLimiter,
     barcode: KeyedRateLimiter,
+    barcode_household: KeyedRateLimiter,
+    barcode_user: KeyedRateLimiter,
     history: KeyedRateLimiter,
+    invite_household: KeyedRateLimiter,
+    invite_user: KeyedRateLimiter,
 }
 
 impl RateLimiters {
@@ -139,15 +147,27 @@ impl RateLimiters {
         Self {
             auth: KeyedRateLimiter::new(config.rate_limit_auth.clone()),
             barcode: KeyedRateLimiter::new(config.rate_limit_barcode.clone()),
+            barcode_household: KeyedRateLimiter::new(config.rate_limit_barcode_household.clone()),
+            barcode_user: KeyedRateLimiter::new(config.rate_limit_barcode_user.clone()),
             history: KeyedRateLimiter::new(config.rate_limit_history.clone()),
+            invite_household: KeyedRateLimiter::new(config.rate_limit_invite_household.clone()),
+            invite_user: KeyedRateLimiter::new(config.rate_limit_invite_user.clone()),
         }
+    }
+
+    pub async fn allow(&self, target: RateLimitTarget, key: &str) -> bool {
+        self.for_target(target).allow(key).await
     }
 
     fn for_target(&self, target: RateLimitTarget) -> &KeyedRateLimiter {
         match target {
             RateLimitTarget::Auth => &self.auth,
             RateLimitTarget::Barcode => &self.barcode,
+            RateLimitTarget::BarcodeHousehold => &self.barcode_household,
+            RateLimitTarget::BarcodeUser => &self.barcode_user,
             RateLimitTarget::History => &self.history,
+            RateLimitTarget::InviteHousehold => &self.invite_household,
+            RateLimitTarget::InviteUser => &self.invite_user,
         }
     }
 }
@@ -228,6 +248,9 @@ impl KeyedRateLimiter {
     }
 
     async fn allow(&self, key: &str) -> bool {
+        if self.config.requests_per_minute == 0 || self.config.burst == 0 {
+            return true;
+        }
         let now = Instant::now();
         let mut buckets = self.buckets.lock().await;
         buckets.retain(|_, state| now.duration_since(state.last_seen) <= self.entry_ttl);

@@ -5708,7 +5708,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "1.25.0"
+version = "1.26.0"
 dependencies = [
  "anyhow",
  "qm-api",

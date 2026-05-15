@@ -24,6 +24,7 @@ use uuid::Uuid;
 use crate::{
     auth::{self, CurrentUser},
     error::{ApiError, ApiResult},
+    quotas,
     rate_limit::RateLimitLayerState,
     routes::patch::{
         reject_remove, reject_value_for_remove, string_value, JsonPatchDocument, JsonPatchOperation,
@@ -403,6 +404,12 @@ pub async fn create(
     }
 
     let quantity = create_stock_quantity(&req, &product, storage_vessel.as_ref())?;
+    quotas::ensure_can_add_stock_batch(
+        &state,
+        household_id,
+        state.config.expiry_reminder_policy.enabled && req.expires_on.is_some(),
+    )
+    .await?;
 
     let row = qm_db::stock::create_with_storage_vessel(
         &state.db,
@@ -721,6 +728,12 @@ pub async fn consume_and_store(
         None => derive_open_expiry(&opened_on, product.max_open_days)?,
     };
     validate_remainder_expiry(&opened_on, &remainder_expires_on)?;
+    quotas::ensure_can_add_stock_batch(
+        &state,
+        household_id,
+        state.config.expiry_reminder_policy.enabled,
+    )
+    .await?;
 
     let result = qm_db::stock::consume_and_store_remainder(
         &state.db,

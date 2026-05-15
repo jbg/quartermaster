@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::{
     auth,
     error::{ApiError, ApiResult},
+    quotas,
     rate_limit::RateLimitLayerState,
     routes::{accounts, households},
     AppState, RegistrationMode,
@@ -192,6 +193,11 @@ pub async fn join_invite(
     if code.is_empty() {
         return Err(ApiError::BadRequest("invite_code is required".into()));
     }
+    if let Some(invite) = qm_db::invites::find_by_code(&state.db, &code).await? {
+        if qm_db::invites::classify(&invite) == qm_db::invites::InviteStatus::Active {
+            quotas::ensure_can_add_member(&state, invite.household_id).await?;
+        }
+    }
     let verification = accounts::signup_verification(&state, &email).await?;
     let password_hash = auth::hash_password(&req.password)?;
     let mut tx = qm_db::invites::begin_invite_tx(&state.db).await?;
@@ -302,6 +308,9 @@ async fn create_user_household(
     )
     .await?;
     let household = qm_db::households::create_in_tx(&mut tx, household_name, timezone).await?;
+    let billing_account =
+        qm_db::billing::create_in_tx(&mut tx, qm_db::billing::DEFAULT_PLAN_KEY).await?;
+    qm_db::billing::attach_household_in_tx(&mut tx, household.id, billing_account.id).await?;
     qm_db::locations::seed_defaults_in_tx(&mut tx, household.id).await?;
     qm_db::memberships::insert_in_tx(&mut tx, household.id, user.id, ROLE_ADMIN).await?;
     accounts::send_signup_verification(state, email, &verification.code, &verification.expires_at)

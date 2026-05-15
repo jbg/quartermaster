@@ -15,6 +15,8 @@ use uuid::Uuid;
 use crate::{
     auth::{self, CurrentUser},
     error::{ApiError, ApiResult},
+    quotas,
+    rate_limit::RateLimitTarget,
     routes::accounts::{self, MeResponse, UserDto},
     types::MembershipRole,
     AppState,
@@ -126,7 +128,19 @@ pub async fn create_household(
     let name = validate_household_name(&req.name)?;
     let timezone = validate_household_timezone(&req.timezone)?;
     let measurement_system = req.measurement_system.unwrap_or(MeasurementSystem::DEFAULT);
+    let billing_account_id =
+        quotas::ensure_can_add_household_for_current_account(&state, current.household_id).await?;
     let mut household = qm_db::households::create(&state.db, name, timezone).await?;
+    if let Some(billing_account_id) = billing_account_id {
+        qm_db::billing::attach_household(&state.db, household.id, billing_account_id).await?;
+    } else {
+        qm_db::billing::ensure_for_household(
+            &state.db,
+            household.id,
+            qm_db::billing::DEFAULT_PLAN_KEY,
+        )
+        .await?;
+    }
     if measurement_system != MeasurementSystem::DEFAULT {
         household = qm_db::households::update(
             &state.db,
@@ -381,6 +395,8 @@ pub async fn create_invite(
 ) -> ApiResult<(StatusCode, Json<InviteDto>)> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
     auth::require_admin(&current)?;
+    enforce_invite_rate_limits(&state, household_id, current.user_id).await?;
+    quotas::ensure_can_add_invite(&state, household_id).await?;
     if req.max_uses < 1 {
         return Err(ApiError::BadRequest("max_uses must be >= 1".into()));
     }
@@ -462,6 +478,15 @@ pub async fn redeem_invite(
     Json(req): Json<RedeemInviteRequest>,
 ) -> ApiResult<StatusCode> {
     let code = req.invite_code.trim().to_ascii_uppercase();
+    if let Some(invite) = qm_db::invites::find_by_code(&state.db, &code).await? {
+        if qm_db::invites::classify(&invite) == qm_db::invites::InviteStatus::Active
+            && qm_db::memberships::find(&state.db, invite.household_id, current.user_id)
+                .await?
+                .is_none()
+        {
+            quotas::ensure_can_add_member(&state, invite.household_id).await?;
+        }
+    }
     match qm_db::invites::redeem_for_user(&state.db, &code, current.user_id).await {
         Ok(qm_db::invites::RedeemOutcome::Joined { household_id })
         | Ok(qm_db::invites::RedeemOutcome::AlreadyMember { household_id }) => {
@@ -477,6 +502,28 @@ pub async fn redeem_invite(
         Err(qm_db::invites::RedeemInviteError::InvalidInvite) => Err(ApiError::InvalidInvite),
         Err(qm_db::invites::RedeemInviteError::Database(err)) => Err(ApiError::Database(err)),
     }
+}
+
+async fn enforce_invite_rate_limits(
+    state: &AppState,
+    household_id: Uuid,
+    user_id: Uuid,
+) -> ApiResult<()> {
+    if !state
+        .rate_limiters
+        .allow(
+            RateLimitTarget::InviteHousehold,
+            &format!("household:{household_id}"),
+        )
+        .await
+        || !state
+            .rate_limiters
+            .allow(RateLimitTarget::InviteUser, &format!("user:{user_id}"))
+            .await
+    {
+        return Err(ApiError::RateLimited);
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_household_name(name: &str) -> ApiResult<&str> {

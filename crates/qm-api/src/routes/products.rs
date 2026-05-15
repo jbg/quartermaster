@@ -19,7 +19,8 @@ use crate::{
         self, OffContributionForm, OffResult, OffWriteCredentials, OffWriteResult,
         OpenFoodFactsClient,
     },
-    rate_limit::RateLimitLayerState,
+    quotas,
+    rate_limit::{RateLimitLayerState, RateLimitTarget},
     routes::patch::{
         reject_remove, reject_value_for_remove, string_value, JsonPatchDocument, JsonPatchOperation,
     },
@@ -370,6 +371,7 @@ pub async fn by_barcode(
 ) -> ApiResult<Json<BarcodeLookupResponse>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
     auth::require_read_write(&current)?;
+    enforce_barcode_rate_limits(&state, household_id, current.user_id).await?;
     let barcode = barcode::normalise(&raw_barcode)?;
 
     let now = jiff::Timestamp::now();
@@ -418,6 +420,7 @@ pub async fn create(
 ) -> ApiResult<(StatusCode, Json<ProductDto>)> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
     auth::require_read_write(&current)?;
+    quotas::ensure_can_add_product(&state, household_id).await?;
 
     let name = req.name.trim();
     if name.is_empty() || name.len() > 256 {
@@ -475,6 +478,28 @@ pub async fn create(
     .await?;
 
     Ok((StatusCode::CREATED, Json(row.try_into()?)))
+}
+
+async fn enforce_barcode_rate_limits(
+    state: &AppState,
+    household_id: Uuid,
+    user_id: Uuid,
+) -> ApiResult<()> {
+    if !state
+        .rate_limiters
+        .allow(
+            RateLimitTarget::BarcodeHousehold,
+            &format!("household:{household_id}"),
+        )
+        .await
+        || !state
+            .rate_limiters
+            .allow(RateLimitTarget::BarcodeUser, &format!("user:{user_id}"))
+            .await
+    {
+        return Err(ApiError::RateLimited);
+    }
+    Ok(())
 }
 
 #[utoipa::path(
