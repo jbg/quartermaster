@@ -60,7 +60,8 @@ extension MembershipRole {
   var displayName: String {
     switch self {
     case .admin: "Admin"
-    case .member: "Member"
+    case .readOnly: "Read-only"
+    case .readWrite: "Read-write"
     }
   }
 }

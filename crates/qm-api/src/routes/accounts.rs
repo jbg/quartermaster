@@ -94,7 +94,8 @@ pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct RegisterRequest {
-    pub username: String,
+    pub email: String,
+    pub display_name: String,
     pub password: String,
     /// Required unless the server is in `first_run_only` mode and no users
     /// exist yet, or in `open` mode.
@@ -105,7 +106,7 @@ pub struct RegisterRequest {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct LoginRequest {
-    pub username: String,
+    pub email: String,
     pub password: String,
     pub device_label: Option<String>,
 }
@@ -126,8 +127,8 @@ pub struct TokenPair {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct UserDto {
     pub id: Uuid,
-    pub username: String,
-    pub email: Option<String>,
+    pub email: String,
+    pub display_name: String,
     pub email_verified_at: Option<String>,
     pub pending_email: Option<String>,
     pub pending_email_verification_expires_at: Option<String>,
@@ -219,12 +220,12 @@ pub struct ConfirmEmailVerificationRequest {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PasswordResetRequest {
-    pub username: String,
+    pub email: String,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PasswordResetConfirmRequest {
-    pub username: String,
+    pub email: String,
     pub new_password: String,
     pub code: Option<String>,
     pub token: Option<String>,
@@ -253,6 +254,13 @@ pub(crate) struct OpenFoodFactsPlainCredentials {
     pub password: String,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct SignupVerification {
+    pub code: String,
+    pub code_hash: String,
+    pub expires_at: String,
+}
+
 #[utoipa::path(
     post,
     path = "/auth/register",
@@ -271,34 +279,49 @@ pub async fn register(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
 ) -> ApiResult<(StatusCode, HeaderMap, Json<TokenPair>)> {
-    validate_credentials(&req.username, &req.password)?;
+    let email = validate_email(&req.email)?;
+    let display_name = validate_display_name(&req.display_name)?;
+    validate_password(&req.password)?;
+    let verification = signup_verification(&state, &email).await?;
 
     let existing_count = qm_db::users::count(&state.db).await?;
     let password_hash = auth::hash_password(&req.password)?;
 
     let user = match (state.config.registration_mode, existing_count) {
         (RegistrationMode::FirstRunOnly, 0) => {
-            if qm_db::users::find_by_username(&state.db, &req.username)
+            if qm_db::users::find_by_email(&state.db, &email)
                 .await?
                 .is_some()
             {
-                return Err(ApiError::Conflict("username already taken".into()));
+                return Err(ApiError::Conflict("email already registered".into()));
             }
-            let user = qm_db::users::create(&state.db, &req.username, None, &password_hash).await?;
-            user
+            create_user_with_pending_verification(
+                &state,
+                &email,
+                display_name,
+                &password_hash,
+                &verification,
+            )
+            .await?
         }
         (RegistrationMode::FirstRunOnly, _) => {
             return Err(ApiError::RegistrationDisabled);
         }
         (RegistrationMode::Open, _) => {
-            if qm_db::users::find_by_username(&state.db, &req.username)
+            if qm_db::users::find_by_email(&state.db, &email)
                 .await?
                 .is_some()
             {
-                return Err(ApiError::Conflict("username already taken".into()));
+                return Err(ApiError::Conflict("email already registered".into()));
             }
-            let user = qm_db::users::create(&state.db, &req.username, None, &password_hash).await?;
-            user
+            create_user_with_pending_verification(
+                &state,
+                &email,
+                display_name,
+                &password_hash,
+                &verification,
+            )
+            .await?
         }
         (RegistrationMode::InviteOnly, _) => {
             let code = req
@@ -308,21 +331,34 @@ pub async fn register(
                 .filter(|s| !s.is_empty())
                 .ok_or_else(|| ApiError::BadRequest("invite_code is required".into()))?
                 .to_ascii_uppercase();
-            match qm_db::invites::register_user_with_invite(
+            let mut tx = qm_db::invites::begin_invite_tx(&state.db).await?;
+            match qm_db::invites::register_user_with_invite_in_tx(
                 &state.db,
+                &mut tx,
                 &code,
-                &req.username,
-                None,
+                &email,
+                display_name,
                 &password_hash,
+                Some((&verification.code_hash, &verification.expires_at)),
             )
             .await
             {
-                Ok(registered) => registered.user,
+                Ok(registered) => {
+                    send_signup_verification(
+                        &state,
+                        &email,
+                        &verification.code,
+                        &verification.expires_at,
+                    )
+                    .await?;
+                    tx.commit().await?;
+                    registered.user
+                }
                 Err(qm_db::invites::RegisterWithInviteError::InvalidInvite) => {
                     return Err(ApiError::InvalidInvite);
                 }
-                Err(qm_db::invites::RegisterWithInviteError::UsernameTaken) => {
-                    return Err(ApiError::Conflict("username already taken".into()));
+                Err(qm_db::invites::RegisterWithInviteError::EmailTaken) => {
+                    return Err(ApiError::Conflict("email already registered".into()));
                 }
                 Err(qm_db::invites::RegisterWithInviteError::Database(err)) => {
                     return Err(ApiError::Database(err));
@@ -330,7 +366,6 @@ pub async fn register(
             }
         }
     };
-
     let initial_household_id = qm_db::households::find_for_user(&state.db, user.id)
         .await?
         .map(|household| household.id);
@@ -443,7 +478,8 @@ pub async fn login(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
 ) -> ApiResult<(HeaderMap, Json<TokenPair>)> {
-    let user = qm_db::users::find_by_username(&state.db, &req.username)
+    let email = validate_email(&req.email)?;
+    let user = qm_db::users::find_by_email(&state.db, &email)
         .await?
         .ok_or(ApiError::Unauthorized)?;
     if !auth::verify_password(&req.password, &user.password_hash) {
@@ -598,7 +634,7 @@ pub async fn request_email_verification(
     current: CurrentUser,
     Json(req): Json<RequestEmailVerificationRequest>,
 ) -> ApiResult<Json<RequestEmailVerificationResponse>> {
-    let email = validate_recovery_email(&req.email)?;
+    let email = validate_email(&req.email)?;
     let Some(email_transport) = state.email_transport.as_ref() else {
         return Err(ApiError::ServiceUnavailable(
             "email delivery is not configured".into(),
@@ -656,10 +692,10 @@ pub async fn request_password_reset(
     State(state): State<AppState>,
     Json(req): Json<PasswordResetRequest>,
 ) -> ApiResult<(StatusCode, Json<PasswordResetRequestResponse>)> {
-    let username = validate_username(&req.username)?;
-    if let Some(user) = qm_db::users::find_by_username(&state.db, username).await? {
+    let email = validate_email(&req.email)?;
+    if let Some(user) = qm_db::users::find_by_email(&state.db, &email).await? {
         if let (Some(email), Some(_verified_at), Some(email_transport)) = (
-            user.email.as_deref(),
+            Some(user.email.as_str()),
             user.email_verified_at.as_deref(),
             state.email_transport.as_ref(),
         ) {
@@ -681,7 +717,6 @@ pub async fn request_password_reset(
             .await?;
             if let Err(err) = email_transport
                 .send(password_reset_email(
-                    username,
                     email,
                     &code,
                     &token,
@@ -722,7 +757,7 @@ pub async fn confirm_password_reset(
     State(state): State<AppState>,
     Json(req): Json<PasswordResetConfirmRequest>,
 ) -> ApiResult<StatusCode> {
-    let username = validate_username(&req.username)?;
+    let email = validate_email(&req.email)?;
     validate_password(&req.new_password)?;
     let code = req.code.as_deref().map(normalize_reset_code).transpose()?;
     let token = req.token.as_deref().map(validate_reset_token).transpose()?;
@@ -737,7 +772,7 @@ pub async fn confirm_password_reset(
     let token_hash = token.as_deref().map(auth::sha256_hex);
     let updated = qm_db::users::reset_password_by_code_or_token(
         &state.db,
-        username,
+        &email,
         code_hash.as_deref(),
         token_hash.as_deref(),
         &password_hash,
@@ -811,12 +846,11 @@ pub async fn confirm_email_verification(
     security(("bearer" = [])),
 )]
 pub async fn clear_recovery_email(
-    State(state): State<AppState>,
-    current: CurrentUser,
+    State(_state): State<AppState>,
+    _current: CurrentUser,
 ) -> ApiResult<Json<MeResponse>> {
-    qm_db::users::clear_recovery_email(&state.db, current.user_id).await?;
-    Ok(Json(
-        build_me_response(&state, current.user_id, current.household_id).await?,
+    Err(ApiError::BadRequest(
+        "account email is required and cannot be cleared".into(),
     ))
 }
 
@@ -858,17 +892,9 @@ pub async fn switch_household(
     ))
 }
 
-pub(crate) fn validate_credentials(username: &str, password: &str) -> ApiResult<()> {
-    validate_username(username)?;
+pub(crate) fn validate_credentials(email: &str, password: &str) -> ApiResult<()> {
+    validate_email(email)?;
     validate_password(password)
-}
-
-fn validate_username(username: &str) -> ApiResult<&str> {
-    let username = username.trim();
-    if username.is_empty() || username.len() > 64 {
-        return Err(ApiError::BadRequest("username must be 1..=64 chars".into()));
-    }
-    Ok(username)
 }
 
 fn validate_password(password: &str) -> ApiResult<()> {
@@ -904,7 +930,7 @@ fn validate_reset_token(token: &str) -> ApiResult<String> {
     Ok(token.to_owned())
 }
 
-fn validate_recovery_email(value: &str) -> ApiResult<String> {
+pub(crate) fn validate_email(value: &str) -> ApiResult<String> {
     let email = value.trim().to_ascii_lowercase();
     if email.is_empty() || email.len() > 254 {
         return Err(ApiError::BadRequest("email must be 1..=254 chars".into()));
@@ -918,6 +944,16 @@ fn validate_recovery_email(value: &str) -> ApiResult<String> {
     Ok(email)
 }
 
+pub(crate) fn validate_display_name(value: &str) -> ApiResult<&str> {
+    let display_name = value.trim();
+    if display_name.is_empty() || display_name.len() > 128 {
+        return Err(ApiError::BadRequest(
+            "display_name must be 1..=128 chars".into(),
+        ));
+    }
+    Ok(display_name)
+}
+
 fn recovery_verification_email(email: &str, code: &str, expires_at: &str) -> EmailMessage {
     EmailMessage {
         to: EmailAddress::new(email, None),
@@ -928,8 +964,82 @@ fn recovery_verification_email(email: &str, code: &str, expires_at: &str) -> Ema
     }
 }
 
+pub(crate) async fn signup_verification(
+    state: &AppState,
+    _email: &str,
+) -> ApiResult<SignupVerification> {
+    if state.email_transport.is_none() {
+        return Err(ApiError::ServiceUnavailable(
+            "email delivery is not configured".into(),
+        ));
+    }
+    let code = auth::generate_human_code(10);
+    let expires_at = Timestamp::now()
+        .checked_add(SignedDuration::from_mins(30))
+        .map_err(|e| {
+            ApiError::Internal(anyhow::anyhow!("email verification expiry overflow: {e}"))
+        })?;
+    let expires_at = qm_db::time::format_timestamp(expires_at);
+    Ok(SignupVerification {
+        code_hash: auth::sha256_hex(&code),
+        code,
+        expires_at,
+    })
+}
+
+pub(crate) async fn create_user_with_pending_verification(
+    state: &AppState,
+    email: &str,
+    display_name: &str,
+    password_hash: &str,
+    verification: &SignupVerification,
+) -> ApiResult<qm_db::users::UserRow> {
+    let mut tx = state.db.pool.begin().await?;
+    let user = match qm_db::users::create_in_tx(&mut tx, email, display_name, password_hash).await {
+        Ok(user) => user,
+        Err(err) if qm_db::memberships::is_unique_violation(&err) => {
+            return Err(ApiError::Conflict("email already registered".into()));
+        }
+        Err(err) => return Err(ApiError::Database(err)),
+    };
+    qm_db::users::create_email_verification_in_tx(
+        &mut tx,
+        user.id,
+        email,
+        &verification.code_hash,
+        &verification.expires_at,
+    )
+    .await?;
+    send_signup_verification(state, email, &verification.code, &verification.expires_at).await?;
+    tx.commit().await?;
+    Ok(user)
+}
+
+pub(crate) async fn send_signup_verification(
+    state: &AppState,
+    email: &str,
+    code: &str,
+    expires_at: &str,
+) -> ApiResult<()> {
+    let Some(email_transport) = state.email_transport.as_ref() else {
+        return Err(ApiError::ServiceUnavailable(
+            "email delivery is not configured".into(),
+        ));
+    };
+    email_transport
+        .send(recovery_verification_email(email, code, expires_at))
+        .await
+        .map_err(|err| {
+            tracing::warn!(
+                target_email = %email,
+                error = ?err.source(),
+                "signup email verification delivery failed"
+            );
+            ApiError::ServiceUnavailable("email delivery failed".into())
+        })
+}
+
 fn password_reset_email(
-    username: &str,
     email: &str,
     code: &str,
     token: &str,
@@ -937,14 +1047,14 @@ fn password_reset_email(
     expires_at: &str,
 ) -> EmailMessage {
     let mut body = format!(
-        "A Quartermaster password reset was requested for username {username}.\n\nUse this code to reset your password:\n\n{code}\n\nThis reset expires at {expires_at}."
+        "A Quartermaster password reset was requested for {email}.\n\nUse this code to reset your password:\n\n{code}\n\nThis reset expires at {expires_at}."
     );
     if let Some(base_url) = public_base_url {
         let base = base_url.trim_end_matches('/');
-        let username = utf8_percent_encode(username, NON_ALPHANUMERIC);
+        let email = utf8_percent_encode(email, NON_ALPHANUMERIC);
         let token = utf8_percent_encode(token, NON_ALPHANUMERIC);
         body.push_str(&format!(
-            "\n\nYou can also open this reset link:\n{base}/reset-password?username={username}&token={token}"
+            "\n\nYou can also open this reset link:\n{base}/reset-password?email={email}&token={token}"
         ));
     }
     EmailMessage {
@@ -1133,11 +1243,8 @@ pub(crate) async fn build_me_response(
     Ok(MeResponse {
         user: UserDto {
             id: user.id,
-            username: user.username,
-            email: user
-                .email_verified_at
-                .as_ref()
-                .and_then(|_| user.email.clone()),
+            email: user.email,
+            display_name: user.display_name,
             email_verified_at: user.email_verified_at,
             pending_email: pending_email.as_ref().map(|pending| pending.email.clone()),
             pending_email_verification_expires_at: pending_email.map(|pending| pending.expires_at),

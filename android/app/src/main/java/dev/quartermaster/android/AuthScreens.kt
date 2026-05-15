@@ -74,7 +74,8 @@ internal fun InviteHandoffCard(
 internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    var username by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var displayName by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var householdName by remember { mutableStateOf("") }
     var timezone by remember { mutableStateOf(TimeZone.getDefault().id) }
@@ -205,7 +206,15 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
                     )
                 }
                 item {
-                    AccountFields(username, password, onUsername = { username = it }, onPassword = { password = it })
+                    AccountFields(
+                        email = email,
+                        displayName = displayName,
+                        password = password,
+                        includeDisplayName = true,
+                        onEmail = { email = it },
+                        onDisplayName = { displayName = it },
+                        onPassword = { password = it },
+                    )
                 }
                 item {
                     Button(
@@ -213,13 +222,17 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
                         onClick = {
                             scope.launch {
                                 appState.joinOnboardingInvite(
-                                    username = username.trim(),
+                                    email = email.trim(),
+                                    displayName = displayName.trim(),
                                     password = password,
                                     inviteCode = inviteCode,
                                 )
                             }
                         },
-                        enabled = !appState.authActionInFlight && username.isNotBlank() && password.length >= 8,
+                        enabled = !appState.authActionInFlight &&
+                            email.isNotBlank() &&
+                            displayName.isNotBlank() &&
+                            password.length >= 8,
                     ) {
                         Text(if (appState.authActionInFlight) "Joining..." else "Join household")
                     }
@@ -228,7 +241,15 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
                 val status = appState.onboardingStatus
                 if (status?.serverState == OnboardingServerState.NEEDS_INITIAL_SETUP) {
                     item {
-                        AccountFields(username, password, onUsername = { username = it }, onPassword = { password = it })
+                        AccountFields(
+                            email = email,
+                            displayName = displayName,
+                            password = password,
+                            includeDisplayName = true,
+                            onEmail = { email = it },
+                            onDisplayName = { displayName = it },
+                            onPassword = { password = it },
+                        )
                     }
                     item {
                         OutlinedTextField(
@@ -252,7 +273,8 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
                             onClick = {
                                 scope.launch {
                                     appState.createOnboardingHousehold(
-                                        username = username.trim(),
+                                        email = email.trim(),
+                                        displayName = displayName.trim(),
                                         password = password,
                                         householdName = householdName.trim(),
                                         timezone = timezone.trim(),
@@ -260,7 +282,8 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
                                 }
                             },
                             enabled = !appState.authActionInFlight &&
-                                username.isNotBlank() &&
+                                email.isNotBlank() &&
+                                displayName.isNotBlank() &&
                                 password.length >= 8 &&
                                 householdName.isNotBlank() &&
                                 timezone.isNotBlank(),
@@ -280,15 +303,23 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
                     item {
                         if (signInMode && resetMode) {
                             ResetPasswordFields(
-                                username = username,
+                                email = email,
                                 code = resetCode,
                                 newPassword = password,
-                                onUsername = { username = it },
+                                onEmail = { email = it },
                                 onCode = { resetCode = it },
                                 onNewPassword = { password = it },
                             )
                         } else {
-                            AccountFields(username, password, onUsername = { username = it }, onPassword = { password = it })
+                            AccountFields(
+                                email = email,
+                                displayName = displayName,
+                                password = password,
+                                includeDisplayName = !signInMode,
+                                onEmail = { email = it },
+                                onDisplayName = { displayName = it },
+                                onPassword = { password = it },
+                            )
                         }
                     }
                     if (!signInMode && status?.householdSignup == OnboardingAvailability.ENABLED) {
@@ -328,13 +359,13 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
                             onClick = {
                                 scope.launch {
                                     if (signInMode && resetMode && resetCode.isBlank()) {
-                                        appState.requestPasswordReset(username = username.trim())
+                                        appState.requestPasswordReset(email = email.trim())
                                         if (appState.lastError == null) {
-                                            resetMessage = "If that account has a verified recovery email, a reset code is on its way."
+                                            resetMessage = "If that account has a verified email, a reset code is on its way."
                                         }
                                     } else if (signInMode && resetMode) {
                                         appState.confirmPasswordReset(
-                                            username = username.trim(),
+                                            email = email.trim(),
                                             newPassword = password,
                                             code = resetCode.trim(),
                                         )
@@ -345,10 +376,11 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
                                             resetMessage = "Password reset. Sign in with your new password."
                                         }
                                     } else if (signInMode) {
-                                        appState.signIn(username = username.trim(), password = password)
+                                        appState.signIn(email = email.trim(), password = password)
                                     } else {
                                         appState.createOnboardingHousehold(
-                                            username = username.trim(),
+                                            email = email.trim(),
+                                            displayName = displayName.trim(),
                                             password = password,
                                             householdName = householdName.trim(),
                                             timezone = timezone.trim(),
@@ -357,9 +389,16 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
                                 }
                             },
                             enabled = !appState.authActionInFlight &&
-                                username.isNotBlank() &&
+                                email.isNotBlank() &&
                                 (signInMode && resetMode && resetCode.isBlank() || password.length >= 8) &&
-                                (signInMode || (householdName.isNotBlank() && timezone.isNotBlank())),
+                                (
+                                    signInMode ||
+                                        (
+                                            displayName.isNotBlank() &&
+                                                householdName.isNotBlank() &&
+                                                timezone.isNotBlank()
+                                            )
+                                    ),
                         ) {
                             Text(
                                 when {
@@ -380,18 +419,18 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
 
 @Composable
 private fun ResetPasswordFields(
-    username: String,
+    email: String,
     code: String,
     newPassword: String,
-    onUsername: (String) -> Unit,
+    onEmail: (String) -> Unit,
     onCode: (String) -> Unit,
     onNewPassword: (String) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedTextField(
-            value = username,
-            onValueChange = onUsername,
-            label = { Text("Username") },
+            value = email,
+            onValueChange = onEmail,
+            label = { Text("Email") },
             modifier = Modifier.fillMaxWidth(),
         )
         OutlinedTextField(
@@ -411,20 +450,31 @@ private fun ResetPasswordFields(
 
 @Composable
 private fun AccountFields(
-    username: String,
+    email: String,
+    displayName: String,
     password: String,
-    onUsername: (String) -> Unit,
+    includeDisplayName: Boolean,
+    onEmail: (String) -> Unit,
+    onDisplayName: (String) -> Unit,
     onPassword: (String) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedTextField(
-            value = username,
-            onValueChange = onUsername,
-            label = { Text("Username") },
+            value = email,
+            onValueChange = onEmail,
+            label = { Text("Email") },
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag(SmokeTag.UsernameField),
         )
+        if (includeDisplayName) {
+            OutlinedTextField(
+                value = displayName,
+                onValueChange = onDisplayName,
+                label = { Text("Display name") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         OutlinedTextField(
             value = password,
             onValueChange = onPassword,

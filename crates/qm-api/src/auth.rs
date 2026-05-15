@@ -20,6 +20,9 @@ pub const ACCESS_COOKIE: &str = "qm_access";
 pub const REFRESH_COOKIE: &str = "qm_refresh";
 pub const CSRF_COOKIE: &str = "qm_csrf";
 pub const CSRF_HEADER: &str = "x-qm-csrf";
+pub const ROLE_ADMIN: &str = "admin";
+pub const ROLE_READ_ONLY: &str = "read_only";
+pub const ROLE_READ_WRITE: &str = "read_write";
 
 #[derive(Clone, Debug)]
 pub struct ResolvedHousehold {
@@ -87,6 +90,21 @@ pub struct CurrentUser {
     pub session_id: Uuid,
     pub household_id: Option<Uuid>,
     pub role: Option<String>,
+}
+
+pub fn require_read_write(current: &CurrentUser) -> Result<(), ApiError> {
+    match current.role.as_deref() {
+        Some(ROLE_ADMIN | ROLE_READ_WRITE) => Ok(()),
+        _ => Err(ApiError::Forbidden),
+    }
+}
+
+pub fn require_admin(current: &CurrentUser) -> Result<(), ApiError> {
+    if current.role.as_deref() == Some(ROLE_ADMIN) {
+        Ok(())
+    } else {
+        Err(ApiError::AdminOnly)
+    }
 }
 
 pub async fn resolve_active_household(

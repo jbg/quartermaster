@@ -169,6 +169,7 @@ async fn product_catalogue_lists_visible_products_and_deleted_when_requested() {
     .unwrap();
     qm_db::products::upsert_from_off(
         &app.db,
+        alice_household_id,
         "5449000000996",
         "Catalogue Cola",
         Some("Open"),
@@ -476,6 +477,8 @@ async fn off_credentials_are_per_user_and_preview_reports_local_changes() {
     assert_eq!(app.register("bob", None).await.0, StatusCode::CREATED);
     let alice = app.login("alice").await;
     let bob = app.login("bob").await;
+    let alice_household_id =
+        Uuid::parse_str(me_current_household_id(&app.me(&alice).await).unwrap()).unwrap();
 
     let (status, saved) = app
         .send(
@@ -519,6 +522,7 @@ async fn off_credentials_are_per_user_and_preview_reports_local_changes() {
 
     let product = qm_db::products::upsert_from_off(
         &app.db,
+        alice_household_id,
         "5449000000996",
         "Original cola",
         Some("Original Brand"),
@@ -563,7 +567,7 @@ async fn off_credentials_are_per_user_and_preview_reports_local_changes() {
         .collect();
     assert_eq!(fields, vec!["product_name", "brands"]);
 
-    let (status, preview) = app
+    let (status, _) = app
         .send(
             Method::GET,
             &format!("/api/v1/products/{}/off-contribution-preview", product.id),
@@ -571,6 +575,5 @@ async fn off_credentials_are_per_user_and_preview_reports_local_changes() {
             Some(&bob),
         )
         .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(preview["credentials_present"], false);
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }

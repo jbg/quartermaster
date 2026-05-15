@@ -30,7 +30,7 @@ async fn login_is_rate_limited_per_client_ip() {
         .send_with_headers(
             Method::POST,
             "/api/v1/auth/login",
-            Some(json!({"username": "alice", "password": "password123"})),
+            Some(json!({"email": "alice@example.com", "password": "password123"})),
             None,
             headers.clone(),
         )
@@ -39,7 +39,7 @@ async fn login_is_rate_limited_per_client_ip() {
         .send_with_headers(
             Method::POST,
             "/api/v1/auth/login",
-            Some(json!({"username": "alice", "password": "password123"})),
+            Some(json!({"email": "alice@example.com", "password": "password123"})),
             None,
             headers,
         )
@@ -114,7 +114,7 @@ async fn socket_mode_ignores_forwarded_headers() {
         .send_with_headers(
             Method::POST,
             "/api/v1/auth/login",
-            Some(json!({"username": "alice", "password": "password123"})),
+            Some(json!({"email": "alice@example.com", "password": "password123"})),
             None,
             headers.clone(),
         )
@@ -123,7 +123,7 @@ async fn socket_mode_ignores_forwarded_headers() {
         .send_with_headers(
             Method::POST,
             "/api/v1/auth/login",
-            Some(json!({"username": "alice", "password": "password123"})),
+            Some(json!({"email": "alice@example.com", "password": "password123"})),
             None,
             headers,
         )
@@ -157,7 +157,7 @@ async fn forwarded_mode_falls_back_when_header_is_blank() {
         .send_with_headers(
             Method::POST,
             "/api/v1/auth/login",
-            Some(json!({"username": "alice", "password": "password123"})),
+            Some(json!({"email": "alice@example.com", "password": "password123"})),
             None,
             headers.clone(),
         )
@@ -166,7 +166,7 @@ async fn forwarded_mode_falls_back_when_header_is_blank() {
         .send_with_headers(
             Method::POST,
             "/api/v1/auth/login",
-            Some(json!({"username": "alice", "password": "password123"})),
+            Some(json!({"email": "alice@example.com", "password": "password123"})),
             None,
             headers,
         )
@@ -201,7 +201,7 @@ async fn forwarded_mode_ignores_header_from_untrusted_peer() {
         .send_with_peer_and_request_id_and_headers(
             Method::POST,
             "/api/v1/auth/login",
-            Some(json!({"username": "alice", "password": "password123"})),
+            Some(json!({"email": "alice@example.com", "password": "password123"})),
             None,
             None,
             headers.clone(),
@@ -212,7 +212,7 @@ async fn forwarded_mode_ignores_header_from_untrusted_peer() {
         .send_with_peer_and_request_id_and_headers(
             Method::POST,
             "/api/v1/auth/login",
-            Some(json!({"username": "alice", "password": "password123"})),
+            Some(json!({"email": "alice@example.com", "password": "password123"})),
             None,
             None,
             headers,

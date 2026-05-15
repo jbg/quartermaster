@@ -22,7 +22,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::{
-    auth::CurrentUser,
+    auth::{self, CurrentUser},
     error::{ApiError, ApiResult},
     rate_limit::RateLimitLayerState,
     routes::patch::{
@@ -380,6 +380,7 @@ pub async fn create(
     Json(req): Json<CreateStockRequest>,
 ) -> ApiResult<(StatusCode, Json<StockBatchDto>)> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
 
     validate_positive_decimal(&req.quantity)?;
     let product = load_product_for_write(&state, household_id, req.product_id).await?;
@@ -447,6 +448,7 @@ pub async fn update(
     Json(req): Json<UpdateStockRequest>,
 ) -> ApiResult<Json<StockBatchDto>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
     let req = StockPatch::parse(req)?;
 
     let existing = qm_db::stock::get(&state.db, household_id, id)
@@ -548,6 +550,7 @@ pub async fn delete_one(
     Path(id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
     let found = qm_db::stock::discard(
         &state.db,
         household_id,
@@ -583,6 +586,7 @@ pub async fn consume(
     Json(req): Json<ConsumeRequest>,
 ) -> ApiResult<Json<ConsumeResponse>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
     let product = load_product_for_write(&state, household_id, req.product_id).await?;
     validate_unit_family(&req.unit, &product.family)?;
     validate_positive_decimal(&req.quantity)?;
@@ -678,6 +682,7 @@ pub async fn consume_and_store(
     Json(req): Json<ConsumeAndStoreRequest>,
 ) -> ApiResult<Json<ConsumeAndStoreResponse>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
     validate_positive_decimal(&req.used_quantity)?;
     validate_location(&state, household_id, req.remainder_location_id).await?;
 
@@ -944,6 +949,7 @@ pub async fn restore_many(
     Json(req): Json<RestoreManyRequest>,
 ) -> ApiResult<Json<RestoreManyResponse>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
     if req.ids.is_empty() {
         return Err(ApiError::BadRequest("ids must not be empty".into()));
     }
@@ -989,6 +995,7 @@ pub async fn restore_one(
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<StockBatchDto>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
     let row = qm_db::stock::restore(
         &state.db,
         household_id,
@@ -1181,14 +1188,9 @@ async fn load_product_for_write(
     household_id: Uuid,
     product_id: Uuid,
 ) -> ApiResult<ProductRow> {
-    let product = qm_db::products::find_by_id(&state.db, product_id)
+    let product = qm_db::products::find_for_household(&state.db, household_id, product_id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    if product.source == qm_db::products::SOURCE_MANUAL
-        && product.created_by_household_id != Some(household_id)
-    {
-        return Err(ApiError::NotFound);
-    }
     Ok(product)
 }
 

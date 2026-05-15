@@ -12,7 +12,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::{
-    auth::CurrentUser,
+    auth::{self, CurrentUser},
     barcode,
     error::{ApiError, ApiResult},
     openfoodfacts::{
@@ -365,13 +365,15 @@ pub async fn search(
 )]
 pub async fn by_barcode(
     State(state): State<AppState>,
-    _current: CurrentUser,
+    current: CurrentUser,
     Path(raw_barcode): Path<String>,
 ) -> ApiResult<Json<BarcodeLookupResponse>> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
     let barcode = barcode::normalise(&raw_barcode)?;
 
     let now = jiff::Timestamp::now();
-    let cached = qm_db::barcode_cache::get(&state.db, &barcode).await?;
+    let cached = qm_db::barcode_cache::get(&state.db, household_id, &barcode).await?;
 
     if let Some(entry) = &cached {
         if entry.is_fresh(
@@ -383,7 +385,7 @@ pub async fn by_barcode(
                 return Err(ApiError::NotFound);
             }
             if let Some(pid) = entry.product_id {
-                let product = qm_db::products::find_by_id(&state.db, pid)
+                let product = qm_db::products::find_for_household(&state.db, household_id, pid)
                     .await?
                     .ok_or(ApiError::NotFound)?;
                 return Ok(Json(BarcodeLookupResponse {
@@ -394,7 +396,7 @@ pub async fn by_barcode(
         }
     }
 
-    fetch_and_cache(&state, &barcode).await
+    fetch_and_cache(&state, household_id, &barcode).await
 }
 
 #[utoipa::path(
@@ -415,6 +417,7 @@ pub async fn create(
     Json(req): Json<CreateProductRequest>,
 ) -> ApiResult<(StatusCode, Json<ProductDto>)> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
 
     let name = req.name.trim();
     if name.is_empty() || name.len() > 256 {
@@ -492,14 +495,9 @@ pub async fn get_one(
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<ProductDto>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    let row = qm_db::products::find_including_deleted(&state.db, id)
+    let row = qm_db::products::find_for_household_including_deleted(&state.db, household_id, id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    if row.source == qm_db::products::SOURCE_MANUAL
-        && row.created_by_household_id != Some(household_id)
-    {
-        return Err(ApiError::NotFound);
-    }
     Ok(Json(row.try_into()?))
 }
 
@@ -526,20 +524,15 @@ pub async fn update(
     Json(req): Json<UpdateProductRequest>,
 ) -> ApiResult<Json<ProductDto>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
     let req = ProductPatch::parse(req)?;
 
-    let existing = qm_db::products::find_by_id(&state.db, id)
+    let existing = qm_db::products::find_for_household(&state.db, household_id, id)
         .await?
         .ok_or(ApiError::NotFound)?;
 
     if existing.source == qm_db::products::SOURCE_OFF && !req.is_off_local_correction_only() {
         return Err(ApiError::OffProductReadOnly);
-    }
-
-    if existing.source == qm_db::products::SOURCE_MANUAL
-        && existing.created_by_household_id != Some(household_id)
-    {
-        return Err(ApiError::NotFound);
     }
 
     // Validation on provided fields.
@@ -680,7 +673,7 @@ pub async fn update(
     }
 
     let updated = if convert_piece_stock_to_package_unit {
-        qm_db::products::find_by_id(&state.db, id)
+        qm_db::products::find_for_household(&state.db, household_id, id)
             .await?
             .ok_or(ApiError::NotFound)?
     } else {
@@ -778,14 +771,12 @@ pub async fn delete_one(
     Path(id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    let existing = qm_db::products::find_by_id(&state.db, id)
+    auth::require_read_write(&current)?;
+    let existing = qm_db::products::find_for_household(&state.db, household_id, id)
         .await?
         .ok_or(ApiError::NotFound)?;
     if existing.source == qm_db::products::SOURCE_OFF {
         return Err(ApiError::OffProductReadOnly);
-    }
-    if existing.created_by_household_id != Some(household_id) {
-        return Err(ApiError::NotFound);
     }
     if qm_db::stock::has_active_stock_for_product(&state.db, id).await? {
         return Err(ApiError::ProductHasStock);
@@ -810,10 +801,12 @@ pub async fn delete_one(
 )]
 pub async fn refresh(
     State(state): State<AppState>,
-    _current: CurrentUser,
+    current: CurrentUser,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<ProductDto>> {
-    let existing = qm_db::products::find_by_id(&state.db, id)
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
+    let existing = qm_db::products::find_for_household(&state.db, household_id, id)
         .await?
         .ok_or(ApiError::NotFound)?;
     if existing.source != qm_db::products::SOURCE_OFF {
@@ -863,6 +856,7 @@ pub async fn refresh(
     let preferred = qm_db::products::base_unit_for_family(family.as_str());
     let row = qm_db::products::upsert_from_off(
         &state.db,
+        household_id,
         &off_product.barcode,
         &off_product.name,
         off_product.brand.as_deref(),
@@ -873,7 +867,7 @@ pub async fn refresh(
         package.as_ref().map(|(_, unit)| unit.as_str()),
     )
     .await?;
-    qm_db::barcode_cache::put_hit(&state.db, &barcode, row.id).await?;
+    qm_db::barcode_cache::put_hit(&state.db, household_id, &barcode, row.id).await?;
 
     Ok(Json(row.try_into()?))
 }
@@ -895,7 +889,8 @@ pub async fn off_contribution_preview(
     current: CurrentUser,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<OffContributionPreviewResponse>> {
-    let product = qm_db::products::find_by_id(&state.db, id)
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    let product = qm_db::products::find_for_household(&state.db, household_id, id)
         .await?
         .ok_or(ApiError::NotFound)?;
     let credentials = qm_db::off_credentials::get(&state.db, current.user_id).await?;
@@ -930,7 +925,9 @@ pub async fn off_contribution(
     current: CurrentUser,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<OffContributionResponse>> {
-    let product = qm_db::products::find_by_id(&state.db, id)
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
+    let product = qm_db::products::find_for_household(&state.db, household_id, id)
         .await?
         .ok_or(ApiError::NotFound)?;
     if product.source != qm_db::products::SOURCE_OFF {
@@ -1023,21 +1020,20 @@ pub async fn restore(
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<ProductDto>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    let existing = qm_db::products::find_including_deleted(&state.db, id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+    auth::require_read_write(&current)?;
+    let existing =
+        qm_db::products::find_for_household_including_deleted(&state.db, household_id, id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
     if existing.source == qm_db::products::SOURCE_OFF {
         return Err(ApiError::OffProductReadOnly);
-    }
-    if existing.created_by_household_id != Some(household_id) {
-        return Err(ApiError::NotFound);
     }
     if existing.deleted_at.is_none() {
         return Err(ApiError::Conflict("product is not deleted".into()));
     }
 
     qm_db::products::restore(&state.db, id).await?;
-    let refreshed = qm_db::products::find_by_id(&state.db, id)
+    let refreshed = qm_db::products::find_for_household(&state.db, household_id, id)
         .await?
         .ok_or(ApiError::NotFound)?;
     Ok(Json(refreshed.try_into()?))
@@ -1088,6 +1084,7 @@ fn off_contribution_changes(product: &ProductRow) -> Vec<OffContributionFieldCha
 
 async fn fetch_and_cache(
     state: &AppState,
+    household_id: Uuid,
     barcode: &str,
 ) -> ApiResult<Json<BarcodeLookupResponse>> {
     let off = OpenFoodFactsClient::new(
@@ -1103,6 +1100,7 @@ async fn fetch_and_cache(
                 openfoodfacts::normalize_package(p.quantity.as_deref(), p.quantity_unit.as_deref());
             let row = qm_db::products::upsert_from_off(
                 &state.db,
+                household_id,
                 &p.barcode,
                 &p.name,
                 p.brand.as_deref(),
@@ -1113,14 +1111,14 @@ async fn fetch_and_cache(
                 package.as_ref().map(|(_, unit)| unit.as_str()),
             )
             .await?;
-            qm_db::barcode_cache::put_hit(&state.db, barcode, row.id).await?;
+            qm_db::barcode_cache::put_hit(&state.db, household_id, barcode, row.id).await?;
             Ok(Json(BarcodeLookupResponse {
                 product: row.try_into()?,
                 source: "openfoodfacts",
             }))
         }
         OffResult::NotFound => {
-            qm_db::barcode_cache::put_miss(&state.db, barcode).await?;
+            qm_db::barcode_cache::put_miss(&state.db, household_id, barcode).await?;
             Err(ApiError::NotFound)
         }
         OffResult::Upstream(_) => Err(ApiError::BadGateway),

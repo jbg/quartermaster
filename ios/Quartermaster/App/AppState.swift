@@ -11,23 +11,26 @@ protocol AppStateTokenStore: Actor {
 }
 
 protocol AppStateAPI: Actor {
-  func register(username: String, password: String, inviteCode: String?)
+  func register(email: String, displayName: String, password: String, inviteCode: String?)
     async throws -> TokenPair
   func onboardingStatus() async throws -> OnboardingStatus
   func createOnboardingHousehold(
-    username: String,
+    email: String,
+    displayName: String,
     password: String,
     householdName: String,
     timezone: String
   ) async throws -> TokenPair
-  func joinOnboardingInvite(username: String, password: String, inviteCode: String)
+  func joinOnboardingInvite(
+    email: String, displayName: String, password: String, inviteCode: String
+  )
     async throws -> TokenPair
-  func login(username: String, password: String) async throws -> TokenPair
+  func login(email: String, password: String) async throws -> TokenPair
   func requestEmailVerification(email: String) async throws -> RequestEmailVerificationResponse
   func confirmEmailVerification(code: String) async throws -> Me
   func clearRecoveryEmail() async throws -> Me
-  func requestPasswordReset(username: String) async throws
-  func confirmPasswordReset(username: String, newPassword: String, code: String) async throws
+  func requestPasswordReset(email: String) async throws
+  func confirmPasswordReset(email: String, newPassword: String, code: String) async throws
   func logout() async throws
   func me() async throws -> Me
   func switchHousehold(householdID: String) async throws -> Me
@@ -293,11 +296,14 @@ final class AppState {
     return nil
   }
 
-  func register(username: String, password: String, inviteCode: String? = nil) async {
+  func register(email: String, displayName: String, password: String, inviteCode: String? = nil)
+    async
+  {
     lastError = nil
     do {
       let pair = try await api.register(
-        username: username,
+        email: email,
+        displayName: displayName,
         password: password,
         inviteCode: inviteCode,
       )
@@ -313,7 +319,8 @@ final class AppState {
   }
 
   func createOnboardingHousehold(
-    username: String,
+    email: String,
+    displayName: String,
     password: String,
     householdName: String,
     timezone: String
@@ -321,7 +328,8 @@ final class AppState {
     lastError = nil
     do {
       let pair = try await api.createOnboardingHousehold(
-        username: username,
+        email: email,
+        displayName: displayName,
         password: password,
         householdName: householdName,
         timezone: timezone
@@ -333,11 +341,16 @@ final class AppState {
     }
   }
 
-  func joinOnboardingInvite(username: String, password: String, inviteCode: String) async {
+  func joinOnboardingInvite(
+    email: String, displayName: String, password: String, inviteCode: String
+  )
+    async
+  {
     lastError = nil
     do {
       let pair = try await api.joinOnboardingInvite(
-        username: username,
+        email: email,
+        displayName: displayName,
         password: password,
         inviteCode: inviteCode
       )
@@ -349,10 +362,10 @@ final class AppState {
     }
   }
 
-  func login(username: String, password: String) async {
+  func login(email: String, password: String) async {
     lastError = nil
     do {
-      let pair = try await api.login(username: username, password: password)
+      let pair = try await api.login(email: email, password: password)
       await tokenStore.store(pair)
       await refreshMe()
     } catch {
@@ -360,21 +373,21 @@ final class AppState {
     }
   }
 
-  func requestPasswordReset(username: String) async {
+  func requestPasswordReset(email: String) async {
     lastError = nil
     do {
       try await api.requestPasswordReset(
-        username: username.trimmingCharacters(in: .whitespacesAndNewlines))
+        email: email.trimmingCharacters(in: .whitespacesAndNewlines))
     } catch {
       lastError = userMessage(for: error)
     }
   }
 
-  func confirmPasswordReset(username: String, newPassword: String, code: String) async {
+  func confirmPasswordReset(email: String, newPassword: String, code: String) async {
     lastError = nil
     do {
       try await api.confirmPasswordReset(
-        username: username.trimmingCharacters(in: .whitespacesAndNewlines),
+        email: email.trimmingCharacters(in: .whitespacesAndNewlines),
         newPassword: newPassword,
         code: code.trimmingCharacters(in: .whitespacesAndNewlines)
       )

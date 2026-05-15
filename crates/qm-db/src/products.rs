@@ -146,6 +146,7 @@ pub async fn create_manual_with_max_open_days(
 /// Insert or update an OpenFoodFacts-sourced product keyed by its barcode.
 pub async fn upsert_from_off(
     db: &Database,
+    household_id: Uuid,
     barcode: &str,
     name: &str,
     brand: Option<&str>,
@@ -158,7 +159,7 @@ pub async fn upsert_from_off(
     let now = now_utc_rfc3339();
     let unit = preferred_unit.unwrap_or(base_unit_for_family(family));
 
-    if let Some(existing) = find_by_off_barcode(db, barcode).await? {
+    if let Some(existing) = find_by_off_barcode(db, household_id, barcode).await? {
         sqlx::query(
             "UPDATE product \
              SET name = CASE WHEN name_local_override = 1 THEN name ELSE ? END, \
@@ -198,7 +199,7 @@ pub async fn upsert_from_off(
          (id, source, off_barcode, name, brand, default_unit, family, image_url, \
           package_quantity, package_unit, fetched_at, created_by_household_id, created_at, \
           off_name, off_brand, off_package_quantity, off_package_unit) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id.to_string())
     .bind(SOURCE_OFF)
@@ -211,6 +212,7 @@ pub async fn upsert_from_off(
     .bind(package_quantity)
     .bind(package_unit)
     .bind(&now)
+    .bind(household_id.to_string())
     .bind(&now)
     .bind(name)
     .bind(brand)
@@ -231,6 +233,23 @@ pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<ProductRow>, s
     row.map(row_to_product).transpose()
 }
 
+pub async fn find_for_household(
+    db: &Database,
+    household_id: Uuid,
+    id: Uuid,
+) -> Result<Option<ProductRow>, sqlx::Error> {
+    let sql = format!(
+        "SELECT {COLS} FROM product \
+         WHERE id = ? AND created_by_household_id = ? AND deleted_at IS NULL"
+    );
+    let row = sqlx::query(&sql)
+        .bind(id.to_string())
+        .bind(household_id.to_string())
+        .fetch_optional(&db.pool)
+        .await?;
+    row.map(row_to_product).transpose()
+}
+
 /// Same as `find_by_id` but doesn't filter out soft-deleted rows. Used by
 /// the product-restore endpoint and by history timelines that need to
 /// resolve product names even for deleted products.
@@ -246,16 +265,33 @@ pub async fn find_including_deleted(
     row.map(row_to_product).transpose()
 }
 
+pub async fn find_for_household_including_deleted(
+    db: &Database,
+    household_id: Uuid,
+    id: Uuid,
+) -> Result<Option<ProductRow>, sqlx::Error> {
+    let sql = format!("SELECT {COLS} FROM product WHERE id = ? AND created_by_household_id = ?");
+    let row = sqlx::query(&sql)
+        .bind(id.to_string())
+        .bind(household_id.to_string())
+        .fetch_optional(&db.pool)
+        .await?;
+    row.map(row_to_product).transpose()
+}
+
 pub async fn find_by_off_barcode(
     db: &Database,
+    household_id: Uuid,
     barcode: &str,
 ) -> Result<Option<ProductRow>, sqlx::Error> {
     let sql = format!(
-        "SELECT {COLS} FROM product WHERE off_barcode = ? AND source = ? AND deleted_at IS NULL"
+        "SELECT {COLS} FROM product \
+         WHERE off_barcode = ? AND source = ? AND created_by_household_id = ? AND deleted_at IS NULL"
     );
     let row = sqlx::query(&sql)
         .bind(barcode)
         .bind(SOURCE_OFF)
+        .bind(household_id.to_string())
         .fetch_optional(&db.pool)
         .await?;
     row.map(row_to_product).transpose()
@@ -279,14 +315,13 @@ pub async fn search_with_deleted(
     let sql = format!(
         "SELECT {COLS} \
          FROM product \
-         WHERE (source = ? OR created_by_household_id = ?) \
+         WHERE created_by_household_id = ? \
            {deleted_clause} \
            AND (LOWER(name) LIKE LOWER(?) OR LOWER(COALESCE(brand, '')) LIKE LOWER(?)) \
          ORDER BY name ASC \
          LIMIT ?"
     );
     let rows = sqlx::query(&sql)
-        .bind(SOURCE_OFF)
         .bind(household_id.to_string())
         .bind(&pattern)
         .bind(&pattern)
@@ -319,15 +354,13 @@ pub async fn list_visible(
     let sql = format!(
         "SELECT {COLS} \
          FROM product \
-         WHERE (source = ? OR created_by_household_id = ?) \
+         WHERE created_by_household_id = ? \
            {deleted_clause} \
            {search_clause} \
          ORDER BY name ASC \
          LIMIT ?"
     );
-    let mut query_builder = sqlx::query(&sql)
-        .bind(SOURCE_OFF)
-        .bind(household_id.to_string());
+    let mut query_builder = sqlx::query(&sql).bind(household_id.to_string());
     let pattern = trimmed.map(|q| format!("%{}%", q.replace('%', r"\%")));
     if let Some(pattern) = pattern.as_deref() {
         query_builder = query_builder.bind(pattern).bind(pattern);
@@ -459,7 +492,11 @@ pub async fn invalidate_barcode_cache_for(db: &Database, id: Uuid) -> Result<boo
     let Some(barcode) = product.off_barcode.as_deref() else {
         return Ok(false);
     };
-    sqlx::query("DELETE FROM barcode_cache WHERE barcode = ?")
+    let Some(household_id) = product.created_by_household_id else {
+        return Ok(false);
+    };
+    sqlx::query("DELETE FROM barcode_cache WHERE household_id = ? AND barcode = ?")
+        .bind(household_id.to_string())
         .bind(barcode)
         .execute(&db.pool)
         .await?;
@@ -639,12 +676,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn search_sees_off_products_across_households() {
+    async fn search_scopes_off_products_to_household() {
         let db = crate::test_db().await;
         let a = households::create(&db, "A", "UTC").await.unwrap();
         let b = households::create(&db, "B", "UTC").await.unwrap();
         upsert_from_off(
             &db,
+            a.id,
             "5449000000996",
             "Coca-Cola",
             Some("Coca-Cola"),
@@ -657,14 +695,16 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(search(&db, a.id, "coca", 10).await.unwrap().len(), 1);
-        assert_eq!(search(&db, b.id, "coca", 10).await.unwrap().len(), 1);
+        assert_eq!(search(&db, b.id, "coca", 10).await.unwrap().len(), 0);
     }
 
     #[tokio::test]
     async fn upsert_from_off_updates_existing() {
         let db = crate::test_db().await;
+        let h = households::create(&db, "h", "UTC").await.unwrap();
         let first = upsert_from_off(
             &db,
+            h.id,
             "8076809513388",
             "Spaghetti",
             None,
@@ -678,6 +718,7 @@ mod tests {
         .unwrap();
         let second = upsert_from_off(
             &db,
+            h.id,
             "8076809513388",
             "Spaghetti No. 5",
             Some("Barilla"),
@@ -751,6 +792,7 @@ mod tests {
             .unwrap();
         upsert_from_off(
             &db,
+            a.id,
             "5449000000996",
             "Coca-Cola",
             Some("Coca-Cola"),

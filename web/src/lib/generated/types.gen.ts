@@ -113,10 +113,11 @@ export type CreateLocationRequest = {
 
 export type CreateOnboardingHouseholdRequest = {
     device_label?: string | null;
+    display_name: string;
+    email: string;
     household_name: string;
     password: string;
     timezone: string;
-    username: string;
 };
 
 export type CreateProductRequest = {
@@ -204,9 +205,10 @@ export type InviteDto = {
 
 export type JoinInviteRequest = {
     device_label?: string | null;
+    display_name: string;
+    email: string;
     invite_code: string;
     password: string;
-    username: string;
 };
 
 export type JsonPatchOperation = {
@@ -257,8 +259,8 @@ export type LocationDto = {
 
 export type LoginRequest = {
     device_label?: string | null;
+    email: string;
     password: string;
-    username: string;
 };
 
 export type MeResponse = {
@@ -276,7 +278,7 @@ export type MemberDto = {
     user: UserDto;
 };
 
-export type MembershipRole = 'admin' | 'member';
+export type MembershipRole = 'admin' | 'read_only' | 'read_write';
 
 export type OffContributionFieldChange = {
     current_value?: string | null;
@@ -326,13 +328,13 @@ export type OpenFoodFactsCredentialStatusResponse = {
 
 export type PasswordResetConfirmRequest = {
     code?: string | null;
+    email: string;
     new_password: string;
     token?: string | null;
-    username: string;
 };
 
 export type PasswordResetRequest = {
-    username: string;
+    email: string;
 };
 
 export type PasswordResetRequestResponse = {
@@ -416,13 +418,14 @@ export type RegisterRequest = {
      * Optional label applied to the refresh token (shown on `/api/v1/auth/me`).
      */
     device_label?: string | null;
+    display_name: string;
+    email: string;
     /**
      * Required unless the server is in `first_run_only` mode and no users
      * exist yet, or in `open` mode.
      */
     invite_code?: string | null;
     password: string;
-    username: string;
 };
 
 export type ReminderDto = {
@@ -619,12 +622,12 @@ export type UpdateStorageVesselRequest = {
 };
 
 export type UserDto = {
-    email?: string | null;
+    display_name: string;
+    email: string;
     email_verified_at?: string | null;
     id: string;
     pending_email?: string | null;
     pending_email_verification_expires_at?: string | null;
-    username: string;
 };
 
 export type AccountOpenfoodfactsDeleteData = {

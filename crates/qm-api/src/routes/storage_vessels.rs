@@ -12,7 +12,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
-    auth::CurrentUser,
+    auth::{self, CurrentUser},
     error::{ApiError, ApiResult},
     AppState,
 };
@@ -70,6 +70,7 @@ pub async fn list_storage_vessels(
     current: CurrentUser,
 ) -> ApiResult<Json<Vec<StorageVesselDto>>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
     let rows = qm_db::storage_vessels::list_for_household(&state.db, household_id).await?;
     Ok(Json(rows.into_iter().map(to_dto).collect()))
 }
@@ -89,6 +90,7 @@ pub async fn create_storage_vessel(
     Json(req): Json<CreateStorageVesselRequest>,
 ) -> ApiResult<(StatusCode, Json<StorageVesselDto>)> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
     let name = validate_name(&req.name)?;
     validate_tare(&req.tare_weight, &req.tare_unit)?;
     let sort_order = match req.sort_order {
@@ -124,6 +126,7 @@ pub async fn update_storage_vessel(
     Json(req): Json<UpdateStorageVesselRequest>,
 ) -> ApiResult<Json<StorageVesselDto>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
     let name = validate_name(&req.name)?;
     validate_tare(&req.tare_weight, &req.tare_unit)?;
     let row = qm_db::storage_vessels::update(

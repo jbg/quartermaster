@@ -279,7 +279,9 @@ mod tests {
     async fn setup() -> (crate::Database, Uuid, Uuid, Uuid, Uuid) {
         let db = crate::test_db().await;
         let h = households::create(&db, "h", "UTC").await.unwrap();
-        let u = users::create(&db, "u", None, "hash").await.unwrap();
+        let u = users::create(&db, "u@example.com", "User", "hash")
+            .await
+            .unwrap();
         memberships::insert(&db, h.id, u.id, "admin").await.unwrap();
         locations::seed_defaults(&db, h.id).await.unwrap();
         let locs = locations::list_for_household(&db, h.id).await.unwrap();

@@ -25,7 +25,12 @@ impl TestApp {
     }
 
     pub async fn start_with_http(config: ApiConfig, http: reqwest::Client) -> Self {
-        Self::start_with_http_and_email(config, http, None).await
+        Self::start_with_http_and_email(
+            config,
+            http,
+            Some(Arc::new(qm_api::email::LogEmailTransport)),
+        )
+        .await
     }
 
     #[allow(dead_code)]
@@ -203,12 +208,14 @@ impl TestApp {
 
     #[allow(dead_code)]
     pub async fn register(&self, username: &str, invite_code: Option<&str>) -> (StatusCode, Value) {
+        let email = format!("{username}@example.com");
         if let Some(invite_code) = invite_code {
             self.send(
                 Method::POST,
                 "/api/v1/onboarding/join-invite",
                 Some(json!({
-                    "username": username,
+                    "email": email,
+                    "display_name": username,
                     "password": "password123",
                     "invite_code": invite_code,
                 })),
@@ -220,7 +227,8 @@ impl TestApp {
                 Method::POST,
                 "/api/v1/onboarding/create-household",
                 Some(json!({
-                    "username": username,
+                    "email": email,
+                    "display_name": username,
                     "password": "password123",
                     "household_name": format!("{username}'s Household"),
                     "timezone": "UTC",
@@ -240,12 +248,13 @@ impl TestApp {
 
     #[allow(dead_code)]
     pub async fn login_with_password(&self, username: &str, password: &str) -> (StatusCode, Value) {
+        let email = format!("{username}@example.com");
         let (status, body) = self
             .send(
                 Method::POST,
                 "/api/v1/auth/login",
                 Some(json!({
-                    "username": username,
+                    "email": email,
                     "password": password,
                 })),
                 None,
@@ -272,8 +281,8 @@ impl TestApp {
         let hash = qm_api::auth::hash_password("password123").unwrap();
         let user = qm_db::users::create(
             &self.db,
+            &format!("{username}@example.com"),
             username,
-            Some(&format!("{username}@example.com")),
             &hash,
         )
         .await
@@ -289,8 +298,8 @@ impl TestApp {
         let hash = qm_api::auth::hash_password("password123").unwrap();
         qm_db::users::create(
             &self.db,
+            &format!("{username}@example.com"),
             username,
-            Some(&format!("{username}@example.com")),
             &hash,
         )
         .await

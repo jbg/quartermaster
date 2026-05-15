@@ -122,7 +122,8 @@ class QuartermasterApi(
     )
 
     suspend fun createOnboardingHousehold(
-        username: String,
+        email: String,
+        displayName: String,
         password: String,
         householdName: String,
         timezone: String,
@@ -132,7 +133,8 @@ class QuartermasterApi(
         path = "/onboarding/create-household",
         body =
         CreateOnboardingHouseholdRequest(
-            username = username,
+            email = email,
+            displayName = displayName,
             password = password,
             householdName = householdName,
             timezone = timezone,
@@ -142,7 +144,8 @@ class QuartermasterApi(
     ).also { authStore.saveTokens(it.accessToken, it.refreshToken) }
 
     suspend fun joinOnboardingInvite(
-        username: String,
+        email: String,
+        displayName: String,
         password: String,
         inviteCode: String,
         deviceLabel: String = "Android",
@@ -151,7 +154,8 @@ class QuartermasterApi(
         path = "/onboarding/join-invite",
         body =
         JoinInviteRequest(
-            username = username,
+            email = email,
+            displayName = displayName,
             password = password,
             inviteCode = inviteCode,
             deviceLabel = deviceLabel,
@@ -160,7 +164,7 @@ class QuartermasterApi(
     ).also { authStore.saveTokens(it.accessToken, it.refreshToken) }
 
     suspend fun login(
-        username: String,
+        email: String,
         password: String,
         deviceLabel: String = "Android",
     ): TokenPair = jsonRequest<TokenPair>(
@@ -168,7 +172,7 @@ class QuartermasterApi(
         path = "/auth/login",
         body =
         LoginRequest(
-            username = username,
+            email = email,
             password = password,
             deviceLabel = deviceLabel,
         ),
@@ -176,7 +180,8 @@ class QuartermasterApi(
     ).also { authStore.saveTokens(it.accessToken, it.refreshToken) }
 
     suspend fun register(
-        username: String,
+        email: String,
+        displayName: String,
         password: String,
         inviteCode: String?,
         deviceLabel: String = "Android",
@@ -185,7 +190,8 @@ class QuartermasterApi(
         path = "/auth/register",
         body =
         RegisterRequest(
-            username = username,
+            email = email,
+            displayName = displayName,
             password = password,
             inviteCode = inviteCode,
             deviceLabel = deviceLabel,
@@ -211,21 +217,21 @@ class QuartermasterApi(
         body = null,
     )
 
-    suspend fun requestPasswordReset(username: String) {
+    suspend fun requestPasswordReset(email: String) {
         unitRequest(
             method = "POST",
             path = "/auth/password-reset/request",
-            body = PasswordResetRequest(username = username),
+            body = PasswordResetRequest(email = email),
             requiresAuth = false,
         )
     }
 
-    suspend fun confirmPasswordReset(username: String, newPassword: String, code: String) {
+    suspend fun confirmPasswordReset(email: String, newPassword: String, code: String) {
         unitRequest(
             method = "POST",
             path = "/auth/password-reset/confirm",
             body = PasswordResetConfirmRequest(
-                username = username,
+                email = email,
                 newPassword = newPassword,
                 code = code,
                 token = null,

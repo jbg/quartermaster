@@ -81,7 +81,8 @@
 
   let session: QuartermasterSession | null = $state(null);
   let serverUrl = $state('');
-  let username = $state('');
+  let email = $state('');
+  let displayName = $state('');
   let password = $state('');
   let householdName = $state('');
   let timezone = $state(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
@@ -401,9 +402,9 @@
     await refreshOnboardingStatus();
     if (authMode === 'resetRequest') {
       try {
-        await session.requestPasswordReset(username);
+        await session.requestPasswordReset(email);
         authMode = 'resetConfirm';
-        authMessage = 'If that account has a verified recovery email, a reset code is on its way.';
+        authMessage = 'If that account has a verified email, a reset code is on its way.';
       } catch {
         authError = 'Password reset could not be requested.';
       } finally {
@@ -413,7 +414,7 @@
     }
     if (authMode === 'resetConfirm') {
       try {
-        await session.confirmPasswordReset(username, password, { code: householdName });
+        await session.confirmPasswordReset(email, password, { code: householdName });
         authMode = 'login';
         password = '';
         householdName = '';
@@ -432,9 +433,15 @@
     }
     try {
       if (authMode === 'login') {
-        await session.login(username, password);
+        await session.login(email, password);
       } else {
-        await session.createOnboardingHousehold(username, password, householdName, timezone);
+        await session.createOnboardingHousehold(
+          email,
+          displayName,
+          password,
+          householdName,
+          timezone
+        );
       }
       authenticated = true;
       await refreshMe();
@@ -1080,9 +1087,15 @@
           </label>
         </details>
         <label>
-          Username
-          <input bind:value={username} autocomplete="username" required />
+          Email
+          <input bind:value={email} type="email" autocomplete="email" required />
         </label>
+        {#if authMode === 'register'}
+          <label>
+            Display name
+            <input bind:value={displayName} autocomplete="name" required />
+          </label>
+        {/if}
         {#if authMode !== 'resetRequest'}
           <label>
             {authMode === 'resetConfirm' ? 'New password' : 'Password'}
@@ -1146,9 +1159,9 @@
           class="primary-action"
           type="submit"
           disabled={authBusy ||
-            !username ||
+            !email ||
             (authMode !== 'resetRequest' && password.length < 8) ||
-            (authMode === 'register' && (!householdName || !timezone)) ||
+            (authMode === 'register' && (!displayName || !householdName || !timezone)) ||
             (authMode === 'resetConfirm' && !householdName)}
         >
           {authBusy

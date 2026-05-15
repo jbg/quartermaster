@@ -22,10 +22,8 @@ struct NoHouseholdView: View {
       }
 
       Section("Signed in") {
-        LabeledContent("Username", value: me.user.username)
-        if let email = me.user.email {
-          LabeledContent("Email", value: email)
-        }
+        LabeledContent("Display name", value: me.user.displayName)
+        LabeledContent("Email", value: me.user.email)
       }
 
       HouseholdEntrySections(

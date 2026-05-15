@@ -7,7 +7,8 @@ use support::{me_current_household_id, TestApp};
 
 fn create_household_body(username: &str) -> serde_json::Value {
     json!({
-        "username": username,
+        "email": format!("{username}@example.com"),
+        "display_name": username,
         "password": "password123",
         "household_name": format!("{username}'s Kitchen"),
         "timezone": "UTC",
@@ -17,7 +18,7 @@ fn create_household_body(username: &str) -> serde_json::Value {
 fn invite_body(max_uses: i64) -> serde_json::Value {
     json!({
         "max_uses": max_uses,
-        "role_granted": "member",
+        "role_granted": "read_write",
     })
 }
 
@@ -90,7 +91,8 @@ async fn create_household_supports_first_run_and_open_servers() {
     assert_eq!(status, StatusCode::CREATED);
     let alice = body["access_token"].as_str().unwrap();
     let me = first_run.me(alice).await;
-    assert_eq!(me["user"]["username"], "alice");
+    assert_eq!(me["user"]["email"], "alice@example.com");
+    assert_eq!(me["user"]["display_name"], "alice");
     assert!(me_current_household_id(&me).is_some());
 
     assert_eq!(
@@ -196,7 +198,8 @@ async fn join_invite_is_transactional_and_logs_user_in() {
             Method::POST,
             "/api/v1/onboarding/join-invite",
             Some(json!({
-                "username": "bob",
+                "email": "bob@example.com",
+                "display_name": "bob",
                 "password": "password123",
                 "invite_code": code,
             })),
@@ -216,7 +219,8 @@ async fn join_invite_is_transactional_and_logs_user_in() {
             Method::POST,
             "/api/v1/onboarding/join-invite",
             Some(json!({
-                "username": "carol",
+                "email": "carol@example.com",
+                "display_name": "carol",
                 "password": "password123",
                 "invite_code": code,
             })),
@@ -238,7 +242,8 @@ async fn invalid_invite_join_does_not_create_orphaned_user() {
             Method::POST,
             "/api/v1/onboarding/join-invite",
             Some(json!({
-                "username": "bob",
+                "email": "bob@example.com",
+                "display_name": "bob",
                 "password": "password123",
                 "invite_code": "NOPE",
             })),

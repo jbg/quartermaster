@@ -13,14 +13,12 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
-    auth::CurrentUser,
+    auth::{self, CurrentUser},
     error::{ApiError, ApiResult},
     routes::accounts::{self, MeResponse, UserDto},
     types::MembershipRole,
     AppState,
 };
-
-const ROLE_ADMIN: &str = "admin";
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -123,7 +121,7 @@ pub async fn create_household(
         .ok_or(ApiError::NotFound)?;
     }
     qm_db::locations::seed_defaults(&state.db, household.id).await?;
-    qm_db::memberships::insert(&state.db, household.id, current.user_id, ROLE_ADMIN).await?;
+    qm_db::memberships::insert(&state.db, household.id, current.user_id, auth::ROLE_ADMIN).await?;
     qm_db::auth_sessions::upsert(
         &state.db,
         current.session_id,
@@ -177,7 +175,7 @@ pub async fn update_current_household(
     Json(req): Json<UpdateHouseholdRequest>,
 ) -> ApiResult<Json<HouseholdDetailDto>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    require_admin(&current)?;
+    auth::require_admin(&current)?;
     let name = validate_household_name(&req.name)?;
     let timezone = validate_household_timezone(&req.timezone)?;
     let household = qm_db::households::update(
@@ -217,11 +215,8 @@ pub async fn list_members(
             Ok::<_, ApiError>(MemberDto {
                 user: UserDto {
                     id: row.membership.user_id,
-                    username: row.username,
-                    email: row
-                        .email_verified_at
-                        .as_ref()
-                        .and_then(|_| row.email.clone()),
+                    email: row.email,
+                    display_name: row.display_name,
                     email_verified_at: row.email_verified_at,
                     pending_email: None,
                     pending_email_verification_expires_at: None,
@@ -249,11 +244,11 @@ pub async fn remove_member(
     Path(user_id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    require_admin(&current)?;
+    auth::require_admin(&current)?;
     let membership = qm_db::memberships::find(&state.db, household_id, user_id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    if membership.role == ROLE_ADMIN
+    if membership.role == auth::ROLE_ADMIN
         && qm_db::memberships::count_admins(&state.db, household_id).await? <= 1
     {
         return Err(ApiError::LastAdminRemoval);
@@ -280,7 +275,7 @@ pub async fn create_invite(
     Json(req): Json<CreateInviteRequest>,
 ) -> ApiResult<(StatusCode, Json<InviteDto>)> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    require_admin(&current)?;
+    auth::require_admin(&current)?;
     if req.max_uses < 1 {
         return Err(ApiError::BadRequest("max_uses must be >= 1".into()));
     }
@@ -315,7 +310,7 @@ pub async fn list_invites(
     current: CurrentUser,
 ) -> ApiResult<Json<Vec<InviteDto>>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    require_admin(&current)?;
+    auth::require_admin(&current)?;
     let rows = qm_db::invites::list_for_household(&state.db, household_id).await?;
     Ok(Json(
         rows.into_iter()
@@ -339,7 +334,7 @@ pub async fn revoke_invite(
     Path(id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    require_admin(&current)?;
+    auth::require_admin(&current)?;
     let revoked = qm_db::invites::revoke(&state.db, id, household_id).await?;
     if !revoked {
         return Err(ApiError::NotFound);
@@ -376,14 +371,6 @@ pub async fn redeem_invite(
         }
         Err(qm_db::invites::RedeemInviteError::InvalidInvite) => Err(ApiError::InvalidInvite),
         Err(qm_db::invites::RedeemInviteError::Database(err)) => Err(ApiError::Database(err)),
-    }
-}
-
-fn require_admin(current: &CurrentUser) -> ApiResult<()> {
-    if current.role.as_deref() == Some(ROLE_ADMIN) {
-        Ok(())
-    } else {
-        Err(ApiError::AdminOnly)
     }
 }
 

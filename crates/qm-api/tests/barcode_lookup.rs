@@ -5,7 +5,8 @@ use std::time::Duration;
 use axum::http::{Method, StatusCode};
 use qm_api::ApiConfig;
 use support::off_http::MockOffServer;
-use support::TestApp;
+use support::{me_current_household_id, TestApp};
+use uuid::Uuid;
 
 #[tokio::test]
 async fn barcode_lookup_retries_transient_off_failures_then_succeeds() {
@@ -47,6 +48,8 @@ async fn barcode_lookup_404_writes_negative_cache_entry() {
     .await;
     assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
     let alice = app.login("alice").await;
+    let household_id =
+        Uuid::parse_str(me_current_household_id(&app.me(&alice).await).unwrap()).unwrap();
 
     let (status, _) = app
         .send(
@@ -58,7 +61,7 @@ async fn barcode_lookup_404_writes_negative_cache_entry() {
         .await;
 
     assert_eq!(status, StatusCode::NOT_FOUND);
-    let cached = qm_db::barcode_cache::get(&app.db, "2222222222222")
+    let cached = qm_db::barcode_cache::get(&app.db, household_id, "2222222222222")
         .await
         .unwrap()
         .unwrap();
@@ -80,6 +83,8 @@ async fn breaker_open_failures_do_not_write_cache_misses_and_fail_fast() {
     .await;
     assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
     let alice = app.login("alice").await;
+    let household_id =
+        Uuid::parse_str(me_current_household_id(&app.me(&alice).await).unwrap()).unwrap();
 
     let first = app
         .send(
@@ -101,10 +106,12 @@ async fn breaker_open_failures_do_not_write_cache_misses_and_fail_fast() {
     assert_eq!(first.0, StatusCode::BAD_GATEWAY);
     assert_eq!(second.0, StatusCode::BAD_GATEWAY);
     assert_eq!(mock.hit_count("3333333333333").await, 1);
-    assert!(qm_db::barcode_cache::get(&app.db, "3333333333333")
-        .await
-        .unwrap()
-        .is_none());
+    assert!(
+        qm_db::barcode_cache::get(&app.db, household_id, "3333333333333")
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[tokio::test]

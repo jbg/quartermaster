@@ -50,7 +50,7 @@ async fn login_initializes_active_household_from_latest_joined_and_me_lists_memb
     qm_db::locations::seed_defaults(&app.db, newer_household.id)
         .await
         .unwrap();
-    let admin = qm_db::users::create(&app.db, "owner2", Some("owner2@example.com"), "hash")
+    let admin = qm_db::users::create(&app.db, "owner2@example.com", "Owner 2", "hash")
         .await
         .unwrap();
     qm_db::memberships::insert(&app.db, newer_household.id, admin.id, "admin")
@@ -64,7 +64,7 @@ async fn login_initializes_active_household_from_latest_joined_and_me_lists_memb
         admin.id,
         "2999-01-01T00:00:00.000Z",
         5,
-        "member",
+        "read_write",
     )
     .await
     .unwrap();
@@ -98,7 +98,7 @@ async fn login_initializes_active_household_from_latest_joined_and_me_lists_memb
         me["households"][0]["id"].as_str().unwrap(),
         newer_household.id.to_string()
     );
-    assert_eq!(me["households"][0]["role"].as_str().unwrap(), "member");
+    assert_eq!(me["households"][0]["role"].as_str().unwrap(), "read_write");
 
     sqlx::query("UPDATE membership SET joined_at = ? WHERE user_id = ?")
         .bind("2026-01-01T00:00:00.000Z")
@@ -141,10 +141,9 @@ async fn switch_household_is_session_scoped_and_rejects_non_members() {
     qm_db::locations::seed_defaults(&app.db, cabin_household.id)
         .await
         .unwrap();
-    let cabin_admin =
-        qm_db::users::create(&app.db, "cabin-owner", Some("cabin@example.com"), "hash")
-            .await
-            .unwrap();
+    let cabin_admin = qm_db::users::create(&app.db, "cabin@example.com", "Cabin Owner", "hash")
+        .await
+        .unwrap();
     qm_db::memberships::insert(&app.db, cabin_household.id, cabin_admin.id, "admin")
         .await
         .unwrap();
@@ -155,7 +154,7 @@ async fn switch_household_is_session_scoped_and_rejects_non_members() {
         cabin_admin.id,
         "2999-01-01T00:00:00.000Z",
         5,
-        "member",
+        "read_write",
     )
     .await
     .unwrap();
@@ -281,7 +280,7 @@ async fn removing_active_membership_falls_back_and_last_membership_clears_active
     qm_db::locations::seed_defaults(&app.db, newer_household.id)
         .await
         .unwrap();
-    let admin = qm_db::users::create(&app.db, "owner2", Some("owner2@example.com"), "hash")
+    let admin = qm_db::users::create(&app.db, "owner2@example.com", "Owner 2", "hash")
         .await
         .unwrap();
     qm_db::memberships::insert(&app.db, newer_household.id, admin.id, "admin")
@@ -295,7 +294,7 @@ async fn removing_active_membership_falls_back_and_last_membership_clears_active
         admin.id,
         "2999-01-01T00:00:00.000Z",
         5,
-        "member",
+        "read_write",
     )
     .await
     .unwrap();
@@ -456,7 +455,7 @@ async fn logout_revokes_tokens_and_deletes_auth_session_row() {
             Method::POST,
             "/api/v1/auth/login",
             Some(json!({
-                "username": "alice",
+                "email": "alice@example.com",
                 "password": "password123",
             })),
             None,
@@ -582,7 +581,7 @@ async fn refresh_rotation_keeps_auth_session_row_alive() {
             Method::POST,
             "/api/v1/auth/login",
             Some(json!({
-                "username": "alice",
+                "email": "alice@example.com",
                 "password": "password123",
             })),
             None,
@@ -628,7 +627,7 @@ async fn member_removal_and_location_deletion_guards_work() {
             "/api/v1/households/current/invites",
             Some(json!({
                 "max_uses": 1,
-                "role_granted": "member",
+                "role_granted": "read_write",
             })),
             Some(&alice),
         )
@@ -652,7 +651,7 @@ async fn member_removal_and_location_deletion_guards_work() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|m| m["user"]["username"] == "bob")
+        .find(|m| m["user"]["email"] == "bob@example.com")
         .unwrap()["user"]["id"]
         .as_str()
         .unwrap()
@@ -798,7 +797,7 @@ async fn stale_tokens_follow_current_household_and_cannot_access_prior_household
         alice_id,
         "2999-01-01T00:00:00.000Z",
         5,
-        "member",
+        "read_write",
     )
     .await
     .unwrap();
@@ -809,7 +808,7 @@ async fn stale_tokens_follow_current_household_and_cannot_access_prior_household
     qm_db::locations::seed_defaults(&app.db, household_b.id)
         .await
         .unwrap();
-    let owner_b = qm_db::users::create(&app.db, "ownerb", Some("ownerb@example.com"), "hash")
+    let owner_b = qm_db::users::create(&app.db, "ownerb@example.com", "Owner B", "hash")
         .await
         .unwrap();
     qm_db::memberships::insert(&app.db, household_b.id, owner_b.id, "admin")

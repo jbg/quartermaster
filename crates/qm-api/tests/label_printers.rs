@@ -135,7 +135,7 @@ async fn label_printer_defaults_are_household_scoped_and_admin_only() {
             "/api/v1/households/current/invites",
             Some(json!({
                 "max_uses": 1,
-                "role_granted": "member"
+                "role_granted": "read_write"
             })),
             Some(&alice),
         )

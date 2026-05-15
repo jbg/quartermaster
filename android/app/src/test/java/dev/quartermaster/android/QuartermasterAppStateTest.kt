@@ -117,7 +117,8 @@ class QuartermasterAppStateTest {
         val appState = QuartermasterAppState(sessionStore = FakeSessionStore(), backend = backend)
 
         appState.createOnboardingHousehold(
-            username = "alice",
+            email = "alice@example.com",
+            displayName = "Alice",
             password = "password123",
             householdName = "Kitchen",
             timezone = "UTC",
@@ -136,7 +137,8 @@ class QuartermasterAppStateTest {
         )
 
         appState.joinOnboardingInvite(
-            username = "alice",
+            email = "alice@example.com",
+            displayName = "Alice",
             password = "password123",
             inviteCode = "DEEP1234",
         )
@@ -219,7 +221,7 @@ class QuartermasterAppStateTest {
     }
 
     @Test
-    fun `recovery email actions use settings state and refresh me`() = runTest {
+    fun `email verification actions use settings state and refresh me`() = runTest {
         val backend = FakeBackend(meResponse = meResponseJson())
         val appState = QuartermasterAppState(sessionStore = FakeSessionStore(), backend = backend)
         appState.bootstrap()
@@ -1547,7 +1549,7 @@ class QuartermasterAppStateTest {
             {
               "user": {
                 "id": "11111111-1111-1111-1111-111111111111",
-                "username": "alice",
+                "display_name": "Alice",
                 "email": "alice@example.com",
                 "email_verified_at": "2026-04-28T12:00:00.000Z",
                 "pending_email": null,
@@ -1878,7 +1880,8 @@ class QuartermasterAppStateTest {
         override suspend fun onboardingStatus(): OnboardingStatusResponse = onboardingStatusResponse
 
         override suspend fun createOnboardingHousehold(
-            username: String,
+            email: String,
+            displayName: String,
             password: String,
             householdName: String,
             timezone: String,
@@ -1887,7 +1890,8 @@ class QuartermasterAppStateTest {
         }
 
         override suspend fun joinOnboardingInvite(
-            username: String,
+            email: String,
+            displayName: String,
             password: String,
             inviteCode: String,
         ) {
@@ -1895,12 +1899,13 @@ class QuartermasterAppStateTest {
         }
 
         override suspend fun login(
-            username: String,
+            email: String,
             password: String,
         ) = Unit
 
         override suspend fun register(
-            username: String,
+            email: String,
+            displayName: String,
             password: String,
             inviteCode: String?,
         ) = Unit
@@ -1918,10 +1923,10 @@ class QuartermasterAppStateTest {
             return meResponse
         }
 
-        override suspend fun requestPasswordReset(username: String) = Unit
+        override suspend fun requestPasswordReset(email: String) = Unit
 
         override suspend fun confirmPasswordReset(
-            username: String,
+            email: String,
             newPassword: String,
             code: String,
         ) = Unit

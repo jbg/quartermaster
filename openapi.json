@@ -3768,7 +3768,8 @@
       "CreateOnboardingHouseholdRequest": {
         "type": "object",
         "required": [
-          "username",
+          "email",
+          "display_name",
           "password",
           "household_name",
           "timezone"
@@ -3780,6 +3781,12 @@
               "null"
             ]
           },
+          "display_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
           "household_name": {
             "type": "string"
           },
@@ -3787,9 +3794,6 @@
             "type": "string"
           },
           "timezone": {
-            "type": "string"
-          },
-          "username": {
             "type": "string"
           }
         }
@@ -4076,7 +4080,8 @@
       "JoinInviteRequest": {
         "type": "object",
         "required": [
-          "username",
+          "email",
+          "display_name",
           "password",
           "invite_code"
         ],
@@ -4087,13 +4092,16 @@
               "null"
             ]
           },
+          "display_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
           "invite_code": {
             "type": "string"
           },
           "password": {
-            "type": "string"
-          },
-          "username": {
             "type": "string"
           }
         }
@@ -4231,7 +4239,7 @@
       "LoginRequest": {
         "type": "object",
         "required": [
-          "username",
+          "email",
           "password"
         ],
         "properties": {
@@ -4241,10 +4249,10 @@
               "null"
             ]
           },
-          "password": {
+          "email": {
             "type": "string"
           },
-          "username": {
+          "password": {
             "type": "string"
           }
         }
@@ -4313,7 +4321,8 @@
         "type": "string",
         "enum": [
           "admin",
-          "member"
+          "read_only",
+          "read_write"
         ]
       },
       "OffContributionFieldChange": {
@@ -4486,7 +4495,7 @@
       "PasswordResetConfirmRequest": {
         "type": "object",
         "required": [
-          "username",
+          "email",
           "new_password"
         ],
         "properties": {
@@ -4496,6 +4505,9 @@
               "null"
             ]
           },
+          "email": {
+            "type": "string"
+          },
           "new_password": {
             "type": "string"
           },
@@ -4504,19 +4516,16 @@
               "string",
               "null"
             ]
-          },
-          "username": {
-            "type": "string"
           }
         }
       },
       "PasswordResetRequest": {
         "type": "object",
         "required": [
-          "username"
+          "email"
         ],
         "properties": {
-          "username": {
+          "email": {
             "type": "string"
           }
         }
@@ -4757,7 +4766,8 @@
       "RegisterRequest": {
         "type": "object",
         "required": [
-          "username",
+          "email",
+          "display_name",
           "password"
         ],
         "properties": {
@@ -4768,6 +4778,12 @@
             ],
             "description": "Optional label applied to the refresh token (shown on `/api/v1/auth/me`)."
           },
+          "display_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
           "invite_code": {
             "type": [
               "string",
@@ -4776,9 +4792,6 @@
             "description": "Required unless the server is in `first_run_only` mode and no users\nexist yet, or in `open` mode."
           },
           "password": {
-            "type": "string"
-          },
-          "username": {
             "type": "string"
           }
         }
@@ -5416,14 +5429,15 @@
         "type": "object",
         "required": [
           "id",
-          "username"
+          "email",
+          "display_name"
         ],
         "properties": {
+          "display_name": {
+            "type": "string"
+          },
           "email": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "email_verified_at": {
             "type": [
@@ -5446,9 +5460,6 @@
               "string",
               "null"
             ]
-          },
-          "username": {
-            "type": "string"
           }
         }
       }

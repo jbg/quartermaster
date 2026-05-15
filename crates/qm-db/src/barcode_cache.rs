@@ -6,6 +6,7 @@ use crate::{now_utc_rfc3339, Database};
 
 #[derive(Debug, Clone)]
 pub struct CacheEntry {
+    pub household_id: Uuid,
     pub barcode: String,
     pub product_id: Option<Uuid>,
     pub fetched_at: String,
@@ -26,26 +27,39 @@ impl CacheEntry {
     }
 }
 
-pub async fn get(db: &Database, barcode: &str) -> Result<Option<CacheEntry>, sqlx::Error> {
+pub async fn get(
+    db: &Database,
+    household_id: Uuid,
+    barcode: &str,
+) -> Result<Option<CacheEntry>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT barcode, product_id, fetched_at, miss FROM barcode_cache WHERE barcode = ?",
+        "SELECT household_id, barcode, product_id, fetched_at, miss \
+         FROM barcode_cache WHERE household_id = ? AND barcode = ?",
     )
+    .bind(household_id.to_string())
     .bind(barcode)
     .fetch_optional(&db.pool)
     .await?;
     row.map(row_to_entry).transpose()
 }
 
-pub async fn put_hit(db: &Database, barcode: &str, product_id: Uuid) -> Result<(), sqlx::Error> {
+pub async fn put_hit(
+    db: &Database,
+    household_id: Uuid,
+    barcode: &str,
+    product_id: Uuid,
+) -> Result<(), sqlx::Error> {
     let mut tx = db.pool.begin().await?;
-    sqlx::query("DELETE FROM barcode_cache WHERE barcode = ?")
+    sqlx::query("DELETE FROM barcode_cache WHERE household_id = ? AND barcode = ?")
+        .bind(household_id.to_string())
         .bind(barcode)
         .execute(&mut *tx)
         .await?;
     sqlx::query(
-        "INSERT INTO barcode_cache (barcode, product_id, raw_off_json, fetched_at, miss) \
-         VALUES (?, ?, NULL, ?, 0)",
+        "INSERT INTO barcode_cache (household_id, barcode, product_id, raw_off_json, fetched_at, miss) \
+         VALUES (?, ?, ?, NULL, ?, 0)",
     )
+    .bind(household_id.to_string())
     .bind(barcode)
     .bind(product_id.to_string())
     .bind(now_utc_rfc3339())
@@ -55,16 +69,18 @@ pub async fn put_hit(db: &Database, barcode: &str, product_id: Uuid) -> Result<(
     Ok(())
 }
 
-pub async fn put_miss(db: &Database, barcode: &str) -> Result<(), sqlx::Error> {
+pub async fn put_miss(db: &Database, household_id: Uuid, barcode: &str) -> Result<(), sqlx::Error> {
     let mut tx = db.pool.begin().await?;
-    sqlx::query("DELETE FROM barcode_cache WHERE barcode = ?")
+    sqlx::query("DELETE FROM barcode_cache WHERE household_id = ? AND barcode = ?")
+        .bind(household_id.to_string())
         .bind(barcode)
         .execute(&mut *tx)
         .await?;
     sqlx::query(
-        "INSERT INTO barcode_cache (barcode, product_id, raw_off_json, fetched_at, miss) \
-         VALUES (?, NULL, NULL, ?, 1)",
+        "INSERT INTO barcode_cache (household_id, barcode, product_id, raw_off_json, fetched_at, miss) \
+         VALUES (?, ?, NULL, NULL, ?, 1)",
     )
+    .bind(household_id.to_string())
     .bind(barcode)
     .bind(now_utc_rfc3339())
     .execute(&mut *tx)
@@ -74,9 +90,12 @@ pub async fn put_miss(db: &Database, barcode: &str) -> Result<(), sqlx::Error> {
 }
 
 fn row_to_entry(row: sqlx::any::AnyRow) -> Result<CacheEntry, sqlx::Error> {
+    let household_id_str: String = row.try_get("household_id")?;
     let product_id_str: Option<String> = row.try_get("product_id")?;
     let miss: i64 = row.try_get("miss")?;
     Ok(CacheEntry {
+        household_id: Uuid::parse_str(&household_id_str)
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         barcode: row.try_get("barcode")?,
         product_id: product_id_str
             .map(|s| Uuid::parse_str(&s))
@@ -99,8 +118,8 @@ mod tests {
         let p = products::create_manual(&db, h.id, "Test", None, "count", None, None, None)
             .await
             .unwrap();
-        put_hit(&db, "1234567890123", p.id).await.unwrap();
-        let got = get(&db, "1234567890123").await.unwrap().unwrap();
+        put_hit(&db, h.id, "1234567890123", p.id).await.unwrap();
+        let got = get(&db, h.id, "1234567890123").await.unwrap().unwrap();
         assert!(!got.miss);
         assert_eq!(got.product_id, Some(p.id));
     }
@@ -108,8 +127,9 @@ mod tests {
     #[tokio::test]
     async fn miss_then_lookup() {
         let db = crate::test_db().await;
-        put_miss(&db, "0000000000000").await.unwrap();
-        let got = get(&db, "0000000000000").await.unwrap().unwrap();
+        let h = households::create(&db, "h", "UTC").await.unwrap();
+        put_miss(&db, h.id, "0000000000000").await.unwrap();
+        let got = get(&db, h.id, "0000000000000").await.unwrap().unwrap();
         assert!(got.miss);
         assert!(got.product_id.is_none());
     }
@@ -121,9 +141,9 @@ mod tests {
         let p = products::create_manual(&db, h.id, "Test", None, "count", None, None, None)
             .await
             .unwrap();
-        put_hit(&db, "1111111111111", p.id).await.unwrap();
-        put_miss(&db, "1111111111111").await.unwrap();
-        let got = get(&db, "1111111111111").await.unwrap().unwrap();
+        put_hit(&db, h.id, "1111111111111", p.id).await.unwrap();
+        put_miss(&db, h.id, "1111111111111").await.unwrap();
+        let got = get(&db, h.id, "1111111111111").await.unwrap().unwrap();
         assert!(got.miss);
     }
 
@@ -131,6 +151,7 @@ mod tests {
     fn freshness_check() {
         let now = Timestamp::now();
         let fresh = CacheEntry {
+            household_id: Uuid::nil(),
             barcode: "x".into(),
             product_id: None,
             fetched_at: crate::time::format_timestamp(
@@ -141,6 +162,7 @@ mod tests {
         assert!(fresh.is_fresh(now, 30, 7));
 
         let stale = CacheEntry {
+            household_id: Uuid::nil(),
             barcode: "x".into(),
             product_id: None,
             fetched_at: crate::time::format_timestamp(
@@ -152,6 +174,7 @@ mod tests {
         assert!(!stale.is_fresh(now, 30, 7));
 
         let miss_fresh = CacheEntry {
+            household_id: Uuid::nil(),
             barcode: "x".into(),
             product_id: None,
             fetched_at: crate::time::format_timestamp(
@@ -162,6 +185,7 @@ mod tests {
         assert!(miss_fresh.is_fresh(now, 30, 7));
 
         let miss_stale = CacheEntry {
+            household_id: Uuid::nil(),
             barcode: "x".into(),
             product_id: None,
             fetched_at: crate::time::format_timestamp(

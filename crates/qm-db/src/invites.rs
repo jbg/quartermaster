@@ -31,7 +31,7 @@ pub enum InviteStatus {
 #[derive(Debug)]
 pub enum RegisterWithInviteError {
     InvalidInvite,
-    UsernameTaken,
+    EmailTaken,
     Database(sqlx::Error),
 }
 
@@ -190,31 +190,62 @@ pub async fn consume_in_tx(
 pub async fn register_user_with_invite(
     db: &Database,
     code: &str,
-    username: &str,
-    email: Option<&str>,
+    email: &str,
+    display_name: &str,
     password_hash: &str,
+    verification: Option<(&str, &str)>,
 ) -> Result<RegisteredInviteUser, RegisterWithInviteError> {
     let mut tx = begin_invite_tx(db).await?;
-    let invite = find_active_by_code_in_tx(&mut tx, code)
+    let registered = register_user_with_invite_in_tx(
+        db,
+        &mut tx,
+        code,
+        email,
+        display_name,
+        password_hash,
+        verification,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(registered)
+}
+
+pub async fn register_user_with_invite_in_tx(
+    db: &Database,
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    code: &str,
+    email: &str,
+    display_name: &str,
+    password_hash: &str,
+    verification: Option<(&str, &str)>,
+) -> Result<RegisteredInviteUser, RegisterWithInviteError> {
+    let invite = find_active_by_code_in_tx(&mut *tx, code)
         .await?
         .ok_or(RegisterWithInviteError::InvalidInvite)?;
     maybe_synchronize_invite_race(db, invite.id).await;
 
-    let user = match crate::users::create_in_tx(&mut tx, username, email, password_hash).await {
+    let user = match crate::users::create_in_tx(&mut *tx, email, display_name, password_hash).await
+    {
         Ok(user) => user,
         Err(err) if crate::memberships::is_unique_violation(&err) => {
-            return Err(RegisterWithInviteError::UsernameTaken);
+            return Err(RegisterWithInviteError::EmailTaken);
         }
         Err(err) => return Err(RegisterWithInviteError::Database(err)),
     };
 
-    crate::memberships::insert_in_tx(&mut tx, invite.household_id, user.id, &invite.role_granted)
+    if let Some((code_hash, expires_at)) = verification {
+        crate::users::create_email_verification_in_tx(
+            &mut *tx, user.id, email, code_hash, expires_at,
+        )
         .await?;
-    if !consume_in_tx(&mut tx, invite.id).await? {
+    }
+
+    crate::memberships::insert_in_tx(&mut *tx, invite.household_id, user.id, &invite.role_granted)
+        .await?;
+    if !consume_in_tx(&mut *tx, invite.id).await? {
         return Err(RegisterWithInviteError::InvalidInvite);
     }
 
-    tx.commit().await?;
     Ok(RegisteredInviteUser {
         user,
         household_id: invite.household_id,
@@ -269,7 +300,7 @@ async fn maybe_synchronize_invite_race(db: &Database, invite_id: Uuid) {
 #[cfg(not(any(test, feature = "test-support")))]
 async fn maybe_synchronize_invite_race(_db: &Database, _invite_id: Uuid) {}
 
-async fn begin_invite_tx(
+pub async fn begin_invite_tx(
     db: &Database,
 ) -> Result<sqlx::Transaction<'static, sqlx::Any>, sqlx::Error> {
     if db.backend() == Backend::Sqlite {
@@ -338,7 +369,9 @@ mod tests {
     async fn create_list_revoke_and_consume() {
         let db = crate::test_db().await;
         let household = households::create(&db, "Home", "UTC").await.unwrap();
-        let creator = users::create(&db, "alice", None, "hash").await.unwrap();
+        let creator = users::create(&db, "alice@example.com", "Alice", "hash")
+            .await
+            .unwrap();
         let invite = create(
             &db,
             household.id,
@@ -346,7 +379,7 @@ mod tests {
             creator.id,
             "2999-01-01T00:00:00.000Z",
             2,
-            "member",
+            "read_write",
         )
         .await
         .unwrap();
