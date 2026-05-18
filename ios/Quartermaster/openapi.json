@@ -5302,6 +5302,13 @@
             ],
             "description": "Include the batch quantity/unit on the printed label. Defaults to false\nbecause labels often stay with mutable containers after first use."
           },
+          "label_size": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Label length to print: `standard` or `small`. `small` is only supported\non continuous media and keeps a compact QR code for narrow bottles or jars."
+          },
           "printer_id": {
             "type": [
               "string",

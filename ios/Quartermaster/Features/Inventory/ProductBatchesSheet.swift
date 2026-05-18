@@ -217,8 +217,8 @@ struct ProductBatchesSheet: View {
     BatchRow(
       batch: batch,
       isPrintingLabel: labelPrintingBatchID == batch.id
-    ) { includeQuantity in
-      Task { await printLabel(for: batch, includeQuantity: includeQuantity) }
+    ) { includeQuantity, labelSize in
+      Task { await printLabel(for: batch, includeQuantity: includeQuantity, labelSize: labelSize) }
     }
     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
       if !isDepleted(batch) {
@@ -285,7 +285,9 @@ struct ProductBatchesSheet: View {
     }
   }
 
-  private func printLabel(for batch: StockBatch, includeQuantity: Bool) async {
+  private func printLabel(for batch: StockBatch, includeQuantity: Bool, labelSize: LabelPrintSize)
+    async
+  {
     guard labelPrintingBatchID == nil else { return }
     labelPrintingBatchID = batch.id
     defer { labelPrintingBatchID = nil }
@@ -294,6 +296,7 @@ struct ProductBatchesSheet: View {
         id: batch.id,
         copies: 1,
         includeQuantity: includeQuantity,
+        labelSize: labelSize,
       )
       let action = response.status == .sent ? "sent" : "rendered"
       labelPrintNotice = LabelPrintNotice(
@@ -337,7 +340,7 @@ private struct LabelPrintNotice: Identifiable {
 struct BatchRow: View {
   let batch: StockBatch
   var isPrintingLabel = false
-  var onPrintLabel: ((Bool) -> Void)?
+  var onPrintLabel: ((Bool, LabelPrintSize) -> Void)?
 
   var body: some View {
     HStack {
@@ -371,14 +374,24 @@ struct BatchRow: View {
         } else {
           Menu {
             Button {
-              onPrintLabel(false)
+              onPrintLabel(false, .standard)
             } label: {
               Label("Print label", systemImage: "qrcode")
             }
             Button {
-              onPrintLabel(true)
+              onPrintLabel(true, .standard)
             } label: {
               Label("Print with quantity", systemImage: "number")
+            }
+            Button {
+              onPrintLabel(false, .small)
+            } label: {
+              Label("Print small label", systemImage: "rectangle.compress.vertical")
+            }
+            Button {
+              onPrintLabel(true, .small)
+            } label: {
+              Label("Print small with quantity", systemImage: "number")
             }
           } label: {
             Image(systemName: "qrcode")

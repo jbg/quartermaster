@@ -270,6 +270,7 @@ export interface PrintStockLabelRequest {
   printer_id?: string | null;
   copies?: number | null;
   dry_run?: boolean | null;
+  label_size?: 'standard' | 'small' | null;
   include_quantity?: boolean | null;
 }
 

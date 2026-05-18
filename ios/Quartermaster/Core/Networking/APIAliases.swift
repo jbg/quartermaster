@@ -215,6 +215,11 @@ typealias Reminder = Components.Schemas.ReminderDto
 typealias ReminderKind = Components.Schemas.ReminderKind
 typealias ReminderListResponse = Components.Schemas.ReminderListResponse
 
+enum LabelPrintSize: String {
+  case standard
+  case small
+}
+
 extension StorageVessel: Identifiable {
   var displayTare: String { "\(tareWeight) \(tareUnit)" }
 }

@@ -491,6 +491,11 @@ export type PrintStockLabelRequest = {
      * because labels often stay with mutable containers after first use.
      */
     include_quantity?: boolean | null;
+    /**
+     * Label length to print: `standard` or `small`. `small` is only supported
+     * on continuous media and keeps a compact QR code for narrow bottles or jars.
+     */
+    label_size?: string | null;
     printer_id?: string | null;
 };
 

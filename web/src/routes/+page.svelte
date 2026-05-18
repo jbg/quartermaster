@@ -119,6 +119,7 @@
   let labelPrintMessage = $state<string | null>(null);
   let labelPrintError = $state<string | null>(null);
   let labelPrintIncludeQuantity = $state(false);
+  let labelPrintSize = $state<'standard' | 'small'>('standard');
   let stockEditOpen = $state(false);
   let stockEditQuantity = $state('');
   let stockEditLocationId = $state('');
@@ -216,6 +217,8 @@
     session = created;
     serverUrl = created.snapshot().serverUrl;
     labelPrintIncludeQuantity = window.localStorage.getItem('qm_label_include_quantity') === 'true';
+    labelPrintSize =
+      window.localStorage.getItem('qm_label_size') === 'small' ? 'small' : 'standard';
     const batchParam = page.url.searchParams.get('batch');
     if (batchParam) {
       selectedBatchId = batchParam;
@@ -715,9 +718,11 @@
           'qm_label_include_quantity',
           labelPrintIncludeQuantity ? 'true' : 'false'
         );
+        window.localStorage.setItem('qm_label_size', labelPrintSize);
       }
       const printed = await session.stockLabelPrint(selectedBatch.id, {
         copies: 1,
+        label_size: labelPrintSize,
         include_quantity: labelPrintIncludeQuantity
       });
       labelPrintMessage =
@@ -1697,6 +1702,13 @@
               <a class="secondary-action small" href={settingsHref}>Printers</a>
             </div>
             <div class="stock-actions">
+              <label>
+                Size
+                <select bind:value={labelPrintSize}>
+                  <option value="standard">Standard</option>
+                  <option value="small">Small continuous</option>
+                </select>
+              </label>
               <label>
                 <input type="checkbox" bind:checked={labelPrintIncludeQuantity} />
                 Include quantity

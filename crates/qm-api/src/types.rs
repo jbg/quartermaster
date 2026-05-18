@@ -201,6 +201,10 @@ impl LabelPrinterMedia {
             Self::Dk29x90 => "dk_29x90",
         }
     }
+
+    pub const fn is_continuous(self) -> bool {
+        matches!(self, Self::Dk62Continuous | Self::Dk62RedBlackContinuous)
+    }
 }
 
 impl fmt::Display for LabelPrinterMedia {
@@ -220,6 +224,19 @@ impl FromStr for LabelPrinterMedia {
                 "unknown label printer media in DB row: {other}",
             ))),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LabelPrintSize {
+    Standard,
+    Small,
+}
+
+impl Default for LabelPrintSize {
+    fn default() -> Self {
+        Self::Standard
     }
 }
 
