@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.27.0](https://github.com/jbg/quartermaster/compare/1.26.0...1.27.0) (2026-05-18)
+
+
+### Features
+
+* add hosted plan quotas ([dcb2242](https://github.com/jbg/quartermaster/commit/dcb2242672a29fdbb331915fca354d0f2f4fffe3))
+* support small continuous labels ([9015c7b](https://github.com/jbg/quartermaster/commit/9015c7b09335565d61e8585ffd9af77be42d91a5))
+
 ## [1.26.0](https://github.com/jbg/quartermaster/compare/1.25.0...1.26.0) (2026-05-15)
 
 
