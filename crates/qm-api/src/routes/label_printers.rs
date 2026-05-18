@@ -17,7 +17,7 @@ use crate::{
         build_label_job, BrotherQlRasterPrinter, BrotherQlRenderer, LabelJob, LabelPrinter,
         LabelRenderer,
     },
-    types::{LabelPrinterDriver, LabelPrinterMedia},
+    types::{LabelPrintSize, LabelPrinterDriver, LabelPrinterMedia},
     AppState,
 };
 
@@ -84,6 +84,9 @@ pub struct PrintStockLabelRequest {
     pub printer_id: Option<Uuid>,
     pub copies: Option<u8>,
     pub dry_run: Option<bool>,
+    /// Label length to print: `standard` or `small`. `small` is only supported
+    /// on continuous media and keeps a compact QR code for narrow bottles or jars.
+    pub label_size: Option<String>,
     /// Include the batch quantity/unit on the printed label. Defaults to false
     /// because labels often stay with mutable containers after first use.
     pub include_quantity: Option<bool>,
@@ -265,7 +268,7 @@ pub async fn test_label_printer(
         note: Some("Test print".into()),
         include_quantity: false,
     };
-    let rendered = BrotherQlRenderer.render(&job, media)?;
+    let rendered = BrotherQlRenderer.render(&job, media, LabelPrintSize::Standard)?;
     send_to_printer(&printer, &rendered, 1).await?;
     Ok(Json(PrintStockLabelResponse {
         printer_id: printer.id,
@@ -317,7 +320,8 @@ pub async fn print_stock_label(
     let mut job = build_label_job(&state, household_id, id).await?;
     job.include_quantity = req.include_quantity.unwrap_or(false);
     let media = LabelPrinterMedia::from_str(&printer.media)?;
-    let rendered = BrotherQlRenderer.render(&job, media)?;
+    let rendered =
+        BrotherQlRenderer.render(&job, media, parse_label_size(req.label_size.as_deref())?)?;
     let status = if req.dry_run.unwrap_or(false) {
         LabelPrintStatus::Rendered
     } else {
@@ -404,4 +408,12 @@ fn validate_port(port: i64) -> ApiResult<i64> {
         ));
     }
     Ok(port)
+}
+
+fn parse_label_size(value: Option<&str>) -> ApiResult<LabelPrintSize> {
+    match value.unwrap_or("standard") {
+        "standard" => Ok(LabelPrintSize::Standard),
+        "small" => Ok(LabelPrintSize::Small),
+        other => Err(ApiError::BadRequest(format!("unknown label size: {other}"))),
+    }
 }

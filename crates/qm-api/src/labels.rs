@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::{
     error::{ApiError, ApiResult},
-    types::{LabelPrinterDriver, LabelPrinterMedia},
+    types::{LabelPrintSize, LabelPrinterDriver, LabelPrinterMedia},
     AppState,
 };
 
@@ -47,7 +47,12 @@ pub struct PrintReceipt {
 }
 
 pub trait LabelRenderer {
-    fn render(&self, job: &LabelJob, media: LabelPrinterMedia) -> ApiResult<RenderedLabel>;
+    fn render(
+        &self,
+        job: &LabelJob,
+        media: LabelPrinterMedia,
+        size: LabelPrintSize,
+    ) -> ApiResult<RenderedLabel>;
 }
 
 pub trait LabelPrinter {
@@ -93,8 +98,13 @@ pub fn public_batch_url(state: &AppState, batch_id: Uuid) -> ApiResult<String> {
 pub struct BrotherQlRenderer;
 
 impl LabelRenderer for BrotherQlRenderer {
-    fn render(&self, job: &LabelJob, media: LabelPrinterMedia) -> ApiResult<RenderedLabel> {
-        let spec = BrotherMediaSpec::for_media(media);
+    fn render(
+        &self,
+        job: &LabelJob,
+        media: LabelPrinterMedia,
+        size: LabelPrintSize,
+    ) -> ApiResult<RenderedLabel> {
+        let spec = BrotherMediaSpec::for_media(media, size)?;
         let text = LabelTextRenderer::new()?;
         let mut bitmap = Bitmap::new(spec.width_px, spec.height_px);
         bitmap.draw_rect(0, 0, spec.width_px, spec.height_px, Pixel::White);
@@ -173,24 +183,32 @@ struct BrotherMediaSpec {
     media: Media,
     qr_px: usize,
     supports_red: bool,
+    size: LabelPrintSize,
 }
 
 impl BrotherMediaSpec {
-    fn for_media(media: LabelPrinterMedia) -> Self {
-        match media {
+    fn for_media(media: LabelPrinterMedia, size: LabelPrintSize) -> ApiResult<Self> {
+        if size == LabelPrintSize::Small && !media.is_continuous() {
+            return Err(ApiError::BadRequest(
+                "small labels require continuous label printer media".into(),
+            ));
+        }
+        Ok(match media {
             LabelPrinterMedia::Dk62Continuous => Self {
                 width_px: Media::C62.width_dots() as usize,
-                height_px: 360,
+                height_px: continuous_label_height(size),
                 media: Media::C62,
-                qr_px: 300,
+                qr_px: continuous_qr_size(size),
                 supports_red: false,
+                size,
             },
             LabelPrinterMedia::Dk62RedBlackContinuous => Self {
                 width_px: Media::C62R.width_dots() as usize,
-                height_px: 360,
+                height_px: continuous_label_height(size),
                 media: Media::C62R,
-                qr_px: 300,
+                qr_px: continuous_qr_size(size),
                 supports_red: true,
+                size,
             },
             LabelPrinterMedia::Dk29x90 => Self {
                 width_px: Media::D29x90.width_dots() as usize,
@@ -198,12 +216,27 @@ impl BrotherMediaSpec {
                 media: Media::D29x90,
                 qr_px: 240,
                 supports_red: false,
+                size,
             },
-        }
+        })
     }
 
     fn is_portrait(&self) -> bool {
         self.height_px > self.width_px.saturating_mul(2)
+    }
+}
+
+fn continuous_label_height(size: LabelPrintSize) -> usize {
+    match size {
+        LabelPrintSize::Standard => 360,
+        LabelPrintSize::Small => 220,
+    }
+}
+
+fn continuous_qr_size(size: LabelPrintSize) -> usize {
+    match size {
+        LabelPrintSize::Standard => 300,
+        LabelPrintSize::Small => 180,
     }
 }
 
@@ -214,6 +247,9 @@ fn render_landscape_label(
     job: &LabelJob,
     spec: &BrotherMediaSpec,
 ) -> ApiResult<()> {
+    if spec.size == LabelPrintSize::Small {
+        return render_small_landscape_label(bitmap, text, qr, job, spec);
+    }
     let (actual_qr_px, module_px) = qr_size(qr, spec.qr_px.min(spec.height_px.saturating_sub(24)));
     let qr_x = 10;
     let qr_y = (spec.height_px.saturating_sub(actual_qr_px)) / 2;
@@ -258,6 +294,62 @@ fn render_landscape_label(
         bitmap,
         text_x,
         spec.height_px.saturating_sub(16),
+        &format!("BATCH {}", short_id(job.batch_id)),
+        1,
+    )?;
+    Ok(())
+}
+
+fn render_small_landscape_label(
+    bitmap: &mut Bitmap,
+    text: &LabelTextRenderer,
+    qr: &QrCode,
+    job: &LabelJob,
+    spec: &BrotherMediaSpec,
+) -> ApiResult<()> {
+    let (actual_qr_px, module_px) = qr_size(qr, spec.qr_px.min(spec.height_px.saturating_sub(22)));
+    let qr_x = 8;
+    let qr_y = (spec.height_px.saturating_sub(actual_qr_px)) / 2;
+    bitmap.draw_branded_qr(qr, qr_x, qr_y, actual_qr_px, module_px);
+
+    let text_x = qr_x + actual_qr_px + 14;
+    let text_width = spec.width_px.saturating_sub(text_x + 8);
+    let mut y = if spec.supports_red { 20 } else { 14 };
+    y += draw_wrapped_text(bitmap, text, text_x, y, &job.product_name, text_width, 4, 2)? + 8;
+    if let Some(brand) = job.brand.as_deref().filter(|s| !s.trim().is_empty()) {
+        text.draw_text(
+            bitmap,
+            text_x,
+            y,
+            &truncate_for_width(text, brand, text_width, 2)?,
+            2,
+        )?;
+        y += 24;
+    }
+    if job.include_quantity {
+        text.draw_text(
+            bitmap,
+            text_x,
+            y,
+            &truncate_for_width(text, &label_quantity(job), text_width, 2)?,
+            2,
+        )?;
+        y += 24;
+    }
+    y += draw_compact_dates(bitmap, text, text_x, y, text_width, job)?;
+    if let Some(note) = job.note.as_deref().filter(|s| !s.trim().is_empty()) {
+        text.draw_text(
+            bitmap,
+            text_x,
+            y + 2,
+            &truncate_for_width(text, note, text_width, 1)?,
+            1,
+        )?;
+    }
+    text.draw_text(
+        bitmap,
+        text_x,
+        spec.height_px.saturating_sub(14),
         &format!("BATCH {}", short_id(job.batch_id)),
         1,
     )?;
@@ -397,6 +489,46 @@ fn draw_secondary_dates(
         consumed += text.line_height(scale)? + 6;
     }
     Ok(consumed)
+}
+
+fn draw_compact_dates(
+    bitmap: &mut Bitmap,
+    text: &LabelTextRenderer,
+    x: usize,
+    y: usize,
+    width: usize,
+    job: &LabelJob,
+) -> ApiResult<usize> {
+    let mut consumed = 0;
+    if let Some((label, date)) = primary_date(job) {
+        let line = format!("{label} {date}");
+        text.draw_text(bitmap, x, y, &truncate_for_width(text, &line, width, 3)?, 3)?;
+        consumed += text.line_height(3)? + 6;
+    }
+    let secondary = compact_secondary_date(job);
+    if let Some(line) = secondary.as_deref() {
+        text.draw_text(
+            bitmap,
+            x,
+            y + consumed,
+            &truncate_for_width(text, line, width, 2)?,
+            2,
+        )?;
+        consumed += text.line_height(2)? + 4;
+    }
+    Ok(consumed)
+}
+
+fn compact_secondary_date(job: &LabelJob) -> Option<String> {
+    if let Some(opened_on) = &job.opened_on {
+        Some(format!("OPEN {opened_on}"))
+    } else if job.expires_on.is_some() {
+        job.produced_on
+            .as_ref()
+            .map(|produced_on| format!("MADE {produced_on}"))
+    } else {
+        None
+    }
 }
 
 fn draw_wrapped_text(
@@ -881,7 +1013,7 @@ impl Bitmap {
 }
 
 fn compile_brother_ql_job(label: &RenderedLabel, copies: u8) -> ApiResult<Vec<u8>> {
-    let media = BrotherMediaSpec::for_media(label.media).media;
+    let media = BrotherMediaSpec::for_media(label.media, LabelPrintSize::Standard)?.media;
     let copies = NonZeroU8::new(copies.max(1)).ok_or_else(|| {
         ApiError::Internal(anyhow::anyhow!("label print copies must be non-zero"))
     })?;
@@ -949,7 +1081,11 @@ mod tests {
         };
 
         let rendered = BrotherQlRenderer
-            .render(&job, LabelPrinterMedia::Dk62Continuous)
+            .render(
+                &job,
+                LabelPrinterMedia::Dk62Continuous,
+                LabelPrintSize::Standard,
+            )
             .unwrap();
         let bytes = compile_brother_ql_job(&rendered, 1).unwrap();
         assert_eq!(rendered.width_px, 696);
@@ -979,7 +1115,11 @@ mod tests {
         };
 
         let rendered = BrotherQlRenderer
-            .render(&job, LabelPrinterMedia::Dk62RedBlackContinuous)
+            .render(
+                &job,
+                LabelPrinterMedia::Dk62RedBlackContinuous,
+                LabelPrintSize::Standard,
+            )
             .unwrap();
         let bytes = compile_brother_ql_job(&rendered, 1).unwrap();
         let rgb = rendered.image.to_rgb8();
@@ -1013,7 +1153,7 @@ mod tests {
         };
 
         let rendered = BrotherQlRenderer
-            .render(&job, LabelPrinterMedia::Dk29x90)
+            .render(&job, LabelPrinterMedia::Dk29x90, LabelPrintSize::Standard)
             .unwrap();
         let bytes = compile_brother_ql_job(&rendered, 2).unwrap();
 
@@ -1021,6 +1161,67 @@ mod tests {
         assert_eq!(rendered.height_px, 944);
         assert!(bytes.starts_with(&[0x00; 10]));
         assert_eq!(bytes.last(), Some(&0x1a));
+    }
+
+    #[test]
+    fn brother_renderer_supports_small_continuous_labels() {
+        let job = LabelJob {
+            batch_id: Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap(),
+            batch_url:
+                "https://quartermaster.example.com/batches/33333333-3333-3333-3333-333333333333"
+                    .into(),
+            product_name: "Vanilla extract bottle".into(),
+            brand: Some("Acme".into()),
+            location_name: "Pantry".into(),
+            quantity: "100".into(),
+            unit: "ml".into(),
+            produced_on: Some("2026-05-01".into()),
+            expires_on: Some("2026-06-01".into()),
+            opened_on: None,
+            note: Some("pourer".into()),
+            include_quantity: true,
+        };
+
+        let rendered = BrotherQlRenderer
+            .render(
+                &job,
+                LabelPrinterMedia::Dk62Continuous,
+                LabelPrintSize::Small,
+            )
+            .unwrap();
+        let bytes = compile_brother_ql_job(&rendered, 1).unwrap();
+        let rgb = rendered.image.to_rgb8();
+
+        assert_eq!(rendered.width_px, 696);
+        assert_eq!(rendered.height_px, 220);
+        assert!((8..200).any(|x| (10..210).any(|y| *rgb.get_pixel(x, y) == image::Rgb([0, 0, 0]))));
+        assert!(bytes.starts_with(&[0x00; 10]));
+        assert_eq!(bytes.last(), Some(&0x1a));
+    }
+
+    #[test]
+    fn small_labels_require_continuous_media() {
+        let job = LabelJob {
+            batch_id: Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap(),
+            batch_url:
+                "https://quartermaster.example.com/batches/33333333-3333-3333-3333-333333333333"
+                    .into(),
+            product_name: "Flour".into(),
+            brand: None,
+            location_name: "Pantry".into(),
+            quantity: "500".into(),
+            unit: "g".into(),
+            produced_on: None,
+            expires_on: None,
+            opened_on: None,
+            note: None,
+            include_quantity: false,
+        };
+
+        let err = BrotherQlRenderer
+            .render(&job, LabelPrinterMedia::Dk29x90, LabelPrintSize::Small)
+            .unwrap_err();
+        assert!(err.to_string().contains("continuous"));
     }
 
     #[test]

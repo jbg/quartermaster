@@ -208,7 +208,12 @@ import UIKit
     {
       throw APIError.unknown
     }
-    func printStockLabel(id: String, copies: Int, includeQuantity: Bool) async throws
+    func printStockLabel(
+      id: String,
+      copies: Int,
+      includeQuantity: Bool,
+      labelSize: LabelPrintSize,
+    ) async throws
       -> PrintStockLabelResponse
     {
       try decodeFixture(

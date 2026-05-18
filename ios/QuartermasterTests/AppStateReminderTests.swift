@@ -782,7 +782,12 @@ private actor FakeAPI: AppStateAPI {
   {
     fatalError("unused")
   }
-  func printStockLabel(id: String, copies: Int, includeQuantity: Bool) async throws
+  func printStockLabel(
+    id: String,
+    copies: Int,
+    includeQuantity: Bool,
+    labelSize: LabelPrintSize,
+  ) async throws
     -> PrintStockLabelResponse
   {
     fatalError("unused")

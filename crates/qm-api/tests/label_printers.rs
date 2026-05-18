@@ -54,6 +54,78 @@ async fn dry_run_prints_batch_label_with_public_batch_url() {
 }
 
 #[tokio::test]
+async fn small_label_prints_only_on_continuous_media() {
+    let app = TestApp::start(ApiConfig {
+        public_base_url: Some("https://quartermaster.example.com".into()),
+        ..ApiConfig::default()
+    })
+    .await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let batch_id = seed_batch(&app, &alice).await;
+
+    let (status, _) = app
+        .send(
+            Method::POST,
+            "/api/v1/label-printers",
+            Some(json!({
+                "name": "Kitchen Brother",
+                "driver": "brother_ql_raster",
+                "address": "127.0.0.1",
+                "media": "dk_62_continuous",
+                "enabled": true,
+                "is_default": true
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, printed) = app
+        .send(
+            Method::POST,
+            &format!("/api/v1/stock/{batch_id}/labels/print"),
+            Some(json!({ "dry_run": true, "label_size": "small" })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(printed["status"], "rendered");
+
+    let (status, printer) = app
+        .send(
+            Method::POST,
+            "/api/v1/label-printers",
+            Some(json!({
+                "name": "Die cut Brother",
+                "driver": "brother_ql_raster",
+                "address": "127.0.0.1",
+                "media": "dk_29x90",
+                "enabled": true,
+                "is_default": false
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, body) = app
+        .send(
+            Method::POST,
+            &format!("/api/v1/stock/{batch_id}/labels/print"),
+            Some(json!({
+                "dry_run": true,
+                "label_size": "small",
+                "printer_id": printer["id"],
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["message"].as_str().unwrap().contains("continuous"));
+}
+
+#[tokio::test]
 async fn print_requires_public_base_url_even_for_dry_run() {
     let app = TestApp::start(ApiConfig::default()).await;
     assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
