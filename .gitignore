@@ -41,6 +41,7 @@ android/local.properties
 
 # Web / pnpm / SvelteKit
 node_modules/
+.pnpm-store/
 web/node_modules/
 web/.svelte-kit/
 web/build/
