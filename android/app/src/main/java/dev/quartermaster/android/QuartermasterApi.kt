@@ -20,6 +20,7 @@ import dev.quartermaster.android.generated.models.JoinInviteRequest
 import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.LoginRequest
 import dev.quartermaster.android.generated.models.MeResponse
+import dev.quartermaster.android.generated.models.MeasurementSystem
 import dev.quartermaster.android.generated.models.MemberDto
 import dev.quartermaster.android.generated.models.OffContributionPreviewResponse
 import dev.quartermaster.android.generated.models.OffContributionResponse
@@ -47,6 +48,7 @@ import dev.quartermaster.android.generated.models.StorageVesselDto
 import dev.quartermaster.android.generated.models.SwitchHouseholdRequest
 import dev.quartermaster.android.generated.models.TokenPair
 import dev.quartermaster.android.generated.models.UnitDto
+import dev.quartermaster.android.generated.models.UpdateHouseholdRequest
 import dev.quartermaster.android.generated.models.UpdateLocationRequest
 import dev.quartermaster.android.generated.models.UpdateStorageVesselRequest
 import kotlinx.coroutines.Dispatchers
@@ -431,10 +433,15 @@ class QuartermasterApi(
     suspend fun createHousehold(
         name: String,
         timezone: String,
+        measurementSystem: MeasurementSystem = MeasurementSystem.METRIC,
     ): MeResponse = authedJson(
         method = "POST",
         path = "/households",
-        body = CreateHouseholdRequest(name = name, timezone = timezone),
+        body = CreateHouseholdRequest(
+            name = name,
+            timezone = timezone,
+            measurementSystem = measurementSystem,
+        ),
     )
 
     suspend fun redeemInvite(inviteCode: String) {
@@ -446,6 +453,12 @@ class QuartermasterApi(
     }
 
     suspend fun currentHousehold(): HouseholdDetailDto = authedJson("GET", "/households/current")
+
+    suspend fun updateCurrentHousehold(request: UpdateHouseholdRequest): HouseholdDetailDto = authedJson(
+        method = "PATCH",
+        path = "/households/current",
+        body = request,
+    )
 
     suspend fun exportCurrentHousehold(): String = authedRaw("GET", "/households/current/export")
 
@@ -853,6 +866,7 @@ class QuartermasterApi(
         is RegisterDeviceRequest -> json.encodeToString(body)
         is RegisterRequest -> json.encodeToString(body)
         is SwitchHouseholdRequest -> json.encodeToString(body)
+        is UpdateHouseholdRequest -> json.encodeToString(body)
         is UpdateLocationRequest -> json.encodeToString(body)
         is UpdateStorageVesselRequest -> json.encodeToString(body)
         is ProductUpdateRequest -> patchJson.encodeToString(body.operations)

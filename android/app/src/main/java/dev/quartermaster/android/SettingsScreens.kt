@@ -33,6 +33,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.quartermaster.android.generated.models.LocationDto
+import dev.quartermaster.android.generated.models.MeasurementSystem
 import dev.quartermaster.android.generated.models.StorageVesselDto
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -56,6 +57,9 @@ internal fun SettingsScreen(
     var offPassword by remember { mutableStateOf("") }
     var passkeyLabel by remember { mutableStateOf("") }
     var handoffLabel by remember { mutableStateOf("Android") }
+    var householdName by remember { mutableStateOf("") }
+    var householdTimezone by remember { mutableStateOf("") }
+    var householdMeasurementSystem by remember { mutableStateOf(MeasurementSystem.METRIC) }
     var storageVesselFields by remember { mutableStateOf(StorageVesselFormFields()) }
     var editingStorageVesselId by remember { mutableStateOf<String?>(null) }
     var pendingStorageVesselDeleteId by remember { mutableStateOf<String?>(null) }
@@ -67,6 +71,13 @@ internal fun SettingsScreen(
     LaunchedEffect(appState.pendingInviteContext) {
         if (!appState.pendingInviteContext?.inviteCode.isNullOrBlank()) {
             redeemInviteCode = appState.pendingInviteContext?.inviteCode.orEmpty()
+        }
+    }
+    LaunchedEffect(appState.householdDetail) {
+        appState.householdDetail?.let { household ->
+            householdName = household.name
+            householdTimezone = household.timezone
+            householdMeasurementSystem = household.measurementSystem
         }
     }
     LaunchedEffect(appState.storageVesselUnitSymbols()) {
@@ -125,9 +136,42 @@ internal fun SettingsScreen(
                     MetadataRow("Email", appState.meOrNull?.user?.email ?: "Unknown")
                     MetadataRow("Household", appState.meOrNull?.currentHousehold?.name ?: "None")
                     MetadataRow("Timezone", appState.meOrNull?.currentHousehold?.timezone ?: "UTC")
+                    appState.householdDetail?.let { household ->
+                        MetadataRow("Measurement system", household.measurementSystem.displayName())
+                    }
                     MetadataRow("Server", appState.serverUrl)
                 }
             }
+        }
+        item {
+            val household = appState.householdDetail
+            HouseholdDetailsCard(
+                name = householdName,
+                timezone = householdTimezone,
+                measurementSystem = householdMeasurementSystem,
+                loadedMeasurementSystem = household?.measurementSystem,
+                canManage = appState.currentUserIsHouseholdAdmin(),
+                actionInFlight = appState.settingsLoadState == LoadState.Loading,
+                onNameChange = { householdName = it },
+                onTimezoneChange = { householdTimezone = it },
+                onMeasurementSystemChange = { householdMeasurementSystem = it },
+                onSave = {
+                    scope.launch {
+                        appState.updateCurrentHousehold(
+                            name = householdName,
+                            timezone = householdTimezone,
+                            measurementSystem = householdMeasurementSystem,
+                        )
+                    }
+                },
+                onReset = {
+                    household?.let {
+                        householdName = it.name
+                        householdTimezone = it.timezone
+                        householdMeasurementSystem = it.measurementSystem
+                    }
+                },
+            )
         }
         item {
             SectionHeader(
@@ -597,6 +641,122 @@ internal fun SettingsScreen(
             }
         }
     }
+}
+
+@Composable
+private fun HouseholdDetailsCard(
+    name: String,
+    timezone: String,
+    measurementSystem: MeasurementSystem,
+    loadedMeasurementSystem: MeasurementSystem?,
+    canManage: Boolean,
+    actionInFlight: Boolean,
+    onNameChange: (String) -> Unit,
+    onTimezoneChange: (String) -> Unit,
+    onMeasurementSystemChange: (MeasurementSystem) -> Unit,
+    onSave: () -> Unit,
+    onReset: () -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SectionHeader(
+                title = "Household details",
+                body = "Name, household timezone, and volume defaults for recipes and stock actions.",
+            )
+            if (canManage) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = onNameChange,
+                    label = { Text("Household name") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = timezone,
+                    onValueChange = onTimezoneChange,
+                    label = { Text("Timezone") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                MeasurementSystemPicker(
+                    selected = measurementSystem,
+                    enabled = !actionInFlight,
+                    onSelect = onMeasurementSystemChange,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = onSave,
+                        enabled = !actionInFlight && name.isNotBlank() && timezone.isNotBlank(),
+                    ) {
+                        Text(if (actionInFlight) "Saving..." else "Save household")
+                    }
+                    TextButton(onClick = onReset, enabled = !actionInFlight) {
+                        Text("Reset")
+                    }
+                }
+            } else {
+                MetadataRow("Name", name.ifBlank { "Unknown" })
+                MetadataRow("Timezone", timezone.ifBlank { "UTC" })
+                MetadataRow(
+                    "Measurement system",
+                    (loadedMeasurementSystem ?: measurementSystem).displayName(),
+                )
+                Text(
+                    (loadedMeasurementSystem ?: measurementSystem).detail(),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MeasurementSystemPicker(
+    selected: MeasurementSystem,
+    enabled: Boolean,
+    onSelect: (MeasurementSystem) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Measurement system", style = MaterialTheme.typography.labelLarge)
+        MeasurementSystem.values().forEach { option ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(option.displayName(), style = MaterialTheme.typography.bodyMedium)
+                    Text(option.detail(), style = MaterialTheme.typography.bodySmall)
+                }
+                if (option == selected) {
+                    Text("Selected", style = MaterialTheme.typography.labelMedium)
+                } else {
+                    TextButton(
+                        onClick = { onSelect(option) },
+                        enabled = enabled,
+                    ) {
+                        Text("Select")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun MeasurementSystem.displayName(): String = when (this) {
+    MeasurementSystem.METRIC -> "Metric"
+    MeasurementSystem.US_CUSTOMARY -> "US customary"
+    MeasurementSystem.AUSTRALIAN -> "Australian"
+    MeasurementSystem.IMPERIAL -> "Imperial"
+}
+
+private fun MeasurementSystem.detail(): String = when (this) {
+    MeasurementSystem.METRIC -> "1 tsp = 5 ml, 1 tbsp = 15 ml"
+    MeasurementSystem.US_CUSTOMARY -> "1 tsp = 4.929 ml, 1 tbsp = 14.787 ml"
+    MeasurementSystem.AUSTRALIAN -> "1 tsp = 5 ml, 1 tbsp = 20 ml"
+    MeasurementSystem.IMPERIAL -> "1 tsp = 5.919 ml, 1 tbsp = 17.758 ml"
 }
 
 @Composable

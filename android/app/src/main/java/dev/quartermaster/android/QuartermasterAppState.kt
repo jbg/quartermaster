@@ -21,6 +21,7 @@ import dev.quartermaster.android.generated.models.HouseholdDetailDto
 import dev.quartermaster.android.generated.models.InviteDto
 import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.MeResponse
+import dev.quartermaster.android.generated.models.MeasurementSystem
 import dev.quartermaster.android.generated.models.MembershipRole
 import dev.quartermaster.android.generated.models.OffContributionPreviewResponse
 import dev.quartermaster.android.generated.models.OffContributionResponse
@@ -38,6 +39,7 @@ import dev.quartermaster.android.generated.models.StockEventType
 import dev.quartermaster.android.generated.models.StorageVesselDto
 import dev.quartermaster.android.generated.models.UnitDto
 import dev.quartermaster.android.generated.models.UnitFamily
+import dev.quartermaster.android.generated.models.UpdateHouseholdRequest
 import dev.quartermaster.android.generated.models.UpdateLocationRequest
 import dev.quartermaster.android.generated.models.UpdateStorageVesselRequest
 import kotlinx.serialization.json.Json
@@ -226,9 +228,10 @@ interface QuartermasterBackend {
     suspend fun confirmPasswordReset(email: String, newPassword: String, code: String)
     suspend fun logout()
     suspend fun switchHousehold(householdId: String): MeResponse
-    suspend fun createHousehold(name: String, timezone: String): MeResponse
+    suspend fun createHousehold(name: String, timezone: String, measurementSystem: MeasurementSystem): MeResponse
     suspend fun redeemInvite(inviteCode: String)
     suspend fun currentHousehold(): HouseholdDetailDto
+    suspend fun updateCurrentHousehold(request: UpdateHouseholdRequest): HouseholdDetailDto
     suspend fun exportCurrentHousehold(): String
     suspend fun importHousehold(document: JsonElement): MeResponse
     suspend fun requestCurrentHouseholdDeletion(confirmationName: String)
@@ -372,13 +375,18 @@ class QuartermasterApiBackend(
 
     override suspend fun switchHousehold(householdId: String): MeResponse = api.switchHousehold(householdId)
 
-    override suspend fun createHousehold(name: String, timezone: String): MeResponse = api.createHousehold(name = name, timezone = timezone)
+    override suspend fun createHousehold(
+        name: String,
+        timezone: String,
+        measurementSystem: MeasurementSystem,
+    ): MeResponse = api.createHousehold(name = name, timezone = timezone, measurementSystem = measurementSystem)
 
     override suspend fun redeemInvite(inviteCode: String) {
         api.redeemInvite(inviteCode)
     }
 
     override suspend fun currentHousehold(): HouseholdDetailDto = api.currentHousehold()
+    override suspend fun updateCurrentHousehold(request: UpdateHouseholdRequest): HouseholdDetailDto = api.updateCurrentHousehold(request)
     override suspend fun exportCurrentHousehold(): String = api.exportCurrentHousehold()
     override suspend fun importHousehold(document: JsonElement): MeResponse = api.importHousehold(document)
     override suspend fun requestCurrentHouseholdDeletion(confirmationName: String) = api.requestCurrentHouseholdDeletion(confirmationName)
@@ -767,8 +775,36 @@ class QuartermasterAppState(
         applyAuthenticated(backend.switchHousehold(householdId))
     }
 
-    suspend fun createHousehold(name: String, timezone: String) = runSettingsAction {
-        applyAuthenticated(backend.createHousehold(name = name, timezone = timezone))
+    suspend fun createHousehold(
+        name: String,
+        timezone: String,
+        measurementSystem: MeasurementSystem = MeasurementSystem.METRIC,
+    ) = runSettingsAction {
+        applyAuthenticated(
+            backend.createHousehold(
+                name = name.trim(),
+                timezone = timezone.trim(),
+                measurementSystem = measurementSystem,
+            ),
+        )
+        units = backend.units().sortedBy { it.code }
+        householdDetail = backend.currentHousehold()
+    }
+
+    suspend fun updateCurrentHousehold(
+        name: String,
+        timezone: String,
+        measurementSystem: MeasurementSystem,
+    ) = runSettingsAction {
+        householdDetail = backend.updateCurrentHousehold(
+            UpdateHouseholdRequest(
+                name = name.trim(),
+                timezone = timezone.trim(),
+                measurementSystem = measurementSystem,
+            ),
+        )
+        applyAuthenticated(backend.me())
+        units = backend.units().sortedBy { it.code }
     }
 
     suspend fun redeemInvite(code: String) = runSettingsAction {
