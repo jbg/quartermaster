@@ -67,6 +67,70 @@ import UIKit
       try decodeFixture(from: tokenPairJSON)
     }
 
+    func listPasskeys() async throws -> [PasskeyCredentialSummary] { [] }
+
+    func startPasskeyRegistration(label: String?) async throws -> PasskeyRegistrationStart {
+      PasskeyRegistrationStart(
+        ceremonyID: "ui-test-passkey-registration",
+        publicKey: Data("{}".utf8)
+      )
+    }
+
+    func finishPasskeyRegistration(ceremonyID: String, credentialJSON: Data, label: String?)
+      async throws -> PasskeyCredentialSummary
+    {
+      PasskeyCredentialSummary(
+        id: "ui-test-passkey",
+        label: label,
+        createdAt: "2026-04-22T10:00:00Z",
+        lastUsedAt: nil
+      )
+    }
+
+    func startPasskeyLogin(email: String) async throws -> PasskeyLoginStart {
+      PasskeyLoginStart(
+        ceremonyID: "ui-test-passkey-login",
+        publicKey: Data("{}".utf8)
+      )
+    }
+
+    func finishPasskeyLogin(ceremonyID: String, credentialJSON: Data) async throws -> TokenPair {
+      try decodeFixture(from: tokenPairJSON)
+    }
+
+    func deletePasskey(id: String) async throws {}
+
+    func createAuthHandoff(targetDeviceLabel: String?, serverURL: String?) async throws
+      -> AuthHandoffCreate
+    {
+      AuthHandoffCreate(
+        id: "ui-test-handoff",
+        handoffURL:
+          "quartermaster://handoff?server=https://quartermaster.example.com&id=ui-test-handoff&token=ui-test-token",
+        expiresAt: "2026-04-22T10:05:00Z",
+        targetDeviceLabel: targetDeviceLabel
+      )
+    }
+
+    func cancelAuthHandoff(id: String) async throws {}
+
+    func previewAuthHandoff(id: String, token: String) async throws -> AuthHandoffPreview {
+      AuthHandoffPreview(
+        id: id,
+        sourceEmail: "smoke@example.com",
+        sourceDisplayName: "Smoke User",
+        householdID: "99999999-9999-9999-9999-999999999999",
+        targetDeviceLabel: "New device",
+        expiresAt: "2026-04-22T10:05:00Z"
+      )
+    }
+
+    func acceptAuthHandoff(id: String, token: String, deviceLabel: String?) async throws
+      -> TokenPair
+    {
+      try decodeFixture(from: tokenPairJSON)
+    }
+
     func requestEmailVerification(email: String) async throws -> RequestEmailVerificationResponse {
       RequestEmailVerificationResponse(
         expiresAt: "2026-04-28T12:30:00.000Z",

@@ -26,6 +26,18 @@ protocol AppStateAPI: Actor {
   )
     async throws -> TokenPair
   func login(email: String, password: String) async throws -> TokenPair
+  func listPasskeys() async throws -> [PasskeyCredentialSummary]
+  func startPasskeyRegistration(label: String?) async throws -> PasskeyRegistrationStart
+  func finishPasskeyRegistration(ceremonyID: String, credentialJSON: Data, label: String?)
+    async throws -> PasskeyCredentialSummary
+  func startPasskeyLogin(email: String) async throws -> PasskeyLoginStart
+  func finishPasskeyLogin(ceremonyID: String, credentialJSON: Data) async throws -> TokenPair
+  func deletePasskey(id: String) async throws
+  func createAuthHandoff(targetDeviceLabel: String?, serverURL: String?) async throws
+    -> AuthHandoffCreate
+  func cancelAuthHandoff(id: String) async throws
+  func previewAuthHandoff(id: String, token: String) async throws -> AuthHandoffPreview
+  func acceptAuthHandoff(id: String, token: String, deviceLabel: String?) async throws -> TokenPair
   func requestEmailVerification(email: String) async throws -> RequestEmailVerificationResponse
   func confirmEmailVerification(code: String) async throws -> Me
   func clearRecoveryEmail() async throws -> Me
@@ -227,6 +239,9 @@ final class AppState {
   /// the batches sheet for the named product+location, then clears it.
   var pendingInventoryTarget: InventoryTarget?
   var pendingInviteContext: InviteContext?
+  var passkeys: [PasskeyCredentialSummary] = []
+  var authHandoff: AuthHandoffCreate?
+  var pendingAuthHandoff: PendingAuthHandoff?
 
   private let tokenStore: any AppStateTokenStore
   private let apiFactory: ((URL) -> any AppStateAPI)?
@@ -238,6 +253,13 @@ final class AppState {
   private var pushAuthorization: PushAuthorizationStatus = .notDetermined
   private var isSyncingReminders = false
   private var hasLoadedReminderInbox = false
+
+  struct PendingAuthHandoff: Equatable {
+    let id: String
+    let token: String
+    let serverURL: URL?
+    var preview: AuthHandoffPreview?
+  }
 
   init() {
     let tokenStore = TokenStore()
@@ -382,6 +404,105 @@ final class AppState {
     }
   }
 
+  func reloadPasskeys() async {
+    do {
+      passkeys = try await api.listPasskeys()
+    } catch {
+      lastError = userMessage(for: error)
+    }
+  }
+
+  func finishPasskeyLogin(ceremonyID: String, credentialJSON: Data) async {
+    lastError = nil
+    do {
+      let pair = try await api.finishPasskeyLogin(
+        ceremonyID: ceremonyID,
+        credentialJSON: credentialJSON
+      )
+      await tokenStore.store(pair)
+      await refreshMe()
+    } catch {
+      lastError = userMessage(for: error)
+    }
+  }
+
+  func finishPasskeyRegistration(ceremonyID: String, credentialJSON: Data, label: String?) async {
+    lastError = nil
+    do {
+      let credential = try await api.finishPasskeyRegistration(
+        ceremonyID: ceremonyID,
+        credentialJSON: credentialJSON,
+        label: label
+      )
+      passkeys.insert(credential, at: 0)
+    } catch {
+      lastError = userMessage(for: error)
+    }
+  }
+
+  func deletePasskey(id: String) async {
+    lastError = nil
+    do {
+      try await api.deletePasskey(id: id)
+      passkeys.removeAll { $0.id == id }
+    } catch {
+      lastError = userMessage(for: error)
+    }
+  }
+
+  func createAuthHandoff(targetDeviceLabel: String?) async {
+    lastError = nil
+    do {
+      authHandoff = try await api.createAuthHandoff(
+        targetDeviceLabel: targetDeviceLabel,
+        serverURL: serverURL.absoluteString
+      )
+    } catch {
+      lastError = userMessage(for: error)
+    }
+  }
+
+  func cancelAuthHandoff() async {
+    guard let authHandoff else { return }
+    do {
+      try await api.cancelAuthHandoff(id: authHandoff.id)
+      self.authHandoff = nil
+    } catch {
+      lastError = userMessage(for: error)
+    }
+  }
+
+  func previewAuthHandoff(id: String, token: String, serverURL: URL?) async {
+    lastError = nil
+    do {
+      if case .unauthenticated = phase, let serverURL {
+        updateServerURL(serverURL)
+      }
+      var pending = PendingAuthHandoff(id: id, token: token, serverURL: serverURL, preview: nil)
+      pending.preview = try await api.previewAuthHandoff(id: id, token: token)
+      pendingAuthHandoff = pending
+    } catch {
+      lastError = userMessage(for: error)
+    }
+  }
+
+  func acceptPendingAuthHandoff() async {
+    guard let pendingAuthHandoff else { return }
+    lastError = nil
+    do {
+      let pair = try await api.acceptAuthHandoff(
+        id: pendingAuthHandoff.id,
+        token: pendingAuthHandoff.token,
+        deviceLabel: UIDevice.current.name
+      )
+      await tokenStore.store(pair)
+      self.pendingAuthHandoff = nil
+      await refreshMe()
+    } catch {
+      lastError = userMessage(for: error)
+    }
+  }
+
   func requestPasswordReset(email: String) async {
     lastError = nil
     do {
@@ -495,15 +616,18 @@ final class AppState {
     }
 
     let isServerLink = components.scheme == "quartermaster" && components.host == "server"
+    let isHandoffLink = components.scheme == "quartermaster" && components.host == "handoff"
     let isJoinLink =
       (components.scheme == "quartermaster" && components.host == "join")
       || components.path == "/join"
-    guard isServerLink || isJoinLink else { return }
+    guard isServerLink || isJoinLink || isHandoffLink else { return }
 
     let items = Dictionary(
       uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") }
     )
     let inviteCode = items["invite"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let handoffID = items["id"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let handoffToken = items["token"]?.trimmingCharacters(in: .whitespacesAndNewlines)
     let incomingServer = items["server"].flatMap { raw -> URL? in
       guard let url = URL(string: raw) else { return nil }
       guard ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
@@ -512,6 +636,15 @@ final class AppState {
 
     if case .unauthenticated = phase, let incomingServer {
       updateServerURL(incomingServer)
+    }
+
+    if isHandoffLink, let handoffID, let handoffToken,
+      !handoffID.isEmpty, !handoffToken.isEmpty
+    {
+      Task {
+        await previewAuthHandoff(id: handoffID, token: handoffToken, serverURL: incomingServer)
+      }
+      return
     }
 
     guard isJoinLink else { return }

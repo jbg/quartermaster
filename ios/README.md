@@ -17,11 +17,11 @@ Re-run `xcodegen generate` whenever `project.yml` or the source layout changes.
 
 The checked-in CI build uses:
 
-- simulator destination `platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2`
+- generic simulator destination `generic/platform=iOS Simulator`
 - `-skipPackagePluginValidation` because `swift-openapi-generator` runs as an Xcode build-tool plugin during the build
 - Release configuration generated from CI environment variables rather than checked-in Apple identity
 
-If GitHub-hosted macOS images drift and that simulator runtime disappears, update the workflow and this note together.
+The generic simulator destination keeps the build independent of whatever concrete simulator devices happen to be preinstalled on the GitHub-hosted macOS image.
 
 Simulator-backed `xcodebuild` runs are host-only checks. Run them from a normal macOS shell, not from inside the Codex sandbox.
 

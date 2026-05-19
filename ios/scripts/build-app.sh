@@ -11,7 +11,7 @@ Options:
   --configuration Debug|Release     Build configuration. Default: Debug.
   --destination DESTINATION         xcodebuild destination.
                                     Default: generic/platform=iOS for Debug,
-                                    or CI simulator for Release.
+                                    or generic/platform=iOS Simulator for Release.
   --derived-data-path PATH          DerivedData directory. Default: /tmp/qm-ios-build.
   --associated-domain HOSTNAME      Override QUARTERMASTER_ASSOCIATED_DOMAIN.
   --team TEAM_ID                    Override DEVELOPMENT_TEAM.
@@ -107,7 +107,7 @@ esac
 
 if [ -z "$destination" ]; then
 	if [ "$configuration" = "Release" ]; then
-		destination="platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2"
+		destination="generic/platform=iOS Simulator"
 	else
 		destination="generic/platform=iOS"
 	fi

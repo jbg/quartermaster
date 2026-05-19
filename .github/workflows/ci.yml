@@ -154,7 +154,6 @@ jobs:
         run: >-
           sh ios/scripts/build-app.sh
           --configuration Release
-          --destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2'
 
   android-build:
     runs-on: ubuntu-latest

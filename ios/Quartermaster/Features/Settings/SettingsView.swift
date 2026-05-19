@@ -1,4 +1,6 @@
+import CoreImage.CIFilterBuiltins
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
   @Environment(AppState.self) private var appState
@@ -19,6 +21,8 @@ struct SettingsView: View {
   @State private var offUsernameDraft: String = ""
   @State private var offPasswordDraft: String = ""
   @State private var isSavingOFFCredentials = false
+  @State private var passkeyLabelDraft: String = ""
+  @State private var handoffTargetLabelDraft: String = UIDevice.current.name
 
   @State private var showLocationEditor = false
   @State private var editingLocation: Location?
@@ -41,6 +45,7 @@ struct SettingsView: View {
   @State private var locationPendingDeletion: Location?
   @State private var storageVesselPendingDeletion: StorageVessel?
   @State private var householdEntry = HouseholdEntryController()
+  private let passkeyAuthenticator = PasskeyAuthenticator()
 
   var body: some View {
     Form {
@@ -146,6 +151,15 @@ struct SettingsView: View {
             )
           }
           NavigationLink {
+            passkeysView
+          } label: {
+            settingsLinkLabel(
+              "Passkeys",
+              systemImage: "key",
+              detail: appState.passkeys.isEmpty ? "Not configured" : "\(appState.passkeys.count)"
+            )
+          }
+          NavigationLink {
             openFoodFactsCredentialsView
           } label: {
             settingsLinkLabel(
@@ -162,6 +176,11 @@ struct SettingsView: View {
           serverView
         } label: {
           settingsLinkLabel("Server", systemImage: "server.rack", detail: appState.serverURL.host)
+        }
+        NavigationLink {
+          handoffView
+        } label: {
+          settingsLinkLabel("Pair signed-in device", systemImage: "qrcode", detail: nil)
         }
       }
 
@@ -631,6 +650,89 @@ struct SettingsView: View {
     .navigationTitle("Email")
   }
 
+  private var passkeysView: some View {
+    Form {
+      Section("Passkeys") {
+        if appState.passkeys.isEmpty {
+          Text("No passkeys yet.")
+            .foregroundStyle(.secondary)
+        } else {
+          ForEach(appState.passkeys) { passkey in
+            VStack(alignment: .leading, spacing: 4) {
+              Text(passkey.label ?? "Passkey")
+              Text(passkey.lastUsedAt.map { "Last used \($0)" } ?? "Created \(passkey.createdAt)")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+            .swipeActions {
+              Button(role: .destructive) {
+                Task { await appState.deletePasskey(id: passkey.id) }
+              } label: {
+                Label("Delete", systemImage: "trash")
+              }
+            }
+          }
+        }
+      }
+
+      Section("Add") {
+        TextField("Label", text: $passkeyLabelDraft)
+        Button {
+          Task {
+            let label = passkeyLabelDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            let start = try await appState.api.startPasskeyRegistration(
+              label: label.isEmpty ? nil : label)
+            let credentialJSON = try await passkeyAuthenticator.register(start: start)
+            await appState.finishPasskeyRegistration(
+              ceremonyID: start.ceremonyID,
+              credentialJSON: credentialJSON,
+              label: label.isEmpty ? nil : label
+            )
+            passkeyLabelDraft = ""
+          }
+        } label: {
+          Label("Add passkey", systemImage: "key")
+        }
+      }
+    }
+    .navigationTitle("Passkeys")
+  }
+
+  private var handoffView: some View {
+    Form {
+      Section("Target") {
+        TextField("Device label", text: $handoffTargetLabelDraft)
+        Button {
+          Task {
+            await appState.createAuthHandoff(
+              targetDeviceLabel: handoffTargetLabelDraft.trimmingCharacters(
+                in: .whitespacesAndNewlines)
+            )
+          }
+        } label: {
+          Label("Create handoff code", systemImage: "qrcode")
+        }
+      }
+
+      if let handoff = appState.authHandoff {
+        Section("Code") {
+          QRCodeImage(text: handoff.handoffURL)
+            .frame(maxWidth: .infinity)
+          Text(handoff.handoffURL)
+            .font(.footnote.monospaced())
+            .textSelection(.enabled)
+          LabeledContent("Expires", value: handoff.expiresAt)
+          Button(role: .destructive) {
+            Task { await appState.cancelAuthHandoff() }
+          } label: {
+            Label("Cancel handoff", systemImage: "xmark.circle")
+          }
+        }
+      }
+    }
+    .navigationTitle("Pair signed-in device")
+  }
+
   private var openFoodFactsCredentialsView: some View {
     Form {
       Section {
@@ -922,9 +1024,11 @@ struct SettingsView: View {
       async let locationsReq = appState.api.locations()
       async let storageVesselsReq = appState.api.storageVessels()
       async let offReq = appState.api.openFoodFactsCredentialStatus()
-      let (household, members, locations, storageVessels, offCredentialStatus) = try await (
-        householdReq, membersReq, locationsReq, storageVesselsReq, offReq
-      )
+      async let passkeysReq = appState.api.listPasskeys()
+      let (household, members, locations, storageVessels, offCredentialStatus, passkeys) = try await
+        (
+          householdReq, membersReq, locationsReq, storageVesselsReq, offReq, passkeysReq
+        )
       self.household = household
       self.householdNameDraft = household.name
       self.householdTimezoneDraft = household.timezone
@@ -933,6 +1037,7 @@ struct SettingsView: View {
       self.locations = locations.sorted { $0.sortOrder < $1.sortOrder }
       self.storageVessels = storageVessels.sorted { $0.sortOrder < $1.sortOrder }
       self.offCredentialStatus = offCredentialStatus
+      appState.passkeys = passkeys
       self.offUsernameDraft = offCredentialStatus.username ?? ""
       self.offPasswordDraft = ""
       if members.first(where: { $0.user.id == me.user.id })?.role == .admin {
@@ -1435,5 +1540,30 @@ private struct StorageVesselEditorView: View {
     let trimmedWeight = tareWeight.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmedName.isEmpty, let weight = Decimal(string: trimmedWeight) else { return false }
     return weight >= 0
+  }
+}
+
+private struct QRCodeImage: View {
+  let text: String
+  private let context = CIContext()
+  private let filter = CIFilter.qrCodeGenerator()
+
+  var body: some View {
+    if let image {
+      Image(uiImage: image)
+        .interpolation(.none)
+        .resizable()
+        .scaledToFit()
+        .frame(width: 220, height: 220)
+        .accessibilityLabel("Authenticated handoff QR code")
+    }
+  }
+
+  private var image: UIImage? {
+    filter.message = Data(text.utf8)
+    guard let output = filter.outputImage else { return nil }
+    let scaled = output.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
+    guard let cgImage = context.createCGImage(scaled, from: scaled.extent) else { return nil }
+    return UIImage(cgImage: cgImage)
   }
 }

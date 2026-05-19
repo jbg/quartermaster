@@ -40,6 +40,58 @@ struct AppRoot: View {
     } message: { reminder in
       Text(reminder.displayBody)
     }
+    .sheet(
+      isPresented: Binding(
+        get: { appState.pendingAuthHandoff?.preview != nil },
+        set: { presented in
+          if !presented {
+            appState.pendingAuthHandoff = nil
+          }
+        }
+      )
+    ) {
+      AuthHandoffConfirmationView()
+    }
+  }
+}
+
+private struct AuthHandoffConfirmationView: View {
+  @Environment(AppState.self) private var appState
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        if let preview = appState.pendingAuthHandoff?.preview {
+          Section("Account") {
+            LabeledContent("Email", value: preview.sourceEmail)
+            LabeledContent("Name", value: preview.sourceDisplayName)
+            if let target = preview.targetDeviceLabel {
+              LabeledContent("Target", value: target)
+            }
+            LabeledContent("Expires", value: preview.expiresAt)
+          }
+          Section {
+            Button {
+              Task {
+                await appState.acceptPendingAuthHandoff()
+                dismiss()
+              }
+            } label: {
+              Label("Accept handoff", systemImage: "checkmark.circle")
+            }
+            Button(role: .cancel) {
+              appState.pendingAuthHandoff = nil
+              dismiss()
+            } label: {
+              Text("Cancel")
+            }
+          }
+        }
+      }
+      .navigationTitle("Sign in from device")
+      .navigationBarTitleDisplayMode(.inline)
+    }
   }
 }
 

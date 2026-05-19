@@ -25,6 +25,7 @@ struct OnboardingView: View {
   @State private var isConnecting = false
   @State private var isSubmitting = false
   @State private var localError: String?
+  private let passkeyAuthenticator = PasskeyAuthenticator()
 
   var body: some View {
     NavigationStack {
@@ -198,6 +199,14 @@ struct OnboardingView: View {
         )
       }
       .disabled(!canSubmitResetOrSignIn || isSubmitting)
+      if supportsPasskeys {
+        Button {
+          Task { await submitPasskeySignIn() }
+        } label: {
+          Label("Sign in with passkey", systemImage: "key")
+        }
+        .disabled(email.trimmed.isEmpty || isSubmitting)
+      }
     }
   }
 
@@ -286,6 +295,10 @@ struct OnboardingView: View {
     canSubmitAccount && !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
+  private var supportsPasskeys: Bool {
+    status?.authMethods.contains { $0.method == .passkey && $0.availability == .enabled } == true
+  }
+
   private func availableAuthModes(status: OnboardingStatus) -> [AuthMode] {
     status.householdSignup == .enabled ? [.signIn, .createHousehold] : [.signIn]
   }
@@ -335,6 +348,19 @@ struct OnboardingView: View {
     isSubmitting = true
     defer { isSubmitting = false }
     await appState.login(email: email.trimmed, password: password)
+  }
+
+  private func submitPasskeySignIn() async {
+    isSubmitting = true
+    defer { isSubmitting = false }
+    do {
+      let start = try await appState.api.startPasskeyLogin(email: email.trimmed)
+      let credentialJSON = try await passkeyAuthenticator.login(start: start)
+      await appState.finishPasskeyLogin(
+        ceremonyID: start.ceremonyID, credentialJSON: credentialJSON)
+    } catch {
+      localError = (error as? APIError)?.userFacingMessage ?? error.localizedDescription
+    }
   }
 
   private func requestResetCode() async {
