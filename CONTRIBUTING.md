@@ -118,9 +118,21 @@ gradle assembleDebug
 
 Android host checks need a working JDK, Android SDK, and `android/local.properties`. See [android/README.md](android/README.md) for local emulator setup.
 
+The two known SDK roots are:
+
+- Homebrew command-line tools on Apple Silicon: `/opt/homebrew/share/android-commandlinetools`
+- Android Studio's default install: `~/Library/Android/sdk`
+
+Set `sdk.dir` in `android/local.properties` to whichever root owns your installed platforms and build tools.
+
 ## Web
 
-The web app uses SvelteKit, TypeScript, pnpm, and a generated TypeScript client from `openapi.json`. Volta pins Node and pnpm in `package.json`; set `VOLTA_FEATURE_PNPM=1` in shells or CI environments that need Volta's pnpm shim.
+The web app uses SvelteKit, TypeScript, pnpm, and a generated TypeScript client from `openapi.json`. Volta pins Node and pnpm in `package.json`; set `VOLTA_FEATURE_PNPM=1` before `pnpm install` in shells or CI environments that need Volta's pnpm shim:
+
+```sh
+export VOLTA_FEATURE_PNPM=1
+volta install node pnpm
+```
 
 ```sh
 pnpm install --frozen-lockfile
@@ -147,6 +159,25 @@ The Playwright smoke path builds/uses the static web shell and starts `qm-server
 pnpm -C web exec playwright install chromium
 ```
 
+## Formatting Tools
+
+The root `package.json` owns the formatter entry points:
+
+```sh
+pnpm format
+pnpm format:check
+```
+
+Local installs need the language tools those commands call:
+
+- Rust: `rustup component add rustfmt`
+- Swift: install `swift-format` and keep it available on `PATH`
+- Kotlin: Gradle runs Spotless from the Android build, using the configured SDK/JDK
+- Shell: install `shfmt`
+- Web and docs-adjacent files: `pnpm install` supplies Prettier through the web workspace
+
+Install commit hooks with `pnpm hooks:install` if you want local pre-commit checks to mirror CI.
+
 ## Release Identity And Universal Links
 
 Invite links and app setup codes are built from `QM_PUBLIC_BASE_URL` when it is set. `QM_PUBLIC_BASE_URL` may be an HTTP origin for LAN/self-hosted app setup. For direct app-opening on iOS, use a real HTTPS host: that host must serve `/.well-known/apple-app-site-association`, and the app build must include a matching `applinks:` associated domain. The native app persists the server URL from setup/manual entry and reuses it on later launches.
@@ -156,7 +187,16 @@ Quartermaster supports one explicit v1 release identity story:
 - one associated-domain host
 - one env-driven iOS team ID and bundle ID pairing
 
-Keep the associated-domain host aligned with the iOS release identity and use `cargo xtask verify-release-config` as the drift check instead of checking Apple release identity into the repo.
+Use the wrapper for local release setup:
+
+```sh
+cargo xtask configure-release-identity \
+  --team YOUR_TEAM_ID \
+  --bundle-id com.yourname.Quartermaster \
+  --domain quartermaster.example.com
+```
+
+It writes the ignored iOS release config and prints the matching `QM_IOS_*` server environment. Keep the associated-domain host aligned with the iOS release identity and use `cargo xtask verify-release-config` as the drift check instead of checking Apple release identity into the repo.
 
 ## End-To-End Smoke Test
 
