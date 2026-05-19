@@ -147,6 +147,30 @@ mod tests {
         assert!(got.miss);
     }
 
+    #[tokio::test]
+    async fn same_barcode_entries_are_isolated_by_household() {
+        let db = crate::test_db().await;
+        let a = households::create(&db, "a", "UTC").await.unwrap();
+        let b = households::create(&db, "b", "UTC").await.unwrap();
+        let product_a =
+            products::create_manual(&db, a.id, "A Test", None, "count", None, None, None)
+                .await
+                .unwrap();
+
+        put_hit(&db, a.id, "2222222222222", product_a.id)
+            .await
+            .unwrap();
+        put_miss(&db, b.id, "2222222222222").await.unwrap();
+
+        let got_a = get(&db, a.id, "2222222222222").await.unwrap().unwrap();
+        assert!(!got_a.miss);
+        assert_eq!(got_a.product_id, Some(product_a.id));
+
+        let got_b = get(&db, b.id, "2222222222222").await.unwrap().unwrap();
+        assert!(got_b.miss);
+        assert!(got_b.product_id.is_none());
+    }
+
     #[test]
     fn freshness_check() {
         let now = Timestamp::now();

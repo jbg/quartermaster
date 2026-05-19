@@ -288,6 +288,169 @@ async fn product_stock_history_lifecycle_flows_through_api() {
     assert!(items.iter().any(|item| item["event_type"] == "restore"));
 }
 
+#[tokio::test]
+async fn stock_and_location_operations_do_not_cross_households() {
+    let app = TestApp::start(ApiConfig {
+        registration_mode: qm_api::RegistrationMode::Open,
+        ..ApiConfig::default()
+    })
+    .await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    assert_eq!(app.register("bob", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let bob = app.login("bob").await;
+
+    let alice_household =
+        Uuid::parse_str(me_current_household_id(&app.me(&alice).await).unwrap()).unwrap();
+    let bob_household =
+        Uuid::parse_str(me_current_household_id(&app.me(&bob).await).unwrap()).unwrap();
+    let alice_pantry = qm_db::locations::list_for_household(&app.db, alice_household)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|loc| loc.kind == "pantry")
+        .unwrap()
+        .id;
+    let bob_pantry = qm_db::locations::list_for_household(&app.db, bob_household)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|loc| loc.kind == "pantry")
+        .unwrap()
+        .id;
+
+    let (status, product) = app
+        .send(
+            Method::POST,
+            "/api/v1/products",
+            Some(json!({
+                "name": "Tenant Rice",
+                "brand": null,
+                "family": "mass",
+                "preferred_unit": "g",
+                "barcode": null,
+                "image_url": null,
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let product_id = product["id"].as_str().unwrap();
+
+    let (status, batch) = app
+        .send(
+            Method::POST,
+            "/api/v1/stock",
+            Some(json!({
+                "product_id": product_id,
+                "location_id": alice_pantry,
+                "quantity": "100",
+                "unit": "g",
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let batch_id = batch["id"].as_str().unwrap();
+
+    for (method, path, body) in [
+        (Method::GET, format!("/api/v1/stock/{batch_id}"), None),
+        (
+            Method::PATCH,
+            format!("/api/v1/stock/{batch_id}"),
+            Some(json!([{ "op": "replace", "path": "/quantity", "value": "50" }])),
+        ),
+        (Method::DELETE, format!("/api/v1/stock/{batch_id}"), None),
+        (
+            Method::GET,
+            format!("/api/v1/stock/{batch_id}/events"),
+            None,
+        ),
+    ] {
+        let (status, body) = app.send(method, &path, body, Some(&bob)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["code"], "not_found");
+    }
+
+    let (status, _) = app
+        .send(
+            Method::POST,
+            "/api/v1/stock",
+            Some(json!({
+                "product_id": product_id,
+                "location_id": bob_pantry,
+                "quantity": "10",
+                "unit": "g",
+            })),
+            Some(&bob),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = app
+        .send(
+            Method::PATCH,
+            &format!("/api/v1/stock/{batch_id}"),
+            Some(json!([{ "op": "replace", "path": "/location_id", "value": bob_pantry.to_string() }])),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, bob_history) = app
+        .send(
+            Method::GET,
+            "/api/v1/stock/events?limit=20",
+            None,
+            Some(&bob),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(bob_history["items"].as_array().unwrap().is_empty());
+
+    assert_eq!(
+        app.send(
+            Method::DELETE,
+            &format!("/api/v1/stock/{batch_id}"),
+            None,
+            Some(&alice),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let (status, _) = app
+        .send(
+            Method::POST,
+            &format!("/api/v1/stock/{batch_id}/restore"),
+            None,
+            Some(&bob),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = app
+        .send(
+            Method::POST,
+            "/api/v1/stock/restore-many",
+            Some(json!({ "ids": [batch_id] })),
+            Some(&bob),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    let (status, restored) = app
+        .send(
+            Method::POST,
+            &format!("/api/v1/stock/{batch_id}/restore"),
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(restored["id"], batch_id);
+}
+
 fn unit_factor(units: &serde_json::Value, code: &str) -> i64 {
     units
         .as_array()

@@ -231,6 +231,98 @@ async fn product_catalogue_lists_visible_products_and_deleted_when_requested() {
 }
 
 #[tokio::test]
+async fn manual_products_cannot_be_read_mutated_restored_or_inferred_across_households() {
+    let app = TestApp::start(ApiConfig {
+        registration_mode: qm_api::RegistrationMode::Open,
+        ..ApiConfig::default()
+    })
+    .await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    assert_eq!(app.register("bob", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let bob = app.login("bob").await;
+
+    let (status, product) = app
+        .send(
+            Method::POST,
+            "/api/v1/products",
+            Some(json!({
+                "name": "Tenant Private Flour",
+                "brand": "Alice Mill",
+                "family": "mass",
+                "preferred_unit": "g",
+                "barcode": "12345670",
+                "image_url": null,
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let product_id = product["id"].as_str().unwrap();
+
+    for (method, path, body) in [
+        (Method::GET, format!("/api/v1/products/{product_id}"), None),
+        (
+            Method::PATCH,
+            format!("/api/v1/products/{product_id}"),
+            Some(json!([{ "op": "replace", "path": "/name", "value": "Bob Flour" }])),
+        ),
+        (
+            Method::DELETE,
+            format!("/api/v1/products/{product_id}"),
+            None,
+        ),
+    ] {
+        let (status, body) = app.send(method, &path, body, Some(&bob)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["code"], "not_found");
+    }
+
+    let (status, bob_search) = app
+        .send(
+            Method::GET,
+            "/api/v1/products/search?q=tenant&include_deleted=true",
+            None,
+            Some(&bob),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(bob_search["items"].as_array().unwrap().is_empty());
+
+    assert_eq!(
+        app.send(
+            Method::DELETE,
+            &format!("/api/v1/products/{product_id}"),
+            None,
+            Some(&alice),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let (status, _) = app
+        .send(
+            Method::POST,
+            &format!("/api/v1/products/{product_id}/restore"),
+            None,
+            Some(&bob),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, restored) = app
+        .send(
+            Method::POST,
+            &format!("/api/v1/products/{product_id}/restore"),
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(restored["name"], "Tenant Private Flour");
+}
+
+#[tokio::test]
 async fn product_patch_uses_json_patch_replace_and_remove() {
     let app = TestApp::start(ApiConfig::default()).await;
     assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);

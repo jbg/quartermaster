@@ -141,6 +141,68 @@ async fn revoke_invite_and_existing_user_redeem_flow() {
 }
 
 #[tokio::test]
+async fn invite_list_and_revoke_are_current_household_scoped() {
+    let app = TestApp::start(ApiConfig {
+        registration_mode: qm_api::RegistrationMode::Open,
+        ..ApiConfig::default()
+    })
+    .await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    assert_eq!(app.register("bob", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let bob = app.login("bob").await;
+
+    let (_, alice_invite) = app
+        .send(
+            Method::POST,
+            "/api/v1/households/current/invites",
+            Some(invite_body(2)),
+            Some(&alice),
+        )
+        .await;
+    let invite_id = alice_invite["id"].as_str().unwrap();
+    let invite_code = alice_invite["code"].as_str().unwrap();
+
+    let (status, bob_invites) = app
+        .send(
+            Method::GET,
+            "/api/v1/households/current/invites",
+            None,
+            Some(&bob),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(bob_invites.as_array().unwrap().is_empty());
+
+    let (status, _) = app
+        .send(
+            Method::DELETE,
+            &format!("/api/v1/invites/{invite_id}"),
+            None,
+            Some(&bob),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = app
+        .send(
+            Method::POST,
+            "/api/v1/invites/redeem",
+            Some(json!({ "invite_code": invite_code })),
+            Some(&bob),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let me = app.me(&bob).await;
+    assert_eq!(me["households"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        me_current_household_id(&me).unwrap(),
+        me_current_household_id(&app.me(&alice).await).unwrap(),
+    );
+}
+
+#[tokio::test]
 async fn redeeming_same_household_invite_is_idempotent() {
     let app = TestApp::start(ApiConfig {
         registration_mode: RegistrationMode::InviteOnly,

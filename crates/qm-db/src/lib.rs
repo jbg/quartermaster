@@ -90,11 +90,120 @@ impl Database {
     }
 
     pub async fn migrate(&self) -> Result<(), sqlx::migrate::MigrateError> {
-        sqlx::migrate!("./migrations").run(&self.pool).await
+        sqlx::migrate!("./migrations").run(&self.pool).await?;
+        self.drop_legacy_product_off_barcode_unique()
+            .await
+            .map_err(sqlx::migrate::MigrateError::Execute)?;
+        Ok(())
     }
 
     pub fn backend(&self) -> Backend {
         self.backend
+    }
+
+    async fn drop_legacy_product_off_barcode_unique(&self) -> Result<(), sqlx::Error> {
+        match self.backend {
+            Backend::Postgres => {
+                sqlx::query(
+                    "ALTER TABLE product DROP CONSTRAINT IF EXISTS product_off_barcode_key",
+                )
+                .execute(&self.pool)
+                .await?;
+            }
+            Backend::Sqlite => {
+                let row: Option<(String,)> = sqlx::query_as(
+                    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'product'",
+                )
+                .fetch_optional(&self.pool)
+                .await?;
+                let Some((create_sql,)) = row else {
+                    return Ok(());
+                };
+                if !create_sql.contains("off_barcode              TEXT UNIQUE")
+                    && !create_sql.contains("off_barcode TEXT UNIQUE")
+                {
+                    return Ok(());
+                }
+
+                // SQLite cannot drop a table-level UNIQUE constraint in place.
+                // Rebuild the table once, preserving the later household-scoped
+                // barcode index and keeping child FKs pointed at `product`.
+                let mut conn = self.pool.acquire().await?;
+                sqlx::query("PRAGMA foreign_keys = OFF")
+                    .execute(&mut *conn)
+                    .await?;
+                sqlx::query("PRAGMA legacy_alter_table = ON")
+                    .execute(&mut *conn)
+                    .await?;
+                sqlx::query("ALTER TABLE product RENAME TO product_legacy_unique")
+                    .execute(&mut *conn)
+                    .await?;
+                sqlx::query(
+                    "CREATE TABLE product ( \
+                        id TEXT PRIMARY KEY, \
+                        source TEXT NOT NULL, \
+                        off_barcode TEXT, \
+                        name TEXT NOT NULL, \
+                        brand TEXT, \
+                        default_unit TEXT NOT NULL, \
+                        image_url TEXT, \
+                        fetched_at TEXT, \
+                        created_by_household_id TEXT REFERENCES household(id) ON DELETE CASCADE, \
+                        created_at TEXT NOT NULL, \
+                        family TEXT NOT NULL DEFAULT 'count', \
+                        deleted_at TEXT, \
+                        package_quantity TEXT, \
+                        package_unit TEXT, \
+                        max_open_days INTEGER, \
+                        package_size_local_override INTEGER NOT NULL DEFAULT 0, \
+                        off_name TEXT, \
+                        off_brand TEXT, \
+                        off_package_quantity TEXT, \
+                        off_package_unit TEXT, \
+                        name_local_override INTEGER NOT NULL DEFAULT 0, \
+                        brand_local_override INTEGER NOT NULL DEFAULT 0, \
+                        family_local_override INTEGER NOT NULL DEFAULT 0 \
+                    )",
+                )
+                .execute(&mut *conn)
+                .await?;
+                sqlx::query(
+                    "INSERT INTO product ( \
+                        id, source, off_barcode, name, brand, default_unit, image_url, fetched_at, \
+                        created_by_household_id, created_at, family, deleted_at, package_quantity, package_unit, \
+                        max_open_days, package_size_local_override, off_name, off_brand, \
+                        off_package_quantity, off_package_unit, name_local_override, \
+                        brand_local_override, family_local_override \
+                     ) \
+                     SELECT \
+                        id, source, off_barcode, name, brand, default_unit, image_url, fetched_at, \
+                        created_by_household_id, created_at, family, deleted_at, package_quantity, package_unit, \
+                        max_open_days, package_size_local_override, off_name, off_brand, \
+                        off_package_quantity, off_package_unit, name_local_override, \
+                        brand_local_override, family_local_override \
+                     FROM product_legacy_unique",
+                )
+                .execute(&mut *conn)
+                .await?;
+                sqlx::query("DROP TABLE product_legacy_unique")
+                    .execute(&mut *conn)
+                    .await?;
+                sqlx::query("PRAGMA legacy_alter_table = OFF")
+                    .execute(&mut *conn)
+                    .await?;
+                sqlx::query("PRAGMA foreign_keys = ON")
+                    .execute(&mut *conn)
+                    .await?;
+                sqlx::query("CREATE INDEX IF NOT EXISTS idx_product_household ON product(created_by_household_id)")
+                    .execute(&mut *conn)
+                    .await?;
+                sqlx::query("CREATE INDEX IF NOT EXISTS idx_product_household_barcode ON product(created_by_household_id, off_barcode)")
+                    .execute(&mut *conn)
+                    .await?;
+            }
+            Backend::Other => {}
+        }
+        Ok(())
     }
 }
 

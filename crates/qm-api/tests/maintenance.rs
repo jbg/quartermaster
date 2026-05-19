@@ -357,6 +357,138 @@ async fn seed_smoke_returns_deterministic_fixture() {
     assert_eq!(memberships.len(), 1);
 }
 
+#[tokio::test]
+async fn seed_smoke_reset_only_removes_fixture_rows_from_smoke_household() {
+    let app = TestApp::start(ApiConfig {
+        smoke_seed_trigger_secret: Some("smoke-secret".into()),
+        expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy {
+            enabled: false,
+            ..Default::default()
+        },
+        ..ApiConfig::default()
+    })
+    .await;
+
+    let other_household = qm_db::households::create(&app.db, "Other", "UTC")
+        .await
+        .unwrap();
+    qm_db::locations::seed_defaults(&app.db, other_household.id)
+        .await
+        .unwrap();
+    let other_user = qm_db::users::create(&app.db, "other@example.com", "Other", "hash")
+        .await
+        .unwrap();
+    qm_db::memberships::insert(&app.db, other_household.id, other_user.id, "admin")
+        .await
+        .unwrap();
+    let other_pantry = qm_db::locations::list_for_household(&app.db, other_household.id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|row| row.kind == "pantry")
+        .unwrap()
+        .id;
+    let other_product = qm_db::products::create_manual(
+        &app.db,
+        other_household.id,
+        "Smoke Product should stay",
+        None,
+        "mass",
+        Some("g"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let other_location = qm_db::locations::create(
+        &app.db,
+        other_household.id,
+        "Smoke Shelf should stay",
+        "pantry",
+        99,
+    )
+    .await
+    .unwrap();
+    qm_db::stock::create(
+        &app.db,
+        other_household.id,
+        other_product.id,
+        other_pantry,
+        "100",
+        "g",
+        None,
+        Some("2999-01-03"),
+        None,
+        Some("other household fixture-shaped stock"),
+        other_user.id,
+        None,
+    )
+    .await
+    .unwrap();
+    qm_db::stock::create(
+        &app.db,
+        other_household.id,
+        other_product.id,
+        other_location.id,
+        "200",
+        "g",
+        None,
+        Some("2999-01-03"),
+        None,
+        Some("other household fixture-shaped location stock"),
+        other_user.id,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        qm_api::routes::maintenance::MAINTENANCE_TOKEN_HEADER,
+        "smoke-secret".parse().unwrap(),
+    );
+    let (status, _) = app
+        .send_with_headers(
+            Method::POST,
+            "/internal/maintenance/seed-smoke",
+            None,
+            None,
+            headers.clone(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = app
+        .send_with_headers(
+            Method::POST,
+            "/internal/maintenance/seed-smoke",
+            None,
+            None,
+            headers,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    assert_eq!(
+        leftover_product_count(&app, &other_household.id.to_string()).await,
+        1
+    );
+    assert_eq!(
+        leftover_location_count(&app, &other_household.id.to_string()).await,
+        1
+    );
+    let other_batches: i64 = sqlx::query(
+        "SELECT COUNT(*) AS n FROM stock_batch WHERE household_id = ? AND product_id = ?",
+    )
+    .bind(other_household.id.to_string())
+    .bind(other_product.id.to_string())
+    .fetch_one(&app.db.pool)
+    .await
+    .unwrap()
+    .try_get("n")
+    .unwrap();
+    assert_eq!(other_batches, 2);
+}
+
 async fn smoke_batch_count(app: &TestApp, household_id: &str) -> i64 {
     sqlx::query(
         "SELECT COUNT(*) AS n \
