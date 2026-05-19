@@ -137,6 +137,8 @@ cd ios
 bundle install
 ```
 
+On macOS, prefer a user-managed Ruby from `rbenv`, `mise`, or Homebrew if the system Ruby cannot install the pinned bundle cleanly. Keep fastlane entry points behind `bundle exec` so local machines and CI use the versions locked in `Gemfile.lock`.
+
 fastlane uses the same App Store Connect API-key environment variables as CI:
 
 ```text
@@ -163,14 +165,26 @@ Quartermaster keeps the custom `quartermaster://` scheme as a fallback, but iOS 
 
 1. Choose the public HTTPS associated-domain host users will tap, such as `quartermaster.example.com`.
 2. Set `QM_IOS_TEAM_ID` and `QM_IOS_BUNDLE_ID` on the server so the backend can serve `/.well-known/apple-app-site-association` for the matching app build.
-3. Export `QUARTERMASTER_IOS_DEVELOPMENT_TEAM`, `QUARTERMASTER_IOS_BUNDLE_ID`, and `QUARTERMASTER_ASSOCIATED_DOMAIN`, then run:
+3. Generate the local release identity config:
 
    ```sh
-   /bin/sh scripts/generate-release-config.sh
+   cargo xtask configure-release-identity \
+     --team YOUR_TEAM_ID \
+     --bundle-id com.yourname.Quartermaster \
+     --domain quartermaster.example.com
+   ```
+
+   The command writes `ios/Config/ReleaseIdentity.generated.xcconfig` and prints the matching `QM_IOS_TEAM_ID` / `QM_IOS_BUNDLE_ID` values for the server.
+
+4. Regenerate the Xcode project:
+
+   ```sh
    xcodegen generate
    ```
 
-4. Build/install the Release app again so the entitlement matches the deployed host.
+5. Build/install the Release app again so the entitlement matches the deployed host.
+
+The lower-level `/bin/sh scripts/generate-release-config.sh` entry point remains available for CI and scripts that already export `QUARTERMASTER_IOS_DEVELOPMENT_TEAM`, `QUARTERMASTER_IOS_BUNDLE_ID`, and `QUARTERMASTER_ASSOCIATED_DOMAIN` directly.
 
 `QM_PUBLIC_BASE_URL` may still be set to an HTTP origin for LAN app setup codes and browser invite fallbacks. iOS Universal Links only use HTTPS associated domains.
 
@@ -185,7 +199,7 @@ To enable passkeys against a deployed server:
 1. Set `QM_PUBLIC_BASE_URL=https://your-quartermaster-host.example`.
 2. Set `QM_PASSKEYS_ENABLED=true`.
 3. Leave `QM_PASSKEY_RP_ID` and `QM_PASSKEY_ORIGIN` unset unless you need to override the derived host/origin deliberately.
-4. Configure `QM_IOS_TEAM_ID`, `QM_IOS_BUNDLE_ID`, `QUARTERMASTER_IOS_*`, and `QUARTERMASTER_ASSOCIATED_DOMAIN` for the same app/domain pair, then regenerate the release config and Xcode project.
+4. Configure `QM_IOS_TEAM_ID`, `QM_IOS_BUNDLE_ID`, `QUARTERMASTER_IOS_*`, and `QUARTERMASTER_ASSOCIATED_DOMAIN` for the same app/domain pair, preferably through `cargo xtask configure-release-identity`, then regenerate the Xcode project.
 
 Passkey account creation is intentionally not a first-run path. Users create accounts with email address, display name, and password, then add passkeys from Settings. Email address remains the account identity; display name is presentation-only.
 

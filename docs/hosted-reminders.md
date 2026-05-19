@@ -24,6 +24,9 @@ Example environment split:
 
 - API process
   - `QM_PUBLIC_BASE_URL=https://quartermaster.example.com`
+  - `QM_WEB_AUTH_ALLOWED_ORIGINS=https://app.quartermaster.example.com` when the browser shell is served from a separate origin
+  - `QM_RATE_LIMIT_CLIENT_IP_MODE=x-forwarded-for`
+  - `QM_RATE_LIMIT_TRUSTED_PROXY_CIDRS=10.0.0.0/24`
   - `QM_DATABASE_URL=postgres://...`
   - `QM_EXPIRY_REMINDERS_ENABLED=true`
   - `QM_EXPIRY_REMINDER_RECONCILE_INTERVAL_SECONDS=300`
@@ -65,6 +68,28 @@ curl -X POST \
 
 The maintenance endpoints enqueue background jobs. They are useful for drift repair and low-frequency maintenance, but the worker process must be running to drain the queued work.
 
+Use one scheduling owner for each periodic maintenance path. In a single-node install that can be the API process itself. In a multi-pod deployment, either enable the interval on one API pod only or call the manual endpoints from one external scheduler. Running the same reconcile/sweep interval on every API pod is safe but noisy because each process enqueues repair work independently.
+
+## Reverse Proxies and Browser Origins
+
+Credentialed browser auth only needs CORS when the browser origin differs from the API origin. Keep `QM_WEB_AUTH_ALLOWED_ORIGINS` unset when Quartermaster serves the web shell and API from the same host. For a split deployment, list the exact HTTPS browser origins:
+
+```sh
+QM_PUBLIC_BASE_URL=https://api.quartermaster.example.com
+QM_WEB_AUTH_ALLOWED_ORIGINS=https://app.quartermaster.example.com,https://kitchen.example.net
+```
+
+Entries must be origins only: scheme, host, and optional port, with no path, query, or fragment.
+
+`X-Forwarded-For` is accepted only when both proxy settings are explicit:
+
+```sh
+QM_RATE_LIMIT_CLIENT_IP_MODE=x-forwarded-for
+QM_RATE_LIMIT_TRUSTED_PROXY_CIDRS=10.42.0.0/16,fd00:42::/64
+```
+
+Set the CIDRs to the actual reverse proxy or ingress source ranges. If Quartermaster is exposed directly, leave the mode as `socket`.
+
 ## Metrics and Health
 
 When metrics are enabled, Quartermaster exposes secret-header-protected internal routes:
@@ -78,6 +103,19 @@ All internal scrape and maintenance routes require the same secret-header patter
 - value: the configured trigger secret for that surface
 
 Do not expose these routes publicly without a reverse proxy or network boundary that keeps them internal.
+
+Prometheus can scrape through a small internal proxy that adds the maintenance token before forwarding to Quartermaster:
+
+```nginx
+location /quartermaster/metrics {
+    allow 10.50.0.0/16;
+    deny all;
+    proxy_set_header X-QM-Maintenance-Token $quartermaster_metrics_token;
+    proxy_pass http://quartermaster-api:8080/internal/metrics;
+}
+```
+
+For split worker mode, scrape the API process on its normal bind and each worker on `QM_METRICS_BIND`. The worker bind defaults to loopback, so either run the scraper sidecar on the same host/pod or bind it to an internal-only interface such as `0.0.0.0:9091` behind network policy.
 
 ## What Healthy Delivery Looks Like
 

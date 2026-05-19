@@ -111,6 +111,43 @@ Rate limiting and reverse proxies:
 | `QM_RATE_LIMIT_HISTORY_PER_MINUTE`  | `120`    | Per-client history refill rate                                             |
 | `QM_RATE_LIMIT_HISTORY_BURST`       | `40`     | Per-client history burst                                                   |
 
+Keep `QM_RATE_LIMIT_CLIENT_IP_MODE=socket` when Quartermaster receives traffic directly from clients. Behind a trusted reverse proxy, set `QM_RATE_LIMIT_CLIENT_IP_MODE=x-forwarded-for` and set `QM_RATE_LIMIT_TRUSTED_PROXY_CIDRS` to the proxy source ranges that are allowed to supply `X-Forwarded-For`. Do not trust all private ranges unless every service in those ranges is allowed to choose client IPs for rate limiting.
+
+If the web shell is served from a different HTTPS origin than the API, list that browser origin in `QM_WEB_AUTH_ALLOWED_ORIGINS` so cookie-backed browser auth can use credentialed CORS. Entries must be origins only, with no path:
+
+```sh
+QM_PUBLIC_BASE_URL=https://api.quartermaster.example.com
+QM_WEB_AUTH_ALLOWED_ORIGINS=https://app.quartermaster.example.com
+```
+
+A reverse proxy for that split-origin shape should forward the API host to Quartermaster and preserve the client address only from trusted proxy hops. For example, in Caddy:
+
+```caddyfile
+api.quartermaster.example.com {
+	reverse_proxy quartermaster:8080
+}
+
+app.quartermaster.example.com {
+	root * /srv/quartermaster-web
+	file_server
+}
+```
+
+And in nginx:
+
+```nginx
+server {
+    server_name api.quartermaster.example.com;
+
+    location / {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://quartermaster:8080;
+    }
+}
+```
+
 Barcode lookup tuning:
 
 | Variable                                   | Default                                               | Meaning                                               |
@@ -197,6 +234,15 @@ Quartermaster exposes a small set of internal maintenance hooks when you configu
 
 When metrics are enabled, callers must supply `X-QM-Maintenance-Token`.
 
+For single-node installs, the scheduled cleanup/reconcile intervals are usually enough:
+
+```sh
+QM_AUTH_SESSION_CLEANUP_INTERVAL_SECONDS=86400
+QM_EXPIRY_REMINDER_RECONCILE_INTERVAL_SECONDS=3600
+```
+
+For multi-instance deployments, prefer one external scheduler or one API instance with those intervals enabled, plus the manual secret-protected endpoints for repair jobs. Prometheus should scrape `/internal/metrics` only through an internal network path or reverse proxy rule that injects or requires `X-QM-Maintenance-Token`; do not publish the internal routes as anonymous public endpoints.
+
 ## Invite Links And iOS Universal Links
 
 If `QM_PUBLIC_BASE_URL` is set, it must be an `http://` or `https://` origin with no path, query, or fragment. Quartermaster uses it for browser-friendly invite links and mobile app setup codes. iOS Universal Links still require HTTPS and a matching associated-domain setup.
@@ -209,6 +255,17 @@ For iOS Universal Links, configure:
 | ------------------ | ---------------------------------------------- |
 | `QM_IOS_TEAM_ID`   | Apple Team ID used in the AASA payload         |
 | `QM_IOS_BUNDLE_ID` | iOS bundle identifier used in the AASA payload |
+
+For a local release identity setup, prefer the wrapper command:
+
+```sh
+cargo xtask configure-release-identity \
+  --team YOUR_TEAM_ID \
+  --bundle-id com.yourname.Quartermaster \
+  --domain quartermaster.example.com
+```
+
+It writes the ignored iOS release config and prints the matching `QM_IOS_*` server environment to deploy with the same app identity.
 
 The iOS app build also needs a matching associated-domain entitlement. The native app persists the server URL from setup/manual entry and reuses it on later launches. Without associated-domain setup, invite links still work through the browser fallback and manual invite entry.
 
