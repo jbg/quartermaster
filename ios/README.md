@@ -126,9 +126,9 @@ QUARTERMASTER_ASSOCIATED_DOMAIN=quartermaster.example.com \
 
 `archive-app.sh` defaults to `Apple Distribution` for release archive signing and export. Set optional `QUARTERMASTER_IOS_SIGNING_CERTIFICATE` or pass `--signing-certificate` only if the imported distribution certificate needs a different identity string or SHA.
 
-### fastlane metadata and TestFlight automation
+### fastlane metadata, privacy, screenshots, and TestFlight automation
 
-App Store listing metadata lives in `ios/fastlane/metadata/`, and screenshots should be added under `ios/fastlane/screenshots/`. Keep listing text reviewable there instead of clicking around in App Store Connect.
+App Store listing metadata lives in `ios/fastlane/metadata/`. App Privacy answers live in `ios/fastlane/app_privacy_details.json`. Keep listing text and privacy answers reviewable there instead of clicking around in App Store Connect.
 
 Install the pinned fastlane bundle with Ruby 3.0 or newer:
 
@@ -153,11 +153,56 @@ Useful local commands:
 ```sh
 cd ios
 bundle exec fastlane ios check_metadata
+bundle exec fastlane ios privacy_details
 bundle exec fastlane ios upload_metadata
 QM_IOS_IPA_PATH=/path/to/Quartermaster.ipa bundle exec fastlane ios upload_testflight
 ```
 
+`check_metadata` verifies checked-in listing files against App Store Connect. Skip it when App Store Connect credentials are not configured locally.
+
+`privacy_details` is a review-only lane by default: it parses and summarizes the checked-in JSON but does not upload anything. To send privacy answers to App Store Connect, run it with Apple ID owner/admin credentials because fastlane's `upload_app_privacy_details_to_app_store` action does not use the App Store Connect API key:
+
+```sh
+APPSTORE_USERNAME=owner-or-admin@example.com \
+QUARTERMASTER_IOS_BUNDLE_ID=com.yourname.Quartermaster \
+  bundle exec fastlane ios privacy_details upload:true
+```
+
+The upload lane defaults to non-publishing review mode. Add `publish:true` only when the operator intends to publish the privacy answers:
+
+```sh
+APPSTORE_USERNAME=owner-or-admin@example.com \
+QUARTERMASTER_IOS_BUNDLE_ID=com.yourname.Quartermaster \
+  bundle exec fastlane ios privacy_details upload:true publish:true
+```
+
 `upload_metadata` sends listing metadata only and does not submit the app for review. `upload_testflight` is also what CI calls after `archive-app.sh` exports the IPA.
+
+### App Store screenshot capture
+
+Quartermaster has a deterministic DEBUG-only UI-test fixture for local App Store screenshot capture. The generated PNGs are review artifacts, not source assets, and remain ignored by git until a later asset-review phase chooses final screenshots to commit under `ios/fastlane/screenshots/`.
+
+Regenerate the Xcode project after source or `project.yml` changes, then run the screenshot script from a normal macOS shell:
+
+```sh
+cd ios
+xcodegen generate
+sh scripts/capture-app-store-screenshots.sh
+```
+
+The script runs the `QuartermasterAppStoreScreenshots` scheme with `-skipPackagePluginValidation`, writes the result bundle to `ios/fastlane/screenshot-results.xcresult`, and exports screenshots to `ios/fastlane/screenshots-local/en-US/`:
+
+```text
+01-inventory.png
+02-product-search.png
+03-batches.png
+04-batch-history.png
+05-reminders.png
+06-settings.png
+07-pair-device.png
+```
+
+Both the result bundle and `screenshots-local/` are ignored. Use `git status --short --branch` after capture to confirm no generated screenshots are staged.
 
 ## Universal-link and passkey setup
 
