@@ -90,6 +90,112 @@ data class DeleteHouseholdRequest(
 )
 
 @Serializable
+data class PasskeyCredentialSummary(
+    val id: String,
+    val label: String? = null,
+    @SerialName("created_at")
+    val createdAt: String,
+    @SerialName("last_used_at")
+    val lastUsedAt: String? = null,
+)
+
+@Serializable
+data class PasskeyListResponse(
+    val credentials: List<PasskeyCredentialSummary>,
+)
+
+@Serializable
+data class PasskeyRegistrationStartRequest(
+    val label: String? = null,
+)
+
+@Serializable
+data class PasskeyRegistrationStartResponse(
+    @SerialName("ceremony_id")
+    val ceremonyId: String,
+    @SerialName("public_key")
+    val publicKey: JsonElement,
+)
+
+@Serializable
+data class PasskeyRegistrationFinishRequest(
+    @SerialName("ceremony_id")
+    val ceremonyId: String,
+    val credential: JsonElement,
+    val label: String? = null,
+)
+
+@Serializable
+data class PasskeyLoginStartRequest(
+    val email: String,
+)
+
+@Serializable
+data class PasskeyLoginStartResponse(
+    @SerialName("ceremony_id")
+    val ceremonyId: String,
+    @SerialName("public_key")
+    val publicKey: JsonElement,
+)
+
+@Serializable
+data class PasskeyLoginFinishRequest(
+    @SerialName("ceremony_id")
+    val ceremonyId: String,
+    val credential: JsonElement,
+    @SerialName("device_label")
+    val deviceLabel: String? = null,
+)
+
+@Serializable
+data class AuthHandoffCreateRequest(
+    @SerialName("target_device_label")
+    val targetDeviceLabel: String? = null,
+    @SerialName("server_url")
+    val serverUrl: String? = null,
+)
+
+@Serializable
+data class AuthHandoffCreateResponse(
+    val id: String,
+    @SerialName("handoff_url")
+    val handoffUrl: String,
+    @SerialName("expires_at")
+    val expiresAt: String,
+    @SerialName("target_device_label")
+    val targetDeviceLabel: String? = null,
+)
+
+@Serializable
+data class AuthHandoffTokenRequest(
+    val id: String,
+    val token: String,
+)
+
+@Serializable
+data class AuthHandoffPreviewResponse(
+    val id: String,
+    @SerialName("source_email")
+    val sourceEmail: String,
+    @SerialName("source_display_name")
+    val sourceDisplayName: String,
+    @SerialName("household_id")
+    val householdId: String? = null,
+    @SerialName("target_device_label")
+    val targetDeviceLabel: String? = null,
+    @SerialName("expires_at")
+    val expiresAt: String,
+)
+
+@Serializable
+data class AuthHandoffAcceptRequest(
+    val id: String,
+    val token: String,
+    @SerialName("device_label")
+    val deviceLabel: String? = null,
+)
+
+@Serializable
 data class JsonPatchOperation(
     val op: String,
     val path: String,
@@ -183,6 +289,70 @@ class QuartermasterApi(
             password = password,
             deviceLabel = deviceLabel,
         ),
+        requiresAuth = false,
+    ).also { authStore.saveTokens(it.accessToken, it.refreshToken) }
+
+    suspend fun listPasskeys(): List<PasskeyCredentialSummary> = authedJson<PasskeyListResponse>(
+        method = "GET",
+        path = "/auth/passkeys",
+        body = null,
+    ).credentials
+
+    suspend fun startPasskeyRegistration(label: String?): PasskeyRegistrationStartResponse = authedJson(
+        method = "POST",
+        path = "/auth/passkeys/register/start",
+        body = PasskeyRegistrationStartRequest(label = label),
+    )
+
+    suspend fun finishPasskeyRegistration(
+        ceremonyId: String,
+        credential: JsonElement,
+        label: String?,
+    ): PasskeyCredentialSummary = authedJson(
+        method = "POST",
+        path = "/auth/passkeys/register/finish",
+        body = PasskeyRegistrationFinishRequest(ceremonyId = ceremonyId, credential = credential, label = label),
+    )
+
+    suspend fun startPasskeyLogin(email: String): PasskeyLoginStartResponse = jsonRequest(
+        method = "POST",
+        path = "/auth/passkeys/login/start",
+        body = PasskeyLoginStartRequest(email = email),
+        requiresAuth = false,
+    )
+
+    suspend fun finishPasskeyLogin(ceremonyId: String, credential: JsonElement): TokenPair = jsonRequest<TokenPair>(
+        method = "POST",
+        path = "/auth/passkeys/login/finish",
+        body = PasskeyLoginFinishRequest(ceremonyId = ceremonyId, credential = credential, deviceLabel = "Android"),
+        requiresAuth = false,
+    ).also { authStore.saveTokens(it.accessToken, it.refreshToken) }
+
+    suspend fun deletePasskey(id: String) {
+        authedUnit("DELETE", "/auth/passkeys/$id")
+    }
+
+    suspend fun createAuthHandoff(targetDeviceLabel: String?, serverUrl: String?): AuthHandoffCreateResponse = authedJson(
+        method = "POST",
+        path = "/auth/handoffs",
+        body = AuthHandoffCreateRequest(targetDeviceLabel = targetDeviceLabel, serverUrl = serverUrl),
+    )
+
+    suspend fun cancelAuthHandoff(id: String) {
+        authedUnit("DELETE", "/auth/handoffs/$id")
+    }
+
+    suspend fun previewAuthHandoff(id: String, token: String): AuthHandoffPreviewResponse = jsonRequest(
+        method = "POST",
+        path = "/auth/handoffs/preview",
+        body = AuthHandoffTokenRequest(id = id, token = token),
+        requiresAuth = false,
+    )
+
+    suspend fun acceptAuthHandoff(id: String, token: String, deviceLabel: String? = "Android"): TokenPair = jsonRequest<TokenPair>(
+        method = "POST",
+        path = "/auth/handoffs/accept",
+        body = AuthHandoffAcceptRequest(id = id, token = token, deviceLabel = deviceLabel),
         requiresAuth = false,
     ).also { authStore.saveTokens(it.accessToken, it.refreshToken) }
 

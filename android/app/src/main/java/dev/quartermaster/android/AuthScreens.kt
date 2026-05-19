@@ -30,6 +30,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import dev.quartermaster.android.generated.models.OnboardingAuthMethod
+import dev.quartermaster.android.generated.models.OnboardingAuthMethodAvailability
 import dev.quartermaster.android.generated.models.OnboardingAvailability
 import dev.quartermaster.android.generated.models.OnboardingServerState
 import kotlinx.coroutines.launch
@@ -74,6 +76,7 @@ internal fun InviteHandoffCard(
 internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val passkeyCredentialManager = remember(context) { AndroidPasskeyCredentialManager(context) }
     var email by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -341,6 +344,27 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
                         }
                     }
                     if (signInMode) {
+                        if (status?.authMethods?.any {
+                                it.method == OnboardingAuthMethod.PASSKEY &&
+                                    it.availability == OnboardingAuthMethodAvailability.ENABLED
+                            }
+                            == true
+                        ) {
+                            item {
+                                TextButton(
+                                    onClick = {
+                                        scope.launch {
+                                            val start = appState.startPasskeyLogin(email.trim())
+                                            val credential = passkeyCredentialManager.get(start.publicKey)
+                                            appState.finishPasskeyLogin(start.ceremonyId, credential)
+                                        }
+                                    },
+                                    enabled = !appState.authActionInFlight && email.isNotBlank(),
+                                ) {
+                                    Text("Sign in with passkey")
+                                }
+                            }
+                        }
                         item {
                             TextButton(
                                 onClick = {

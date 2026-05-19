@@ -46,12 +46,16 @@ internal fun SettingsScreen(
     onDeleteLocation: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val passkeyCredentialManager = remember(context) { AndroidPasskeyCredentialManager(context) }
     var inviteMaxUses by remember { mutableStateOf("1") }
     var redeemInviteCode by remember { mutableStateOf(appState.pendingInviteContext?.inviteCode.orEmpty()) }
     var recoveryEmail by remember { mutableStateOf(appState.meOrNull?.user?.pendingEmail ?: appState.meOrNull?.user?.email.orEmpty()) }
     var recoveryCode by remember { mutableStateOf("") }
     var offUsername by remember { mutableStateOf("") }
     var offPassword by remember { mutableStateOf("") }
+    var passkeyLabel by remember { mutableStateOf("") }
+    var handoffLabel by remember { mutableStateOf("Android") }
     var storageVesselFields by remember { mutableStateOf(StorageVesselFormFields()) }
     var editingStorageVesselId by remember { mutableStateOf<String?>(null) }
     var pendingStorageVesselDeleteId by remember { mutableStateOf<String?>(null) }
@@ -122,6 +126,100 @@ internal fun SettingsScreen(
                     MetadataRow("Household", appState.meOrNull?.currentHousehold?.name ?: "None")
                     MetadataRow("Timezone", appState.meOrNull?.currentHousehold?.timezone ?: "UTC")
                     MetadataRow("Server", appState.serverUrl)
+                }
+            }
+        }
+        item {
+            SectionHeader(
+                title = "Passkeys",
+                body = "Manage passkeys for this account.",
+            )
+        }
+        item {
+            Card {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (appState.passkeys.isEmpty()) {
+                        Text("No passkeys yet.", style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        appState.passkeys.forEach { passkey ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Column {
+                                    Text(passkey.label ?: "Passkey")
+                                    Text(
+                                        passkey.lastUsedAt ?: passkey.createdAt,
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                                TextButton(onClick = { scope.launch { appState.deletePasskey(passkey.id) } }) {
+                                    Text("Delete")
+                                }
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = passkeyLabel,
+                        onValueChange = { passkeyLabel = it },
+                        label = { Text("New passkey label") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                val start = appState.backendStartPasskeyRegistration(passkeyLabel.trim().ifBlank { null })
+                                val credential = passkeyCredentialManager.create(start.publicKey)
+                                appState.finishPasskeyRegistration(
+                                    start.ceremonyId,
+                                    credential,
+                                    passkeyLabel.trim().ifBlank { null },
+                                )
+                                passkeyLabel = ""
+                            }
+                        },
+                        enabled = appState.settingsLoadState != LoadState.Loading,
+                    ) {
+                        Text("Add passkey")
+                    }
+                }
+            }
+        }
+        item {
+            SectionHeader(
+                title = "Authenticated pairing",
+                body = "Create a one-time sign-in code for another device.",
+            )
+        }
+        item {
+            Card {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedTextField(
+                        value = handoffLabel,
+                        onValueChange = { handoffLabel = it },
+                        label = { Text("Target device label") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(onClick = { scope.launch { appState.createAuthHandoff(handoffLabel.trim().ifBlank { null }) } }) {
+                        Text("Create handoff")
+                    }
+                    appState.authHandoff?.let { handoff ->
+                        MetadataRow("Expires", handoff.expiresAt)
+                        Text(handoff.handoffUrl, style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = { scope.launch { appState.cancelAuthHandoff() } }) {
+                            Text("Cancel handoff")
+                        }
+                    }
                 }
             }
         }
