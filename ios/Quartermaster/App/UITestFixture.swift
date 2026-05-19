@@ -4,13 +4,17 @@ import UIKit
 #if DEBUG
   enum QuartermasterUITestLaunchArgument {
     static let depletedInventory = "--quartermaster-ui-test-depleted-inventory"
+    static let appStoreScreenshots = "--quartermaster-ui-test-app-store-screenshots"
   }
 
   extension AppState {
     static func uiTestFixtureIfRequested(
       arguments: [String] = ProcessInfo.processInfo.arguments
     ) -> AppState? {
-      guard arguments.contains(QuartermasterUITestLaunchArgument.depletedInventory) else {
+      guard
+        arguments.contains(QuartermasterUITestLaunchArgument.depletedInventory)
+          || arguments.contains(QuartermasterUITestLaunchArgument.appStoreScreenshots)
+      else {
         return nil
       }
       return AppState(
@@ -148,7 +152,9 @@ import UIKit
     func me() async throws -> Me { try decodeFixture(from: meJSON) }
     func switchHousehold(householdID: String) async throws -> Me { try await me() }
     func createHousehold(name: String, timezone: String) async throws -> Me { try await me() }
-    func currentHousehold() async throws -> HouseholdDetail { throw APIError.unknown }
+    func currentHousehold() async throws -> HouseholdDetail {
+      try decodeFixture(from: householdDetailJSON)
+    }
     func updateCurrentHousehold(
       name: String, timezone: String, measurementSystem: MeasurementSystem
     ) async throws -> HouseholdDetail {
@@ -161,9 +167,9 @@ import UIKit
     {
       throw APIError.unknown
     }
-    func householdMembers() async throws -> [Member] { [] }
+    func householdMembers() async throws -> [Member] { try decodeFixture(from: "[\(memberJSON)]") }
     func removeHouseholdMember(userID: String) async throws {}
-    func householdInvites() async throws -> [Invite] { [] }
+    func householdInvites() async throws -> [Invite] { try decodeFixture(from: "[\(inviteJSON)]") }
     func createInvite(maxUses: Int, role: MembershipRole) async throws -> Invite {
       throw APIError.unknown
     }
@@ -177,7 +183,9 @@ import UIKit
       -> Location
     { throw APIError.unknown }
     func deleteLocation(id: String) async throws {}
-    func storageVessels() async throws -> [StorageVessel] { [] }
+    func storageVessels() async throws -> [StorageVessel] {
+      try decodeFixture(from: "[\(storageVesselJSON)]")
+    }
     func createStorageVessel(
       name: String,
       tareWeight: String,
@@ -194,7 +202,7 @@ import UIKit
     func deleteStorageVessel(id: String) async throws {}
     func units() async throws -> [Unit] { try decodeFixture(from: unitsJSON) }
     func searchProducts(query: String, limit: Int, includeDeleted: Bool) async throws -> [Product] {
-      []
+      query.localizedCaseInsensitiveContains("oat") ? [try decodeFixture(from: productJSON)] : []
     }
     func lookupBarcode(_ barcode: String) async throws -> BarcodeLookupResponse {
       throw APIError.unknown
@@ -297,7 +305,10 @@ import UIKit
     }
     func listReminders(afterFireAt: String?, afterID: String?, limit: Int) async throws
       -> ReminderListResponse
-    { try decodeFixture(from: #"{"items":[],"next_after_fire_at":null,"next_after_id":null}"#) }
+    {
+      try decodeFixture(
+        from: #"{"items":[\#(reminderJSON)],"next_after_fire_at":null,"next_after_id":null}"#)
+    }
     func presentReminder(id: String) async throws {}
     func ackReminder(id: String) async throws {}
     func openReminder(id: String) async throws {}
@@ -362,6 +373,60 @@ import UIKit
       """
     }
 
+    private var householdDetailJSON: String {
+      """
+      {
+        "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        "name": "Smoke Household",
+        "timezone": "UTC",
+        "measurement_system": "metric"
+      }
+      """
+    }
+
+    private var memberJSON: String {
+      """
+      {
+        "user": {
+          "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          "display_name": "UI Smoke",
+          "email": "ui-smoke@example.com",
+          "email_verified_at": null,
+          "pending_email": null,
+          "pending_email_verification_expires_at": null
+        },
+        "role": "admin",
+        "joined_at": "2026-04-22T12:00:00Z"
+      }
+      """
+    }
+
+    private var inviteJSON: String {
+      """
+      {
+        "id": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+        "code": "SMOKE-INVITE",
+        "role_granted": "read_write",
+        "expires_at": "2026-06-01T12:00:00Z",
+        "max_uses": 4,
+        "use_count": 1,
+        "created_at": "2026-04-22T12:00:00Z"
+      }
+      """
+    }
+
+    private var storageVesselJSON: String {
+      """
+      {
+        "id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+        "name": "Kilner jar",
+        "tare_weight": "380",
+        "tare_unit": "g",
+        "sort_order": 0
+      }
+      """
+    }
+
     private var unitsJSON: String {
       """
       [
@@ -406,6 +471,30 @@ import UIKit
         "opened_on": null,
         "note": "Active smoke batch",
         "depleted_at": null
+      }
+      """
+    }
+
+    private var reminderJSON: String {
+      """
+      {
+        "id": "88888888-8888-8888-8888-888888888888",
+        "kind": "expiry",
+        "fire_at": "2026-04-29T08:30:00Z",
+        "household_timezone": "UTC",
+        "household_fire_local_at": "2026-04-29T08:30:00",
+        "batch_id": "\(activeBatchID)",
+        "product_id": "\(productID)",
+        "location_id": "\(locationID)",
+        "product_name": "Smoke Oats",
+        "location_name": "Smoke Pantry",
+        "quantity": "500",
+        "unit": "g",
+        "expires_on": "2026-05-01",
+        "days_until_expiry": 2,
+        "urgency": "expires_future",
+        "presented_on_device_at": "2026-04-29T08:31:00Z",
+        "opened_on_device_at": null
       }
       """
     }
