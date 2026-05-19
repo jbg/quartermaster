@@ -69,6 +69,79 @@ async fn barcode_lookup_404_writes_negative_cache_entry() {
 }
 
 #[tokio::test]
+async fn barcode_cache_and_off_imports_are_household_scoped() {
+    let mock = MockOffServer::start().await;
+    let app = TestApp::start(ApiConfig {
+        registration_mode: qm_api::RegistrationMode::Open,
+        off_api_base_url: mock.base_url(),
+        off_max_retries: 0,
+        ..ApiConfig::default()
+    })
+    .await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    assert_eq!(app.register("bob", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let bob = app.login("bob").await;
+    let alice_household =
+        Uuid::parse_str(me_current_household_id(&app.me(&alice).await).unwrap()).unwrap();
+    let bob_household =
+        Uuid::parse_str(me_current_household_id(&app.me(&bob).await).unwrap()).unwrap();
+
+    let (status, alice_body) = app
+        .send(
+            Method::GET,
+            "/api/v1/products/by-barcode/4444444444444",
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{alice_body}");
+    assert_eq!(alice_body["source"], "openfoodfacts");
+    let alice_product_id = alice_body["product"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(mock.hit_count("4444444444444").await, 1);
+
+    let (status, bob_body) = app
+        .send(
+            Method::GET,
+            "/api/v1/products/by-barcode/4444444444444",
+            None,
+            Some(&bob),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(bob_body["source"], "openfoodfacts");
+    let bob_product_id = bob_body["product"]["id"].as_str().unwrap().to_owned();
+    assert_ne!(alice_product_id, bob_product_id);
+    assert_eq!(mock.hit_count("4444444444444").await, 2);
+
+    let (status, bob_cached) = app
+        .send(
+            Method::GET,
+            "/api/v1/products/by-barcode/4444444444444",
+            None,
+            Some(&bob),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(bob_cached["source"], "cache");
+    assert_eq!(bob_cached["product"]["id"], bob_product_id);
+    assert_ne!(bob_cached["product"]["id"], alice_product_id);
+
+    assert!(
+        qm_db::barcode_cache::get(&app.db, alice_household, "4444444444444")
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        qm_db::barcode_cache::get(&app.db, bob_household, "4444444444444")
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[tokio::test]
 async fn breaker_open_failures_do_not_write_cache_misses_and_fail_fast() {
     let mock = MockOffServer::start().await;
     let app = TestApp::start(ApiConfig {

@@ -699,6 +699,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn same_off_barcode_can_exist_in_multiple_households() {
+        let db = crate::test_db().await;
+        let a = households::create(&db, "A", "UTC").await.unwrap();
+        let b = households::create(&db, "B", "UTC").await.unwrap();
+
+        let product_a = upsert_from_off(
+            &db,
+            a.id,
+            "5449000000996",
+            "A Cola",
+            None,
+            "volume",
+            Some("ml"),
+            None,
+            Some("330"),
+            Some("ml"),
+        )
+        .await
+        .unwrap();
+        let product_b = upsert_from_off(
+            &db,
+            b.id,
+            "5449000000996",
+            "B Cola",
+            None,
+            "volume",
+            Some("ml"),
+            None,
+            Some("330"),
+            Some("ml"),
+        )
+        .await
+        .unwrap();
+
+        assert_ne!(product_a.id, product_b.id);
+        assert_eq!(
+            find_by_off_barcode(&db, a.id, "5449000000996")
+                .await
+                .unwrap()
+                .unwrap()
+                .name,
+            "A Cola"
+        );
+        assert_eq!(
+            find_by_off_barcode(&db, b.id, "5449000000996")
+                .await
+                .unwrap()
+                .unwrap()
+                .name,
+            "B Cola"
+        );
+    }
+
+    #[tokio::test]
     async fn upsert_from_off_updates_existing() {
         let db = crate::test_db().await;
         let h = households::create(&db, "h", "UTC").await.unwrap();

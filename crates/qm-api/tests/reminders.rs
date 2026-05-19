@@ -5,7 +5,8 @@ use jiff::Timestamp;
 use qm_api::ApiConfig;
 use qm_db::reminders::ExpiryReminderPolicy;
 use serde_json::json;
-use support::TestApp;
+use support::{me_current_household_id, TestApp};
+use uuid::Uuid;
 
 fn enabled_policy() -> ExpiryReminderPolicy {
     ExpiryReminderPolicy {
@@ -173,6 +174,110 @@ async fn list_returns_due_reminders_for_active_household_only() {
 }
 
 #[tokio::test]
+async fn reminder_actions_and_push_claims_do_not_cross_households() {
+    let app = TestApp::start(ApiConfig {
+        registration_mode: qm_api::RegistrationMode::Open,
+        expiry_reminder_policy: enabled_policy(),
+        ..ApiConfig::default()
+    })
+    .await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    assert_eq!(app.register("bob", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let bob = app.login("bob").await;
+    let alice_me = app.me(&alice).await;
+    let bob_me = app.me(&bob).await;
+    let alice_household = Uuid::parse_str(me_current_household_id(&alice_me).unwrap()).unwrap();
+    let bob_household = Uuid::parse_str(me_current_household_id(&bob_me).unwrap()).unwrap();
+    let alice_user = Uuid::parse_str(alice_me["user"]["id"].as_str().unwrap()).unwrap();
+    let bob_user = Uuid::parse_str(bob_me["user"]["id"].as_str().unwrap()).unwrap();
+
+    let alice_reminder = seed_due_reminder(
+        &app,
+        alice_household,
+        alice_user,
+        "Alice reminder product",
+        "100",
+        "g",
+        "mass",
+    )
+    .await;
+    let bob_reminder = seed_due_reminder(
+        &app,
+        bob_household,
+        bob_user,
+        "Bob reminder product",
+        "2",
+        "piece",
+        "count",
+    )
+    .await;
+
+    for suffix in ["present", "open", "ack"] {
+        let (status, body) = app
+            .send(
+                Method::POST,
+                &format!("/api/v1/reminders/{alice_reminder}/{suffix}"),
+                None,
+                Some(&bob),
+            )
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["code"], "not_found");
+    }
+
+    for (bearer, device_id, platform, token) in [
+        (&alice, "alice-ios", "ios", "token-alice"),
+        (&bob, "bob-android", "android", "token-bob"),
+    ] {
+        let (status, _) = app
+            .send(
+                Method::POST,
+                "/api/v1/devices/register",
+                Some(json!({
+                    "device_id": device_id,
+                    "platform": platform,
+                    "push_authorization": "authorized",
+                    "push_token": token,
+                    "app_version": "0.1",
+                })),
+                Some(bearer),
+            )
+            .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+    }
+
+    let claim = qm_db::reminders::claim_due_push_work(
+        &app.db,
+        &qm_db::time::format_timestamp(Timestamp::now()),
+        10,
+        "tenant-test",
+        "2999-01-01T00:00:00.000Z",
+    )
+    .await
+    .unwrap();
+    assert_eq!(claim.items.len(), 2);
+
+    let alice_item = claim
+        .items
+        .iter()
+        .find(|item| item.reminder_id == alice_reminder)
+        .unwrap();
+    assert_eq!(alice_item.household_id, alice_household);
+    assert_eq!(alice_item.device_token, "token-alice");
+    assert_eq!(alice_item.channel, qm_db::reminders::CHANNEL_APNS);
+
+    let bob_item = claim
+        .items
+        .iter()
+        .find(|item| item.reminder_id == bob_reminder)
+        .unwrap();
+    assert_eq!(bob_item.household_id, bob_household);
+    assert_eq!(bob_item.device_token, "token-bob");
+    assert_eq!(bob_item.channel, qm_db::reminders::CHANNEL_FCM);
+}
+
+#[tokio::test]
 async fn present_open_and_ack_are_device_aware() {
     let app = TestApp::start(ApiConfig {
         expiry_reminder_policy: enabled_policy(),
@@ -310,6 +415,61 @@ async fn present_open_and_ack_are_device_aware() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert!(body["items"].as_array().unwrap().is_empty());
+}
+
+async fn seed_due_reminder(
+    app: &TestApp,
+    household_id: Uuid,
+    user_id: Uuid,
+    product_name: &str,
+    quantity: &str,
+    unit: &str,
+    family: &str,
+) -> Uuid {
+    let pantry = qm_db::locations::list_for_household(&app.db, household_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|row| row.kind == "pantry")
+        .unwrap()
+        .id;
+    let product = qm_db::products::create_manual(
+        &app.db,
+        household_id,
+        product_name,
+        None,
+        family,
+        Some(unit),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let batch = qm_db::stock::create(
+        &app.db,
+        household_id,
+        product.id,
+        pantry,
+        quantity,
+        unit,
+        None,
+        Some("2999-01-03"),
+        None,
+        None,
+        user_id,
+        Some(&enabled_policy()),
+    )
+    .await
+    .unwrap();
+    qm_db::reminders::force_due_for_batch(
+        &app.db,
+        batch.id,
+        &qm_db::time::format_timestamp(Timestamp::now()),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .id
 }
 
 #[tokio::test]
