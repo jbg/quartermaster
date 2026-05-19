@@ -1,7 +1,13 @@
 default_platform(:ios)
 
+require "json"
+
 def appstore_private_key
   ENV.fetch("APPSTORE_API_PRIVATE_KEY").gsub("\\n", "\n")
+end
+
+def truthy?(value)
+  %w[1 true yes].include?(value.to_s.downcase)
 end
 
 platform :ios do
@@ -35,6 +41,28 @@ platform :ios do
       submit_for_review: false,
       run_precheck_before_submit: false,
       force: true
+    )
+  end
+
+  desc "Review or upload App Store privacy details"
+  lane :privacy_details do |options|
+    json_path = options[:json_path] || "fastlane/app_privacy_details.json"
+    details = JSON.parse(File.read(json_path))
+    UI.message("Loaded #{details.length} App Privacy detail entries from #{json_path}")
+
+    upload = options.key?(:upload) ? truthy?(options[:upload]) : truthy?(ENV["QM_IOS_UPLOAD_PRIVACY_DETAILS"])
+    unless upload
+      UI.message("Skipping App Store Connect upload. Pass upload:true or set QM_IOS_UPLOAD_PRIVACY_DETAILS=true to upload.")
+      next
+    end
+
+    upload_app_privacy_details_to_app_store(
+      username: ENV.fetch("APPSTORE_USERNAME"),
+      team_id: ENV["APPSTORE_TEAM_ID"],
+      team_name: ENV["APPSTORE_TEAM_NAME"],
+      app_identifier: ENV.fetch("QUARTERMASTER_IOS_BUNDLE_ID"),
+      json_path: json_path,
+      skip_publish: !truthy?(options[:publish])
     )
   end
 
