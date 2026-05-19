@@ -29,7 +29,11 @@
     type OpenFoodFactsCredentialStatusResponse,
     type StorageVessel
   } from '$lib/session-core';
-  import type { HouseholdExportDocument } from '$lib/generated/types.gen';
+  import type {
+    HouseholdDetailDto,
+    HouseholdExportDocument,
+    MeasurementSystem
+  } from '$lib/generated/types.gen';
 
   let session: QuartermasterSession | null = $state(null);
   let me = $state<MeResponse | null>(null);
@@ -53,6 +57,12 @@
   let deleteError = $state<string | null>(null);
   let householdDataMessage = $state<string | null>(null);
   let householdDataError = $state<string | null>(null);
+  let householdDetail = $state<HouseholdDetailDto | null>(null);
+  let householdName = $state('');
+  let householdTimezone = $state('');
+  let householdMeasurementSystem = $state<MeasurementSystem>('metric');
+  let householdDetailsMessage = $state<string | null>(null);
+  let householdDetailsError = $state<string | null>(null);
   let deletionConfirmationName = $state('');
   let importInput: HTMLInputElement | null = $state(null);
   let editingLocation = $state<Location | null>(null);
@@ -86,6 +96,24 @@
     me?.public_base_url?.trim() || me?.publicBaseUrl?.trim() || pairingServerUrl
   );
   const pairingDeepLink = $derived(quartermasterServerUrl(mobilePairingServerUrl));
+  const measurementSystemOptions: Array<{
+    value: MeasurementSystem;
+    label: string;
+    detail: string;
+  }> = [
+    { value: 'metric', label: 'Metric', detail: '1 tsp = 5 ml, 1 tbsp = 15 ml' },
+    {
+      value: 'us_customary',
+      label: 'US customary',
+      detail: '1 tsp = 4.929 ml, 1 tbsp = 14.787 ml'
+    },
+    { value: 'australian', label: 'Australian', detail: '1 tsp = 5 ml, 1 tbsp = 20 ml' },
+    { value: 'imperial', label: 'Imperial', detail: '1 tsp = 5.919 ml, 1 tbsp = 17.758 ml' }
+  ];
+  const selectedMeasurementSystem = $derived(
+    measurementSystemOptions.find((option) => option.value === householdMeasurementSystem) ??
+      measurementSystemOptions[0]
+  );
 
   $effect(() => {
     if (!browser || !mobilePairingServerUrl) {
@@ -136,6 +164,7 @@
       me = await session.me();
       if (currentHousehold(me)) {
         await Promise.all([
+          refreshHouseholdDetail(),
           refreshLocations(),
           refreshStorageVessels(),
           refreshPrinters(),
@@ -146,12 +175,14 @@
         storageVessels = [];
         printers = [];
         offCredentialStatus = null;
+        householdDetail = null;
       }
     } catch {
       me = null;
       locations = [];
       storageVessels = [];
       printers = [];
+      householdDetail = null;
       authenticated = false;
       error = 'Sign in again to continue.';
     } finally {
@@ -164,6 +195,59 @@
       return;
     }
     locations = sortLocations(await session.locationsList());
+  }
+
+  async function refreshHouseholdDetail() {
+    if (!session) {
+      return;
+    }
+    householdDetail = await session.householdCurrentGet();
+    householdName = householdDetail.name;
+    householdTimezone = householdDetail.timezone;
+    householdMeasurementSystem = householdDetail.measurement_system;
+  }
+
+  async function saveHouseholdDetails() {
+    if (!session || !householdDetail) {
+      return;
+    }
+    const name = householdName.trim();
+    const timezone = householdTimezone.trim();
+    if (!name || !timezone) {
+      householdDetailsError = 'Enter a household name and timezone.';
+      return;
+    }
+    actionBusy = 'household:details';
+    householdDetailsError = null;
+    householdDetailsMessage = null;
+    try {
+      householdDetail = await session.householdCurrentUpdate({
+        name,
+        timezone,
+        measurement_system: householdMeasurementSystem
+      });
+      householdName = householdDetail.name;
+      householdTimezone = householdDetail.timezone;
+      householdMeasurementSystem = householdDetail.measurement_system;
+      me = await session.me();
+      householdDetailsMessage = 'Household details saved.';
+    } catch (err) {
+      householdDetailsError =
+        err instanceof Error ? err.message : 'Household details could not be saved.';
+    } finally {
+      actionBusy = null;
+    }
+  }
+
+  function resetHouseholdDetails() {
+    if (!householdDetail) {
+      return;
+    }
+    householdName = householdDetail.name;
+    householdTimezone = householdDetail.timezone;
+    householdMeasurementSystem = householdDetail.measurement_system;
+    householdDetailsError = null;
+    householdDetailsMessage = null;
   }
 
   async function refreshStorageVessels() {
@@ -797,6 +881,80 @@
     </section>
   {:else}
     <section class="settings-layout">
+      <section class="panel settings-panel" aria-labelledby="household-details-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Household</p>
+            <h2 id="household-details-heading">Details</h2>
+          </div>
+        </div>
+
+        {#if householdDetailsMessage}
+          <p class="muted">{householdDetailsMessage}</p>
+        {/if}
+        {#if householdDetailsError}
+          <p class="error-text">{householdDetailsError}</p>
+        {/if}
+
+        {#if isAdmin && householdDetail}
+          <form
+            class="settings-form"
+            onsubmit={(event) => {
+              event.preventDefault();
+              void saveHouseholdDetails();
+            }}
+          >
+            <label>
+              Household name
+              <input bind:value={householdName} maxlength="120" />
+            </label>
+            <label>
+              Timezone
+              <input bind:value={householdTimezone} placeholder="Europe/Madrid" />
+            </label>
+            <label>
+              Measurement system
+              <select bind:value={householdMeasurementSystem}>
+                {#each measurementSystemOptions as option}
+                  <option value={option.value}>{option.label}</option>
+                {/each}
+              </select>
+            </label>
+            <p class="muted">{selectedMeasurementSystem.detail}</p>
+            <div class="row-actions">
+              <button
+                class="primary-action"
+                type="submit"
+                disabled={actionBusy !== null || !householdName.trim() || !householdTimezone.trim()}
+                >{actionBusy === 'household:details' ? 'Saving...' : 'Save household'}</button
+              >
+              <button
+                class="ghost-button"
+                type="button"
+                disabled={actionBusy !== null}
+                onclick={resetHouseholdDetails}>Reset</button
+              >
+            </div>
+          </form>
+        {:else}
+          <div class="detail-grid compact">
+            <div>
+              <h3>Name</h3>
+              <p>{householdDetail?.name ?? activeHousehold?.name ?? 'Unknown'}</p>
+            </div>
+            <div>
+              <h3>Timezone</h3>
+              <p>{householdDetail?.timezone ?? 'UTC'}</p>
+            </div>
+            <div>
+              <h3>Measurement system</h3>
+              <p>{selectedMeasurementSystem.label}</p>
+            </div>
+          </div>
+          <p class="muted">{selectedMeasurementSystem.detail}</p>
+        {/if}
+      </section>
+
       <section class="panel settings-panel" aria-labelledby="locations-heading">
         <div class="section-heading">
           <div>

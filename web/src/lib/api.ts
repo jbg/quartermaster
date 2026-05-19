@@ -13,6 +13,8 @@ import {
   deviceRegister,
   householdCurrentDeletionRequest,
   householdCurrentExport,
+  householdCurrentGet,
+  householdCurrentUpdate,
   householdImport,
   labelPrintersCreate,
   labelPrintersDelete,
@@ -119,6 +121,12 @@ export function generatedTransport(): SessionTransport {
     },
     householdCurrentDeletionRequest(body) {
       return householdCurrentDeletionRequest({ body });
+    },
+    householdCurrentGet() {
+      return householdCurrentGet();
+    },
+    householdCurrentUpdate(body) {
+      return householdCurrentUpdate({ body });
     },
     registerDevice(body) {
       return deviceRegister({ body });

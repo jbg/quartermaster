@@ -1,5 +1,10 @@
 import { trimTrailingSlashes, webBasePath, type BrowserLocationLike } from '$lib/paths';
-import type { DeleteHouseholdResponse, HouseholdExportDocument } from './generated/types.gen';
+import type {
+  DeleteHouseholdResponse,
+  HouseholdDetailDto,
+  HouseholdExportDocument,
+  UpdateHouseholdRequest
+} from './generated/types.gen';
 
 export interface TokenPair {
   access_token?: string;
@@ -445,6 +450,8 @@ export interface SessionTransport {
   logout(): Promise<ApiResult<void>>;
   me(): Promise<ApiResult<MeResponse>>;
   switchHousehold(body: { household_id: string }): Promise<ApiResult<MeResponse>>;
+  householdCurrentGet?(): Promise<ApiResult<HouseholdDetailDto>>;
+  householdCurrentUpdate?(body: UpdateHouseholdRequest): Promise<ApiResult<HouseholdDetailDto>>;
   householdCurrentExport?(): Promise<ApiResult<HouseholdExportDocument>>;
   householdImport?(body: HouseholdExportDocument): Promise<ApiResult<MeResponse>>;
   householdCurrentDeletionRequest?(body: {
@@ -685,6 +692,16 @@ export class QuartermasterSession {
 
   switchHousehold(householdId: string): Promise<MeResponse> {
     return this.authed(() => this.transport.switchHousehold({ household_id: householdId }));
+  }
+
+  householdCurrentGet(): Promise<HouseholdDetailDto> {
+    return this.authed(() => required(this.transport.householdCurrentGet, 'householdCurrentGet')());
+  }
+
+  householdCurrentUpdate(body: UpdateHouseholdRequest): Promise<HouseholdDetailDto> {
+    return this.authed(() =>
+      required(this.transport.householdCurrentUpdate, 'householdCurrentUpdate')(body)
+    );
   }
 
   householdCurrentExport(): Promise<HouseholdExportDocument> {

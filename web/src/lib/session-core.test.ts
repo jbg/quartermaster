@@ -7,7 +7,7 @@ import {
   type SessionTransport,
   type StoredSession
 } from './session-core';
-import type { HouseholdExportDocument } from './generated/types.gen';
+import type { HouseholdExportDocument, UpdateHouseholdRequest } from './generated/types.gen';
 import { appPath } from './paths';
 
 function memoryStorage(initial: StoredSession): SessionStorage & { value: StoredSession } {
@@ -714,6 +714,30 @@ describe('QuartermasterSession', () => {
         calls.push('export');
         return { data: document, response: { status: 200 } };
       },
+      async householdCurrentGet() {
+        calls.push('get');
+        return {
+          data: {
+            id: 'household-1',
+            name: 'Home',
+            timezone: 'Europe/Madrid',
+            measurement_system: 'metric'
+          },
+          response: { status: 200 }
+        };
+      },
+      async householdCurrentUpdate(body: UpdateHouseholdRequest) {
+        calls.push(['update', body.name, body.timezone, body.measurement_system]);
+        return {
+          data: {
+            id: 'household-1',
+            name: body.name,
+            timezone: body.timezone,
+            measurement_system: body.measurement_system
+          },
+          response: { status: 200 }
+        };
+      },
       async householdImport(body: HouseholdExportDocument) {
         calls.push(['import', body.household.name]);
         return {
@@ -735,6 +759,20 @@ describe('QuartermasterSession', () => {
 
     const session = new QuartermasterSession(storage, transport);
 
+    await expect(session.householdCurrentGet()).resolves.toMatchObject({
+      name: 'Home',
+      measurement_system: 'metric'
+    });
+    await expect(
+      session.householdCurrentUpdate({
+        name: 'Home',
+        timezone: 'Europe/Madrid',
+        measurement_system: 'imperial'
+      })
+    ).resolves.toMatchObject({
+      name: 'Home',
+      measurement_system: 'imperial'
+    });
     await expect(session.householdCurrentExport()).resolves.toEqual(document);
     await expect(session.householdImport(document)).resolves.toMatchObject({
       current_household: { id: 'imported', name: 'Home' }
@@ -742,6 +780,12 @@ describe('QuartermasterSession', () => {
     await expect(session.householdCurrentDeletionRequest('Home')).resolves.toMatchObject({
       status: 'queued'
     });
-    expect(calls).toEqual(['export', ['import', 'Home'], ['delete', 'Home']]);
+    expect(calls).toEqual([
+      'get',
+      ['update', 'Home', 'Europe/Madrid', 'imperial'],
+      'export',
+      ['import', 'Home'],
+      ['delete', 'Home']
+    ]);
   });
 });
