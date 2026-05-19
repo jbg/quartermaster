@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.28.0](https://github.com/jbg/quartermaster/compare/1.27.0...1.28.0) (2026-05-19)
+
+
+### Features
+
+* **android:** support passkeys and authenticated handoff ([0a02cdc](https://github.com/jbg/quartermaster/commit/0a02cdca413f233791c518a13f030bce48fa2c2a))
+* **auth:** add passkeys and authenticated handoff ([a9690c0](https://github.com/jbg/quartermaster/commit/a9690c0aa9c42908a0c7217d2632ee978fb4a1c7))
+* **ios:** support passkeys and authenticated handoff ([6eb4b5a](https://github.com/jbg/quartermaster/commit/6eb4b5a992c1824db8ea1780a78184b0c80e3476))
+
+
+### Bug Fixes
+
+* enforce tenant isolation for product barcodes ([e793831](https://github.com/jbg/quartermaster/commit/e7938315662006560328d55a767979b2d4c24d0a))
+
 ## [1.27.0](https://github.com/jbg/quartermaster/compare/1.26.0...1.27.0) (2026-05-18)
 
 
