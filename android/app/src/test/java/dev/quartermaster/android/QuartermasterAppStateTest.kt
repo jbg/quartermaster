@@ -16,6 +16,7 @@ import dev.quartermaster.android.generated.models.HouseholdDetailDto
 import dev.quartermaster.android.generated.models.InviteDto
 import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.MeResponse
+import dev.quartermaster.android.generated.models.MeasurementSystem
 import dev.quartermaster.android.generated.models.OffContributionPreviewResponse
 import dev.quartermaster.android.generated.models.OffContributionResponse
 import dev.quartermaster.android.generated.models.OnboardingStatusResponse
@@ -31,6 +32,7 @@ import dev.quartermaster.android.generated.models.StockEventType
 import dev.quartermaster.android.generated.models.StorageVesselDto
 import dev.quartermaster.android.generated.models.UnitDto
 import dev.quartermaster.android.generated.models.UnitFamily
+import dev.quartermaster.android.generated.models.UpdateHouseholdRequest
 import dev.quartermaster.android.generated.models.UpdateLocationRequest
 import dev.quartermaster.android.generated.models.UpdateStorageVesselRequest
 import kotlinx.coroutines.test.runTest
@@ -236,6 +238,51 @@ class QuartermasterAppStateTest {
         assertEquals(1, backend.clearRecoveryEmailCount)
         assertEquals(LoadState.Idle, appState.settingsLoadState)
         assertTrue(appState.phase is AppPhase.Authenticated)
+    }
+
+    @Test
+    fun `createHousehold sends selected measurement system and refreshes detail`() = runTest {
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                householdDetail = householdDetailJson(measurementSystem = "us_customary"),
+                units = listOf(unitJson("oz", "mass")),
+            )
+        val appState = QuartermasterAppState(sessionStore = FakeSessionStore(), backend = backend)
+
+        appState.createHousehold(" Home ", " America/New_York ", MeasurementSystem.US_CUSTOMARY)
+
+        assertEquals(
+            listOf(Triple("Home", "America/New_York", MeasurementSystem.US_CUSTOMARY)),
+            backend.createdHouseholds,
+        )
+        assertEquals(MeasurementSystem.US_CUSTOMARY, appState.householdDetail?.measurementSystem)
+        assertEquals(listOf("oz"), appState.units.map { it.code })
+    }
+
+    @Test
+    fun `updateCurrentHousehold sends full measurement system request`() = runTest {
+        val updated = householdDetailJson(
+            name = "Kitchen",
+            timezone = "America/New_York",
+            measurementSystem = "imperial",
+        )
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                householdDetail = updated,
+                units = listOf(unitJson("oz", "mass")),
+            )
+        val appState = QuartermasterAppState(sessionStore = FakeSessionStore(), backend = backend)
+
+        appState.updateCurrentHousehold(" Kitchen ", " America/New_York ", MeasurementSystem.IMPERIAL)
+
+        val request = backend.updateHouseholdRequests.single()
+        assertEquals("Kitchen", request.name)
+        assertEquals("America/New_York", request.timezone)
+        assertEquals(MeasurementSystem.IMPERIAL, request.measurementSystem)
+        assertEquals(updated, appState.householdDetail)
+        assertEquals(listOf("oz"), appState.units.map { it.code })
     }
 
     @Test
@@ -1601,13 +1648,17 @@ class QuartermasterAppStateTest {
         }
         """.trimIndent()
 
-    private fun householdDetailJson(): HouseholdDetailDto = json.decodeFromString(
+    private fun householdDetailJson(
+        name: String = "Home",
+        timezone: String = "UTC",
+        measurementSystem: String = "metric",
+    ): HouseholdDetailDto = json.decodeFromString(
         """
             {
               "id": "66666666-6666-6666-6666-666666666666",
-              "name": "Home",
-              "timezone": "UTC",
-              "measurement_system": "metric",
+              "name": "$name",
+              "timezone": "$timezone",
+              "measurement_system": "$measurementSystem",
               "members": []
             }
         """.trimIndent(),
@@ -1872,6 +1923,8 @@ class QuartermasterAppStateTest {
         val restoredBatchIds = mutableListOf<String>()
         val createdOnboardingHouseholds = mutableListOf<String>()
         val joinedOnboardingInvites = mutableListOf<String>()
+        val createdHouseholds = mutableListOf<Triple<String, String, MeasurementSystem>>()
+        val updateHouseholdRequests = mutableListOf<UpdateHouseholdRequest>()
         val requestedRecoveryEmails = mutableListOf<String>()
         val confirmedRecoveryCodes = mutableListOf<String>()
         var clearRecoveryEmailCount = 0
@@ -2006,11 +2059,24 @@ class QuartermasterAppStateTest {
         override suspend fun createHousehold(
             name: String,
             timezone: String,
-        ): MeResponse = meResponse
+            measurementSystem: MeasurementSystem,
+        ): MeResponse {
+            createdHouseholds += Triple(name, timezone, measurementSystem)
+            return meResponse
+        }
 
         override suspend fun redeemInvite(inviteCode: String) = Unit
 
         override suspend fun currentHousehold(): HouseholdDetailDto = householdDetail ?: error("Unused in test")
+
+        override suspend fun updateCurrentHousehold(request: UpdateHouseholdRequest): HouseholdDetailDto {
+            updateHouseholdRequests += request
+            return householdDetail ?: householdDetailJson(
+                name = request.name,
+                timezone = request.timezone,
+                measurementSystem = request.measurementSystem.value,
+            )
+        }
 
         override suspend fun exportCurrentHousehold(): String = error("Unused in test")
 

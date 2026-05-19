@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import dev.quartermaster.android.generated.models.MeasurementSystem
 import dev.quartermaster.android.generated.models.OnboardingAuthMethod
 import dev.quartermaster.android.generated.models.OnboardingAuthMethodAvailability
 import dev.quartermaster.android.generated.models.OnboardingAvailability
@@ -442,6 +443,49 @@ internal fun OnboardingScreen(appState: QuartermasterAppState, modifier: Modifie
 }
 
 @Composable
+private fun MeasurementSystemPicker(
+    selected: MeasurementSystem,
+    enabled: Boolean,
+    onSelect: (MeasurementSystem) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Measurement system", style = MaterialTheme.typography.labelLarge)
+        MeasurementSystem.values().forEach { option ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(option.displayName(), style = MaterialTheme.typography.bodyMedium)
+                    Text(option.detail(), style = MaterialTheme.typography.bodySmall)
+                }
+                if (option == selected) {
+                    Text("Selected", style = MaterialTheme.typography.labelMedium)
+                } else {
+                    TextButton(onClick = { onSelect(option) }, enabled = enabled) {
+                        Text("Select")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun MeasurementSystem.displayName(): String = when (this) {
+    MeasurementSystem.METRIC -> "Metric"
+    MeasurementSystem.US_CUSTOMARY -> "US customary"
+    MeasurementSystem.AUSTRALIAN -> "Australian"
+    MeasurementSystem.IMPERIAL -> "Imperial"
+}
+
+private fun MeasurementSystem.detail(): String = when (this) {
+    MeasurementSystem.METRIC -> "1 tsp = 5 ml, 1 tbsp = 15 ml"
+    MeasurementSystem.US_CUSTOMARY -> "1 tsp = 4.929 ml, 1 tbsp = 14.787 ml"
+    MeasurementSystem.AUSTRALIAN -> "1 tsp = 5 ml, 1 tbsp = 20 ml"
+    MeasurementSystem.IMPERIAL -> "1 tsp = 5.919 ml, 1 tbsp = 17.758 ml"
+}
+
+@Composable
 private fun ResetPasswordFields(
     email: String,
     code: String,
@@ -534,6 +578,7 @@ internal fun NoHouseholdScreen(appState: QuartermasterAppState, modifier: Modifi
     val scope = rememberCoroutineScope()
     var householdName by remember { mutableStateOf("") }
     var timezone by remember { mutableStateOf("UTC") }
+    var householdMeasurementSystem by remember { mutableStateOf(MeasurementSystem.METRIC) }
     var inviteCode by remember { mutableStateOf(appState.pendingInviteContext?.inviteCode.orEmpty()) }
 
     LaunchedEffect(appState.pendingInviteContext) {
@@ -592,8 +637,21 @@ internal fun NoHouseholdScreen(appState: QuartermasterAppState, modifier: Modifi
                         label = { Text("Timezone") },
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    MeasurementSystemPicker(
+                        selected = householdMeasurementSystem,
+                        enabled = appState.settingsLoadState != LoadState.Loading,
+                        onSelect = { householdMeasurementSystem = it },
+                    )
                     Button(
-                        onClick = { scope.launch { appState.createHousehold(householdName, timezone) } },
+                        onClick = {
+                            scope.launch {
+                                appState.createHousehold(
+                                    householdName,
+                                    timezone,
+                                    householdMeasurementSystem,
+                                )
+                            }
+                        },
                         enabled = appState.settingsLoadState != LoadState.Loading && householdName.isNotBlank(),
                     ) {
                         Text(if (appState.settingsLoadState == LoadState.Loading) "Working..." else "Create household")
