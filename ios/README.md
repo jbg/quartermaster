@@ -35,7 +35,7 @@ Simulator-backed `xcodebuild` runs are host-only checks. Run them from a normal 
 
 2. Build + run the **Quartermaster** scheme in Xcode on an iOS 26 simulator. The simulator reaches the Mac host at `http://localhost:8080`, which is what the app uses by default.
 
-3. First launch: the Onboarding screen appears with **Get started** selected. Enter a username + password, tap _Create household_, and the app should land on the Inventory tab with the three seeded locations (Pantry / Fridge / Freezer) showing empty states.
+3. First launch: the Onboarding screen appears with **Get started** selected. Enter an email address, display name, and password, tap _Create household_, and the app should land on the Inventory tab with the three seeded locations (Pantry / Fridge / Freezer) showing empty states.
 
 If the server rejects registration (`registration_disabled`), the backend has already had a first user created — either delete `data.db` at the repo root and restart the backend, or switch Onboarding to **Sign in**.
 
@@ -157,7 +157,7 @@ QM_IOS_IPA_PATH=/path/to/Quartermaster.ipa bundle exec fastlane ios upload_testf
 
 `upload_metadata` sends listing metadata only and does not submit the app for review. `upload_testflight` is also what CI calls after `archive-app.sh` exports the IPA.
 
-## Universal-link setup
+## Universal-link and passkey setup
 
 Quartermaster keeps the custom `quartermaster://` scheme as a fallback, but iOS can also open invite links directly from HTTPS when the build has a matching Associated Domains entitlement.
 
@@ -177,6 +177,17 @@ Quartermaster keeps the custom `quartermaster://` scheme as a fallback, but iOS 
 Release builds fail if `DEVELOPMENT_TEAM`, `PRODUCT_BUNDLE_IDENTIFIER`, or `QUARTERMASTER_ASSOCIATED_DOMAIN` are missing or malformed. That guard is intentionally skipped for Debug builds so local development can keep using the custom scheme without a public HTTPS domain.
 
 If the server does not have `QM_IOS_TEAM_ID` and `QM_IOS_BUNDLE_ID` configured, the backend returns `404` for `/.well-known/apple-app-site-association` and the app falls back to the custom `quartermaster://` scheme plus manual invite entry.
+
+Release entitlements include both `applinks:$(QUARTERMASTER_ASSOCIATED_DOMAIN)` and `webcredentials:$(QUARTERMASTER_ASSOCIATED_DOMAIN)`. The server AASA payload advertises both capabilities when `QM_IOS_TEAM_ID` and `QM_IOS_BUNDLE_ID` are set, so passkeys and universal links share the same public HTTPS domain.
+
+To enable passkeys against a deployed server:
+
+1. Set `QM_PUBLIC_BASE_URL=https://your-quartermaster-host.example`.
+2. Set `QM_PASSKEYS_ENABLED=true`.
+3. Leave `QM_PASSKEY_RP_ID` and `QM_PASSKEY_ORIGIN` unset unless you need to override the derived host/origin deliberately.
+4. Configure `QM_IOS_TEAM_ID`, `QM_IOS_BUNDLE_ID`, `QUARTERMASTER_IOS_*`, and `QUARTERMASTER_ASSOCIATED_DOMAIN` for the same app/domain pair, then regenerate the release config and Xcode project.
+
+Passkey account creation is intentionally not a first-run path. Users create accounts with email address, display name, and password, then add passkeys from Settings. Email address remains the account identity; display name is presentation-only.
 
 Do not point the associated-domain entitlement at `localhost`; keep local development on the custom scheme and use a real HTTPS host for universal links.
 

@@ -10,9 +10,9 @@ There is no hosted Quartermaster service today. To use it, you run your own Quar
 
 Quartermaster is usable today for adventurous self-hosters and is still evolving quickly. Expect occasional breaking changes between releases and read [CHANGELOG.md](CHANGELOG.md) before upgrading a running household.
 
-- **Server:** Rust API, SQLite by default, optional Postgres, Docker image support, local accounts, browser cookie auth, verified recovery-email state, invite-based household sharing, OpenFoodFacts barcode lookup/cache/contribution, stock history, reminders, background worker support, Brother QL label printing, and optional Prometheus metrics.
-- **iOS:** Native SwiftUI client is the primary client. It supports onboarding, sign-in, household switching, inventory, stock creation/editing/consumption, product editing, OpenFoodFacts correction contribution, barcode scanning on physical devices, history, recovery-email setup, settings, invite links, reminder push/inbox flows, and printing stock labels through configured server-side printers.
-- **Android:** Native Jetpack Compose client exists and can connect to self-hosted servers. It supports the core account, inventory, product, location, reminder, recovery-email, barcode, OpenFoodFacts credential/contribution, scan/add-stock, and invite flows, with push configuration available for self-hosters who provide Firebase details.
+- **Server:** Rust API, SQLite by default, optional Postgres, Docker image support, local accounts, browser cookie auth, optional passkeys, verified recovery-email state, invite-based household sharing, authenticated mobile handoff, OpenFoodFacts barcode lookup/cache/contribution, stock history, reminders, background worker support, Brother QL label printing, and optional Prometheus metrics.
+- **iOS:** Native SwiftUI client is the primary client. It supports onboarding, sign-in, passkeys, authenticated mobile handoff, household switching, inventory, stock creation/editing/consumption, product editing, OpenFoodFacts correction contribution, barcode scanning on physical devices, history, recovery-email setup, settings, invite links, reminder push/inbox flows, and printing stock labels through configured server-side printers.
+- **Android:** Native Jetpack Compose client exists and can connect to self-hosted servers. It supports the core account, passkey, authenticated handoff, inventory, product, location, reminder, recovery-email, barcode, OpenFoodFacts credential/contribution, scan/add-stock, and invite flows, with push configuration available for self-hosters who provide Firebase details.
 - **Web:** A SvelteKit web client is included and can be served by the API process. It supports core inventory, batch deep links, consume-and-store remainder, location, product, OpenFoodFacts credential/contribution, barcode, history, invite, settings, label-printer administration, mobile setup QR, and reminder flows. The native mobile apps remain the most complete experience.
 
 Quartermaster is intentionally narrow: it is inventory software, not recipe planning, grocery automation, or a general household task app.
@@ -90,6 +90,10 @@ Common settings:
 | `QM_REFRESH_TOKEN_TTL_SECONDS` | `5184000`                   | Refresh-token lifetime in seconds                                             |
 | `QM_INVITE_TTL_SECONDS`        | `604800`                    | Invite-code lifetime in seconds                                               |
 | `QM_PUBLIC_BASE_URL`           | unset                       | Public HTTP(S) origin for invite/share links and app setup                    |
+| `QM_PASSKEYS_ENABLED`          | `false`                     | Enables WebAuthn/passkey registration and sign-in when RP config is complete  |
+| `QM_PASSKEY_RP_ID`             | derived                     | Optional WebAuthn relying-party ID; defaults to `QM_PUBLIC_BASE_URL` host     |
+| `QM_PASSKEY_ORIGIN`            | derived                     | Optional WebAuthn origin; defaults to `QM_PUBLIC_BASE_URL`                    |
+| `QM_PASSKEY_RP_NAME`           | `Quartermaster`             | Human-readable relying-party name shown by passkey platforms                  |
 | `QM_WEB_DIST_DIR`              | `web/build`                 | Built web shell directory served by the API process                           |
 | `QM_WEB_AUTH_ALLOWED_ORIGINS`  | unset                       | Comma-separated HTTPS browser origins allowed to use credentialed cookie auth |
 | `RUST_LOG`                     | `info`                      | Tracing filter                                                                |
@@ -197,6 +201,8 @@ When metrics are enabled, callers must supply `X-QM-Maintenance-Token`.
 
 If `QM_PUBLIC_BASE_URL` is set, it must be an `http://` or `https://` origin with no path, query, or fragment. Quartermaster uses it for browser-friendly invite links and mobile app setup codes. iOS Universal Links still require HTTPS and a matching associated-domain setup.
 
+Passkeys are opt-in because native passkeys require a real HTTPS origin and app-domain association. To enable them, set `QM_PASSKEYS_ENABLED=true` and serve Quartermaster at the HTTPS `QM_PUBLIC_BASE_URL` users actually open. The server derives the WebAuthn RP ID and origin from that URL unless `QM_PASSKEY_RP_ID` or `QM_PASSKEY_ORIGIN` are set explicitly. The RP ID must match the domain associated with the native apps; local HTTP origins are only accepted for localhost development and are not useful for installed mobile passkeys.
+
 For iOS Universal Links, configure:
 
 | Variable           | Meaning                                        |
@@ -205,6 +211,10 @@ For iOS Universal Links, configure:
 | `QM_IOS_BUNDLE_ID` | iOS bundle identifier used in the AASA payload |
 
 The iOS app build also needs a matching associated-domain entitlement. The native app persists the server URL from setup/manual entry and reuses it on later launches. Without associated-domain setup, invite links still work through the browser fallback and manual invite entry.
+
+iOS passkeys use the same associated domain through `webcredentials:<domain>` in Release entitlements and the server AASA payload. Android passkeys require the equivalent app/domain association through Android Digital Asset Links for the package and signing certificate you distribute.
+
+Authenticated mobile handoff is separate from server setup links and invite links. A signed-in source device creates a short-lived QR payload containing the server URL plus a one-time handoff token, and the target device previews the source account before accepting. Expired, consumed, cancelled, or invalid handoff tokens fail closed. See [docs/authenticated-mobile-pairing.md](docs/authenticated-mobile-pairing.md).
 
 ## Clients
 
