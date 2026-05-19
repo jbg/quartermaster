@@ -13,9 +13,19 @@ import OpenAPIURLSession
 actor APIClient: AppStateAPI {
   private let client: Client
   private let tokenStore: TokenStore
+  private let baseURL: URL
+  private let session: URLSession
+  private let jsonDecoder: JSONDecoder
+  private let jsonEncoder: JSONEncoder
 
   init(baseURL: URL, tokenStore: TokenStore, session: URLSession = .shared) {
     self.tokenStore = tokenStore
+    self.baseURL = baseURL
+    self.session = session
+    self.jsonDecoder = JSONDecoder()
+    self.jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
+    self.jsonEncoder = JSONEncoder()
+    self.jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
     let auth = AuthMiddleware(
       baseURL: baseURL,
       tokenStore: tokenStore,
@@ -137,6 +147,143 @@ actor APIClient: AppStateAPI {
     case .tooManyRequests(let err): throw APIError.server(status: 429, body: try? err.body.json)
     case .undocumented(let statusCode, _): throw APIError.server(status: statusCode, body: nil)
     }
+  }
+
+  func listPasskeys() async throws -> [PasskeyCredentialSummary] {
+    struct Response: Decodable { let credentials: [PasskeyCredentialSummary] }
+    let response: Response = try await rawJSON(
+      "GET",
+      "/auth/passkeys",
+      body: Optional<Int>.none,
+      auth: true
+    )
+    return response.credentials
+  }
+
+  func startPasskeyRegistration(label: String?) async throws -> PasskeyRegistrationStart {
+    struct Request: Encodable { let label: String? }
+    struct Response: Decodable {
+      let ceremonyID: String
+      let publicKey: AnyJSON
+    }
+    let response: Response = try await rawJSON(
+      "POST",
+      "/auth/passkeys/register/start",
+      body: Request(label: label),
+      auth: true
+    )
+    return PasskeyRegistrationStart(
+      ceremonyID: response.ceremonyID, publicKey: response.publicKey.data)
+  }
+
+  func finishPasskeyRegistration(ceremonyID: String, credentialJSON: Data, label: String?)
+    async throws -> PasskeyCredentialSummary
+  {
+    struct Request: Encodable {
+      let ceremonyID: String
+      let credential: AnyJSON
+      let label: String?
+    }
+    return try await rawJSON(
+      "POST",
+      "/auth/passkeys/register/finish",
+      body: Request(
+        ceremonyID: ceremonyID,
+        credential: try AnyJSON(data: credentialJSON),
+        label: label
+      ),
+      auth: true,
+      successStatus: 201
+    )
+  }
+
+  func startPasskeyLogin(email: String) async throws -> PasskeyLoginStart {
+    struct Request: Encodable { let email: String }
+    struct Response: Decodable {
+      let ceremonyID: String
+      let publicKey: AnyJSON
+    }
+    let response: Response = try await rawJSON(
+      "POST",
+      "/auth/passkeys/login/start",
+      body: Request(email: email),
+      auth: false
+    )
+    return PasskeyLoginStart(ceremonyID: response.ceremonyID, publicKey: response.publicKey.data)
+  }
+
+  func finishPasskeyLogin(ceremonyID: String, credentialJSON: Data) async throws -> TokenPair {
+    struct Request: Encodable {
+      let ceremonyID: String
+      let credential: AnyJSON
+      let deviceLabel: String?
+    }
+    let pair: TokenPair = try await rawJSON(
+      "POST",
+      "/auth/passkeys/login/finish",
+      body: Request(
+        ceremonyID: ceremonyID,
+        credential: try AnyJSON(data: credentialJSON),
+        deviceLabel: Self.deviceLabel
+      ),
+      auth: false
+    )
+    await tokenStore.store(pair)
+    return pair
+  }
+
+  func deletePasskey(id: String) async throws {
+    try await rawUnit("DELETE", "/auth/passkeys/\(id)", auth: true)
+  }
+
+  func createAuthHandoff(targetDeviceLabel: String?, serverURL: String?) async throws
+    -> AuthHandoffCreate
+  {
+    struct Request: Encodable {
+      let targetDeviceLabel: String?
+      let serverURL: String?
+    }
+    return try await rawJSON(
+      "POST",
+      "/auth/handoffs",
+      body: Request(targetDeviceLabel: targetDeviceLabel, serverURL: serverURL),
+      auth: true,
+      successStatus: 201
+    )
+  }
+
+  func cancelAuthHandoff(id: String) async throws {
+    try await rawUnit("DELETE", "/auth/handoffs/\(id)", auth: true)
+  }
+
+  func previewAuthHandoff(id: String, token: String) async throws -> AuthHandoffPreview {
+    struct Request: Encodable {
+      let id: String
+      let token: String
+    }
+    return try await rawJSON(
+      "POST",
+      "/auth/handoffs/preview",
+      body: Request(id: id, token: token),
+      auth: false
+    )
+  }
+
+  func acceptAuthHandoff(id: String, token: String, deviceLabel: String?) async throws -> TokenPair
+  {
+    struct Request: Encodable {
+      let id: String
+      let token: String
+      let deviceLabel: String?
+    }
+    let pair: TokenPair = try await rawJSON(
+      "POST",
+      "/auth/handoffs/accept",
+      body: Request(id: id, token: token, deviceLabel: deviceLabel ?? Self.deviceLabel),
+      auth: false
+    )
+    await tokenStore.store(pair)
+    return pair
   }
 
   func requestPasswordReset(email: String) async throws {
@@ -939,6 +1086,55 @@ actor APIClient: AppStateAPI {
     case .undocumented(let statusCode, _):
       throw APIError.server(status: statusCode, body: nil)
     }
+  }
+
+  private func rawJSON<RequestBody: Encodable, ResponseBody: Decodable>(
+    _ method: String,
+    _ path: String,
+    body: RequestBody?,
+    auth: Bool,
+    successStatus: Int = 200
+  ) async throws -> ResponseBody {
+    let data = try await rawData(method, path, body: body, auth: auth, successStatus: successStatus)
+    return try jsonDecoder.decode(ResponseBody.self, from: data)
+  }
+
+  private func rawUnit(_ method: String, _ path: String, auth: Bool) async throws {
+    _ = try await rawData(method, path, body: Optional<Int>.none, auth: auth, successStatus: 204)
+  }
+
+  private func rawData<RequestBody: Encodable>(
+    _ method: String,
+    _ path: String,
+    body: RequestBody?,
+    auth: Bool,
+    successStatus: Int
+  ) async throws -> Data {
+    let url =
+      path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+      .split(separator: "/")
+      .reduce(baseURL.appendingPathComponent("api").appendingPathComponent("v1")) {
+        $0.appendingPathComponent(String($1))
+      }
+    var request = URLRequest(url: url)
+    request.httpMethod = method
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    if let body {
+      request.httpBody = try jsonEncoder.encode(body)
+    }
+    if auth {
+      guard let token = await tokenStore.accessToken else { throw APIError.unauthorized }
+      request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    }
+    let (data, response) = try await session.data(for: request)
+    guard let http = response as? HTTPURLResponse else {
+      throw APIError.server(status: 0, body: nil)
+    }
+    guard http.statusCode == successStatus else {
+      let body = try? jsonDecoder.decode(APIErrorBody.self, from: data)
+      throw APIError.server(status: http.statusCode, body: body)
+    }
+    return data
   }
 
   private static let deviceLabel: String? = {
