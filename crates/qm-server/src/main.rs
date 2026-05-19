@@ -40,6 +40,10 @@ struct RawConfig {
     off_write_url: String,
     off_credential_encryption_key: Option<String>,
     public_base_url: Option<String>,
+    passkeys_enabled: bool,
+    passkey_rp_id: Option<String>,
+    passkey_origin: Option<String>,
+    passkey_rp_name: String,
     rate_limit_client_ip_mode: String,
     rate_limit_trusted_proxy_cidrs: Option<String>,
     rate_limit_auth_per_minute: u32,
@@ -134,6 +138,10 @@ impl Default for RawConfig {
             off_write_url: "https://world.openfoodfacts.org/cgi/product_jqm2.pl".into(),
             off_credential_encryption_key: None,
             public_base_url: None,
+            passkeys_enabled: false,
+            passkey_rp_id: None,
+            passkey_origin: None,
+            passkey_rp_name: "Quartermaster".into(),
             rate_limit_client_ip_mode: "socket".into(),
             rate_limit_trusted_proxy_cidrs: None,
             rate_limit_auth_per_minute: 10,
@@ -321,6 +329,13 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
     let bind = raw.bind.parse().context("parsing bind address")?;
     let log_format = LogFormat::from_str(&raw.log_format).map_err(anyhow::Error::msg)?;
     let public_base_url = normalize_public_base_url(raw.public_base_url)?;
+    let passkeys = normalize_passkey_config(
+        raw.passkeys_enabled,
+        raw.passkey_rp_id,
+        raw.passkey_origin,
+        raw.passkey_rp_name,
+        public_base_url.as_deref(),
+    )?;
     let rate_limit_client_ip_mode =
         ClientIpMode::from_str(&raw.rate_limit_client_ip_mode).map_err(anyhow::Error::msg)?;
     let trusted_proxy_cidrs = match raw.rate_limit_trusted_proxy_cidrs.as_deref() {
@@ -453,6 +468,7 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
             "QM_OFF_CREDENTIAL_ENCRYPTION_KEY",
         )?,
         public_base_url,
+        passkeys,
         rate_limit_client_ip_mode,
         rate_limit_trusted_proxy_cidrs: trusted_proxy_cidrs,
         rate_limit_auth: qm_api::RateLimitConfig {
@@ -622,6 +638,57 @@ fn normalize_public_base_url(raw: Option<String>) -> anyhow::Result<Option<Strin
     }
 
     Ok(Some(url.origin().ascii_serialization()))
+}
+
+fn normalize_passkey_config(
+    enabled: bool,
+    rp_id: Option<String>,
+    origin: Option<String>,
+    rp_name: String,
+    public_base_url: Option<&str>,
+) -> anyhow::Result<qm_api::PasskeyConfig> {
+    if !enabled {
+        return Ok(qm_api::PasskeyConfig::default());
+    }
+
+    let origin = match normalize_optional_secret(origin, "QM_PASSKEY_ORIGIN")? {
+        Some(origin) => origin,
+        None => public_base_url
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "QM_PUBLIC_BASE_URL or QM_PASSKEY_ORIGIN is required when QM_PASSKEYS_ENABLED=true"
+                )
+            })?
+            .to_owned(),
+    };
+    let url = reqwest::Url::parse(&origin).context("parsing QM_PASSKEY_ORIGIN")?;
+    if url.scheme() != "https" && url.host_str() != Some("localhost") {
+        anyhow::bail!("QM_PASSKEY_ORIGIN must use https, except localhost development");
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        anyhow::bail!("QM_PASSKEY_ORIGIN must not include user info");
+    }
+    if url.query().is_some() || url.fragment().is_some() || url.path() != "/" {
+        anyhow::bail!("QM_PASSKEY_ORIGIN must be an origin without path, query, or fragment");
+    }
+    let origin = url.origin().ascii_serialization();
+    let rp_id = match normalize_optional_secret(rp_id, "QM_PASSKEY_RP_ID")? {
+        Some(value) => value,
+        None => url
+            .host_str()
+            .ok_or_else(|| anyhow::anyhow!("QM_PASSKEY_ORIGIN must have a host"))?
+            .to_owned(),
+    };
+    let rp_name = rp_name.trim();
+    if rp_name.is_empty() || rp_name.len() > 64 {
+        anyhow::bail!("QM_PASSKEY_RP_NAME must be 1..=64 chars");
+    }
+    Ok(qm_api::PasskeyConfig {
+        enabled: true,
+        rp_id: Some(rp_id),
+        origin: Some(origin),
+        rp_name: rp_name.to_owned(),
+    })
 }
 
 fn normalize_ios_release_identity(

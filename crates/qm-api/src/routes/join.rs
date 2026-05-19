@@ -53,6 +53,9 @@ pub fn apple_app_site_association_body(
                     "paths": ["/join", "/join*", "/batches/*"]
                 }
             ]
+        },
+        "webcredentials": {
+            "apps": [app_id]
         }
     }))
 }

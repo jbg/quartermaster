@@ -275,8 +275,16 @@ async fn build_status(state: &AppState) -> ApiResult<OnboardingStatusResponse> {
             },
             OnboardingAuthMethodDescriptor {
                 method: OnboardingAuthMethod::Passkey,
-                availability: OnboardingAuthMethodAvailability::Unavailable,
-                unavailable_reason: Some("not_implemented".into()),
+                availability: if accounts::passkeys_available(state) {
+                    OnboardingAuthMethodAvailability::Enabled
+                } else {
+                    OnboardingAuthMethodAvailability::Unavailable
+                },
+                unavailable_reason: if accounts::passkeys_available(state) {
+                    None
+                } else {
+                    Some("not_configured".into())
+                },
             },
         ],
     })
