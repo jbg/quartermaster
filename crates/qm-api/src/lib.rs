@@ -67,6 +67,7 @@ pub struct ApiConfig {
     pub off_write_url: String,
     pub off_credential_encryption_key: Option<String>,
     pub public_base_url: Option<String>,
+    pub passkeys: PasskeyConfig,
     /// Which client-IP source to use for rate-limit keys.
     pub rate_limit_client_ip_mode: ClientIpMode,
     pub rate_limit_trusted_proxy_cidrs: Vec<TrustedProxyNet>,
@@ -96,6 +97,25 @@ pub struct ApiConfig {
 pub struct IosReleaseIdentity {
     team_id: String,
     bundle_id: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct PasskeyConfig {
+    pub enabled: bool,
+    pub rp_id: Option<String>,
+    pub origin: Option<String>,
+    pub rp_name: String,
+}
+
+impl Default for PasskeyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            rp_id: None,
+            origin: None,
+            rp_name: "Quartermaster".into(),
+        }
+    }
 }
 
 impl IosReleaseIdentity {
@@ -177,6 +197,7 @@ impl Default for ApiConfig {
             off_write_url: "https://world.openfoodfacts.org/cgi/product_jqm2.pl".into(),
             off_credential_encryption_key: None,
             public_base_url: None,
+            passkeys: PasskeyConfig::default(),
             rate_limit_client_ip_mode: ClientIpMode::Socket,
             rate_limit_trusted_proxy_cidrs: Vec::new(),
             rate_limit_auth: RateLimitConfig {
@@ -279,6 +300,16 @@ impl Modify for SecurityAddon {
         routes::accounts::login,
         routes::accounts::refresh,
         routes::accounts::logout,
+        routes::accounts::list_passkeys,
+        routes::accounts::start_passkey_registration,
+        routes::accounts::finish_passkey_registration,
+        routes::accounts::start_passkey_login,
+        routes::accounts::finish_passkey_login,
+        routes::accounts::delete_passkey,
+        routes::accounts::create_auth_handoff,
+        routes::accounts::cancel_auth_handoff,
+        routes::accounts::preview_auth_handoff,
+        routes::accounts::accept_auth_handoff,
         routes::accounts::me,
         routes::accounts::switch_household,
         routes::accounts::request_email_verification,

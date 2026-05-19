@@ -48,7 +48,7 @@ async fn status_reports_initial_setup_until_first_household_exists() {
             {
                 "method": "passkey",
                 "availability": "unavailable",
-                "unavailable_reason": "not_implemented",
+                "unavailable_reason": "not_configured",
             },
         ])
     );

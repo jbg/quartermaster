@@ -91,6 +91,8 @@ utoipa = { workspace = true, default-features = false, features = [
     "uuid",
 ] }
 uuid = { workspace = true, default-features = false, features = ["std", "v7", "serde"] }
+url = { workspace = true, default-features = false, features = ["serde", "std"] }
+webauthn-rs = { workspace = true, default-features = false, features = ["danger-allow-state-serialisation"] }
 
 [dev-dependencies]
 qm-db = { path = "../qm-db", default-features = false, features = ["test-support"] }

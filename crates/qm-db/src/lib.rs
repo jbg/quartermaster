@@ -11,6 +11,7 @@ use sqlx::AnyPool;
 #[cfg(any(test, feature = "test-support"))]
 use std::sync::Arc;
 
+pub mod auth_handoff;
 pub mod auth_sessions;
 pub mod barcode_cache;
 pub mod billing;
@@ -23,6 +24,7 @@ pub mod label_printers;
 pub mod locations;
 pub mod memberships;
 pub mod off_credentials;
+pub mod passkeys;
 pub mod products;
 pub mod quotas;
 pub mod reminders;

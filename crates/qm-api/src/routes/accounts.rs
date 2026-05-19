@@ -5,7 +5,7 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     middleware,
     routing::{delete, get, post, put},
@@ -15,6 +15,7 @@ use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use jiff::{SignedDuration, Timestamp};
 use qm_core::units::MeasurementSystem;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use utoipa::{
     openapi::{
@@ -24,6 +25,10 @@ use utoipa::{
     PartialSchema, ToSchema,
 };
 use uuid::Uuid;
+use webauthn_rs::prelude::{
+    Passkey, PasskeyAuthentication, PasskeyRegistration, PublicKeyCredential,
+    RegisterPublicKeyCredential, Url, Webauthn, WebauthnBuilder,
+};
 
 use argon2::password_hash::rand_core::{OsRng as ArgonOsRng, RngCore};
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
@@ -60,6 +65,22 @@ pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
             )),
         )
         .route("/auth/logout", post(logout))
+        .route("/auth/passkeys", get(list_passkeys))
+        .route(
+            "/auth/passkeys/register/start",
+            post(start_passkey_registration),
+        )
+        .route(
+            "/auth/passkeys/register/finish",
+            post(finish_passkey_registration),
+        )
+        .route("/auth/passkeys/login/start", post(start_passkey_login))
+        .route("/auth/passkeys/login/finish", post(finish_passkey_login))
+        .route("/auth/passkeys/{credential_id}", delete(delete_passkey))
+        .route("/auth/handoffs", post(create_auth_handoff))
+        .route("/auth/handoffs/{handoff_id}", delete(cancel_auth_handoff))
+        .route("/auth/handoffs/preview", post(preview_auth_handoff))
+        .route("/auth/handoffs/accept", post(accept_auth_handoff))
         .route("/auth/switch-household", post(switch_household))
         .route("/auth/email-verification", post(request_email_verification))
         .route(
@@ -240,6 +261,96 @@ pub struct PasswordResetRequestResponse {
 pub struct OpenFoodFactsCredentialStatusResponse {
     pub configured: bool,
     pub username: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PasskeyCredentialDto {
+    pub id: Uuid,
+    pub label: Option<String>,
+    pub created_at: String,
+    pub last_used_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PasskeyListResponse {
+    pub credentials: Vec<PasskeyCredentialDto>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct PasskeyRegistrationStartRequest {
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PasskeyRegistrationStartResponse {
+    pub ceremony_id: Uuid,
+    #[schema(nullable = false)]
+    pub public_key: Value,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct PasskeyRegistrationFinishRequest {
+    pub ceremony_id: Uuid,
+    #[schema(nullable = false)]
+    pub credential: Value,
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct PasskeyLoginStartRequest {
+    pub email: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PasskeyLoginStartResponse {
+    pub ceremony_id: Uuid,
+    #[schema(nullable = false)]
+    pub public_key: Value,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct PasskeyLoginFinishRequest {
+    pub ceremony_id: Uuid,
+    #[schema(nullable = false)]
+    pub credential: Value,
+    pub device_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateAuthHandoffRequest {
+    pub target_device_label: Option<String>,
+    pub server_url: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AuthHandoffCreateResponse {
+    pub id: Uuid,
+    pub handoff_url: String,
+    pub expires_at: String,
+    pub target_device_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct AuthHandoffTokenRequest {
+    pub id: Uuid,
+    pub token: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AuthHandoffPreviewResponse {
+    pub id: Uuid,
+    pub source_email: String,
+    pub source_display_name: String,
+    pub household_id: Option<Uuid>,
+    pub target_device_label: Option<String>,
+    pub expires_at: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct AuthHandoffAcceptRequest {
+    pub id: Uuid,
+    pub token: String,
+    pub device_label: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -460,6 +571,427 @@ pub async fn delete_openfoodfacts_credentials(
 ) -> ApiResult<StatusCode> {
     qm_db::off_credentials::delete(&state.db, current.user_id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    get,
+    path = "/auth/passkeys",
+    operation_id = "auth_passkeys_list",
+    tag = "accounts",
+    responses(
+        (status = 200, body = PasskeyListResponse),
+        (status = 401, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_passkeys(
+    State(state): State<AppState>,
+    current: CurrentUser,
+) -> ApiResult<Json<PasskeyListResponse>> {
+    let credentials = qm_db::passkeys::list_credentials(&state.db, current.user_id)
+        .await?
+        .into_iter()
+        .map(passkey_credential_dto)
+        .collect();
+    Ok(Json(PasskeyListResponse { credentials }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth/passkeys/register/start",
+    operation_id = "auth_passkey_registration_start",
+    tag = "accounts",
+    request_body = PasskeyRegistrationStartRequest,
+    responses(
+        (status = 200, body = PasskeyRegistrationStartResponse),
+        (status = 401, body = crate::error::ApiErrorBody),
+        (status = 503, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn start_passkey_registration(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Json(_req): Json<PasskeyRegistrationStartRequest>,
+) -> ApiResult<Json<PasskeyRegistrationStartResponse>> {
+    let webauthn = passkey_webauthn(&state)?;
+    let user = qm_db::users::find_by_id(&state.db, current.user_id)
+        .await?
+        .ok_or(ApiError::Unauthorized)?;
+    let existing = qm_db::passkeys::list_credentials(&state.db, current.user_id).await?;
+    let exclude = existing
+        .into_iter()
+        .map(|row| passkey_from_json(&row.passkey_json).map(|passkey| passkey.cred_id().clone()))
+        .collect::<ApiResult<Vec<_>>>()?;
+    let (challenge, ceremony_state) = webauthn
+        .start_passkey_registration(user.id, &user.email, &user.display_name, Some(exclude))
+        .map_err(passkey_error)?;
+    let state_json = serde_json::to_string(&ceremony_state).map_err(json_error)?;
+    let expires_at = Timestamp::now()
+        .checked_add(SignedDuration::from_mins(10))
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!("passkey expiry overflow: {e}")))?;
+    let ceremony = qm_db::passkeys::create_ceremony(
+        &state.db,
+        Some(current.user_id),
+        qm_db::passkeys::CEREMONY_REGISTRATION,
+        &state_json,
+        expires_at,
+    )
+    .await?;
+    Ok(Json(PasskeyRegistrationStartResponse {
+        ceremony_id: ceremony.id,
+        public_key: serde_json::to_value(challenge).map_err(json_error)?,
+    }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth/passkeys/register/finish",
+    operation_id = "auth_passkey_registration_finish",
+    tag = "accounts",
+    request_body = PasskeyRegistrationFinishRequest,
+    responses(
+        (status = 201, body = PasskeyCredentialDto),
+        (status = 400, body = crate::error::ApiErrorBody),
+        (status = 401, body = crate::error::ApiErrorBody),
+        (status = 409, body = crate::error::ApiErrorBody),
+        (status = 503, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn finish_passkey_registration(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Json(req): Json<PasskeyRegistrationFinishRequest>,
+) -> ApiResult<(StatusCode, Json<PasskeyCredentialDto>)> {
+    let webauthn = passkey_webauthn(&state)?;
+    let ceremony = qm_db::passkeys::consume_ceremony(
+        &state.db,
+        req.ceremony_id,
+        qm_db::passkeys::CEREMONY_REGISTRATION,
+        Some(current.user_id),
+        Timestamp::now(),
+    )
+    .await?
+    .ok_or_else(|| ApiError::BadRequest("passkey ceremony is invalid or expired".into()))?;
+    let registration_state: PasskeyRegistration =
+        serde_json::from_str(&ceremony.state_json).map_err(json_error)?;
+    let credential: RegisterPublicKeyCredential = serde_json::from_value(req.credential)
+        .map_err(|_| ApiError::BadRequest("passkey registration credential is invalid".into()))?;
+    let passkey = webauthn
+        .finish_passkey_registration(&credential, &registration_state)
+        .map_err(passkey_error)?;
+    let credential_id = passkey_credential_id(&passkey)?;
+    if qm_db::passkeys::find_credential_by_credential_id(&state.db, &credential_id)
+        .await?
+        .is_some()
+    {
+        return Err(ApiError::Conflict("passkey is already registered".into()));
+    }
+    let passkey_json = serde_json::to_string(&passkey).map_err(json_error)?;
+    let label = req
+        .label
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let row = qm_db::passkeys::insert_credential(
+        &state.db,
+        current.user_id,
+        &credential_id,
+        label,
+        &passkey_json,
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(passkey_credential_dto(row))))
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth/passkeys/login/start",
+    operation_id = "auth_passkey_login_start",
+    tag = "accounts",
+    request_body = PasskeyLoginStartRequest,
+    responses(
+        (status = 200, body = PasskeyLoginStartResponse),
+        (status = 401, body = crate::error::ApiErrorBody),
+        (status = 503, body = crate::error::ApiErrorBody),
+    ),
+)]
+pub async fn start_passkey_login(
+    State(state): State<AppState>,
+    Json(req): Json<PasskeyLoginStartRequest>,
+) -> ApiResult<Json<PasskeyLoginStartResponse>> {
+    let webauthn = passkey_webauthn(&state)?;
+    let email = validate_email(&req.email)?;
+    let user = qm_db::users::find_by_email(&state.db, &email)
+        .await?
+        .ok_or(ApiError::Unauthorized)?;
+    let credentials = qm_db::passkeys::list_credentials(&state.db, user.id).await?;
+    if credentials.is_empty() {
+        return Err(ApiError::Unauthorized);
+    }
+    let passkeys = credentials
+        .iter()
+        .map(|row| passkey_from_json(&row.passkey_json))
+        .collect::<ApiResult<Vec<_>>>()?;
+    let (challenge, ceremony_state) = webauthn
+        .start_passkey_authentication(&passkeys)
+        .map_err(passkey_error)?;
+    let state_json = serde_json::to_string(&ceremony_state).map_err(json_error)?;
+    let expires_at = Timestamp::now()
+        .checked_add(SignedDuration::from_mins(10))
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!("passkey expiry overflow: {e}")))?;
+    let ceremony = qm_db::passkeys::create_ceremony(
+        &state.db,
+        Some(user.id),
+        qm_db::passkeys::CEREMONY_AUTHENTICATION,
+        &state_json,
+        expires_at,
+    )
+    .await?;
+    Ok(Json(PasskeyLoginStartResponse {
+        ceremony_id: ceremony.id,
+        public_key: serde_json::to_value(challenge).map_err(json_error)?,
+    }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth/passkeys/login/finish",
+    operation_id = "auth_passkey_login_finish",
+    tag = "accounts",
+    request_body = PasskeyLoginFinishRequest,
+    responses(
+        (status = 200, body = TokenPair),
+        (status = 400, body = crate::error::ApiErrorBody),
+        (status = 401, body = crate::error::ApiErrorBody),
+        (status = 503, body = crate::error::ApiErrorBody),
+    ),
+)]
+pub async fn finish_passkey_login(
+    State(state): State<AppState>,
+    Json(req): Json<PasskeyLoginFinishRequest>,
+) -> ApiResult<(HeaderMap, Json<TokenPair>)> {
+    let webauthn = passkey_webauthn(&state)?;
+    let ceremony = qm_db::passkeys::consume_ceremony(
+        &state.db,
+        req.ceremony_id,
+        qm_db::passkeys::CEREMONY_AUTHENTICATION,
+        None,
+        Timestamp::now(),
+    )
+    .await?
+    .ok_or_else(|| ApiError::BadRequest("passkey ceremony is invalid or expired".into()))?;
+    let user_id = ceremony.user_id.ok_or(ApiError::Unauthorized)?;
+    let auth_state: PasskeyAuthentication =
+        serde_json::from_str(&ceremony.state_json).map_err(json_error)?;
+    let credential: PublicKeyCredential = serde_json::from_value(req.credential)
+        .map_err(|_| ApiError::BadRequest("passkey login credential is invalid".into()))?;
+    let auth_result = webauthn
+        .finish_passkey_authentication(&credential, &auth_state)
+        .map_err(passkey_error)?;
+    let credentials = qm_db::passkeys::list_credentials(&state.db, user_id).await?;
+    let mut matched = None;
+    for row in credentials {
+        let mut passkey = passkey_from_json(&row.passkey_json)?;
+        if passkey.update_credential(&auth_result).is_some() {
+            let passkey_json = serde_json::to_string(&passkey).map_err(json_error)?;
+            qm_db::passkeys::update_credential_after_auth(&state.db, row.id, &passkey_json).await?;
+            matched = Some(row);
+            break;
+        }
+    }
+    let row = matched.ok_or(ApiError::Unauthorized)?;
+    let initial_household_id = qm_db::households::find_for_user(&state.db, row.user_id)
+        .await?
+        .map(|household| household.id);
+    let pair = issue_token_pair(
+        &state,
+        row.user_id,
+        Uuid::now_v7(),
+        req.device_label.as_deref(),
+        initial_household_id,
+    )
+    .await?;
+    let headers = session_cookie_headers(&state, &pair);
+    Ok((headers, Json(pair)))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/auth/passkeys/{credential_id}",
+    operation_id = "auth_passkey_delete",
+    tag = "accounts",
+    responses(
+        (status = 204),
+        (status = 401, body = crate::error::ApiErrorBody),
+        (status = 404, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn delete_passkey(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(credential_id): Path<Uuid>,
+) -> ApiResult<StatusCode> {
+    let deleted =
+        qm_db::passkeys::delete_credential(&state.db, credential_id, current.user_id).await?;
+    if !deleted {
+        return Err(ApiError::NotFound);
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth/handoffs",
+    operation_id = "auth_handoff_create",
+    tag = "accounts",
+    request_body = CreateAuthHandoffRequest,
+    responses(
+        (status = 201, body = AuthHandoffCreateResponse),
+        (status = 400, body = crate::error::ApiErrorBody),
+        (status = 401, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn create_auth_handoff(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Json(req): Json<CreateAuthHandoffRequest>,
+) -> ApiResult<(StatusCode, Json<AuthHandoffCreateResponse>)> {
+    let token = auth::generate_token();
+    let token_hash = auth::sha256_hex(&token);
+    let expires_at = Timestamp::now()
+        .checked_add(SignedDuration::from_mins(5))
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!("handoff expiry overflow: {e}")))?;
+    let target_device_label = req
+        .target_device_label
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let handoff = qm_db::auth_handoff::create(
+        &state.db,
+        current.user_id,
+        current.session_id,
+        current.household_id,
+        target_device_label,
+        &token_hash,
+        expires_at,
+    )
+    .await?;
+    let server_url = handoff_server_url(&state, req.server_url.as_deref())?;
+    let handoff_url = format!(
+        "quartermaster://handoff?server={}&id={}&token={}",
+        utf8_percent_encode(&server_url, NON_ALPHANUMERIC),
+        handoff.id,
+        utf8_percent_encode(&token, NON_ALPHANUMERIC)
+    );
+    Ok((
+        StatusCode::CREATED,
+        Json(AuthHandoffCreateResponse {
+            id: handoff.id,
+            handoff_url,
+            expires_at: handoff.expires_at,
+            target_device_label: handoff.target_device_label,
+        }),
+    ))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/auth/handoffs/{handoff_id}",
+    operation_id = "auth_handoff_cancel",
+    tag = "accounts",
+    responses(
+        (status = 204),
+        (status = 401, body = crate::error::ApiErrorBody),
+        (status = 404, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn cancel_auth_handoff(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(handoff_id): Path<Uuid>,
+) -> ApiResult<StatusCode> {
+    if !qm_db::auth_handoff::cancel(&state.db, handoff_id, current.user_id, current.session_id)
+        .await?
+    {
+        return Err(ApiError::NotFound);
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth/handoffs/preview",
+    operation_id = "auth_handoff_preview",
+    tag = "accounts",
+    request_body = AuthHandoffTokenRequest,
+    responses(
+        (status = 200, body = AuthHandoffPreviewResponse),
+        (status = 400, body = crate::error::ApiErrorBody),
+    ),
+)]
+pub async fn preview_auth_handoff(
+    State(state): State<AppState>,
+    Json(req): Json<AuthHandoffTokenRequest>,
+) -> ApiResult<Json<AuthHandoffPreviewResponse>> {
+    let handoff = valid_handoff_for_token(&state, req.id, &req.token).await?;
+    let user = qm_db::users::find_by_id(&state.db, handoff.user_id)
+        .await?
+        .ok_or(ApiError::Unauthorized)?;
+    Ok(Json(AuthHandoffPreviewResponse {
+        id: handoff.id,
+        source_email: user.email,
+        source_display_name: user.display_name,
+        household_id: handoff.active_household_id,
+        target_device_label: handoff.target_device_label,
+        expires_at: handoff.expires_at,
+    }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth/handoffs/accept",
+    operation_id = "auth_handoff_accept",
+    tag = "accounts",
+    request_body = AuthHandoffAcceptRequest,
+    responses(
+        (status = 200, body = TokenPair),
+        (status = 400, body = crate::error::ApiErrorBody),
+        (status = 401, body = crate::error::ApiErrorBody),
+    ),
+)]
+pub async fn accept_auth_handoff(
+    State(state): State<AppState>,
+    Json(req): Json<AuthHandoffAcceptRequest>,
+) -> ApiResult<(HeaderMap, Json<TokenPair>)> {
+    let session_id = Uuid::now_v7();
+    let token_hash = auth::sha256_hex(&req.token);
+    let handoff =
+        qm_db::auth_handoff::consume(&state.db, req.id, &token_hash, session_id, Timestamp::now())
+            .await?
+            .ok_or_else(|| ApiError::BadRequest("handoff token is invalid or expired".into()))?;
+    if qm_db::auth_sessions::find(&state.db, handoff.source_session_id)
+        .await?
+        .is_none()
+    {
+        return Err(ApiError::Unauthorized);
+    }
+    let pair = issue_token_pair(
+        &state,
+        handoff.user_id,
+        session_id,
+        req.device_label
+            .as_deref()
+            .or(handoff.target_device_label.as_deref()),
+        handoff.active_household_id,
+    )
+    .await?;
+    let headers = session_cookie_headers(&state, &pair);
+    Ok((headers, Json(pair)))
 }
 
 #[utoipa::path(
@@ -1037,6 +1569,135 @@ pub(crate) async fn send_signup_verification(
             );
             ApiError::ServiceUnavailable("email delivery failed".into())
         })
+}
+
+pub(crate) fn passkeys_available(state: &AppState) -> bool {
+    state.config.passkeys.enabled
+        && state.config.passkeys.rp_id.is_some()
+        && state.config.passkeys.origin.is_some()
+}
+
+fn passkey_webauthn(state: &AppState) -> ApiResult<Webauthn> {
+    if !passkeys_available(state) {
+        return Err(ApiError::ServiceUnavailable(
+            "passkeys are not configured".into(),
+        ));
+    }
+    let rp_id = state
+        .config
+        .passkeys
+        .rp_id
+        .as_deref()
+        .ok_or_else(|| ApiError::ServiceUnavailable("passkeys are not configured".into()))?;
+    let origin = state
+        .config
+        .passkeys
+        .origin
+        .as_deref()
+        .ok_or_else(|| ApiError::ServiceUnavailable("passkeys are not configured".into()))?;
+    let origin = Url::parse(origin).map_err(|err| {
+        ApiError::Internal(anyhow::anyhow!(
+            "invalid passkey origin configuration: {err}"
+        ))
+    })?;
+    WebauthnBuilder::new(rp_id, &origin)
+        .map_err(passkey_error)?
+        .rp_name(&state.config.passkeys.rp_name)
+        .build()
+        .map_err(passkey_error)
+}
+
+fn passkey_error(err: webauthn_rs::prelude::WebauthnError) -> ApiError {
+    ApiError::BadRequest(format!("passkey ceremony failed: {err}"))
+}
+
+fn json_error(err: serde_json::Error) -> ApiError {
+    ApiError::Internal(anyhow::anyhow!(err))
+}
+
+fn passkey_from_json(value: &str) -> ApiResult<Passkey> {
+    serde_json::from_str(value).map_err(|err| {
+        ApiError::Internal(anyhow::anyhow!(
+            "stored passkey credential is invalid: {err}"
+        ))
+    })
+}
+
+fn passkey_credential_id(passkey: &Passkey) -> ApiResult<String> {
+    serde_json::to_string(passkey.cred_id())
+        .map_err(|err| ApiError::Internal(anyhow::anyhow!("serializing credential id: {err}")))
+}
+
+fn passkey_credential_dto(row: qm_db::passkeys::PasskeyCredentialRow) -> PasskeyCredentialDto {
+    PasskeyCredentialDto {
+        id: row.id,
+        label: row.label,
+        created_at: row.created_at,
+        last_used_at: row.last_used_at,
+    }
+}
+
+fn handoff_server_url(state: &AppState, requested: Option<&str>) -> ApiResult<String> {
+    let raw = requested
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .or_else(|| state.config.public_base_url.clone())
+        .ok_or_else(|| {
+            ApiError::BadRequest("server_url is required when QM_PUBLIC_BASE_URL is unset".into())
+        })?;
+    let url = reqwest::Url::parse(&raw)
+        .map_err(|_| ApiError::BadRequest("server_url is invalid".into()))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(ApiError::BadRequest(
+            "server_url must use http or https".into(),
+        ));
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(ApiError::BadRequest(
+            "server_url must not include user info".into(),
+        ));
+    }
+    if url.query().is_some() || url.fragment().is_some() || url.path() != "/" {
+        return Err(ApiError::BadRequest(
+            "server_url must be an origin without path, query, or fragment".into(),
+        ));
+    }
+    Ok(url.origin().ascii_serialization())
+}
+
+async fn valid_handoff_for_token(
+    state: &AppState,
+    id: Uuid,
+    token: &str,
+) -> ApiResult<qm_db::auth_handoff::AuthHandoffRow> {
+    let token = token.trim();
+    if token.is_empty() || token.len() > 512 {
+        return Err(ApiError::BadRequest("handoff token is invalid".into()));
+    }
+    let token_hash = auth::sha256_hex(token);
+    let handoff = qm_db::auth_handoff::find_by_token_hash(&state.db, id, &token_hash)
+        .await?
+        .ok_or_else(|| ApiError::BadRequest("handoff token is invalid or expired".into()))?;
+    if handoff.consumed_at.is_some() || handoff.cancelled_at.is_some() {
+        return Err(ApiError::BadRequest(
+            "handoff token is invalid or expired".into(),
+        ));
+    }
+    let expires_at = qm_db::time::parse_timestamp(&handoff.expires_at)
+        .map_err(|_| ApiError::BadRequest("handoff token is invalid or expired".into()))?;
+    if expires_at <= Timestamp::now() {
+        return Err(ApiError::BadRequest(
+            "handoff token is invalid or expired".into(),
+        ));
+    }
+    if qm_db::auth_sessions::find(&state.db, handoff.source_session_id)
+        .await?
+        .is_none()
+    {
+        return Err(ApiError::Unauthorized);
+    }
+    Ok(handoff)
 }
 
 fn password_reset_email(
