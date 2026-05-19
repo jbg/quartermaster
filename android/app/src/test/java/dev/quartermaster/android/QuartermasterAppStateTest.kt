@@ -1904,6 +1904,66 @@ class QuartermasterAppStateTest {
             password: String,
         ) = Unit
 
+        override suspend fun listPasskeys(): List<PasskeyCredentialSummary> = emptyList()
+
+        override suspend fun startPasskeyRegistration(label: String?): PasskeyRegistrationStartResponse = PasskeyRegistrationStartResponse(
+            ceremonyId = "test-passkey-registration",
+            publicKey = Json.parseToJsonElement("{}"),
+        )
+
+        override suspend fun finishPasskeyRegistration(
+            ceremonyId: String,
+            credential: JsonElement,
+            label: String?,
+        ): PasskeyCredentialSummary = PasskeyCredentialSummary(
+            id = "test-passkey",
+            label = label,
+            createdAt = "2026-05-19T12:00:00Z",
+            lastUsedAt = null,
+        )
+
+        override suspend fun startPasskeyLogin(email: String): PasskeyLoginStartResponse = PasskeyLoginStartResponse(
+            ceremonyId = "test-passkey-login",
+            publicKey = Json.parseToJsonElement("{}"),
+        )
+
+        override suspend fun finishPasskeyLogin(
+            ceremonyId: String,
+            credential: JsonElement,
+        ) = Unit
+
+        override suspend fun deletePasskey(id: String) = Unit
+
+        override suspend fun createAuthHandoff(
+            targetDeviceLabel: String?,
+            serverUrl: String?,
+        ): AuthHandoffCreateResponse = AuthHandoffCreateResponse(
+            id = "test-handoff",
+            handoffUrl = "quartermaster://handoff?server=http%3A%2F%2F10.0.2.2%3A8080&id=test-handoff&token=test-token",
+            expiresAt = "2026-05-19T12:05:00Z",
+            targetDeviceLabel = targetDeviceLabel,
+        )
+
+        override suspend fun cancelAuthHandoff(id: String) = Unit
+
+        override suspend fun previewAuthHandoff(
+            id: String,
+            token: String,
+        ): AuthHandoffPreviewResponse = AuthHandoffPreviewResponse(
+            id = id,
+            sourceEmail = "alice@example.com",
+            sourceDisplayName = "Alice",
+            householdId = meResponse.currentHousehold?.id?.toString(),
+            targetDeviceLabel = "Android",
+            expiresAt = "2026-05-19T12:05:00Z",
+        )
+
+        override suspend fun acceptAuthHandoff(
+            id: String,
+            token: String,
+            deviceLabel: String?,
+        ) = Unit
+
         override suspend fun register(
             email: String,
             displayName: String,

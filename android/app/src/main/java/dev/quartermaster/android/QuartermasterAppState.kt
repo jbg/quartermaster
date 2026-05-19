@@ -119,6 +119,13 @@ data class InviteContext(
     val serverUrl: String?,
 )
 
+data class PendingAuthHandoff(
+    val id: String,
+    val token: String,
+    val serverUrl: String?,
+    val preview: AuthHandoffPreviewResponse?,
+)
+
 data class InventoryTarget(
     val productId: String,
     val locationId: String,
@@ -201,6 +208,16 @@ interface QuartermasterBackend {
     ): Unit
     suspend fun joinOnboardingInvite(email: String, displayName: String, password: String, inviteCode: String): Unit
     suspend fun login(email: String, password: String): Unit
+    suspend fun listPasskeys(): List<PasskeyCredentialSummary>
+    suspend fun startPasskeyRegistration(label: String?): PasskeyRegistrationStartResponse
+    suspend fun finishPasskeyRegistration(ceremonyId: String, credential: JsonElement, label: String?): PasskeyCredentialSummary
+    suspend fun startPasskeyLogin(email: String): PasskeyLoginStartResponse
+    suspend fun finishPasskeyLogin(ceremonyId: String, credential: JsonElement): Unit
+    suspend fun deletePasskey(id: String)
+    suspend fun createAuthHandoff(targetDeviceLabel: String?, serverUrl: String?): AuthHandoffCreateResponse
+    suspend fun cancelAuthHandoff(id: String)
+    suspend fun previewAuthHandoff(id: String, token: String): AuthHandoffPreviewResponse
+    suspend fun acceptAuthHandoff(id: String, token: String, deviceLabel: String?): Unit
     suspend fun register(email: String, displayName: String, password: String, inviteCode: String?): Unit
     suspend fun requestEmailVerification(email: String): RequestEmailVerificationResponse
     suspend fun confirmEmailVerification(code: String): MeResponse
@@ -296,6 +313,29 @@ class QuartermasterApiBackend(
 
     override suspend fun login(email: String, password: String) {
         api.login(email = email, password = password)
+    }
+
+    override suspend fun listPasskeys(): List<PasskeyCredentialSummary> = api.listPasskeys()
+    override suspend fun startPasskeyRegistration(label: String?): PasskeyRegistrationStartResponse = api.startPasskeyRegistration(label)
+    override suspend fun finishPasskeyRegistration(
+        ceremonyId: String,
+        credential: JsonElement,
+        label: String?,
+    ): PasskeyCredentialSummary = api.finishPasskeyRegistration(ceremonyId, credential, label)
+    override suspend fun startPasskeyLogin(email: String): PasskeyLoginStartResponse = api.startPasskeyLogin(email)
+    override suspend fun finishPasskeyLogin(ceremonyId: String, credential: JsonElement) {
+        api.finishPasskeyLogin(ceremonyId, credential)
+    }
+    override suspend fun deletePasskey(id: String) {
+        api.deletePasskey(id)
+    }
+    override suspend fun createAuthHandoff(targetDeviceLabel: String?, serverUrl: String?): AuthHandoffCreateResponse = api.createAuthHandoff(targetDeviceLabel, serverUrl)
+    override suspend fun cancelAuthHandoff(id: String) {
+        api.cancelAuthHandoff(id)
+    }
+    override suspend fun previewAuthHandoff(id: String, token: String): AuthHandoffPreviewResponse = api.previewAuthHandoff(id, token)
+    override suspend fun acceptAuthHandoff(id: String, token: String, deviceLabel: String?) {
+        api.acceptAuthHandoff(id, token, deviceLabel)
     }
 
     override suspend fun register(
@@ -441,6 +481,12 @@ class QuartermasterAppState(
         private set
     var offCredentialStatus by mutableStateOf<OpenFoodFactsCredentialStatusResponse?>(null)
         private set
+    var passkeys by mutableStateOf<List<PasskeyCredentialSummary>>(emptyList())
+        private set
+    var authHandoff by mutableStateOf<AuthHandoffCreateResponse?>(null)
+        private set
+    var pendingAuthHandoff by mutableStateOf<PendingAuthHandoff?>(null)
+        private set
     var selectedBatchId by mutableStateOf<String?>(null)
         private set
     var selectedBatchEvents by mutableStateOf<List<StockEventDto>>(emptyList())
@@ -582,12 +628,19 @@ class QuartermasterAppState(
                 selectedTab = MainTab.Settings
             }
         }
+        parseAuthHandoff(rawUrl)?.let { handoff ->
+            pendingAuthHandoff = handoff
+        }
     }
 
     suspend fun handleIncomingDeepLink(rawUrl: String) {
         parseBatchDeepLink(rawUrl)?.let { batchId ->
             selectedTab = MainTab.Inventory
             openBatchDeepLink(batchId)
+            return
+        }
+        parseAuthHandoff(rawUrl)?.let { handoff ->
+            previewAuthHandoff(handoff.id, handoff.token, handoff.serverUrl)
             return
         }
         handleDeepLink(rawUrl)
@@ -633,6 +686,13 @@ class QuartermasterAppState(
 
     suspend fun signIn(email: String, password: String) = runAuthAction {
         backend.login(email = email, password = password)
+        applyAuthenticated(backend.me())
+    }
+
+    suspend fun startPasskeyLogin(email: String): PasskeyLoginStartResponse = backend.startPasskeyLogin(email.trim())
+
+    suspend fun finishPasskeyLogin(ceremonyId: String, credential: JsonElement) = runAuthAction {
+        backend.finishPasskeyLogin(ceremonyId, credential)
         applyAuthenticated(backend.me())
     }
 
@@ -975,6 +1035,7 @@ class QuartermasterAppState(
         invites = backend.householdInvites().sortedByDescending { it.createdAt }
         storageVessels = sortStorageVessels(backend.storageVessels())
         offCredentialStatus = backend.openFoodFactsCredentialStatus()
+        passkeys = backend.listPasskeys()
         hasLoadedSettingsOnce = true
     }
 
@@ -1007,6 +1068,65 @@ class QuartermasterAppState(
             backend.deleteOpenFoodFactsCredentials()
             offCredentialStatus = OpenFoodFactsCredentialStatusResponse(configured = false, username = null)
         }
+    }
+
+    suspend fun finishPasskeyRegistration(ceremonyId: String, credential: JsonElement, label: String?) {
+        runSettingsAction {
+            val created = backend.finishPasskeyRegistration(ceremonyId, credential, label)
+            passkeys = listOf(created) + passkeys
+        }
+    }
+
+    suspend fun backendStartPasskeyRegistration(label: String?): PasskeyRegistrationStartResponse = backend.startPasskeyRegistration(label)
+
+    suspend fun deletePasskey(id: String) {
+        runSettingsAction {
+            backend.deletePasskey(id)
+            passkeys = passkeys.filterNot { it.id == id }
+        }
+    }
+
+    suspend fun createAuthHandoff(targetDeviceLabel: String?) {
+        runSettingsAction {
+            authHandoff = backend.createAuthHandoff(targetDeviceLabel, serverUrl)
+        }
+    }
+
+    suspend fun cancelAuthHandoff() {
+        val handoff = authHandoff ?: return
+        runSettingsAction {
+            backend.cancelAuthHandoff(handoff.id)
+            authHandoff = null
+        }
+    }
+
+    suspend fun previewAuthHandoff(id: String, token: String, serverUrl: String?) {
+        lastError = null
+        try {
+            if (phase == AppPhase.Unauthenticated && !serverUrl.isNullOrBlank()) {
+                updateServerUrl(serverUrl)
+            }
+            val preview = backend.previewAuthHandoff(id, token)
+            pendingAuthHandoff = PendingAuthHandoff(id = id, token = token, serverUrl = serverUrl, preview = preview)
+        } catch (err: Exception) {
+            lastError = err.userFacingMessage()
+        }
+    }
+
+    suspend fun acceptPendingAuthHandoff() {
+        val handoff = pendingAuthHandoff ?: return
+        lastError = null
+        try {
+            backend.acceptAuthHandoff(handoff.id, handoff.token, "Android")
+            pendingAuthHandoff = null
+            applyAuthenticated(backend.me())
+        } catch (err: Exception) {
+            lastError = err.userFacingMessage()
+        }
+    }
+
+    fun clearPendingAuthHandoff() {
+        pendingAuthHandoff = null
     }
 
     suspend fun exportHouseholdBackup(): String? {
@@ -2137,6 +2257,28 @@ class QuartermasterAppState(
                 ?.removeSuffix("/")
 
             return InviteContext(inviteCode = if (isJoinLink) invite else null, serverUrl = server)
+        }
+
+        fun parseAuthHandoff(rawUrl: String): PendingAuthHandoff? {
+            val uri = runCatching { URI(rawUrl) }.getOrNull() ?: return null
+            if (uri.scheme != "quartermaster" || uri.host != "handoff") return null
+            val query = uri.rawQuery.orEmpty()
+                .split("&")
+                .filter { it.isNotBlank() }
+                .mapNotNull { pair ->
+                    val parts = pair.split("=", limit = 2)
+                    val name = parts.getOrNull(0)?.urlDecode() ?: return@mapNotNull null
+                    val value = parts.getOrNull(1)?.urlDecode().orEmpty()
+                    name to value
+                }
+                .toMap()
+            val id = query["id"]?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            val token = query["token"]?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            val server = query["server"]
+                ?.trim()
+                ?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+                ?.removeSuffix("/")
+            return PendingAuthHandoff(id = id, token = token, serverUrl = server, preview = null)
         }
 
         fun parseBatchDeepLink(rawUrl: String): String? {
