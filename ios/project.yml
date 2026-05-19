@@ -108,3 +108,22 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: 'YES'
+schemes:
+  Quartermaster:
+    build:
+      targets:
+        Quartermaster: all
+        QuartermasterTests: [test]
+        QuartermasterUITests: [test]
+    test:
+      targets:
+        - QuartermasterTests
+        - QuartermasterUITests
+  QuartermasterAppStoreScreenshots:
+    build:
+      targets:
+        Quartermaster: all
+        QuartermasterUITests: [test]
+    test:
+      targets:
+        - QuartermasterUITests

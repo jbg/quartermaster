@@ -16,14 +16,17 @@ struct MainTabView: View {
       Tab("Reminders", systemImage: "bell", value: Screen.reminders) {
         NavigationStack { ReminderInboxView() }
       }
+      .accessibilityIdentifier("tab.reminders")
 
       Tab("Scan", systemImage: "barcode.viewfinder", value: Screen.scan) {
         NavigationStack { ScanScreen() }
       }
+      .accessibilityIdentifier("tab.scan")
 
       Tab("Settings", systemImage: "slider.horizontal.3", value: Screen.settings) {
         NavigationStack { SettingsView() }
       }
+      .accessibilityIdentifier("tab.settings")
     }
     .onChange(of: appState.pendingInventoryTarget) { _, target in
       // Deep-link out of history / other tabs into Inventory. The
