@@ -1,5 +1,7 @@
 package dev.quartermaster.android
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -14,7 +16,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -34,11 +35,19 @@ import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 
 private enum class ConsumeEntryMode {
     Package,
     Exact,
 }
+
+private data class BatchStatus(
+    val label: String,
+    val tone: StatusTone,
+    val metadata: String,
+)
 
 @Composable
 internal fun InventoryScreen(
@@ -61,7 +70,7 @@ internal fun InventoryScreen(
         item {
             RouteHeader(
                 title = appState.meOrNull?.currentHousehold?.name ?: "Inventory",
-                subtitle = "Stock grouped by household location, with depleted batches kept for history and restore.",
+                subtitle = "Stock grouped by location, with depleted batches kept for history and restore.",
             )
         }
         if (appState.isInventoryRefreshing) {
@@ -103,7 +112,7 @@ internal fun InventoryScreen(
             appState.batches.isEmpty() && appState.inventoryLoadState != LoadState.Loading -> {
                 item {
                     StatusCard(
-                        title = "Inventory is empty",
+                        title = "No stock recorded",
                         message = "Use Scan to search for a product and add your first batch.",
                     )
                 }
@@ -244,42 +253,89 @@ private fun LocationInventoryCard(
                         batchId == target?.batchId ||
                             (batch.product.id.toString() == target?.productId && batch.locationId.toString() == target.locationId)
                     val isSelected = batchId == selectedBatchId
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = when {
-                                isTargetBatch || isSelected -> MaterialTheme.colorScheme.secondaryContainer
-                                depleted -> MaterialTheme.colorScheme.surface
-                                else -> MaterialTheme.colorScheme.surfaceVariant
-                            },
-                        ),
+                    val status = batchStatus(batch.expiresOn, depleted)
+                    Column(
+                        modifier = Modifier
+                            .testTag(SmokeTag.inventoryBatch(batchId))
+                            .fillMaxWidth()
+                            .background(
+                                when {
+                                    isTargetBatch || isSelected -> MaterialTheme.colorScheme.secondaryContainer
+                                    depleted -> MaterialTheme.colorScheme.surface
+                                    else -> MaterialTheme.colorScheme.surfaceVariant
+                                },
+                                MaterialTheme.shapes.medium,
+                            )
+                            .border(
+                                1.dp,
+                                if (isTargetBatch || isSelected) {
+                                    MaterialTheme.colorScheme.secondary
+                                } else {
+                                    MaterialTheme.colorScheme.outlineVariant
+                                },
+                                MaterialTheme.shapes.medium,
+                            )
+                            .clickable { onSelectBatch(batchId) }
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .testTag(SmokeTag.inventoryBatch(batchId))
-                                .fillMaxWidth()
-                                .clickable { onSelectBatch(batchId) }
-                                .padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Text(batch.product.name, style = MaterialTheme.typography.titleSmall)
-                            Text("${batch.quantity} ${batch.unit} · ${if (depleted) "depleted history" else "available"}")
-                            Text("Expires ${batch.expiresOn ?: "not set"}", style = MaterialTheme.typography.bodySmall)
-                            batch.note?.takeIf(String::isNotBlank)?.let { Text(it) }
+                            Text(
+                                batch.product.name,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            StatusBadge(status.label, status.tone)
+                        }
+                        Text(
+                            "${batch.quantity} ${batch.unit} - ${location.name} - ${status.metadata}",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        batch.note?.takeIf(String::isNotBlank)?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (isTargetBatch) {
-                                Text(
-                                    "Reminder target",
-                                    style = MaterialTheme.typography.labelMedium,
+                                StatusBadge(
+                                    label = "Reminder target",
+                                    tone = StatusTone.Info,
                                     modifier = Modifier.testTag(SmokeTag.reminderTarget(batchId)),
                                 )
                             }
                             if (isSelected) {
-                                Text("Selected", style = MaterialTheme.typography.labelMedium)
+                                StatusBadge("Selected", StatusTone.Info)
                             }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+private fun batchStatus(expiresOn: String?, depleted: Boolean): BatchStatus {
+    if (depleted) {
+        return BatchStatus("Depleted", StatusTone.Neutral, "Depleted history")
+    }
+    if (expiresOn.isNullOrBlank()) {
+        return BatchStatus("No date", StatusTone.Neutral, "No expiry date")
+    }
+    val expiry = runCatching { LocalDate.parse(expiresOn) }.getOrNull()
+        ?: return BatchStatus("Expiry set", StatusTone.Neutral, "Expires $expiresOn")
+    val days = ChronoUnit.DAYS.between(LocalDate.now(), expiry)
+    return when {
+        days < 0 -> BatchStatus("Expired", StatusTone.Expired, "Expired ${-days} ${if (days == -1L) "day" else "days"} ago")
+        days == 0L -> BatchStatus("Today", StatusTone.Soon, "Expires today")
+        days == 1L -> BatchStatus("Tomorrow", StatusTone.Soon, "Expires tomorrow")
+        days <= 7L -> BatchStatus("${days}d", StatusTone.Soon, "Expires in $days days")
+        else -> BatchStatus("Dated", StatusTone.Neutral, "Expires $expiresOn")
     }
 }
 

@@ -193,10 +193,32 @@ private fun ProductCatalogueRow(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(product.name, style = MaterialTheme.typography.titleMedium)
-            Text(product.brand ?: "No brand")
-            Text("${product.family.value} · preferred ${product.preferredUnit}")
-            Text("${appState.productSourceLabel(product)} · ${if (appState.isDeletedProduct(product)) "Deleted" else "Active"}")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    product.name,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                StatusBadge(
+                    label = if (appState.isDeletedProduct(product)) "Deleted" else "Active",
+                    tone = if (appState.isDeletedProduct(product)) StatusTone.Neutral else StatusTone.Available,
+                )
+            }
+            Text(
+                listOfNotNull(
+                    product.brand,
+                    product.barcode?.let { "Barcode $it" },
+                ).ifEmpty { listOf("No brand or barcode") }.joinToString(" - "),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                "${product.family.value} - Preferred ${product.preferredUnit} - ${appState.productSourceLabel(product)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

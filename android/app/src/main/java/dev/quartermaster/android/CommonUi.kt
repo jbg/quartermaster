@@ -1,6 +1,11 @@
 package dev.quartermaster.android
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,13 +16,83 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+
+internal enum class StatusTone {
+    Available,
+    Soon,
+    Expired,
+    Info,
+    Neutral,
+    Low,
+    Frozen,
+}
+
+private data class StatusToneColors(
+    val text: Color,
+    val background: Color,
+    val border: Color,
+)
+
+@Composable
+private fun statusToneColors(tone: StatusTone): StatusToneColors = if (isSystemInDarkTheme()) {
+    when (tone) {
+        StatusTone.Available -> StatusToneColors(Color(0xFFA8D9B8), Color(0xFF1B3024), Color(0xFF355A42))
+        StatusTone.Soon -> StatusToneColors(Color(0xFFE8C28F), Color(0xFF332619), Color(0xFF6D4D25))
+        StatusTone.Expired -> StatusToneColors(Color(0xFFF0B7BE), Color(0xFF3A2023), Color(0xFF6F3C45))
+        StatusTone.Info -> StatusToneColors(Color(0xFFA8D3E2), Color(0xFF1B303D), Color(0xFF355A68))
+        StatusTone.Neutral -> StatusToneColors(Color(0xFFC7D0C7), Color(0xFF1F2D25), Color(0xFF2D3A32))
+        StatusTone.Low -> StatusToneColors(Color(0xFFE2C98D), Color(0xFF342817), Color(0xFF66542A))
+        StatusTone.Frozen -> StatusToneColors(Color(0xFFA8D3E2), Color(0xFF18313A), Color(0xFF315C68))
+    }
+} else {
+    when (tone) {
+        StatusTone.Available -> StatusToneColors(
+            text = QuartermasterColors.Leaf,
+            background = QuartermasterColors.SuccessBg,
+            border = QuartermasterColors.SuccessBorder,
+        )
+        StatusTone.Soon -> StatusToneColors(
+            text = Color(0xFF9A4F12),
+            background = QuartermasterColors.WarningBg,
+            border = QuartermasterColors.WarningBorder,
+        )
+        StatusTone.Expired -> StatusToneColors(
+            text = QuartermasterColors.Beet,
+            background = QuartermasterColors.DangerBg,
+            border = QuartermasterColors.DangerBorder,
+        )
+        StatusTone.Info -> StatusToneColors(
+            text = Color(0xFF245B73),
+            background = QuartermasterColors.InfoBg,
+            border = QuartermasterColors.InfoBorder,
+        )
+        StatusTone.Neutral -> StatusToneColors(
+            text = QuartermasterColors.NeutralText,
+            background = QuartermasterColors.NeutralBg,
+            border = QuartermasterColors.NeutralBorder,
+        )
+        StatusTone.Low -> StatusToneColors(
+            text = QuartermasterColors.LowText,
+            background = QuartermasterColors.LowBg,
+            border = QuartermasterColors.LowBorder,
+        )
+        StatusTone.Frozen -> StatusToneColors(
+            text = QuartermasterColors.FrozenText,
+            background = QuartermasterColors.FrozenBg,
+            border = QuartermasterColors.FrozenBorder,
+        )
+    }
+}
 
 @Composable
 internal fun CenteredLoading(modifier: Modifier = Modifier) {
@@ -62,7 +137,13 @@ internal fun SectionHeader(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(title, style = MaterialTheme.typography.titleMedium)
-        body?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        body?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -107,7 +188,10 @@ internal fun StatusCard(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
 ) {
-    Card {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
         Column(
             modifier = modifier
                 .fillMaxWidth()
@@ -115,7 +199,7 @@ internal fun StatusCard(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(message)
+            Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (actionLabel != null && onAction != null) {
                 TextButton(onClick = onAction) {
                     Text(actionLabel)
@@ -132,7 +216,11 @@ internal fun ErrorCard(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
 ) {
-    Card {
+    val colors = statusToneColors(StatusTone.Expired)
+    Card(
+        colors = CardDefaults.cardColors(containerColor = colors.background),
+        border = BorderStroke(1.dp, colors.border),
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -140,7 +228,7 @@ internal fun ErrorCard(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(message)
+            Text(message, color = colors.text)
             if (actionLabel != null && onAction != null) {
                 TextButton(onClick = onAction) {
                     Text(actionLabel)
@@ -165,7 +253,11 @@ internal fun InlineStatusCard(
         CircularProgressIndicator()
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, style = MaterialTheme.typography.titleSmall)
-            Text(message, style = MaterialTheme.typography.bodySmall)
+            Text(
+                message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -173,8 +265,34 @@ internal fun InlineStatusCard(
 @Composable
 internal fun MetadataRow(label: String, value: String) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Text(value, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+internal fun StatusBadge(
+    label: String,
+    tone: StatusTone,
+    modifier: Modifier = Modifier,
+) {
+    val colors = statusToneColors(tone)
+    Box(
+        modifier = modifier
+            .background(colors.background, MaterialTheme.shapes.small)
+            .border(1.dp, colors.border, MaterialTheme.shapes.small)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.text,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
