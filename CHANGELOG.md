@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.29.0](https://github.com/jbg/quartermaster/compare/1.28.0...1.29.0) (2026-05-20)
+
+
+### Features
+
+* add incremental split repack workflow ([4ccda8a](https://github.com/jbg/quartermaster/commit/4ccda8a3875c19c6d608c9751be6faa01ba8bfde))
+* **android:** add household measurement controls ([596daec](https://github.com/jbg/quartermaster/commit/596daec85f61fc1ddc7ddf489d7e0a71fac7bb9d))
+* support client-reached label printing ([dc9cdc1](https://github.com/jbg/quartermaster/commit/dc9cdc1e8ce1e4a119ce43d508e5bfae554dc323))
+* **web:** add household measurement editing ([1f20dea](https://github.com/jbg/quartermaster/commit/1f20dea3ab2756e9ac56cbc63676e152074a120f))
+
 ## [1.28.0](https://github.com/jbg/quartermaster/compare/1.27.0...1.28.0) (2026-05-19)
 
 
