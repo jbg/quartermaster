@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   QuartermasterSession,
+  browserRandomId,
   createBrowserSessionStorage,
   defaultServerUrl,
   type SessionStorage,
@@ -9,6 +10,10 @@ import {
 } from './session-core';
 import type { HouseholdExportDocument, UpdateHouseholdRequest } from './generated/types.gen';
 import { appPath } from './paths';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function memoryStorage(initial: StoredSession): SessionStorage & { value: StoredSession } {
   return {
@@ -24,6 +29,12 @@ function memoryStorage(initial: StoredSession): SessionStorage & { value: Stored
 }
 
 describe('QuartermasterSession', () => {
+  it('generates browser ids when randomUUID is unavailable', () => {
+    vi.stubGlobal('crypto', {});
+
+    expect(browserRandomId('split-remainder')).toMatch(/^split-remainder-/);
+  });
+
   it('uses the current origin as the default server URL', () => {
     expect(defaultServerUrl({ origin: 'http://localhost:8080', pathname: '/' })).toBe(
       'http://localhost:8080'

@@ -53,6 +53,7 @@
     currentHousehold,
     createBrowserSessionStorage,
     QuartermasterSession,
+    browserRandomId,
     type Location,
     type MeResponse,
     type OnboardingStatus,
@@ -260,18 +261,29 @@
       return;
     }
     authError = null;
+    let nextMe: MeResponse;
     try {
-      me = await session.me();
-      if (currentHousehold(me)) {
-        await refreshWorkspace(selectedBatchId);
-      } else {
-        clearHouseholdState();
-      }
+      nextMe = await session.me();
     } catch {
       me = null;
       authenticated = false;
       clearHouseholdState();
       authError = 'Sign in again to continue.';
+      return;
+    }
+    me = nextMe;
+    if (currentHousehold(nextMe)) {
+      try {
+        await refreshWorkspace(selectedBatchId);
+      } catch {
+        inventory = {
+          status: 'error',
+          items: [],
+          error: 'Workspace could not be loaded.'
+        };
+      }
+    } else {
+      clearHouseholdState();
     }
   }
 
@@ -570,7 +582,7 @@
 
   function newSplitRemainder(batch: StockBatch): SplitRemainderFields {
     return {
-      id: crypto.randomUUID(),
+      id: browserRandomId('split-remainder'),
       quantity: '',
       locationId: preferredRemainderLocationId(batch),
       storageVesselId: '',
