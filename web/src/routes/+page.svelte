@@ -72,6 +72,16 @@
     error: string | null;
   }
 
+  interface SplitRemainderFields {
+    id: string;
+    quantity: string;
+    locationId: string;
+    storageVesselId: string;
+    quantityIncludesStorageVessel: boolean;
+    expiresOn: string;
+    note: string;
+  }
+
   const emptyHistoryState: HistoryState = {
     status: 'idle',
     items: [],
@@ -108,11 +118,12 @@
   let consumeEntryMode = $state<'package' | 'exact'>('exact');
   let packageCount = $state('');
   let consumeQuantity = $state('');
-  let storeRemainderQuantity = $state('');
-  let storeRemainderLocationId = $state('');
-  let storeRemainderOpenedOn = $state('');
-  let storeRemainderExpiresOn = $state('');
-  let storeRemainderNote = $state('');
+  let splitUsedQuantity = $state('');
+  let splitOpenedOn = $state('');
+  let splitNote = $state('');
+  let splitRemainder = $state<SplitRemainderFields | null>(null);
+  let splitOperationId = $state<string | null>(null);
+  let splitPrintRetryBatchId = $state<string | null>(null);
   let stockActionBusy = $state<string | null>(null);
   let stockActionError = $state<string | null>(null);
   let labelPrintBusy = $state(false);
@@ -557,55 +568,176 @@
     }
   }
 
-  function hydrateStoreRemainder(batch: StockBatch) {
-    storeRemainderQuantity = consumeQuantity.trim();
-    storeRemainderLocationId = preferredRemainderLocationId(batch);
-    storeRemainderOpenedOn = localDateKey(new Date());
-    storeRemainderExpiresOn = '';
-    storeRemainderNote = '';
+  function newSplitRemainder(batch: StockBatch): SplitRemainderFields {
+    return {
+      id: crypto.randomUUID(),
+      quantity: '',
+      locationId: preferredRemainderLocationId(batch),
+      storageVesselId: '',
+      quantityIncludesStorageVessel: false,
+      expiresOn: '',
+      note: ''
+    };
+  }
+
+  function hydrateSplit(batch: StockBatch) {
+    splitUsedQuantity = consumeQuantity.trim() || '0';
+    splitOpenedOn = localDateKey(new Date());
+    splitNote = '';
+    splitRemainder = newSplitRemainder(batch);
+    splitOperationId = null;
+    splitPrintRetryBatchId = null;
   }
 
   function resetConsumeFields(batch: StockBatch) {
     consumeEntryMode = stockPackageSize(batch) ? 'package' : 'exact';
     packageCount = '';
     consumeQuantity = '';
-    hydrateStoreRemainder(batch);
+    hydrateSplit(batch);
   }
 
-  async function consumeAndStoreSelected() {
-    if (!session || !selectedBatch) {
+  function resetSplitContainer(batch: StockBatch) {
+    splitRemainder = newSplitRemainder(batch);
+    splitPrintRetryBatchId = null;
+  }
+
+  function selectedSplitTareProfile(): StorageVessel | null {
+    if (!splitRemainder?.storageVesselId) {
+      return null;
+    }
+    return storageVessels.find((vessel) => vessel.id === splitRemainder?.storageVesselId) ?? null;
+  }
+
+  function convertMassQuantity(quantity: number, fromUnit: string, toUnit: string): number | null {
+    const grams: Record<string, number> = {
+      mg: 0.001,
+      g: 1,
+      kg: 1000,
+      oz: 28.349523125,
+      lb: 453.59237
+    };
+    const from = grams[fromUnit];
+    const to = grams[toUnit];
+    if (!from || !to) {
+      return null;
+    }
+    return (quantity * from) / to;
+  }
+
+  function splitRemainderNetQuantity(batch: StockBatch): number | null {
+    if (!splitRemainder?.quantity) {
+      return null;
+    }
+    const entered = Number(splitRemainder.quantity);
+    if (!Number.isFinite(entered)) {
+      return null;
+    }
+    if (!splitRemainder.quantityIncludesStorageVessel) {
+      return entered;
+    }
+    const profile = selectedSplitTareProfile();
+    if (!profile) {
+      return entered;
+    }
+    const tare = Number(profile.tare_weight ?? profile.tareWeight ?? 0);
+    const tareUnit = profile.tare_unit ?? profile.tareUnit ?? '';
+    const convertedTare = convertMassQuantity(tare, tareUnit, stockUnit(batch));
+    return convertedTare === null ? null : entered - convertedTare;
+  }
+
+  function splitRemainingAfterContainer(batch: StockBatch): number | null {
+    const net = splitRemainderNetQuantity(batch);
+    if (net === null) {
+      return null;
+    }
+    const used = splitOperationId ? 0 : Number(splitUsedQuantity || 0);
+    if (!Number.isFinite(used)) {
+      return null;
+    }
+    return Number(batch.quantity ?? 0) - used - net;
+  }
+
+  async function splitSelected() {
+    if (!session || !selectedBatch || !splitRemainder) {
       return;
     }
-    const quantity = storeRemainderQuantity.trim();
-    if (!quantity || Number(quantity) <= 0) {
-      stockActionError = 'Enter a positive quantity to use.';
+    if (Number(splitUsedQuantity || 0) < 0) {
+      stockActionError = 'Used quantity cannot be negative.';
       return;
     }
-    if (Number(quantity) >= Number(selectedBatch.quantity ?? 0)) {
-      stockActionError = 'Use less than the current batch quantity.';
+    const netQuantity = splitRemainderNetQuantity(selectedBatch);
+    if (!splitRemainder.quantity || Number(splitRemainder.quantity) <= 0 || netQuantity === null) {
+      stockActionError = 'Enter a positive quantity for the weighed remainder.';
       return;
     }
-    if (!storeRemainderLocationId) {
-      stockActionError = 'Choose a location for the remainder.';
+    if (netQuantity <= 0) {
+      stockActionError = 'Net remainder quantity must be greater than zero.';
       return;
     }
-    stockActionBusy = 'consume-and-store';
+    if (!splitRemainder.locationId) {
+      stockActionError = 'Choose a location for this remainder.';
+      return;
+    }
+    const remaining = splitRemainingAfterContainer(selectedBatch);
+    if (remaining !== null && remaining < -0.000001) {
+      stockActionError =
+        'Used quantity plus this remainder cannot exceed the current batch quantity.';
+      return;
+    }
+    stockActionBusy = 'split';
     stockActionError = null;
+    labelPrintError = null;
+    labelPrintMessage = null;
     closeStockEdit();
     try {
-      const result = await session.stockConsumeAndStore(selectedBatch.id, {
-        used_quantity: quantity,
-        remainder_location_id: storeRemainderLocationId,
-        opened_on: storeRemainderOpenedOn || null,
-        remainder_expires_on: storeRemainderExpiresOn || null,
-        note: storeRemainderNote.trim() || null
+      const usedQuantity = splitOperationId ? '0' : splitUsedQuantity.trim() || '0';
+      const result = await session.stockSplit(selectedBatch.id, {
+        used_quantity: usedQuantity,
+        operation_id: splitOperationId,
+        opened_on: splitOpenedOn || null,
+        note: splitNote.trim() || null,
+        remainders: [
+          {
+            quantity: splitRemainder.quantity.trim(),
+            location_id: splitRemainder.locationId,
+            storage_vessel_id: splitRemainder.storageVesselId || null,
+            quantity_includes_storage_vessel: splitRemainder.quantityIncludesStorageVessel || null,
+            expires_on: splitRemainder.expiresOn || null,
+            note: splitRemainder.note.trim() || null
+          }
+        ]
       });
       consumeQuantity = '';
-      hydrateStoreRemainder(result.remainder);
-      highlightBatchId = result.remainder.id;
-      await refreshWorkspace(result.remainder.id);
+      const firstRemainder = result.remainders[0];
+      const nextOperationId = result.operation_id ?? result.operationId ?? splitOperationId;
+      if (firstRemainder) {
+        highlightBatchId = firstRemainder.id;
+        let retryBatchId: string | null = null;
+        try {
+          await session.stockLabelPrint(firstRemainder.id, {
+            copies: 1,
+            label_size: labelPrintSize,
+            include_quantity: labelPrintIncludeQuantity
+          });
+          labelPrintMessage = `Label sent for ${stockName(firstRemainder)}.`;
+          splitPrintRetryBatchId = null;
+        } catch (err) {
+          labelPrintError = labelPrintErrorMessage(err);
+          retryBatchId = firstRemainder.id;
+        }
+        const sourceIsActive = !isDepleted(result.source);
+        await refreshWorkspace(sourceIsActive ? result.source.id : firstRemainder.id);
+        if (sourceIsActive && selectedBatch) {
+          splitOperationId = nextOperationId ?? null;
+          splitUsedQuantity = usedQuantity;
+          resetSplitContainer(selectedBatch);
+        }
+        splitPrintRetryBatchId = retryBatchId;
+      } else {
+        await refreshWorkspace(selectedBatch.id);
+      }
     } catch {
-      stockActionError = 'Remainder could not be stored.';
+      stockActionError = 'Batch could not be split.';
     } finally {
       stockActionBusy = null;
     }
@@ -729,6 +861,28 @@
         printed.status === 'sent'
           ? `Label sent: ${printed.batch_url}`
           : `Label rendered: ${printed.batch_url}`;
+    } catch (err) {
+      labelPrintError = labelPrintErrorMessage(err);
+    } finally {
+      labelPrintBusy = false;
+    }
+  }
+
+  async function retrySplitLabelPrint() {
+    if (!session || !splitPrintRetryBatchId) {
+      return;
+    }
+    labelPrintBusy = true;
+    labelPrintError = null;
+    labelPrintMessage = null;
+    try {
+      await session.stockLabelPrint(splitPrintRetryBatchId, {
+        copies: 1,
+        label_size: labelPrintSize,
+        include_quantity: labelPrintIncludeQuantity
+      });
+      labelPrintMessage = 'Label sent.';
+      splitPrintRetryBatchId = null;
     } catch (err) {
       labelPrintError = labelPrintErrorMessage(err);
     } finally {
@@ -943,11 +1097,12 @@
     consumeQuantity = '';
     packageCount = '';
     consumeEntryMode = 'exact';
-    storeRemainderQuantity = '';
-    storeRemainderLocationId = '';
-    storeRemainderOpenedOn = '';
-    storeRemainderExpiresOn = '';
-    storeRemainderNote = '';
+    splitUsedQuantity = '';
+    splitOpenedOn = '';
+    splitNote = '';
+    splitRemainder = null;
+    splitOperationId = null;
+    splitPrintRetryBatchId = null;
     stockActionBusy = null;
     stockActionError = null;
     closeStockEdit();
@@ -1453,9 +1608,9 @@
               </select>
             </label>
             <label>
-              Storage vessel
+              Tare profile
               <select bind:value={addStockStorageVesselId}>
-                <option value="">None</option>
+                <option value="">No tare profile</option>
                 {#each storageVessels as vessel}
                   <option value={vessel.id}
                     >{vessel.name} ({vessel.tare_weight ?? vessel.tareWeight}
@@ -1467,7 +1622,7 @@
             {#if addStockGrossVesselEligible}
               <label>
                 <input type="checkbox" bind:checked={addStockQuantityIncludesStorageVessel} />
-                Entered weight includes vessel
+                Entered weight includes container
               </label>
             {/if}
             {#if locations.length === 0}
@@ -1659,7 +1814,7 @@
               <dd>{displayLocation(selectedBatch)}</dd>
             </div>
             <div>
-              <dt>Storage vessel</dt>
+              <dt>Tare profile</dt>
               <dd>{stockStorageVesselLabel(selectedBatch)}</dd>
             </div>
             {#if stockProducedValue(selectedBatch)}
@@ -1763,9 +1918,9 @@
                 </select>
               </label>
               <label>
-                Storage vessel
+                Tare profile
                 <select bind:value={stockEditStorageVesselId}>
-                  <option value="">None</option>
+                  <option value="">No tare profile</option>
                   {#each storageVessels as vessel}
                     <option value={vessel.id}
                       >{vessel.name} ({vessel.tare_weight ?? vessel.tareWeight}
@@ -1889,68 +2044,144 @@
               class="action-panel"
               onsubmit={(event) => {
                 event.preventDefault();
-                void consumeAndStoreSelected();
+                void splitSelected();
               }}
             >
               <div class="section-heading compact">
                 <div>
-                  <p class="eyebrow">Opened package</p>
-                  <h2>Open and store remainder</h2>
+                  <p class="eyebrow">Repack</p>
+                  <h2>Use and split</h2>
                 </div>
               </div>
               <label>
                 Used quantity
                 <input
-                  bind:value={storeRemainderQuantity}
+                  bind:value={splitUsedQuantity}
                   inputmode="decimal"
                   placeholder={`Amount in ${stockUnit(selectedBatch)}`}
-                  disabled={stockActionBusy !== null || stockEditBusy}
+                  disabled={stockActionBusy !== null || stockEditBusy || splitOperationId !== null}
                 />
-              </label>
-              <label>
-                Remainder location
-                <select
-                  bind:value={storeRemainderLocationId}
-                  disabled={stockActionBusy !== null || stockEditBusy}
-                >
-                  {#each locations as location}
-                    <option value={location.id}>{location.name}</option>
-                  {/each}
-                </select>
               </label>
               <label>
                 Opened date
                 <input
-                  bind:value={storeRemainderOpenedOn}
+                  bind:value={splitOpenedOn}
                   type="date"
                   disabled={stockActionBusy !== null || stockEditBusy}
                 />
               </label>
               <label>
-                Remainder expiry override
+                Operation note
                 <input
-                  bind:value={storeRemainderExpiresOn}
-                  type="date"
+                  bind:value={splitNote}
                   disabled={stockActionBusy !== null || stockEditBusy}
                 />
               </label>
-              <label>
-                Remainder note
-                <input
-                  bind:value={storeRemainderNote}
-                  disabled={stockActionBusy !== null || stockEditBusy}
-                />
-              </label>
+              {#if splitRemainder}
+                <div class="remainder-list">
+                  <div class="remainder-row">
+                    <label>
+                      Weighed quantity
+                      <input
+                        bind:value={splitRemainder.quantity}
+                        inputmode="decimal"
+                        placeholder={`Amount in ${stockUnit(selectedBatch)}`}
+                        disabled={stockActionBusy !== null || stockEditBusy}
+                      />
+                    </label>
+                    <label>
+                      Location
+                      <select
+                        bind:value={splitRemainder.locationId}
+                        disabled={stockActionBusy !== null || stockEditBusy}
+                      >
+                        {#each locations as location}
+                          <option value={location.id}>{location.name}</option>
+                        {/each}
+                      </select>
+                    </label>
+                    <label>
+                      Tare profile
+                      <select
+                        bind:value={splitRemainder.storageVesselId}
+                        disabled={stockActionBusy !== null || stockEditBusy}
+                      >
+                        <option value="">No tare profile</option>
+                        {#each storageVessels as vessel}
+                          <option value={vessel.id}
+                            >{vessel.name} ({vessel.tare_weight ?? vessel.tareWeight}
+                            {vessel.tare_unit ?? vessel.tareUnit})</option
+                          >
+                        {/each}
+                      </select>
+                    </label>
+                    {#if splitRemainder.storageVesselId}
+                      <label>
+                        <input
+                          type="checkbox"
+                          bind:checked={splitRemainder.quantityIncludesStorageVessel}
+                          disabled={stockActionBusy !== null || stockEditBusy}
+                        />
+                        Entered weight includes container
+                      </label>
+                      {#if splitRemainder.quantityIncludesStorageVessel}
+                        <p class="muted">
+                          Net preview:
+                          {#if splitRemainderNetQuantity(selectedBatch) === null}
+                            tare conversion will be checked on save
+                          {:else}
+                            {splitRemainderNetQuantity(selectedBatch)?.toLocaleString()}
+                            {stockUnit(selectedBatch)}
+                          {/if}
+                        </p>
+                      {/if}
+                    {/if}
+                    <label>
+                      Expiry override
+                      <input
+                        bind:value={splitRemainder.expiresOn}
+                        type="date"
+                        disabled={stockActionBusy !== null || stockEditBusy}
+                      />
+                    </label>
+                    <label>
+                      Remainder note
+                      <input
+                        bind:value={splitRemainder.note}
+                        disabled={stockActionBusy !== null || stockEditBusy}
+                      />
+                    </label>
+                  </div>
+                </div>
+              {/if}
+              <p class="muted">
+                Remaining after this container:
+                {#if splitRemainingAfterContainer(selectedBatch) === null}
+                  unknown until save
+                {:else}
+                  {splitRemainingAfterContainer(selectedBatch)?.toLocaleString()}
+                  {stockUnit(selectedBatch)}
+                {/if}
+              </p>
               <div class="stock-actions">
                 <button
                   class="primary-action"
                   type="submit"
                   disabled={stockActionBusy !== null || stockEditBusy || locations.length === 0}
-                  >{stockActionBusy === 'consume-and-store'
-                    ? 'Storing...'
-                    : 'Use and store'}</button
+                  >{stockActionBusy === 'split'
+                    ? 'Creating...'
+                    : 'Create remainder and print label'}</button
                 >
               </div>
+              {#if splitPrintRetryBatchId}
+                <button
+                  class="secondary-action"
+                  type="button"
+                  disabled={labelPrintBusy || stockEditBusy}
+                  onclick={retrySplitLabelPrint}
+                  >{labelPrintBusy ? 'Printing...' : 'Retry label print'}</button
+                >
+              {/if}
             </form>
           {/if}
 

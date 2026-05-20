@@ -901,10 +901,8 @@ actor APIClient: AppStateAPI {
     }
   }
 
-  func consumeAndStoreStock(id: String, request: ConsumeAndStoreRequest) async throws
-    -> ConsumeAndStoreResponse
-  {
-    let response = try await client.stockConsumeAndStore(
+  func splitStock(id: String, request: SplitStockRequest) async throws -> SplitStockResponse {
+    let response = try await client.stockSplit(
       .init(path: .init(id: id), body: .json(request)))
     switch response {
     case .ok(let ok): return try ok.body.json

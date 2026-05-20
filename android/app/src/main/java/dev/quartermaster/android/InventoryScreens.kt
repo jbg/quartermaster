@@ -339,7 +339,7 @@ internal fun BatchDetailScreen(
                     batch = batch,
                     onEdit = onEditBatch,
                     onConsume = { quantity, unit -> scope.launch { appState.consumeSelectedBatch(quantity, unit) } },
-                    onConsumeAndStore = { fields -> scope.launch { appState.consumeAndStoreSelectedBatch(fields) } },
+                    onSplit = { fields -> scope.launch { appState.splitSelectedBatch(fields) } },
                     onPrintLabel = { scope.launch { appState.printLabelForBatch(batch.id.toString()) } },
                     onDiscard = { scope.launch { appState.discardBatch(batch.id.toString()) } },
                     onRestore = { scope.launch { appState.restoreBatch(batch.id.toString()) } },
@@ -356,7 +356,7 @@ private fun BatchDetailCard(
     batch: StockBatchDto,
     onEdit: () -> Unit,
     onConsume: (String, String) -> Unit,
-    onConsumeAndStore: (ConsumeAndStoreFields) -> Unit,
+    onSplit: (SplitStockFields) -> Unit,
     onPrintLabel: () -> Unit,
     onDiscard: () -> Unit,
     onRestore: () -> Unit,
@@ -365,7 +365,7 @@ private fun BatchDetailCard(
     var consumeQuantity by remember(batch.id) { mutableStateOf("") }
     var packageCount by remember(batch.id) { mutableStateOf("") }
     var remainderFields by remember(batch.id) {
-        mutableStateOf(appState.consumeAndStoreFields(batch))
+        mutableStateOf(appState.splitStockFields(batch))
     }
     val batchId = batch.id.toString()
     val packageSize = appState.packageSizeFor(batch)
@@ -385,7 +385,7 @@ private fun BatchDetailCard(
         consumeAmount?.quantity?.toDoubleOrNull()?.let { it > 0 } != true -> "Enter a positive amount."
         else -> null
     }
-    val remainderValidation = appState.validateConsumeAndStoreFields(remainderFields)
+    val remainderValidation = appState.validateSplitStockFields(remainderFields)
 
     Card {
         Column(
@@ -415,7 +415,7 @@ private fun BatchDetailCard(
                         StockAction.LoadEvents -> "Loading the latest batch history."
                         StockAction.Update -> "Saving stock correction."
                         StockAction.Consume -> "Recording consumption."
-                        StockAction.ConsumeAndStore -> "Opening and storing the remainder."
+                        StockAction.Split -> "Splitting this batch."
                         StockAction.PrintLabel -> "Printing label."
                         StockAction.Discard -> "Discarding this batch."
                         StockAction.Restore -> "Restoring this batch."
@@ -497,7 +497,7 @@ private fun BatchDetailCard(
                 }
                 if (consumeEntryMode == ConsumeEntryMode.Exact) {
                     SectionHeader(
-                        title = "Open and store remainder",
+                        title = "Use and split",
                         body = "Use part of this batch and create a new open batch for what is left.",
                     )
                     OutlinedTextField(
@@ -564,11 +564,11 @@ private fun BatchDetailCard(
                     )
                     remainderValidation?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                     Button(
-                        onClick = { onConsumeAndStore(remainderFields) },
+                        onClick = { onSplit(remainderFields) },
                         enabled = remainderValidation == null && action == null,
                         modifier = Modifier.testTag(SmokeTag.batchRemainderButton(batchId)),
                     ) {
-                        Text(if (action == StockAction.ConsumeAndStore) "Storing..." else "Open and store remainder")
+                        Text(if (action == StockAction.Split) "Splitting..." else "Use and split")
                     }
                 }
                 TextButton(
@@ -610,7 +610,7 @@ private fun BatchMetadata(batch: StockBatchDto) {
         MetadataRow("Created", batch.createdAt)
         MetadataRow("Initial quantity", "${batch.initialQuantity} ${batch.unit}")
         batch.storageVessel?.let {
-            MetadataRow("Storage vessel", "${it.name} (${it.tareWeight} ${it.tareUnit} tare)")
+            MetadataRow("Tare profile", "${it.name} (${it.tareWeight} ${it.tareUnit} tare)")
         }
         MetadataRow("Expiry", batch.expiresOn ?: "No expiry date")
         MetadataRow("Opened", batch.openedOn ?: "Not marked opened")

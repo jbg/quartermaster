@@ -120,9 +120,9 @@ struct SettingsView: View {
             storageVesselsView
           } label: {
             settingsLinkLabel(
-              "Storage Vessels",
+              "Tare Profiles",
               systemImage: "scalemass",
-              detail: storageVessels.isEmpty ? "No vessels" : "\(storageVessels.count)"
+              detail: storageVessels.isEmpty ? "No profiles" : "\(storageVessels.count)"
             )
           }
           NavigationLink {
@@ -307,14 +307,14 @@ struct SettingsView: View {
       }
     }
     .confirmationDialog(
-      "Delete storage vessel?",
+      "Delete tare profile?",
       isPresented: Binding(
         get: { storageVesselPendingDeletion != nil },
         set: { if !$0 { storageVesselPendingDeletion = nil } }
       ),
       titleVisibility: .visible
     ) {
-      Button("Delete Storage Vessel", role: .destructive) {
+      Button("Delete Tare Profile", role: .destructive) {
         guard let storageVesselPendingDeletion else { return }
         Task { await deleteStorageVessel(storageVesselPendingDeletion) }
       }
@@ -598,9 +598,9 @@ struct SettingsView: View {
 
   private var storageVesselsView: some View {
     Form {
-      Section("Storage Vessels") {
+      Section("Tare Profiles") {
         if storageVessels.isEmpty {
-          Text("No storage vessels yet.")
+          Text("No tare profiles yet.")
             .foregroundStyle(.secondary)
         } else {
           ForEach(storageVessels) { vessel in
@@ -616,12 +616,12 @@ struct SettingsView: View {
             editingStorageVessel = nil
             showStorageVesselEditor = true
           } label: {
-            Label("Add storage vessel", systemImage: "plus")
+            Label("Add tare profile", systemImage: "plus")
           }
         }
       }
     }
-    .navigationTitle("Storage Vessels")
+    .navigationTitle("Tare Profiles")
     .toolbar {
       if isAdmin {
         ToolbarItem(placement: .topBarTrailing) {
@@ -1514,7 +1514,7 @@ private struct StorageVesselEditorView: View {
         Text("lb").tag("lb")
       }
     }
-    .navigationTitle(vessel == nil ? "New Storage Vessel" : "Edit Storage Vessel")
+    .navigationTitle(vessel == nil ? "New Tare Profile" : "Edit Tare Profile")
     .toolbar {
       ToolbarItem(placement: .cancellationAction) {
         Button("Cancel") { dismiss() }

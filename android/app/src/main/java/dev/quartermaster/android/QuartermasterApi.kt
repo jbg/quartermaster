@@ -4,8 +4,6 @@ import android.util.Base64
 import dev.quartermaster.android.generated.infrastructure.Serializer
 import dev.quartermaster.android.generated.models.BarcodeLookupResponse
 import dev.quartermaster.android.generated.models.ConfirmEmailVerificationRequest
-import dev.quartermaster.android.generated.models.ConsumeAndStoreRequest
-import dev.quartermaster.android.generated.models.ConsumeAndStoreResponse
 import dev.quartermaster.android.generated.models.ConsumeRequest
 import dev.quartermaster.android.generated.models.ConsumeResponse
 import dev.quartermaster.android.generated.models.CreateHouseholdRequest
@@ -18,6 +16,7 @@ import dev.quartermaster.android.generated.models.CreateStorageVesselRequest
 import dev.quartermaster.android.generated.models.HouseholdDetailDto
 import dev.quartermaster.android.generated.models.InviteDto
 import dev.quartermaster.android.generated.models.JoinInviteRequest
+import dev.quartermaster.android.generated.models.LabelPrintStatus
 import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.LoginRequest
 import dev.quartermaster.android.generated.models.MeResponse
@@ -29,6 +28,8 @@ import dev.quartermaster.android.generated.models.OnboardingStatusResponse
 import dev.quartermaster.android.generated.models.OpenFoodFactsCredentialStatusResponse
 import dev.quartermaster.android.generated.models.PasswordResetConfirmRequest
 import dev.quartermaster.android.generated.models.PasswordResetRequest
+import dev.quartermaster.android.generated.models.PrintStockLabelRequest
+import dev.quartermaster.android.generated.models.PrintStockLabelResponse
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.ProductSearchResponse
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
@@ -38,9 +39,12 @@ import dev.quartermaster.android.generated.models.RegisterDeviceRequest
 import dev.quartermaster.android.generated.models.RegisterRequest
 import dev.quartermaster.android.generated.models.ReminderDto
 import dev.quartermaster.android.generated.models.ReminderListResponse
+import dev.quartermaster.android.generated.models.RenderLabelResponse
 import dev.quartermaster.android.generated.models.RequestEmailVerificationRequest
 import dev.quartermaster.android.generated.models.RequestEmailVerificationResponse
 import dev.quartermaster.android.generated.models.SaveOpenFoodFactsCredentialsRequest
+import dev.quartermaster.android.generated.models.SplitStockRequest
+import dev.quartermaster.android.generated.models.SplitStockResponse
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventListResponse
@@ -207,45 +211,6 @@ data class JsonPatchOperation(
     constructor(op: String, path: String, value: String) : this(op, path, JsonPrimitive(value))
     constructor(op: String, path: String, value: Long) : this(op, path, JsonPrimitive(value))
 }
-
-@Serializable
-data class PrintStockLabelRequest(
-    val copies: Int = 1,
-    @SerialName("include_quantity")
-    val includeQuantity: Boolean = false,
-    @SerialName("label_size")
-    val labelSize: String = "standard",
-    @SerialName("printer_id")
-    val printerId: String? = null,
-)
-
-@Serializable
-data class PrintStockLabelResponse(
-    @SerialName("printer_id")
-    val printerId: String,
-    @SerialName("batch_id")
-    val batchId: String,
-    @SerialName("batch_url")
-    val batchUrl: String,
-    val copies: Int,
-    val status: String,
-)
-
-@Serializable
-data class RenderLabelResponse(
-    @SerialName("printer_id")
-    val printerId: String,
-    @SerialName("batch_id")
-    val batchId: String,
-    @SerialName("batch_url")
-    val batchUrl: String,
-    val driver: String,
-    val media: String,
-    val address: String,
-    val port: Int,
-    val copies: Int,
-    val payload: String,
-)
 
 class QuartermasterApi(
     private val authStore: AuthStore,
@@ -724,12 +689,27 @@ class QuartermasterApi(
         body = request,
     )
 
-    suspend fun consumeAndStoreStock(
+    suspend fun splitStock(
         batchId: String,
-        request: ConsumeAndStoreRequest,
-    ): ConsumeAndStoreResponse = authedJson(
+        request: SplitStockRequest,
+    ): SplitStockResponse = authedJson(
         method = "POST",
-        path = "/stock/${batchId.urlEncode()}/consume-and-store",
+        path = "/stock/${batchId.urlEncode()}/split",
+        body = request,
+    )
+
+    suspend fun printStockLabel(
+        batchId: String,
+        request: PrintStockLabelRequest = PrintStockLabelRequest(
+            copies = 1,
+            dryRun = null,
+            includeQuantity = false,
+            labelSize = "standard",
+            printerId = null,
+        ),
+    ): PrintStockLabelResponse = authedJson(
+        method = "POST",
+        path = "/stock/${batchId.urlEncode()}/labels/print",
         body = request,
     )
 
@@ -751,13 +731,13 @@ class QuartermasterApi(
                 body = request,
             )
             val payload = Base64.decode(artifact.payload, Base64.DEFAULT)
-            labelPrinterSender.send(payload, artifact.address, artifact.port)
+            labelPrinterSender.send(payload, artifact.address, artifact.port.toInt())
             PrintStockLabelResponse(
                 printerId = artifact.printerId,
                 batchId = artifact.batchId,
                 batchUrl = artifact.batchUrl,
                 copies = artifact.copies,
-                status = "sent",
+                status = LabelPrintStatus.SENT,
             )
         }
     }
@@ -933,6 +913,7 @@ class QuartermasterApi(
         is RedeemInviteRequest -> json.encodeToString(body)
         is PasswordResetConfirmRequest -> json.encodeToString(body)
         is PasswordResetRequest -> json.encodeToString(body)
+        is PrintStockLabelRequest -> json.encodeToString(body)
         is RegisterDeviceRequest -> json.encodeToString(body)
         is RegisterRequest -> json.encodeToString(body)
         is SwitchHouseholdRequest -> json.encodeToString(body)

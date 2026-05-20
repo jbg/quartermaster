@@ -1097,6 +1097,20 @@ a:focus-visible {
   background: var(--qm-paper);
 }
 
+.remainder-list {
+  display: grid;
+  gap: var(--qm-space-3);
+}
+
+.remainder-row {
+  display: grid;
+  gap: var(--qm-space-3);
+  padding: 12px;
+  border: 1px solid var(--qm-line);
+  border-radius: var(--qm-radius-sm);
+  background: var(--qm-white);
+}
+
 .history-region {
   display: grid;
   gap: var(--qm-space-3);

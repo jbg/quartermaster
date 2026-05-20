@@ -8,8 +8,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.quartermaster.android.generated.models.BarcodeLookupResponse
-import dev.quartermaster.android.generated.models.ConsumeAndStoreRequest
-import dev.quartermaster.android.generated.models.ConsumeAndStoreResponse
 import dev.quartermaster.android.generated.models.ConsumeRequest
 import dev.quartermaster.android.generated.models.ConsumeResponse
 import dev.quartermaster.android.generated.models.CreateInviteRequest
@@ -27,12 +25,17 @@ import dev.quartermaster.android.generated.models.OffContributionPreviewResponse
 import dev.quartermaster.android.generated.models.OffContributionResponse
 import dev.quartermaster.android.generated.models.OnboardingStatusResponse
 import dev.quartermaster.android.generated.models.OpenFoodFactsCredentialStatusResponse
+import dev.quartermaster.android.generated.models.PrintStockLabelRequest
+import dev.quartermaster.android.generated.models.PrintStockLabelResponse
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.ProductSource
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
 import dev.quartermaster.android.generated.models.ReminderDto
 import dev.quartermaster.android.generated.models.RequestEmailVerificationResponse
 import dev.quartermaster.android.generated.models.SaveOpenFoodFactsCredentialsRequest
+import dev.quartermaster.android.generated.models.SplitStockRemainderRequest
+import dev.quartermaster.android.generated.models.SplitStockRequest
+import dev.quartermaster.android.generated.models.SplitStockResponse
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventType
@@ -111,7 +114,7 @@ enum class StockAction {
     LoadEvents,
     Update,
     Consume,
-    ConsumeAndStore,
+    Split,
     PrintLabel,
     Discard,
     Restore,
@@ -165,7 +168,7 @@ data class StockEditFields(
     val note: String = "",
 )
 
-data class ConsumeAndStoreFields(
+data class SplitStockFields(
     val usedQuantity: String = "",
     val remainderLocationId: String = "",
     val openedOn: String = "",
@@ -279,8 +282,11 @@ interface QuartermasterBackend {
     suspend fun addStock(request: CreateStockRequest): StockBatchDto
     suspend fun updateStock(id: String, request: StockUpdateRequest): StockBatchDto
     suspend fun consumeStock(request: ConsumeRequest): ConsumeResponse
-    suspend fun consumeAndStoreStock(batchId: String, request: ConsumeAndStoreRequest): ConsumeAndStoreResponse
-    suspend fun printStockLabel(batchId: String): PrintStockLabelResponse
+    suspend fun splitStock(batchId: String, request: SplitStockRequest): SplitStockResponse
+    suspend fun printStockLabel(
+        batchId: String,
+        request: PrintStockLabelRequest = PrintStockLabelRequest(),
+    ): PrintStockLabelResponse
     suspend fun discardStock(batchId: String)
     suspend fun restoreStock(batchId: String): StockBatchDto
 }
@@ -446,11 +452,14 @@ class QuartermasterApiBackend(
     override suspend fun addStock(request: CreateStockRequest): StockBatchDto = api.addStock(request)
     override suspend fun updateStock(id: String, request: StockUpdateRequest): StockBatchDto = api.updateStock(id, request)
     override suspend fun consumeStock(request: ConsumeRequest): ConsumeResponse = api.consumeStock(request)
-    override suspend fun consumeAndStoreStock(
+    override suspend fun splitStock(
         batchId: String,
-        request: ConsumeAndStoreRequest,
-    ): ConsumeAndStoreResponse = api.consumeAndStoreStock(batchId, request)
-    override suspend fun printStockLabel(batchId: String): PrintStockLabelResponse = api.printStockLabel(batchId)
+        request: SplitStockRequest,
+    ): SplitStockResponse = api.splitStock(batchId, request)
+    override suspend fun printStockLabel(
+        batchId: String,
+        request: PrintStockLabelRequest,
+    ) = api.printStockLabel(batchId, request)
     override suspend fun discardStock(batchId: String) = api.discardStock(batchId)
     override suspend fun restoreStock(batchId: String): StockBatchDto = api.restoreStock(batchId)
 }
@@ -1462,32 +1471,52 @@ class QuartermasterAppState(
         }
     }
 
-    suspend fun consumeAndStoreSelectedBatch(fields: ConsumeAndStoreFields): Boolean {
+    suspend fun splitSelectedBatch(fields: SplitStockFields): Boolean {
         val batch = selectedBatch ?: return false
         if (isBatchDepleted(batch)) return false
-        validateConsumeAndStoreFields(fields)?.let {
+        validateSplitStockFields(fields)?.let {
             inventoryError = it
             lastError = it
             return false
         }
+        val usedQuantity = fields.usedQuantity.trim().toBigDecimalOrNull() ?: return false
+        val sourceQuantity = batch.quantity.toBigDecimalOrNull() ?: return false
+        val remainderQuantity = sourceQuantity - usedQuantity
+        if (remainderQuantity <= BigDecimal.ZERO) {
+            inventoryError = "Leave a positive remainder quantity."
+            lastError = inventoryError
+            return false
+        }
         var saved = false
-        runStockAction(batch.id.toString(), StockAction.ConsumeAndStore) {
-            val response = backend.consumeAndStoreStock(
+        runStockAction(batch.id.toString(), StockAction.Split) {
+            val response = backend.splitStock(
                 batch.id.toString(),
-                ConsumeAndStoreRequest(
-                    remainderLocationId = UUID.fromString(fields.remainderLocationId),
-                    usedQuantity = fields.usedQuantity.trim(),
-                    openedOn = fields.openedOn.trim().takeIf { it.isNotEmpty() },
-                    remainderExpiresOn = fields.remainderExpiresOn.trim().takeIf { it.isNotEmpty() },
+                SplitStockRequest(
                     note = fields.note.trim().takeIf { it.isNotEmpty() },
+                    openedOn = fields.openedOn.trim().takeIf { it.isNotEmpty() },
+                    remainders = listOf(
+                        SplitStockRemainderRequest(
+                            expiresOn = fields.remainderExpiresOn.trim().takeIf { it.isNotEmpty() },
+                            locationId = UUID.fromString(fields.remainderLocationId),
+                            note = fields.note.trim().takeIf { it.isNotEmpty() },
+                            quantity = formatQuantity(remainderQuantity),
+                            quantityIncludesStorageVessel = null,
+                            storageVesselId = null,
+                        ),
+                    ),
+                    usedQuantity = fields.usedQuantity.trim(),
                 ),
             )
+            val firstRemainder = response.remainders.firstOrNull()
+            if (firstRemainder != null) {
+                runCatching { backend.printStockLabel(firstRemainder.id.toString()) }
+            }
             pendingInventoryTarget = InventoryTarget(
-                productId = response.remainder.product.id.toString(),
-                locationId = response.remainder.locationId.toString(),
-                batchId = response.remainder.id.toString(),
+                productId = firstRemainder?.product?.id?.toString() ?: response.source.product.id.toString(),
+                locationId = firstRemainder?.locationId?.toString() ?: response.source.locationId.toString(),
+                batchId = firstRemainder?.id?.toString() ?: response.source.id.toString(),
             )
-            refreshInventoryAfterStockMutation(response.remainder.id.toString())
+            refreshInventoryAfterStockMutation(firstRemainder?.id?.toString() ?: response.source.id.toString())
             saved = true
         }
         return saved
@@ -1606,7 +1635,7 @@ class QuartermasterAppState(
         note = batch.note.orEmpty(),
     )
 
-    fun consumeAndStoreFields(batch: StockBatchDto): ConsumeAndStoreFields = ConsumeAndStoreFields(
+    fun splitStockFields(batch: StockBatchDto): SplitStockFields = SplitStockFields(
         remainderLocationId = batch.locationId.toString(),
         openedOn = todayLocalDate(),
     )
@@ -1735,9 +1764,9 @@ class QuartermasterAppState(
         val name = fields.name.trim()
         val tareWeight = fields.tareWeight.trim()
         return when {
-            name.isEmpty() -> "Enter a vessel name."
-            name.length > 80 -> "Vessel name must be 80 characters or fewer."
-            tareWeight.isEmpty() -> "Enter the vessel tare weight."
+            name.isEmpty() -> "Enter a profile name."
+            name.length > 80 -> "Profile name must be 80 characters or fewer."
+            tareWeight.isEmpty() -> "Enter the profile tare weight."
             tareWeight.toBigDecimalOrNull()?.let { it > java.math.BigDecimal.ZERO } != true -> "Enter a positive tare weight."
             fields.tareUnit !in storageVesselUnitSymbols() -> "Choose a mass unit for the tare weight."
             else -> null
@@ -1759,13 +1788,13 @@ class QuartermasterAppState(
         }
     }
 
-    fun validateConsumeAndStoreFields(fields: ConsumeAndStoreFields): String? {
+    fun validateSplitStockFields(fields: SplitStockFields): String? {
         val usedQuantity = fields.usedQuantity.trim()
         val openedOn = fields.openedOn.trim()
         val remainderExpiresOn = fields.remainderExpiresOn.trim()
         return when {
             usedQuantity.isEmpty() -> "Enter a used quantity."
-            usedQuantity.toBigDecimalOrNull()?.let { it > java.math.BigDecimal.ZERO } != true -> "Enter a positive used quantity."
+            usedQuantity.toBigDecimalOrNull()?.let { it >= java.math.BigDecimal.ZERO } != true -> "Enter a used quantity of zero or more."
             fields.remainderLocationId.isBlank() -> "Choose a remainder location."
             locations.none { it.id.toString() == fields.remainderLocationId } -> "Choose an existing remainder location."
             openedOn.isNotEmpty() && !LOCAL_DATE.matches(openedOn) -> "Enter opened date as YYYY-MM-DD."

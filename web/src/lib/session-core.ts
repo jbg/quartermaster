@@ -154,6 +154,10 @@ export interface StockBatch {
   locationName?: string | null;
   storage_vessel?: StorageVessel | null;
   storageVessel?: StorageVessel | null;
+  source_batch_id?: string | null;
+  sourceBatchId?: string | null;
+  source_operation_id?: string | null;
+  sourceOperationId?: string | null;
   produced_on?: string | null;
   producedOn?: string | null;
   expires_on?: string | null;
@@ -170,8 +174,8 @@ export interface StockListResponse {
 
 export interface StockEvent {
   id: string;
-  event_type?: 'add' | 'consume' | 'adjust' | 'discard' | 'restore';
-  eventType?: 'add' | 'consume' | 'adjust' | 'discard' | 'restore';
+  event_type?: 'add' | 'consume' | 'adjust' | 'discard' | 'restore' | 'repack_in' | 'repack_out';
+  eventType?: 'add' | 'consume' | 'adjust' | 'discard' | 'restore' | 'repack_in' | 'repack_out';
   quantity_delta?: string;
   quantityDelta?: string;
   unit?: string;
@@ -189,6 +193,8 @@ export interface StockEvent {
   };
   consume_request_id?: string | null;
   consumeRequestId?: string | null;
+  operation_id?: string | null;
+  operationId?: string | null;
 }
 
 export interface StockEventListResponse {
@@ -315,19 +321,28 @@ export interface ConsumeResponse {
   consumeRequestId?: string;
 }
 
-export interface ConsumeAndStoreRequest {
-  used_quantity: string;
-  remainder_location_id: string;
-  opened_on?: string | null;
-  remainder_expires_on?: string | null;
+export interface SplitStockRemainderRequest {
+  quantity: string;
+  location_id: string;
+  storage_vessel_id?: string | null;
+  quantity_includes_storage_vessel?: boolean | null;
+  expires_on?: string | null;
   note?: string | null;
 }
 
-export interface ConsumeAndStoreResponse {
+export interface SplitStockRequest {
+  used_quantity: string;
+  operation_id?: string | null;
+  opened_on?: string | null;
+  note?: string | null;
+  remainders: SplitStockRemainderRequest[];
+}
+
+export interface SplitStockResponse {
   source: StockBatch;
-  remainder: StockBatch;
-  consume_request_id?: string;
-  consumeRequestId?: string;
+  remainders: StockBatch[];
+  operation_id?: string;
+  operationId?: string;
 }
 
 export interface CreateProductRequest {
@@ -533,10 +548,7 @@ export interface SessionTransport {
     query?: { before_created_at?: string | null; before_id?: string | null; limit?: number | null }
   ): Promise<ApiResult<StockEventListResponse>>;
   stockConsume(body: ConsumeRequest): Promise<ApiResult<ConsumeResponse>>;
-  stockConsumeAndStore?(
-    id: string,
-    body: ConsumeAndStoreRequest
-  ): Promise<ApiResult<ConsumeAndStoreResponse>>;
+  stockSplit?(id: string, body: SplitStockRequest): Promise<ApiResult<SplitStockResponse>>;
   stockDelete(id: string): Promise<ApiResult<void>>;
   stockRestore(id: string): Promise<ApiResult<StockBatch>>;
   stockLabelPrint?(
@@ -917,10 +929,8 @@ export class QuartermasterSession {
     return this.authed(() => this.transport.stockConsume(body));
   }
 
-  stockConsumeAndStore(id: string, body: ConsumeAndStoreRequest): Promise<ConsumeAndStoreResponse> {
-    return this.authed(() =>
-      required(this.transport.stockConsumeAndStore, 'stockConsumeAndStore')(id, body)
-    );
+  stockSplit(id: string, body: SplitStockRequest): Promise<SplitStockResponse> {
+    return this.authed(() => required(this.transport.stockSplit, 'stockSplit')(id, body));
   }
 
   stockDelete(id: string): Promise<void> {

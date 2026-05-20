@@ -264,7 +264,7 @@ export function stockStorageVesselId(batch: StockBatch): string | null {
 export function stockStorageVesselLabel(batch: StockBatch): string {
   const vessel = stockStorageVessel(batch);
   if (!vessel) {
-    return 'None';
+    return 'No tare profile';
   }
   const weight = vessel.tare_weight ?? vessel.tareWeight;
   const unit = vessel.tare_unit ?? vessel.tareUnit;

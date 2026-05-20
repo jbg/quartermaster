@@ -49,13 +49,15 @@ impl FromStr for ProductSource {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum StockEventType {
     Add,
     Consume,
     Adjust,
     Discard,
     Restore,
+    RepackIn,
+    RepackOut,
 }
 
 impl StockEventType {
@@ -66,6 +68,8 @@ impl StockEventType {
             Self::Adjust => "adjust",
             Self::Discard => "discard",
             Self::Restore => "restore",
+            Self::RepackIn => "repack_in",
+            Self::RepackOut => "repack_out",
         }
     }
 }
@@ -290,6 +294,8 @@ impl FromStr for StockEventType {
             "adjust" => Ok(Self::Adjust),
             "discard" => Ok(Self::Discard),
             "restore" => Ok(Self::Restore),
+            "repack_in" => Ok(Self::RepackIn),
+            "repack_out" => Ok(Self::RepackOut),
             other => Err(ApiError::Internal(anyhow::anyhow!(
                 "unknown stock event type in DB row: {other}",
             ))),

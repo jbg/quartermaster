@@ -572,7 +572,7 @@
       );
       await refreshStorageVessels();
     } catch {
-      vesselError = 'Storage vessels could not be reordered.';
+      vesselError = 'Tare profiles could not be reordered.';
     } finally {
       actionBusy = null;
     }
@@ -613,7 +613,7 @@
     const weight = vesselTareWeight.trim();
     const parsed = Number(weight);
     if (!name || !weight || !Number.isFinite(parsed) || parsed < 0) {
-      vesselError = 'Enter a vessel name and zero-or-greater tare weight.';
+      vesselError = 'Enter a profile name and zero-or-greater tare weight.';
       return;
     }
     const busyId = editingVessel ? `vessel:save:${editingVessel.id}` : 'vessel:create';
@@ -638,8 +638,8 @@
       resetVesselForm();
     } catch {
       vesselError = editingVessel
-        ? 'Storage vessel could not be saved.'
-        : 'Storage vessel could not be added.';
+        ? 'Tare profile could not be saved.'
+        : 'Tare profile could not be added.';
     } finally {
       actionBusy = null;
     }
@@ -666,7 +666,7 @@
       }
       await refreshStorageVessels();
     } catch {
-      vesselDeleteError = 'Storage vessel could not be deleted.';
+      vesselDeleteError = 'Tare profile could not be deleted.';
     } finally {
       actionBusy = null;
     }
@@ -1029,7 +1029,7 @@
         <div class="section-heading">
           <div>
             <p class="eyebrow">Stocktake</p>
-            <h2 id="vessels-heading">Storage vessels</h2>
+            <h2 id="vessels-heading">Tare profiles</h2>
           </div>
         </div>
 
@@ -1038,7 +1038,7 @@
         {/if}
 
         {#if sortedStorageVessels.length === 0}
-          <p class="muted">No storage vessels yet.</p>
+          <p class="muted">No tare profiles yet.</p>
         {:else}
           <div class="location-list">
             {#each sortedStorageVessels as vessel, index}
@@ -1092,7 +1092,7 @@
           <div class="section-heading compact">
             <div>
               <p class="eyebrow">{editingVessel ? 'Edit' : 'New'}</p>
-              <h2>{editingVessel ? editingVessel.name : 'Add storage vessel'}</h2>
+              <h2>{editingVessel ? editingVessel.name : 'Add tare profile'}</h2>
             </div>
             {#if editingVessel}
               <button class="ghost-button small" type="button" onclick={resetVesselForm}
@@ -1118,20 +1118,20 @@
             </select>
           </label>
           <button class="primary-action" type="submit" disabled={actionBusy !== null}
-            >{editingVessel ? 'Save vessel' : 'Add vessel'}</button
+            >{editingVessel ? 'Save profile' : 'Add profile'}</button
           >
         </form>
 
         {#if pendingVesselDelete}
           <div class="delete-confirmation">
             <h2>Delete {pendingVesselDelete.name}?</h2>
-            <p class="muted">Batches using this vessel will keep their stock quantity.</p>
+            <p class="muted">Batches using this tare profile will keep their stock quantity.</p>
             <div class="row-actions">
               <button
                 class="ghost-button danger"
                 type="button"
                 disabled={actionBusy !== null}
-                onclick={deleteStorageVessel}>Delete vessel</button
+                onclick={deleteStorageVessel}>Delete profile</button
               >
               <button
                 class="secondary-action"

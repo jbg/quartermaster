@@ -113,6 +113,8 @@ pub struct ExportStockBatch {
     pub product_id: Uuid,
     pub location_id: Uuid,
     pub storage_vessel_id: Option<Uuid>,
+    pub source_batch_id: Option<Uuid>,
+    pub source_operation_id: Option<Uuid>,
     pub initial_quantity: String,
     pub quantity: String,
     pub unit: String,
@@ -137,6 +139,7 @@ pub struct ExportStockEvent {
     pub note: Option<String>,
     pub created_at: String,
     pub consume_request_id: Option<Uuid>,
+    pub operation_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -228,6 +231,7 @@ pub async fn import_household(
     let mut event_ids = IdMap::new();
     let mut reminder_ids = IdMap::new();
     let mut consume_request_ids = HashMap::new();
+    let mut operation_ids = HashMap::new();
 
     for row in &document.locations {
         location_ids.insert(row.id, Uuid::now_v7());
@@ -248,6 +252,14 @@ pub async fn import_household(
         event_ids.insert(row.id, Uuid::now_v7());
         if let Some(id) = row.consume_request_id {
             consume_request_ids.entry(id).or_insert_with(Uuid::now_v7);
+        }
+        if let Some(id) = row.operation_id {
+            operation_ids.entry(id).or_insert_with(Uuid::now_v7);
+        }
+    }
+    for row in &document.stock_batches {
+        if let Some(id) = row.source_operation_id {
+            operation_ids.entry(id).or_insert_with(Uuid::now_v7);
         }
     }
     for row in &document.stock_reminders {
@@ -373,10 +385,10 @@ pub async fn import_household(
     for row in &document.stock_batches {
         sqlx::query(
             "INSERT INTO stock_batch \
-             (id, household_id, product_id, location_id, storage_vessel_id, initial_quantity, \
-              quantity, unit, package_quantity, package_unit, produced_on, expires_on, opened_on, \
-              note, created_at, created_by, depleted_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             (id, household_id, product_id, location_id, storage_vessel_id, source_batch_id, \
+              source_operation_id, initial_quantity, quantity, unit, package_quantity, package_unit, \
+              produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(batch_ids.get(row.id).to_string())
         .bind(household_id.to_string())
@@ -385,6 +397,11 @@ pub async fn import_household(
         .bind(
             row.storage_vessel_id
                 .map(|id| vessel_ids.get(id).to_string()),
+        )
+        .bind(row.source_batch_id.map(|id| batch_ids.get(id).to_string()))
+        .bind(
+            row.source_operation_id
+                .map(|id| operation_ids[&id].to_string()),
         )
         .bind(&row.initial_quantity)
         .bind(&row.quantity)
@@ -406,8 +423,8 @@ pub async fn import_household(
         sqlx::query(
             "INSERT INTO stock_event \
              (id, household_id, batch_id, event_type, quantity_delta, package_quantity, \
-              package_unit, note, created_at, created_by, consume_request_id) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              package_unit, note, created_at, created_by, consume_request_id, operation_id) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(event_ids.get(row.id).to_string())
         .bind(household_id.to_string())
@@ -423,6 +440,7 @@ pub async fn import_household(
             row.consume_request_id
                 .map(|id| consume_request_ids[&id].to_string()),
         )
+        .bind(row.operation_id.map(|id| operation_ids[&id].to_string()))
         .execute(&mut *tx)
         .await?;
     }
@@ -695,6 +713,9 @@ fn validate_document(document: &HouseholdExportDocument) -> Result<(), ImportErr
         if let Some(id) = batch.storage_vessel_id {
             require_ref(&vessel_ids, id, "batch.storage_vessel_id")?;
         }
+        if let Some(id) = batch.source_batch_id {
+            require_ref(&batch_ids, id, "batch.source_batch_id")?;
+        }
         let product = document
             .products
             .iter()
@@ -965,7 +986,8 @@ async fn export_stock_batches(
     household_id: Uuid,
 ) -> Result<Vec<ExportStockBatch>, sqlx::Error> {
     let rows = sqlx::query(
-        "SELECT id, product_id, location_id, storage_vessel_id, initial_quantity, quantity, unit, \
+        "SELECT id, product_id, location_id, storage_vessel_id, source_batch_id, \
+                source_operation_id, initial_quantity, quantity, unit, \
                 package_quantity, package_unit, produced_on, expires_on, opened_on, note, \
                 created_at, depleted_at \
          FROM stock_batch WHERE household_id = ? ORDER BY created_at ASC, id ASC",
@@ -980,6 +1002,8 @@ async fn export_stock_batches(
                 product_id: uuid_from(&row, "product_id")?,
                 location_id: uuid_from(&row, "location_id")?,
                 storage_vessel_id: optional_uuid_from(&row, "storage_vessel_id")?,
+                source_batch_id: optional_uuid_from(&row, "source_batch_id")?,
+                source_operation_id: optional_uuid_from(&row, "source_operation_id")?,
                 initial_quantity: row.try_get("initial_quantity")?,
                 quantity: row.try_get("quantity")?,
                 unit: row.try_get("unit")?,
@@ -1002,7 +1026,7 @@ async fn export_stock_events(
 ) -> Result<Vec<ExportStockEvent>, sqlx::Error> {
     let rows = sqlx::query(
         "SELECT id, batch_id, event_type, quantity_delta, package_quantity, package_unit, \
-                note, created_at, consume_request_id \
+                note, created_at, consume_request_id, operation_id \
          FROM stock_event WHERE household_id = ? ORDER BY created_at ASC, id ASC",
     )
     .bind(household_id.to_string())
@@ -1020,6 +1044,7 @@ async fn export_stock_events(
                 note: row.try_get("note")?,
                 created_at: row.try_get("created_at")?,
                 consume_request_id: optional_uuid_from(&row, "consume_request_id")?,
+                operation_id: optional_uuid_from(&row, "operation_id")?,
             })
         })
         .collect()

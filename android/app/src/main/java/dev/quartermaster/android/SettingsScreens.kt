@@ -491,19 +491,19 @@ internal fun SettingsScreen(
         }
         item {
             SectionHeader(
-                title = "Storage vessels",
-                body = "Track tare weights for jars, bins, and containers used during stocktake.",
+                title = "Tare profiles",
+                body = "Track reusable tare weights for jars, bins, and containers used during stocktake.",
             )
         }
         val settingsStorageVessels = appState.sortedStorageVessels()
         item {
             SectionHeader(
-                title = "Vessel list",
-                body = "${settingsStorageVessels.size} ${if (settingsStorageVessels.size == 1) "vessel" else "vessels"} configured.",
+                title = "Profile list",
+                body = "${settingsStorageVessels.size} ${if (settingsStorageVessels.size == 1) "profile" else "profiles"} configured.",
             )
         }
         if (settingsStorageVessels.isEmpty()) {
-            item { StatusCard("No storage vessels yet", "Weigh an empty container, then add it here before using gross-weight stocktake.") }
+            item { StatusCard("No tare profiles yet", "Weigh an empty container, then add its tare here before using gross-weight stocktake.") }
         } else {
             items(settingsStorageVessels, key = { it.id }) { vessel ->
                 StorageVesselRow(
@@ -1136,13 +1136,13 @@ private fun StorageVesselFormCard(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             SectionHeader(
-                title = if (isEditing) "Edit storage vessel" else "Add storage vessel",
+                title = if (isEditing) "Edit tare profile" else "Add tare profile",
                 body = "Save the empty-container weight so Scan can subtract it from gross mass entries.",
             )
             OutlinedTextField(
                 value = fields.name,
                 onValueChange = { onFieldsChange(fields.copy(name = it)) },
-                label = { Text("Vessel name") },
+                label = { Text("Profile name") },
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
@@ -1175,7 +1175,7 @@ private fun StorageVesselFormCard(
                         when (actionInFlight) {
                             StorageVesselAction.Create -> "Creating..."
                             StorageVesselAction.Update -> "Saving..."
-                            else -> if (isEditing) "Save vessel" else "Create vessel"
+                            else -> if (isEditing) "Save profile" else "Create profile"
                         },
                     )
                 }
@@ -1203,14 +1203,14 @@ private fun StorageVesselDeleteCard(
         ) {
             SectionHeader(
                 title = "Delete ${vessel.name}?",
-                body = "Batches that already reference this vessel keep their saved stock quantity.",
+                body = "Batches that already reference this tare profile keep their saved stock quantity.",
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = onConfirm,
                     enabled = actionInFlight == null,
                 ) {
-                    Text(if (actionInFlight == StorageVesselAction.Delete) "Deleting..." else "Delete vessel")
+                    Text(if (actionInFlight == StorageVesselAction.Delete) "Deleting..." else "Delete profile")
                 }
                 TextButton(onClick = onCancel, enabled = actionInFlight == null) {
                     Text("Cancel")

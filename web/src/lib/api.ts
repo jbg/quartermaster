@@ -45,7 +45,6 @@ import {
   remindersOpen,
   remindersPresent,
   stockConsume,
-  stockConsumeAndStore,
   stockCreate,
   stockDelete,
   stockGet,
@@ -54,6 +53,7 @@ import {
   stockList,
   stockListBatchEvents,
   stockRestore,
+  stockSplit,
   stockUpdate,
   storageVesselsCreate,
   storageVesselsDelete,
@@ -235,8 +235,8 @@ export function generatedTransport(): SessionTransport {
     stockConsume(body) {
       return stockConsume({ body });
     },
-    stockConsumeAndStore(id, body) {
-      return stockConsumeAndStore({ path: { id }, body });
+    stockSplit(id, body) {
+      return stockSplit({ path: { id }, body });
     },
     stockDelete(id) {
       return stockDelete({ path: { id } });

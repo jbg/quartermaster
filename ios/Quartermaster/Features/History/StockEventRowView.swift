@@ -66,6 +66,7 @@ struct StockEventRowView: View {
     switch event.eventType {
     case .add, .restore: QuartermasterBrand.successForeground
     case .consume: QuartermasterBrand.infoForeground
+    case .repackIn, .repackOut: QuartermasterBrand.infoForeground
     case .adjust: QuartermasterBrand.warningForeground
     case .discard: QuartermasterBrand.beetStrong
     }

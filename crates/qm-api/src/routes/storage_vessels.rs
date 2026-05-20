@@ -179,7 +179,7 @@ fn validate_name(name: &str) -> ApiResult<&str> {
     let trimmed = name.trim();
     if trimmed.is_empty() || trimmed.len() > 80 {
         return Err(ApiError::BadRequest(
-            "storage vessel name must be 1..=80 chars".into(),
+            "tare profile name must be 1..=80 chars".into(),
         ));
     }
     Ok(trimmed)

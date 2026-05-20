@@ -2,8 +2,6 @@ package dev.quartermaster.android
 
 import dev.quartermaster.android.generated.infrastructure.Serializer
 import dev.quartermaster.android.generated.models.BarcodeLookupResponse
-import dev.quartermaster.android.generated.models.ConsumeAndStoreRequest
-import dev.quartermaster.android.generated.models.ConsumeAndStoreResponse
 import dev.quartermaster.android.generated.models.ConsumeRequest
 import dev.quartermaster.android.generated.models.ConsumeResponse
 import dev.quartermaster.android.generated.models.ConsumedBatchDto
@@ -14,6 +12,7 @@ import dev.quartermaster.android.generated.models.CreateStockRequest
 import dev.quartermaster.android.generated.models.CreateStorageVesselRequest
 import dev.quartermaster.android.generated.models.HouseholdDetailDto
 import dev.quartermaster.android.generated.models.InviteDto
+import dev.quartermaster.android.generated.models.LabelPrintStatus
 import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.MeResponse
 import dev.quartermaster.android.generated.models.MeasurementSystem
@@ -21,11 +20,15 @@ import dev.quartermaster.android.generated.models.OffContributionPreviewResponse
 import dev.quartermaster.android.generated.models.OffContributionResponse
 import dev.quartermaster.android.generated.models.OnboardingStatusResponse
 import dev.quartermaster.android.generated.models.OpenFoodFactsCredentialStatusResponse
+import dev.quartermaster.android.generated.models.PrintStockLabelRequest
+import dev.quartermaster.android.generated.models.PrintStockLabelResponse
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
 import dev.quartermaster.android.generated.models.ReminderDto
 import dev.quartermaster.android.generated.models.RequestEmailVerificationResponse
 import dev.quartermaster.android.generated.models.SaveOpenFoodFactsCredentialsRequest
+import dev.quartermaster.android.generated.models.SplitStockRequest
+import dev.quartermaster.android.generated.models.SplitStockResponse
 import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventType
@@ -1219,7 +1222,7 @@ class QuartermasterAppStateTest {
     }
 
     @Test
-    fun `consumeAndStoreSelectedBatch records request and selects remainder`() = runTest {
+    fun `splitSelectedBatch records request and selects remainder`() = runTest {
         val pantry = locationJson()
         val fridge = locationJson(id = "55555555-5555-5555-5555-555555555555", name = "Fridge", kind = "fridge", sortOrder = 1)
         val batch = stockBatchJson()
@@ -1238,8 +1241,8 @@ class QuartermasterAppStateTest {
 
         appState.bootstrap()
         appState.selectBatch(batch.id.toString())
-        val saved = appState.consumeAndStoreSelectedBatch(
-            ConsumeAndStoreFields(
+        val saved = appState.splitSelectedBatch(
+            SplitStockFields(
                 usedQuantity = "125",
                 remainderLocationId = fridge.id.toString(),
                 openedOn = "2026-05-01",
@@ -1249,24 +1252,27 @@ class QuartermasterAppStateTest {
         )
 
         assertTrue(saved)
-        assertEquals(1, backend.consumeAndStoreStockRequests.size)
-        val (requestBatchId, request) = backend.consumeAndStoreStockRequests.single()
+        assertEquals(1, backend.splitStockRequests.size)
+        val (requestBatchId, request) = backend.splitStockRequests.single()
         assertEquals(batch.id.toString(), requestBatchId)
         assertEquals("125", request.usedQuantity)
-        assertEquals(fridge.id, request.remainderLocationId)
+        val remainder = request.remainders.single()
+        assertEquals(fridge.id, remainder.locationId)
+        assertEquals("775", remainder.quantity)
         assertEquals("2026-05-01", request.openedOn)
-        assertEquals("2026-05-04", request.remainderExpiresOn)
+        assertEquals("2026-05-04", remainder.expiresOn)
         assertEquals("stored in bowl", request.note)
+        assertEquals("stored in bowl", remainder.note)
         assertEquals("aaaaaaaa-0000-0000-0000-000000000001", appState.selectedBatchId)
         assertEquals("aaaaaaaa-0000-0000-0000-000000000001", appState.pendingInventoryTarget?.batchId)
         assertEquals(fridge.id.toString(), appState.pendingInventoryTarget?.locationId)
         assertTrue(appState.hasLoadedInventoryOnce)
         assertTrue(appState.hasLoadedRemindersOnce)
-        assertEquals(StockEventType.ADD, appState.selectedBatchEvents.first().eventType)
+        assertEquals(StockEventType.REPACK_IN, appState.selectedBatchEvents.first().eventType)
     }
 
     @Test
-    fun `consume and store fields validate required quantity location and dates`() = runTest {
+    fun `split fields validate required quantity location and dates`() = runTest {
         val pantry = locationJson()
         val batch = stockBatchJson()
         val appState =
@@ -1282,20 +1288,20 @@ class QuartermasterAppStateTest {
 
         appState.bootstrap()
 
-        val defaults = appState.consumeAndStoreFields(batch)
+        val defaults = appState.splitStockFields(batch)
         assertEquals(pantry.id.toString(), defaults.remainderLocationId)
-        assertEquals(null, appState.validateConsumeAndStoreFields(defaults.copy(usedQuantity = "1")))
-        assertEquals("Enter a used quantity.", appState.validateConsumeAndStoreFields(defaults.copy(usedQuantity = "")))
-        assertEquals("Enter a positive used quantity.", appState.validateConsumeAndStoreFields(defaults.copy(usedQuantity = "0")))
-        assertEquals("Choose a remainder location.", appState.validateConsumeAndStoreFields(defaults.copy(usedQuantity = "1", remainderLocationId = "")))
+        assertEquals(null, appState.validateSplitStockFields(defaults.copy(usedQuantity = "1")))
+        assertEquals(null, appState.validateSplitStockFields(defaults.copy(usedQuantity = "0")))
+        assertEquals("Enter a used quantity.", appState.validateSplitStockFields(defaults.copy(usedQuantity = "")))
+        assertEquals("Choose a remainder location.", appState.validateSplitStockFields(defaults.copy(usedQuantity = "1", remainderLocationId = "")))
         assertEquals(
             "Choose an existing remainder location.",
-            appState.validateConsumeAndStoreFields(defaults.copy(usedQuantity = "1", remainderLocationId = "55555555-5555-5555-5555-555555555555")),
+            appState.validateSplitStockFields(defaults.copy(usedQuantity = "1", remainderLocationId = "55555555-5555-5555-5555-555555555555")),
         )
-        assertEquals("Enter opened date as YYYY-MM-DD.", appState.validateConsumeAndStoreFields(defaults.copy(usedQuantity = "1", openedOn = "today")))
+        assertEquals("Enter opened date as YYYY-MM-DD.", appState.validateSplitStockFields(defaults.copy(usedQuantity = "1", openedOn = "today")))
         assertEquals(
             "Enter remainder expiry as YYYY-MM-DD.",
-            appState.validateConsumeAndStoreFields(defaults.copy(usedQuantity = "1", remainderExpiresOn = "tomorrow")),
+            appState.validateSplitStockFields(defaults.copy(usedQuantity = "1", remainderExpiresOn = "tomorrow")),
         )
     }
 
@@ -1918,7 +1924,7 @@ class QuartermasterAppStateTest {
         val restoredProductIds = mutableListOf<String>()
         val updateStockRequests = mutableListOf<StockUpdateRequest>()
         val consumeStockRequests = mutableListOf<ConsumeRequest>()
-        val consumeAndStoreStockRequests = mutableListOf<Pair<String, ConsumeAndStoreRequest>>()
+        val splitStockRequests = mutableListOf<Pair<String, SplitStockRequest>>()
         val printedBatchIds = mutableListOf<String>()
         val discardedBatchIds = mutableListOf<String>()
         val restoredBatchIds = mutableListOf<String>()
@@ -2339,21 +2345,22 @@ class QuartermasterAppStateTest {
             )
         }
 
-        override suspend fun consumeAndStoreStock(
+        override suspend fun splitStock(
             batchId: String,
-            request: ConsumeAndStoreRequest,
-        ): ConsumeAndStoreResponse {
-            consumeAndStoreStockRequests += batchId to request
+            request: SplitStockRequest,
+        ): SplitStockResponse {
+            splitStockRequests += batchId to request
             val batch = stockState.firstOrNull { it.id.toString() == batchId } ?: error("Unused in test")
+            val remainderRequest = request.remainders.first()
             val source = batch.copy(quantity = "0", depletedAt = "2026-04-22T12:30:00Z")
             val remainder = batch.copy(
                 id = UUID.fromString("aaaaaaaa-0000-0000-0000-000000000001"),
-                locationId = request.remainderLocationId,
-                initialQuantity = "775",
-                quantity = "775",
-                expiresOn = request.remainderExpiresOn,
+                locationId = remainderRequest.locationId,
+                initialQuantity = remainderRequest.quantity,
+                quantity = remainderRequest.quantity,
+                expiresOn = remainderRequest.expiresOn,
                 openedOn = request.openedOn,
-                note = request.note,
+                note = remainderRequest.note,
                 depletedAt = null,
             )
             stockState.removeAll { it.id.toString() == batchId || it.id == remainder.id }
@@ -2363,7 +2370,7 @@ class QuartermasterAppStateTest {
                 listOf(
                     stockEventJson(
                         id = "77777777-7777-7777-7777-777777777777",
-                        eventType = "consume",
+                        eventType = "repack_out",
                         quantityDelta = "-775",
                     ),
                 ) + batchEventState[batchId].orEmpty()
@@ -2371,25 +2378,28 @@ class QuartermasterAppStateTest {
             batchEventState[remainder.id.toString()] = mutableListOf(
                 stockEventJson(
                     id = "66666666-6666-6666-6666-666666666666",
-                    eventType = "add",
+                    eventType = "repack_in",
                     quantityDelta = remainder.quantity,
                 ),
             )
-            return ConsumeAndStoreResponse(
-                consumeRequestId = UUID.fromString("99999999-9999-9999-9999-999999999999"),
-                remainder = remainder,
+            return SplitStockResponse(
+                operationId = UUID.fromString("99999999-9999-9999-9999-999999999999"),
+                remainders = listOf(remainder),
                 source = source,
             )
         }
 
-        override suspend fun printStockLabel(batchId: String): PrintStockLabelResponse {
+        override suspend fun printStockLabel(
+            batchId: String,
+            request: PrintStockLabelRequest,
+        ): PrintStockLabelResponse {
             printedBatchIds += batchId
             return PrintStockLabelResponse(
-                printerId = "77777777-7777-7777-7777-777777777777",
-                batchId = batchId,
-                batchUrl = "https://quartermaster.example.com/batches/$batchId",
-                copies = 1,
-                status = "sent",
+                batchId = UUID.fromString(batchId),
+                batchUrl = "https://example.test/batches/$batchId",
+                copies = request.copies ?: 1,
+                printerId = UUID.fromString("bbbbbbbb-0000-0000-0000-000000000001"),
+                status = LabelPrintStatus.SENT,
             )
         }
 

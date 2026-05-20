@@ -3672,72 +3672,6 @@
         ]
       }
     },
-    "/api/v1/stock/{id}/consume-and-store": {
-      "post": {
-        "tags": [
-          "stock"
-        ],
-        "operationId": "stock_consume_and_store",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConsumeAndStoreRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConsumeAndStoreResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorBody"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorBody"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ]
-      }
-    },
     "/api/v1/stock/{id}/events": {
       "get": {
         "tags": [
@@ -4000,6 +3934,72 @@
             }
           },
           "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/stock/{id}/split": {
+      "post": {
+        "tags": [
+          "stock"
+        ],
+        "operationId": "stock_split",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SplitStockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SplitStockResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
             "description": "",
             "content": {
               "application/json": {
@@ -4355,60 +4355,6 @@
         "properties": {
           "code": {
             "type": "string"
-          }
-        }
-      },
-      "ConsumeAndStoreRequest": {
-        "type": "object",
-        "required": [
-          "used_quantity",
-          "remainder_location_id"
-        ],
-        "properties": {
-          "note": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "opened_on": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "remainder_expires_on": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "remainder_location_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "used_quantity": {
-            "type": "string"
-          }
-        }
-      },
-      "ConsumeAndStoreResponse": {
-        "type": "object",
-        "required": [
-          "source",
-          "remainder",
-          "consume_request_id"
-        ],
-        "properties": {
-          "consume_request_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "remainder": {
-            "$ref": "#/components/schemas/StockBatchDto"
-          },
-          "source": {
-            "$ref": "#/components/schemas/StockBatchDto"
           }
         }
       },
@@ -4781,7 +4727,7 @@
               "boolean",
               "null"
             ],
-            "description": "When true, `quantity` is the gross measured mass including the selected\nvessel. The API stores net stock after subtracting the vessel tare."
+            "description": "When true, `quantity` is the gross measured mass including the selected\ncontainer. The API stores net stock after subtracting the reusable tare\nprofile referenced by `storage_vessel_id`."
           },
           "storage_vessel_id": {
             "type": [
@@ -5190,6 +5136,20 @@
           "quantity": {
             "type": "string"
           },
+          "source_batch_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "source_operation_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
           "storage_vessel_id": {
             "type": [
               "string",
@@ -5238,6 +5198,13 @@
               "string",
               "null"
             ]
+          },
+          "operation_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
           },
           "package_quantity": {
             "type": [
@@ -6683,6 +6650,109 @@
           }
         }
       },
+      "SplitStockRemainderRequest": {
+        "type": "object",
+        "required": [
+          "quantity",
+          "location_id"
+        ],
+        "properties": {
+          "expires_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "quantity_includes_storage_vessel": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "storage_vessel_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Reusable tare profile used for gross-weight entry, not a unique\nphysical container instance."
+          }
+        }
+      },
+      "SplitStockRequest": {
+        "type": "object",
+        "required": [
+          "used_quantity",
+          "remainders"
+        ],
+        "properties": {
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "opened_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operation_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Existing split/repack operation to append to. When omitted, the server\ncreates a new operation id."
+          },
+          "remainders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SplitStockRemainderRequest"
+            }
+          },
+          "used_quantity": {
+            "type": "string"
+          }
+        }
+      },
+      "SplitStockResponse": {
+        "type": "object",
+        "required": [
+          "source",
+          "remainders",
+          "operation_id"
+        ],
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "remainders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StockBatchDto"
+            }
+          },
+          "source": {
+            "$ref": "#/components/schemas/StockBatchDto"
+          }
+        }
+      },
       "StockBatchDto": {
         "type": "object",
         "required": [
@@ -6763,6 +6833,20 @@
           "quantity": {
             "type": "string"
           },
+          "source_batch_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "source_operation_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
           "storage_vessel": {
             "oneOf": [
               {
@@ -6831,6 +6915,14 @@
               "null"
             ]
           },
+          "operation_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Shared by all rows written by a single split/repack operation."
+          },
           "package_quantity": {
             "type": [
               "string",
@@ -6892,7 +6984,9 @@
           "consume",
           "adjust",
           "discard",
-          "restore"
+          "restore",
+          "repack_in",
+          "repack_out"
         ]
       },
       "StockListResponse": {
@@ -7196,7 +7290,7 @@
     },
     {
       "name": "storage-vessels",
-      "description": "Household storage vessel tare weights"
+      "description": "Household reusable tare profiles"
     },
     {
       "name": "label-printers",
