@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.1](https://github.com/jbg/quartermaster/compare/1.29.0...1.29.1) (2026-05-20)
+
+
+### Bug Fixes
+
+* **web:** avoid auth bounce on bootstrap errors ([4ac37cf](https://github.com/jbg/quartermaster/commit/4ac37cf33a07dd22179b153231c9d93d838feefc))
+
 ## [1.29.0](https://github.com/jbg/quartermaster/compare/1.28.0...1.29.0) (2026-05-20)
 
 
