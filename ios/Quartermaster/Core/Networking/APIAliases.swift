@@ -210,6 +210,7 @@ typealias RestoreManyRequest = Components.Schemas.RestoreManyRequest
 typealias RestoreManyResponse = Components.Schemas.RestoreManyResponse
 typealias PrintStockLabelRequest = Components.Schemas.PrintStockLabelRequest
 typealias PrintStockLabelResponse = Components.Schemas.PrintStockLabelResponse
+typealias RenderLabelResponse = Components.Schemas.RenderLabelResponse
 typealias LabelPrintStatus = Components.Schemas.LabelPrintStatus
 typealias Reminder = Components.Schemas.ReminderDto
 typealias ReminderKind = Components.Schemas.ReminderKind

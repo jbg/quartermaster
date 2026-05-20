@@ -230,6 +230,7 @@ export interface ReminderListResponse {
 }
 
 export type LabelPrinterDriver = 'brother_ql_raster';
+export type LabelPrinterDelivery = 'server' | 'client';
 export type LabelPrinterMedia = 'dk_62_continuous' | 'dk_62_red_black_continuous' | 'dk_29x90';
 
 export interface LabelPrinter {
@@ -239,6 +240,7 @@ export interface LabelPrinter {
   address: string;
   port: number;
   media: LabelPrinterMedia;
+  delivery?: LabelPrinterDelivery;
   enabled: boolean;
   is_default?: boolean;
   isDefault?: boolean;
@@ -258,6 +260,7 @@ export interface CreateLabelPrinterRequest {
   address: string;
   port?: number | null;
   media: LabelPrinterMedia;
+  delivery?: LabelPrinterDelivery | null;
   enabled?: boolean | null;
   is_default?: boolean | null;
 }
@@ -267,6 +270,7 @@ export interface UpdateLabelPrinterRequest {
   address?: string | null;
   port?: number | null;
   media?: LabelPrinterMedia | null;
+  delivery?: LabelPrinterDelivery | null;
   enabled?: boolean | null;
   is_default?: boolean | null;
 }
@@ -285,6 +289,18 @@ export interface PrintStockLabelResponse {
   batch_url: string;
   copies: number;
   status: 'sent' | 'rendered';
+}
+
+export interface RenderLabelResponse {
+  printer_id: string;
+  batch_id: string;
+  batch_url: string;
+  driver: LabelPrinterDriver;
+  media: LabelPrinterMedia;
+  address: string;
+  port: number;
+  copies: number;
+  payload: string;
 }
 
 export interface ConsumeRequest {
@@ -483,6 +499,7 @@ export interface SessionTransport {
   ): Promise<ApiResult<LabelPrinter>>;
   labelPrintersDelete?(id: string): Promise<ApiResult<void>>;
   labelPrintersTest?(id: string): Promise<ApiResult<PrintStockLabelResponse>>;
+  labelPrintersTestRender?(id: string): Promise<ApiResult<RenderLabelResponse>>;
   productSearch(query: {
     q: string;
     limit?: number | null;
@@ -526,6 +543,10 @@ export interface SessionTransport {
     id: string,
     body: PrintStockLabelRequest
   ): Promise<ApiResult<PrintStockLabelResponse>>;
+  stockLabelRender?(
+    id: string,
+    body: PrintStockLabelRequest
+  ): Promise<ApiResult<RenderLabelResponse>>;
   unitsList(): Promise<ApiResult<Unit[]>>;
   remindersList(query?: {
     after_fire_at?: string | null;
@@ -787,6 +808,12 @@ export class QuartermasterSession {
     return this.authed(() => required(this.transport.labelPrintersTest, 'labelPrintersTest')(id));
   }
 
+  labelPrintersTestRender(id: string): Promise<RenderLabelResponse> {
+    return this.authed(() =>
+      required(this.transport.labelPrintersTestRender, 'labelPrintersTestRender')(id)
+    );
+  }
+
   productSearch(query: {
     q: string;
     limit?: number | null;
@@ -906,6 +933,12 @@ export class QuartermasterSession {
 
   stockLabelPrint(id: string, body: PrintStockLabelRequest): Promise<PrintStockLabelResponse> {
     return this.authed(() => required(this.transport.stockLabelPrint, 'stockLabelPrint')(id, body));
+  }
+
+  stockLabelRender(id: string, body: PrintStockLabelRequest): Promise<RenderLabelResponse> {
+    return this.authed(() =>
+      required(this.transport.stockLabelRender, 'stockLabelRender')(id, body)
+    );
   }
 
   unitsList(): Promise<Unit[]> {

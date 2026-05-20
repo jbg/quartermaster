@@ -64,6 +64,8 @@ pub struct ExportLabelPrinter {
     pub address: String,
     pub port: i64,
     pub media: String,
+    #[serde(default = "default_label_printer_delivery")]
+    pub delivery: String,
     pub enabled: bool,
     pub is_default: bool,
     pub created_at: String,
@@ -312,8 +314,8 @@ pub async fn import_household(
     for row in &document.label_printers {
         sqlx::query(
             "INSERT INTO label_printer \
-             (id, household_id, name, driver, address, port, media, enabled, is_default, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             (id, household_id, name, driver, address, port, media, delivery, enabled, is_default, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(printer_ids.get(row.id).to_string())
         .bind(household_id.to_string())
@@ -322,6 +324,7 @@ pub async fn import_household(
         .bind(&row.address)
         .bind(row.port)
         .bind(&row.media)
+        .bind(&row.delivery)
         .bind(bool_int(row.enabled))
         .bind(bool_int(row.is_default))
         .bind(&row.created_at)
@@ -764,6 +767,10 @@ fn require_ref(ids: &HashSet<Uuid>, id: Uuid, label: &str) -> Result<(), ImportE
     }
 }
 
+fn default_label_printer_delivery() -> String {
+    "server".to_owned()
+}
+
 struct IdMap(HashMap<Uuid, Uuid>);
 
 impl IdMap {
@@ -858,7 +865,7 @@ async fn export_label_printers(
     household_id: Uuid,
 ) -> Result<Vec<ExportLabelPrinter>, sqlx::Error> {
     let rows = sqlx::query(
-        "SELECT id, name, driver, address, port, media, enabled, is_default, created_at, updated_at \
+        "SELECT id, name, driver, address, port, media, delivery, enabled, is_default, created_at, updated_at \
          FROM label_printer WHERE household_id = ? ORDER BY is_default DESC, name ASC, created_at ASC",
     )
     .bind(household_id.to_string())
@@ -873,6 +880,7 @@ async fn export_label_printers(
                 address: row.try_get("address")?,
                 port: row.try_get("port")?,
                 media: row.try_get("media")?,
+                delivery: row.try_get("delivery")?,
                 enabled: row.try_get::<i64, _>("enabled")? != 0,
                 is_default: row.try_get::<i64, _>("is_default")? != 0,
                 created_at: row.try_get("created_at")?,

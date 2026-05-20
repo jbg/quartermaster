@@ -34,6 +34,7 @@ async fn dry_run_prints_batch_label_with_public_batch_url() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(printer["port"], 9100);
+    assert_eq!(printer["delivery"], "server");
 
     let (status, printed) = app
         .send(
@@ -51,6 +52,96 @@ async fn dry_run_prints_batch_label_with_public_batch_url() {
         format!("https://quartermaster.example.com/batches/{batch_id}")
     );
     assert_eq!(printed["printer_id"], printer["id"]);
+}
+
+#[tokio::test]
+async fn render_returns_client_print_artifact_without_sending_socket() {
+    let app = TestApp::start(ApiConfig {
+        public_base_url: Some("https://quartermaster.example.com".into()),
+        ..ApiConfig::default()
+    })
+    .await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let batch_id = seed_batch(&app, &alice).await;
+
+    let (status, printer) = app
+        .send(
+            Method::POST,
+            "/api/v1/label-printers",
+            Some(json!({
+                "name": "Kitchen Brother",
+                "driver": "brother_ql_raster",
+                "address": "192.0.2.55",
+                "port": 9100,
+                "media": "dk_62_continuous",
+                "delivery": "client",
+                "enabled": true,
+                "is_default": true
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(printer["delivery"], "client");
+
+    let (status, body) = app
+        .send(
+            Method::POST,
+            &format!("/api/v1/stock/{batch_id}/labels/print"),
+            Some(json!({ "dry_run": true })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["message"]
+        .as_str()
+        .unwrap()
+        .contains("render endpoint"));
+
+    let (status, artifact) = app
+        .send(
+            Method::POST,
+            &format!("/api/v1/stock/{batch_id}/labels/render"),
+            Some(json!({
+                "copies": 2,
+                "label_size": "small",
+                "include_quantity": true
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(artifact["printer_id"], printer["id"]);
+    assert_eq!(artifact["driver"], "brother_ql_raster");
+    assert_eq!(artifact["media"], "dk_62_continuous");
+    assert_eq!(artifact["address"], "192.0.2.55");
+    assert_eq!(artifact["port"], 9100);
+    assert_eq!(artifact["copies"], 2);
+    assert_eq!(
+        artifact["batch_url"],
+        format!("https://quartermaster.example.com/batches/{batch_id}")
+    );
+    let payload = artifact["payload"].as_str().unwrap();
+    assert!(payload.len() > 1000);
+    assert!(payload
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '/' | '=')));
+
+    let (status, test_artifact) = app
+        .send(
+            Method::POST,
+            &format!(
+                "/api/v1/label-printers/{}/test/render",
+                printer["id"].as_str().unwrap()
+            ),
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(test_artifact["batch_id"], Uuid::nil().to_string());
+    assert!(test_artifact["payload"].as_str().unwrap().len() > 1000);
 }
 
 #[tokio::test]

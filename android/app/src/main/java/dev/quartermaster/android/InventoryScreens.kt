@@ -340,6 +340,7 @@ internal fun BatchDetailScreen(
                     onEdit = onEditBatch,
                     onConsume = { quantity, unit -> scope.launch { appState.consumeSelectedBatch(quantity, unit) } },
                     onConsumeAndStore = { fields -> scope.launch { appState.consumeAndStoreSelectedBatch(fields) } },
+                    onPrintLabel = { scope.launch { appState.printLabelForBatch(batch.id.toString()) } },
                     onDiscard = { scope.launch { appState.discardBatch(batch.id.toString()) } },
                     onRestore = { scope.launch { appState.restoreBatch(batch.id.toString()) } },
                     onClose = onBack,
@@ -356,6 +357,7 @@ private fun BatchDetailCard(
     onEdit: () -> Unit,
     onConsume: (String, String) -> Unit,
     onConsumeAndStore: (ConsumeAndStoreFields) -> Unit,
+    onPrintLabel: () -> Unit,
     onDiscard: () -> Unit,
     onRestore: () -> Unit,
     onClose: () -> Unit,
@@ -414,6 +416,7 @@ private fun BatchDetailCard(
                         StockAction.Update -> "Saving stock correction."
                         StockAction.Consume -> "Recording consumption."
                         StockAction.ConsumeAndStore -> "Opening and storing the remainder."
+                        StockAction.PrintLabel -> "Printing label."
                         StockAction.Discard -> "Discarding this batch."
                         StockAction.Restore -> "Restoring this batch."
                     },
@@ -567,6 +570,12 @@ private fun BatchDetailCard(
                     ) {
                         Text(if (action == StockAction.ConsumeAndStore) "Storing..." else "Open and store remainder")
                     }
+                }
+                TextButton(
+                    onClick = onPrintLabel,
+                    enabled = action == null,
+                ) {
+                    Text(if (action == StockAction.PrintLabel) "Printing..." else "Print label")
                 }
                 TextButton(
                     onClick = onDiscard,

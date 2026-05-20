@@ -1012,7 +1012,7 @@ impl Bitmap {
     }
 }
 
-fn compile_brother_ql_job(label: &RenderedLabel, copies: u8) -> ApiResult<Vec<u8>> {
+pub fn compile_brother_ql_job(label: &RenderedLabel, copies: u8) -> ApiResult<Vec<u8>> {
     let media = BrotherMediaSpec::for_media(label.media, LabelPrintSize::Standard)?.media;
     let copies = NonZeroU8::new(copies.max(1)).ok_or_else(|| {
         ApiError::Internal(anyhow::anyhow!("label print copies must be non-zero"))

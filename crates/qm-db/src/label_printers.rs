@@ -13,6 +13,7 @@ pub struct LabelPrinterRow {
     pub address: String,
     pub port: i64,
     pub media: String,
+    pub delivery: String,
     pub enabled: bool,
     pub is_default: bool,
     pub created_at: String,
@@ -26,6 +27,7 @@ pub struct NewLabelPrinter<'a> {
     pub address: &'a str,
     pub port: i64,
     pub media: &'a str,
+    pub delivery: &'a str,
     pub enabled: bool,
     pub is_default: bool,
 }
@@ -36,6 +38,7 @@ pub struct LabelPrinterUpdate<'a> {
     pub address: Option<&'a str>,
     pub port: Option<i64>,
     pub media: Option<&'a str>,
+    pub delivery: Option<&'a str>,
     pub enabled: Option<bool>,
     pub is_default: Option<bool>,
 }
@@ -45,7 +48,7 @@ pub async fn list_for_household(
     household_id: Uuid,
 ) -> Result<Vec<LabelPrinterRow>, sqlx::Error> {
     let rows = sqlx::query(
-        "SELECT id, household_id, name, driver, address, port, media, enabled, is_default, created_at, updated_at \
+        "SELECT id, household_id, name, driver, address, port, media, delivery, enabled, is_default, created_at, updated_at \
          FROM label_printer \
          WHERE household_id = ? \
          ORDER BY is_default DESC, name ASC, created_at ASC",
@@ -62,7 +65,7 @@ pub async fn find(
     id: Uuid,
 ) -> Result<Option<LabelPrinterRow>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT id, household_id, name, driver, address, port, media, enabled, is_default, created_at, updated_at \
+        "SELECT id, household_id, name, driver, address, port, media, delivery, enabled, is_default, created_at, updated_at \
          FROM label_printer \
          WHERE household_id = ? AND id = ?",
     )
@@ -78,7 +81,7 @@ pub async fn default_enabled(
     household_id: Uuid,
 ) -> Result<Option<LabelPrinterRow>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT id, household_id, name, driver, address, port, media, enabled, is_default, created_at, updated_at \
+        "SELECT id, household_id, name, driver, address, port, media, delivery, enabled, is_default, created_at, updated_at \
          FROM label_printer \
          WHERE household_id = ? AND enabled = 1 \
          ORDER BY is_default DESC, created_at ASC \
@@ -103,8 +106,8 @@ pub async fn create(
     }
     sqlx::query(
         "INSERT INTO label_printer \
-         (id, household_id, name, driver, address, port, media, enabled, is_default, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         (id, household_id, name, driver, address, port, media, delivery, enabled, is_default, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id.to_string())
     .bind(household_id.to_string())
@@ -113,6 +116,7 @@ pub async fn create(
     .bind(new.address)
     .bind(new.port)
     .bind(new.media)
+    .bind(new.delivery)
     .bind(bool_int(new.enabled))
     .bind(bool_int(new.is_default))
     .bind(&now)
@@ -138,6 +142,7 @@ pub async fn update(
     let address = upd.address.unwrap_or(&current.address);
     let port = upd.port.unwrap_or(current.port);
     let media = upd.media.unwrap_or(&current.media);
+    let delivery = upd.delivery.unwrap_or(&current.delivery);
     let enabled = upd.enabled.unwrap_or(current.enabled);
     let is_default = upd.is_default.unwrap_or(current.is_default);
     let now = now_utc_rfc3339();
@@ -148,13 +153,14 @@ pub async fn update(
     }
     let res = sqlx::query(
         "UPDATE label_printer \
-         SET name = ?, address = ?, port = ?, media = ?, enabled = ?, is_default = ?, updated_at = ? \
+         SET name = ?, address = ?, port = ?, media = ?, delivery = ?, enabled = ?, is_default = ?, updated_at = ? \
          WHERE household_id = ? AND id = ?",
     )
     .bind(name)
     .bind(address)
     .bind(port)
     .bind(media)
+    .bind(delivery)
     .bind(bool_int(enabled))
     .bind(bool_int(is_default))
     .bind(&now)
@@ -203,6 +209,7 @@ fn row_to_printer(row: sqlx::any::AnyRow) -> Result<LabelPrinterRow, sqlx::Error
         address: row.try_get("address")?,
         port: row.try_get("port")?,
         media: row.try_get("media")?,
+        delivery: row.try_get("delivery")?,
         enabled: enabled != 0,
         is_default: is_default != 0,
         created_at: row.try_get("created_at")?,
@@ -236,6 +243,7 @@ mod tests {
                 address: "192.0.2.10",
                 port: 9100,
                 media: "dk_62_continuous",
+                delivery: "server",
                 enabled: true,
                 is_default: true,
             },
@@ -251,6 +259,7 @@ mod tests {
                 address: "192.0.2.11",
                 port: 9100,
                 media: "dk_29x90",
+                delivery: "server",
                 enabled: true,
                 is_default: true,
             },

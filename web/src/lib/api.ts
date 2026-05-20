@@ -20,6 +20,7 @@ import {
   labelPrintersDelete,
   labelPrintersList,
   labelPrintersTest,
+  labelPrintersTestRender,
   labelPrintersUpdate,
   locationsCreate,
   locationsDelete,
@@ -49,6 +50,7 @@ import {
   stockDelete,
   stockGet,
   stockLabelPrint,
+  stockLabelRender,
   stockList,
   stockListBatchEvents,
   stockRestore,
@@ -170,6 +172,9 @@ export function generatedTransport(): SessionTransport {
     labelPrintersTest(id) {
       return labelPrintersTest({ path: { id } });
     },
+    labelPrintersTestRender(id) {
+      return labelPrintersTestRender({ path: { id } });
+    },
     productSearch(query) {
       return productSearch({ query });
     },
@@ -241,6 +246,9 @@ export function generatedTransport(): SessionTransport {
     },
     stockLabelPrint(id, body) {
       return stockLabelPrint({ path: { id }, body });
+    },
+    stockLabelRender(id, body) {
+      return stockLabelRender({ path: { id }, body });
     },
     unitsList() {
       return unitsList();

@@ -1919,6 +1919,7 @@ class QuartermasterAppStateTest {
         val updateStockRequests = mutableListOf<StockUpdateRequest>()
         val consumeStockRequests = mutableListOf<ConsumeRequest>()
         val consumeAndStoreStockRequests = mutableListOf<Pair<String, ConsumeAndStoreRequest>>()
+        val printedBatchIds = mutableListOf<String>()
         val discardedBatchIds = mutableListOf<String>()
         val restoredBatchIds = mutableListOf<String>()
         val createdOnboardingHouseholds = mutableListOf<String>()
@@ -2378,6 +2379,17 @@ class QuartermasterAppStateTest {
                 consumeRequestId = UUID.fromString("99999999-9999-9999-9999-999999999999"),
                 remainder = remainder,
                 source = source,
+            )
+        }
+
+        override suspend fun printStockLabel(batchId: String): PrintStockLabelResponse {
+            printedBatchIds += batchId
+            return PrintStockLabelResponse(
+                printerId = "77777777-7777-7777-7777-777777777777",
+                batchId = batchId,
+                batchUrl = "https://quartermaster.example.com/batches/$batchId",
+                copies = 1,
+                status = "sent",
             )
         }
 

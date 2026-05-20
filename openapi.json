@@ -1888,6 +1888,42 @@
         ]
       }
     },
+    "/api/v1/label-printers/{id}/test/render": {
+      "post": {
+        "tags": [
+          "label-printers"
+        ],
+        "operationId": "label_printers_test_render",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderLabelResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/locations": {
       "get": {
         "tags": [
@@ -3859,6 +3895,72 @@
         ]
       }
     },
+    "/api/v1/stock/{id}/labels/render": {
+      "post": {
+        "tags": [
+          "label-printers"
+        ],
+        "operationId": "stock_label_render",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrintStockLabelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderLabelResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/stock/{id}/restore": {
       "post": {
         "tags": [
@@ -4474,6 +4576,16 @@
           "address": {
             "type": "string"
           },
+          "delivery": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LabelPrinterDelivery"
+              }
+            ]
+          },
           "driver": {
             "$ref": "#/components/schemas/LabelPrinterDriver"
           },
@@ -4820,6 +4932,9 @@
             "type": "string"
           },
           "created_at": {
+            "type": "string"
+          },
+          "delivery": {
             "type": "string"
           },
           "driver": {
@@ -5507,6 +5622,13 @@
           "rendered"
         ]
       },
+      "LabelPrinterDelivery": {
+        "type": "string",
+        "enum": [
+          "server",
+          "client"
+        ]
+      },
       "LabelPrinterDriver": {
         "type": "string",
         "enum": [
@@ -5522,6 +5644,7 @@
           "address",
           "port",
           "media",
+          "delivery",
           "enabled",
           "is_default",
           "created_at",
@@ -5533,6 +5656,9 @@
           },
           "created_at": {
             "type": "string"
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/LabelPrinterDelivery"
           },
           "driver": {
             "$ref": "#/components/schemas/LabelPrinterDriver"
@@ -6437,6 +6563,55 @@
           "expires_future"
         ]
       },
+      "RenderLabelResponse": {
+        "type": "object",
+        "required": [
+          "printer_id",
+          "batch_id",
+          "batch_url",
+          "driver",
+          "media",
+          "address",
+          "port",
+          "copies",
+          "payload"
+        ],
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "batch_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "batch_url": {
+            "type": "string"
+          },
+          "copies": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "driver": {
+            "$ref": "#/components/schemas/LabelPrinterDriver"
+          },
+          "media": {
+            "$ref": "#/components/schemas/LabelPrinterMedia"
+          },
+          "payload": {
+            "type": "string",
+            "description": "Base64-encoded printer-ready command stream for the selected driver."
+          },
+          "port": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "printer_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "RequestEmailVerificationRequest": {
         "type": "object",
         "required": [
@@ -6854,6 +7029,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "delivery": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LabelPrinterDelivery"
+              }
             ]
           },
           "enabled": {

@@ -6,6 +6,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -14,10 +15,10 @@ use crate::{
     auth::CurrentUser,
     error::{ApiError, ApiResult},
     labels::{
-        build_label_job, BrotherQlRasterPrinter, BrotherQlRenderer, LabelJob, LabelPrinter,
-        LabelRenderer,
+        build_label_job, compile_brother_ql_job, BrotherQlRasterPrinter, BrotherQlRenderer,
+        LabelJob, LabelPrinter, LabelRenderer,
     },
-    types::{LabelPrintSize, LabelPrinterDriver, LabelPrinterMedia},
+    types::{LabelPrintSize, LabelPrinterDelivery, LabelPrinterDriver, LabelPrinterMedia},
     AppState,
 };
 
@@ -36,7 +37,12 @@ pub fn router() -> Router<AppState> {
             axum::routing::patch(update_label_printer).delete(delete_label_printer),
         )
         .route("/label-printers/{id}/test", post(test_label_printer))
+        .route(
+            "/label-printers/{id}/test/render",
+            post(render_test_label_printer),
+        )
         .route("/stock/{id}/labels/print", post(print_stock_label))
+        .route("/stock/{id}/labels/render", post(render_stock_label))
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -47,6 +53,7 @@ pub struct LabelPrinterDto {
     pub address: String,
     pub port: i64,
     pub media: LabelPrinterMedia,
+    pub delivery: LabelPrinterDelivery,
     pub enabled: bool,
     pub is_default: bool,
     pub created_at: String,
@@ -65,6 +72,7 @@ pub struct CreateLabelPrinterRequest {
     pub address: String,
     pub port: Option<i64>,
     pub media: LabelPrinterMedia,
+    pub delivery: Option<LabelPrinterDelivery>,
     pub enabled: Option<bool>,
     pub is_default: Option<bool>,
 }
@@ -75,6 +83,7 @@ pub struct UpdateLabelPrinterRequest {
     pub address: Option<String>,
     pub port: Option<i64>,
     pub media: Option<LabelPrinterMedia>,
+    pub delivery: Option<LabelPrinterDelivery>,
     pub enabled: Option<bool>,
     pub is_default: Option<bool>,
 }
@@ -106,6 +115,20 @@ pub struct PrintStockLabelResponse {
     pub batch_url: String,
     pub copies: u8,
     pub status: LabelPrintStatus,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RenderLabelResponse {
+    pub printer_id: Uuid,
+    pub batch_id: Uuid,
+    pub batch_url: String,
+    pub driver: LabelPrinterDriver,
+    pub media: LabelPrinterMedia,
+    pub address: String,
+    pub port: i64,
+    pub copies: u8,
+    /// Base64-encoded printer-ready command stream for the selected driver.
+    pub payload: String,
 }
 
 #[utoipa::path(
@@ -155,6 +178,10 @@ pub async fn create_label_printer(
             address,
             port,
             media: req.media.as_str(),
+            delivery: req
+                .delivery
+                .unwrap_or(LabelPrinterDelivery::Server)
+                .as_str(),
             enabled: req.enabled.unwrap_or(true),
             is_default: req.is_default.unwrap_or(false),
         },
@@ -185,6 +212,7 @@ pub async fn update_label_printer(
     let address = req.address.as_deref().map(validate_address).transpose()?;
     let port = req.port.map(validate_port).transpose()?;
     let media = req.media.map(|m| m.to_string());
+    let delivery = req.delivery.map(|d| d.to_string());
     let row = qm_db::label_printers::update(
         &state.db,
         household_id,
@@ -194,6 +222,7 @@ pub async fn update_label_printer(
             address,
             port,
             media: media.as_deref(),
+            delivery: delivery.as_deref(),
             enabled: req.enabled,
             is_default: req.is_default,
         },
@@ -247,27 +276,9 @@ pub async fn test_label_printer(
     if !printer.enabled {
         return Err(ApiError::BadRequest("label printer is disabled".into()));
     }
+    require_server_delivery(&printer)?;
     let media = LabelPrinterMedia::from_str(&printer.media)?;
-    let job = LabelJob {
-        batch_id: Uuid::nil(),
-        batch_url: state
-            .config
-            .public_base_url
-            .as_deref()
-            .unwrap_or("https://quartermaster.invalid")
-            .trim_end_matches('/')
-            .to_owned(),
-        product_name: "Quartermaster test".into(),
-        brand: None,
-        location_name: "Printer".into(),
-        quantity: "1".into(),
-        unit: "label".into(),
-        produced_on: None,
-        expires_on: None,
-        opened_on: None,
-        note: Some("Test print".into()),
-        include_quantity: false,
-    };
+    let job = test_label_job(&state);
     let rendered = BrotherQlRenderer.render(&job, media, LabelPrintSize::Standard)?;
     send_to_printer(&printer, &rendered, 1).await?;
     Ok(Json(PrintStockLabelResponse {
@@ -277,6 +288,39 @@ pub async fn test_label_printer(
         copies: 1,
         status: LabelPrintStatus::Sent,
     }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/label-printers/{id}/test/render",
+    operation_id = "label_printers_test_render",
+    tag = "label-printers",
+    params(("id" = Uuid, Path)),
+    responses((status = 200, body = RenderLabelResponse)),
+    security(("bearer" = [])),
+)]
+pub async fn render_test_label_printer(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<RenderLabelResponse>> {
+    require_admin(&current)?;
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    let printer = qm_db::label_printers::find(&state.db, household_id, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if !printer.enabled {
+        return Err(ApiError::BadRequest("label printer is disabled".into()));
+    }
+    let media = LabelPrinterMedia::from_str(&printer.media)?;
+    let job = test_label_job(&state);
+    Ok(Json(render_for_client(
+        &printer,
+        &job,
+        media,
+        LabelPrintSize::Standard,
+        1,
+    )?))
 }
 
 #[utoipa::path(
@@ -300,23 +344,12 @@ pub async fn print_stock_label(
     Json(req): Json<PrintStockLabelRequest>,
 ) -> ApiResult<Json<PrintStockLabelResponse>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
-    let copies = req.copies.unwrap_or(1);
-    if !(1..=MAX_COPIES).contains(&copies) {
-        return Err(ApiError::BadRequest(format!(
-            "copies must be between 1 and {MAX_COPIES}"
-        )));
-    }
-    let printer = match req.printer_id {
-        Some(printer_id) => qm_db::label_printers::find(&state.db, household_id, printer_id)
-            .await?
-            .ok_or(ApiError::NotFound)?,
-        None => qm_db::label_printers::default_enabled(&state.db, household_id)
-            .await?
-            .ok_or_else(|| ApiError::BadRequest("no enabled label printer is configured".into()))?,
-    };
+    let copies = validate_copies(req.copies)?;
+    let printer = select_printer(&state, household_id, req.printer_id).await?;
     if !printer.enabled {
         return Err(ApiError::BadRequest("label printer is disabled".into()));
     }
+    require_server_delivery(&printer)?;
     let mut job = build_label_job(&state, household_id, id).await?;
     job.include_quantity = req.include_quantity.unwrap_or(false);
     let media = LabelPrinterMedia::from_str(&printer.media)?;
@@ -335,6 +368,44 @@ pub async fn print_stock_label(
         copies,
         status,
     }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/stock/{id}/labels/render",
+    operation_id = "stock_label_render",
+    tag = "label-printers",
+    params(("id" = Uuid, Path)),
+    request_body = PrintStockLabelRequest,
+    responses(
+        (status = 200, body = RenderLabelResponse),
+        (status = 400, body = crate::error::ApiErrorBody),
+        (status = 404, body = crate::error::ApiErrorBody),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn render_stock_label(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<PrintStockLabelRequest>,
+) -> ApiResult<Json<RenderLabelResponse>> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    let copies = validate_copies(req.copies)?;
+    let printer = select_printer(&state, household_id, req.printer_id).await?;
+    if !printer.enabled {
+        return Err(ApiError::BadRequest("label printer is disabled".into()));
+    }
+    let mut job = build_label_job(&state, household_id, id).await?;
+    job.include_quantity = req.include_quantity.unwrap_or(false);
+    let media = LabelPrinterMedia::from_str(&printer.media)?;
+    Ok(Json(render_for_client(
+        &printer,
+        &job,
+        media,
+        parse_label_size(req.label_size.as_deref())?,
+        copies,
+    )?))
 }
 
 async fn send_to_printer(
@@ -366,11 +437,96 @@ fn to_dto(row: qm_db::label_printers::LabelPrinterRow) -> ApiResult<LabelPrinter
         address: row.address,
         port: row.port,
         media: LabelPrinterMedia::from_str(&row.media)?,
+        delivery: LabelPrinterDelivery::from_str(&row.delivery)?,
         enabled: row.enabled,
         is_default: row.is_default,
         created_at: row.created_at,
         updated_at: row.updated_at,
     })
+}
+
+fn validate_copies(copies: Option<u8>) -> ApiResult<u8> {
+    let copies = copies.unwrap_or(1);
+    if !(1..=MAX_COPIES).contains(&copies) {
+        return Err(ApiError::BadRequest(format!(
+            "copies must be between 1 and {MAX_COPIES}"
+        )));
+    }
+    Ok(copies)
+}
+
+async fn select_printer(
+    state: &AppState,
+    household_id: Uuid,
+    printer_id: Option<Uuid>,
+) -> ApiResult<qm_db::label_printers::LabelPrinterRow> {
+    match printer_id {
+        Some(printer_id) => qm_db::label_printers::find(&state.db, household_id, printer_id)
+            .await?
+            .ok_or(ApiError::NotFound),
+        None => qm_db::label_printers::default_enabled(&state.db, household_id)
+            .await?
+            .ok_or_else(|| ApiError::BadRequest("no enabled label printer is configured".into())),
+    }
+}
+
+fn require_server_delivery(printer: &qm_db::label_printers::LabelPrinterRow) -> ApiResult<()> {
+    if LabelPrinterDelivery::from_str(&printer.delivery)? == LabelPrinterDelivery::Client {
+        return Err(ApiError::BadRequest(
+            "label printer is configured for client delivery; use the label render endpoint".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn render_for_client(
+    printer: &qm_db::label_printers::LabelPrinterRow,
+    job: &LabelJob,
+    media: LabelPrinterMedia,
+    size: LabelPrintSize,
+    copies: u8,
+) -> ApiResult<RenderLabelResponse> {
+    let driver = LabelPrinterDriver::from_str(&printer.driver)?;
+    let rendered = match driver {
+        LabelPrinterDriver::BrotherQlRaster => BrotherQlRenderer.render(job, media, size)?,
+    };
+    let payload = match driver {
+        LabelPrinterDriver::BrotherQlRaster => compile_brother_ql_job(&rendered, copies)?,
+    };
+    Ok(RenderLabelResponse {
+        printer_id: printer.id,
+        batch_id: job.batch_id,
+        batch_url: job.batch_url.clone(),
+        driver,
+        media,
+        address: printer.address.clone(),
+        port: printer.port,
+        copies,
+        payload: BASE64_STANDARD.encode(payload),
+    })
+}
+
+fn test_label_job(state: &AppState) -> LabelJob {
+    LabelJob {
+        batch_id: Uuid::nil(),
+        batch_url: state
+            .config
+            .public_base_url
+            .as_deref()
+            .unwrap_or("https://quartermaster.invalid")
+            .trim_end_matches('/')
+            .to_owned(),
+        product_name: "Quartermaster test".into(),
+        brand: None,
+        location_name: "Printer".into(),
+        quantity: "1".into(),
+        unit: "label".into(),
+        produced_on: None,
+        expires_on: None,
+        opened_on: None,
+        note: Some("Test print".into()),
+        include_quantity: false,
+    }
 }
 
 fn require_admin(current: &CurrentUser) -> ApiResult<()> {
