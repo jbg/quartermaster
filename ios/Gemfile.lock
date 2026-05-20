@@ -234,5 +234,8 @@ DEPENDENCIES
   CFPropertyList (= 3.0.8)
   fastlane (= 2.234.0)
 
+RUBY VERSION
+   ruby 4.0.4p0
+
 BUNDLED WITH
    2.5.23
