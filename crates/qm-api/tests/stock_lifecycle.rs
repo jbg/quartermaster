@@ -512,7 +512,7 @@ async fn product_id_for_batch(app: &TestApp, household_id: Uuid, batch_id: &str)
 }
 
 #[tokio::test]
-async fn consume_and_store_depletes_source_and_creates_open_remainder() {
+async fn split_allocates_source_incrementally_and_groups_operation() {
     let app = TestApp::start(ApiConfig::default()).await;
     assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
     let alice = app.login("alice").await;
@@ -561,27 +561,72 @@ async fn consume_and_store_depletes_source_and_creates_open_remainder() {
     let (status, body) = app
         .send(
             Method::POST,
-            &format!("/api/v1/stock/{batch_id}/consume-and-store"),
+            &format!("/api/v1/stock/{batch_id}/split"),
             Some(json!({
                 "used_quantity": "150",
-                "remainder_location_id": fridge,
                 "opened_on": "2026-05-01",
                 "note": "leftover sauce",
+                "remainders": [
+                    {
+                        "quantity": "125",
+                        "location_id": fridge,
+                        "expires_on": null,
+                        "note": "leftover sauce A"
+                    }
+                ]
             })),
             Some(&alice),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["source"]["id"], batch_id);
-    assert_eq!(body["source"]["quantity"], "0");
-    assert!(body["source"]["depleted_at"].as_str().is_some());
-    assert_eq!(body["remainder"]["location_id"], fridge.to_string());
-    assert_eq!(body["remainder"]["quantity"], "250");
-    assert_eq!(body["remainder"]["unit"], "ml");
-    assert_eq!(body["remainder"]["opened_on"], "2026-05-01");
-    assert_eq!(body["remainder"]["expires_on"], "2026-05-04");
-    assert_eq!(body["remainder"]["note"], "leftover sauce");
-    let request_id = body["consume_request_id"].as_str().unwrap();
+    assert_eq!(body["source"]["quantity"], "125");
+    assert_eq!(body["source"]["opened_on"], "2026-05-01");
+    assert!(body["source"]["depleted_at"].is_null());
+    assert_eq!(body["remainders"].as_array().unwrap().len(), 1);
+    assert_eq!(body["remainders"][0]["location_id"], fridge.to_string());
+    assert_eq!(body["remainders"][0]["quantity"], "125");
+    assert_eq!(body["remainders"][0]["unit"], "ml");
+    assert_eq!(body["remainders"][0]["opened_on"], "2026-05-01");
+    assert_eq!(body["remainders"][0]["expires_on"], "2026-05-04");
+    assert_eq!(body["remainders"][0]["note"], "leftover sauce A");
+    assert_eq!(body["remainders"][0]["source_batch_id"], batch_id);
+    assert_eq!(
+        body["remainders"][0]["source_operation_id"],
+        body["operation_id"]
+    );
+    let operation_id = body["operation_id"].as_str().unwrap();
+
+    let (status, second) = app
+        .send(
+            Method::POST,
+            &format!("/api/v1/stock/{batch_id}/split"),
+            Some(json!({
+                "used_quantity": "0",
+                "operation_id": operation_id,
+                "opened_on": "2026-05-02",
+                "note": "final sauce",
+                "remainders": [
+                    {
+                        "quantity": "125",
+                        "location_id": fridge,
+                        "expires_on": null,
+                        "note": "leftover sauce B"
+                    }
+                ]
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(second["operation_id"], operation_id);
+    assert_eq!(second["source"]["quantity"], "0");
+    assert_eq!(second["source"]["opened_on"], "2026-05-01");
+    assert!(second["source"]["depleted_at"].as_str().is_some());
+    assert_eq!(
+        second["remainders"][0]["source_operation_id"],
+        body["operation_id"]
+    );
 
     let (status, history) = app
         .send(
@@ -593,21 +638,56 @@ async fn consume_and_store_depletes_source_and_creates_open_remainder() {
         .await;
     assert_eq!(status, StatusCode::OK);
     let events = history["items"].as_array().unwrap();
-    let consume_events: Vec<_> = events
+    let operation_events: Vec<_> = events
         .iter()
-        .filter(|event| event["consume_request_id"].as_str() == Some(request_id))
+        .filter(|event| event["operation_id"].as_str() == Some(operation_id))
         .collect();
-    assert_eq!(consume_events.len(), 2);
-    assert!(consume_events
+    assert_eq!(operation_events.len(), 3);
+    assert!(operation_events
         .iter()
         .any(|event| event["quantity_delta"] == "-150"));
-    assert!(consume_events
+    assert_eq!(
+        operation_events
         .iter()
-        .any(|event| event["quantity_delta"] == "-250"));
+        .filter(|event| event["event_type"] == "repack_out" && event["quantity_delta"] == "-125")
+        .count(),
+        2
+    );
+
+    let (_, invalid_operation_batch) = app
+        .send(
+            Method::POST,
+            "/api/v1/stock",
+            Some(json!({
+                "product_id": product_id,
+                "location_id": pantry,
+                "quantity": "10",
+                "unit": "ml",
+            })),
+            Some(&alice),
+        )
+        .await;
+    let invalid_operation_batch_id = invalid_operation_batch["id"].as_str().unwrap();
+    let (status, _) = app
+        .send(
+            Method::POST,
+            &format!("/api/v1/stock/{invalid_operation_batch_id}/split"),
+            Some(json!({
+                "used_quantity": "0",
+                "operation_id": Uuid::now_v7(),
+                "remainders": [{
+                    "quantity": "1",
+                    "location_id": fridge
+                }]
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
-async fn consume_and_store_accepts_explicit_remainder_expiry_without_product_rule() {
+async fn split_accepts_explicit_remainder_expiry_without_product_rule() {
     let app = TestApp::start(ApiConfig::default()).await;
     assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
     let alice = app.login("alice").await;
@@ -652,23 +732,26 @@ async fn consume_and_store_accepts_explicit_remainder_expiry_without_product_rul
     let (status, body) = app
         .send(
             Method::POST,
-            &format!("/api/v1/stock/{batch_id}/consume-and-store"),
+            &format!("/api/v1/stock/{batch_id}/split"),
             Some(json!({
                 "used_quantity": "0.25",
-                "remainder_location_id": fridge,
                 "opened_on": "2026-05-01",
-                "remainder_expires_on": "2026-05-02",
+                "remainders": [{
+                    "quantity": "0.75",
+                    "location_id": fridge,
+                    "expires_on": "2026-05-02"
+                }]
             })),
             Some(&alice),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["remainder"]["quantity"], "0.75");
-    assert_eq!(body["remainder"]["expires_on"], "2026-05-02");
+    assert_eq!(body["remainders"][0]["quantity"], "0.75");
+    assert_eq!(body["remainders"][0]["expires_on"], "2026-05-02");
 }
 
 #[tokio::test]
-async fn consume_and_store_rejects_missing_expiry_source_and_non_partial_quantities() {
+async fn split_rejects_invalid_totals_and_dates() {
     let app = TestApp::start(ApiConfig::default()).await;
     assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
     let alice = app.login("alice").await;
@@ -710,16 +793,19 @@ async fn consume_and_store_rejects_missing_expiry_source_and_non_partial_quantit
         .await;
     let batch_id = batch["id"].as_str().unwrap();
 
-    for used_quantity in ["0", "100", "150"] {
+    for used_quantity in ["100", "150"] {
         let (status, _) = app
             .send(
                 Method::POST,
-                &format!("/api/v1/stock/{batch_id}/consume-and-store"),
+                &format!("/api/v1/stock/{batch_id}/split"),
                 Some(json!({
                     "used_quantity": used_quantity,
-                    "remainder_location_id": fridge,
                     "opened_on": "2026-05-01",
-                    "remainder_expires_on": "2026-05-02",
+                    "remainders": [{
+                        "quantity": "20",
+                        "location_id": fridge,
+                        "expires_on": "2026-05-02"
+                    }]
                 })),
                 Some(&alice),
             )
@@ -727,30 +813,51 @@ async fn consume_and_store_rejects_missing_expiry_source_and_non_partial_quantit
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 
-    let (status, body) = app
+    let (_, second_batch) = app
         .send(
             Method::POST,
-            &format!("/api/v1/stock/{batch_id}/consume-and-store"),
+            "/api/v1/stock",
             Some(json!({
-                "used_quantity": "20",
-                "remainder_location_id": fridge,
-                "opened_on": "2026-05-01",
+                "product_id": product_id,
+                "location_id": pantry,
+                "quantity": "100",
+                "unit": "g",
             })),
             Some(&alice),
         )
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(body["code"], "bad_request");
+    let second_batch_id = second_batch["id"].as_str().unwrap();
 
     let (status, body) = app
         .send(
             Method::POST,
-            &format!("/api/v1/stock/{batch_id}/consume-and-store"),
+            &format!("/api/v1/stock/{second_batch_id}/split"),
             Some(json!({
                 "used_quantity": "20",
-                "remainder_location_id": fridge,
+                "opened_on": "2026-05-01",
+                "remainders": [{
+                    "quantity": "80",
+                    "location_id": fridge
+                }]
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["remainders"][0]["expires_on"], serde_json::Value::Null);
+
+    let (status, body) = app
+        .send(
+            Method::POST,
+            &format!("/api/v1/stock/{batch_id}/split"),
+            Some(json!({
+                "used_quantity": "20",
                 "opened_on": "2026-05-02",
-                "remainder_expires_on": "2026-05-01",
+                "remainders": [{
+                    "quantity": "80",
+                    "location_id": fridge,
+                    "expires_on": "2026-05-01"
+                }]
             })),
             Some(&alice),
         )

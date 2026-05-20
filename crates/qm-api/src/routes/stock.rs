@@ -11,8 +11,8 @@ use jiff::{civil::Date, tz, Timestamp, ToSpan};
 use qm_core::{batch::plan_consumption_with_measurement_system, units::MeasurementSystem};
 use qm_db::products::ProductRow;
 use qm_db::stock::{
-    ConsumeAndStoreError, RestoreError, StockBatchRow, StockBatchWithProduct, StockFilter,
-    StockMetadataUpdate,
+    RestoreError, SplitRemainder, SplitStockError, StockBatchRow, StockBatchWithProduct,
+    StockFilter, StockMetadataUpdate,
 };
 use qm_db::stock_events::TimelineEntryRow;
 use qm_db::storage_vessels::StorageVesselRow;
@@ -48,7 +48,7 @@ pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
         )
         .route("/stock/restore-many", post(restore_many))
         .route("/stock/{id}", get(get_one).patch(update).delete(delete_one))
-        .route("/stock/{id}/consume-and-store", post(consume_and_store))
+        .route("/stock/{id}/split", post(split_stock))
         .route(
             "/stock/{id}/events",
             get(list_events_for_batch).route_layer(middleware::from_fn_with_state(
@@ -81,6 +81,8 @@ pub struct StockBatchDto {
     pub location_id: Uuid,
     pub location_name: String,
     pub storage_vessel: Option<StorageVesselDto>,
+    pub source_batch_id: Option<Uuid>,
+    pub source_operation_id: Option<Uuid>,
     pub initial_quantity: String,
     pub quantity: String,
     pub unit: String,
@@ -106,6 +108,8 @@ impl TryFrom<StockBatchWithProduct> for StockBatchDto {
             location_id: j.batch.location_id,
             location_name: j.location_name,
             storage_vessel: j.storage_vessel.map(storage_vessel_dto),
+            source_batch_id: j.batch.source_batch_id,
+            source_operation_id: j.batch.source_operation_id,
             initial_quantity: j.batch.initial_quantity,
             quantity: j.batch.quantity,
             unit: j.batch.unit,
@@ -146,7 +150,8 @@ pub struct CreateStockRequest {
     pub unit: String,
     pub storage_vessel_id: Option<Uuid>,
     /// When true, `quantity` is the gross measured mass including the selected
-    /// vessel. The API stores net stock after subtracting the vessel tare.
+    /// container. The API stores net stock after subtracting the reusable tare
+    /// profile referenced by `storage_vessel_id`.
     pub quantity_includes_storage_vessel: Option<bool>,
     pub produced_on: Option<String>,
     pub expires_on: Option<String>,
@@ -280,19 +285,33 @@ pub struct ConsumeResponse {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct ConsumeAndStoreRequest {
-    pub used_quantity: String,
-    pub remainder_location_id: Uuid,
-    pub opened_on: Option<String>,
-    pub remainder_expires_on: Option<String>,
+pub struct SplitStockRemainderRequest {
+    pub quantity: String,
+    pub location_id: Uuid,
+    /// Reusable tare profile used for gross-weight entry, not a unique
+    /// physical container instance.
+    pub storage_vessel_id: Option<Uuid>,
+    pub quantity_includes_storage_vessel: Option<bool>,
+    pub expires_on: Option<String>,
     pub note: Option<String>,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SplitStockRequest {
+    pub used_quantity: String,
+    /// Existing split/repack operation to append to. When omitted, the server
+    /// creates a new operation id.
+    pub operation_id: Option<Uuid>,
+    pub opened_on: Option<String>,
+    pub note: Option<String>,
+    pub remainders: Vec<SplitStockRemainderRequest>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
-pub struct ConsumeAndStoreResponse {
+pub struct SplitStockResponse {
     pub source: StockBatchDto,
-    pub remainder: StockBatchDto,
-    pub consume_request_id: Uuid,
+    pub remainders: Vec<StockBatchDto>,
+    pub operation_id: Uuid,
 }
 
 // ----- handlers -----
@@ -670,48 +689,42 @@ pub async fn consume(
 
 #[utoipa::path(
     post,
-    path = "/stock/{id}/consume-and-store",
-    operation_id = "stock_consume_and_store",
+    path = "/stock/{id}/split",
+    operation_id = "stock_split",
     tag = "stock",
     params(("id" = Uuid, Path)),
-    request_body = ConsumeAndStoreRequest,
+    request_body = SplitStockRequest,
     responses(
-        (status = 200, body = ConsumeAndStoreResponse),
+        (status = 200, body = SplitStockResponse),
         (status = 400, body = crate::error::ApiErrorBody),
         (status = 404, body = crate::error::ApiErrorBody),
     ),
     security(("bearer" = [])),
 )]
-pub async fn consume_and_store(
+pub async fn split_stock(
     State(state): State<AppState>,
     current: CurrentUser,
     Path(id): Path<Uuid>,
-    Json(req): Json<ConsumeAndStoreRequest>,
-) -> ApiResult<Json<ConsumeAndStoreResponse>> {
+    Json(req): Json<SplitStockRequest>,
+) -> ApiResult<Json<SplitStockResponse>> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
     auth::require_read_write(&current)?;
-    validate_positive_decimal(&req.used_quantity)?;
-    validate_location(&state, household_id, req.remainder_location_id).await?;
+    validate_non_negative_decimal("used_quantity", &req.used_quantity)?;
+    if req.remainders.is_empty() {
+        return Err(ApiError::BadRequest(
+            "remainders must contain at least one item".into(),
+        ));
+    }
 
     let existing = qm_db::stock::get(&state.db, household_id, id)
         .await?
         .ok_or(ApiError::NotFound)?;
     if existing.depleted_at.is_some() {
         return Err(ApiError::BadRequest(
-            "depleted stock cannot be consumed and stored".into(),
+            "depleted stock cannot be split or repacked".into(),
         ));
     }
     let product = load_product_for_write(&state, household_id, existing.product_id).await?;
-
-    let used = Decimal::from_str(&req.used_quantity)
-        .map_err(|_| ApiError::BadRequest("quantity not a valid decimal".into()))?;
-    let current_quantity = Decimal::from_str(&existing.quantity)
-        .map_err(|_| ApiError::Internal(anyhow::anyhow!("invalid stored quantity")))?;
-    if used >= current_quantity {
-        return Err(ApiError::BadRequest(
-            "used_quantity must be less than the current batch quantity".into(),
-        ));
-    }
 
     let opened_on = match req.opened_on.as_deref() {
         Some(opened_on) => {
@@ -720,40 +733,74 @@ pub async fn consume_and_store(
         }
         None => household_today(&state, household_id).await?,
     };
-    let remainder_expires_on = match req.remainder_expires_on.as_deref() {
-        Some(expires_on) => {
-            validate_iso_date(expires_on)?;
-            expires_on.to_owned()
+
+    let mut remainders = Vec::with_capacity(req.remainders.len());
+    for remainder in &req.remainders {
+        validate_location(&state, household_id, remainder.location_id).await?;
+        let storage_vessel = match remainder.storage_vessel_id {
+            Some(storage_vessel_id) => {
+                Some(validate_storage_vessel(&state, household_id, storage_vessel_id).await?)
+            }
+            None => None,
+        };
+        let quantity =
+            split_remainder_quantity(remainder, &existing.unit, storage_vessel.as_ref())?;
+        let expires_on = match remainder.expires_on.as_deref() {
+            Some(expires_on) => {
+                validate_iso_date(expires_on)?;
+                Some(expires_on.to_owned())
+            }
+            None => derive_split_expiry(
+                &opened_on,
+                product.max_open_days,
+                existing.expires_on.as_deref(),
+            )?,
+        };
+        if let Some(expires_on) = expires_on.as_deref() {
+            validate_remainder_expiry(&opened_on, expires_on)?;
         }
-        None => derive_open_expiry(&opened_on, product.max_open_days)?,
-    };
-    validate_remainder_expiry(&opened_on, &remainder_expires_on)?;
+        remainders.push(SplitRemainder {
+            location_id: remainder.location_id,
+            storage_vessel_id: remainder.storage_vessel_id,
+            quantity,
+            expires_on,
+            note: remainder.note.clone(),
+        });
+    }
+
     quotas::ensure_can_add_stock_batch(
         &state,
         household_id,
-        state.config.expiry_reminder_policy.enabled,
+        state.config.expiry_reminder_policy.enabled
+            && remainders
+                .iter()
+                .any(|remainder| remainder.expires_on.is_some()),
     )
     .await?;
 
-    let result = qm_db::stock::consume_and_store_remainder(
+    let result = qm_db::stock::split_repack(
         &state.db,
         household_id,
         id,
+        req.operation_id,
         &req.used_quantity,
-        req.remainder_location_id,
         &opened_on,
-        &remainder_expires_on,
         req.note.as_deref(),
+        &remainders,
         current.user_id,
         Some(&state.config.expiry_reminder_policy),
     )
     .await
-    .map_err(consume_and_store_error)?;
+    .map_err(split_stock_error)?;
 
-    Ok(Json(ConsumeAndStoreResponse {
+    let mut remainder_dtos = Vec::with_capacity(result.remainders.len());
+    for remainder in result.remainders {
+        remainder_dtos.push(stock_dto(&state, household_id, remainder.id, false).await?);
+    }
+    Ok(Json(SplitStockResponse {
         source: stock_dto(&state, household_id, result.source.id, true).await?,
-        remainder: stock_dto(&state, household_id, result.remainder.id, false).await?,
-        consume_request_id: result.consume_request_id,
+        remainders: remainder_dtos,
+        operation_id: result.operation_id,
     }))
 }
 
@@ -779,6 +826,8 @@ pub struct StockEventDto {
     pub product: ProductDto,
     /// Shared by all rows written by a single `POST /api/v1/stock/consume` call.
     pub consume_request_id: Option<Uuid>,
+    /// Shared by all rows written by a single split/repack operation.
+    pub operation_id: Option<Uuid>,
 }
 
 impl TryFrom<TimelineEntryRow> for StockEventDto {
@@ -800,6 +849,7 @@ impl TryFrom<TimelineEntryRow> for StockEventDto {
             batch_id: r.event.batch_id,
             product: r.product.try_into()?,
             consume_request_id: r.event.consume_request_id,
+            operation_id: r.event.operation_id,
         })
     }
 }
@@ -1047,6 +1097,17 @@ fn validate_positive_decimal(s: &str) -> ApiResult<()> {
     Ok(())
 }
 
+fn validate_non_negative_decimal(field: &str, s: &str) -> ApiResult<()> {
+    let q = Decimal::from_str(s)
+        .map_err(|_| ApiError::BadRequest(format!("{field} not a valid decimal")))?;
+    if q < Decimal::ZERO {
+        return Err(ApiError::BadRequest(format!(
+            "{field} must be greater than or equal to zero"
+        )));
+    }
+    Ok(())
+}
+
 fn validate_iso_date(s: &str) -> ApiResult<()> {
     Date::from_str(s)
         .map(|_| ())
@@ -1085,7 +1146,7 @@ fn create_stock_quantity(
 
     let vessel = storage_vessel.ok_or_else(|| {
         ApiError::BadRequest(
-            "storage_vessel_id is required when quantity includes the storage vessel".into(),
+            "storage_vessel_id is required when quantity includes the container".into(),
         )
     })?;
     if product.package_quantity.is_some() || product.package_unit.is_some() {
@@ -1104,17 +1165,56 @@ fn create_stock_quantity(
     let gross = Decimal::from_str(&req.quantity)
         .map_err(|_| ApiError::BadRequest("quantity not a valid decimal".into()))?;
     let tare = Decimal::from_str(&vessel.tare_weight)
-        .map_err(|_| ApiError::Internal(anyhow::anyhow!("invalid storage vessel tare weight")))?;
+        .map_err(|_| ApiError::Internal(anyhow::anyhow!("invalid tare profile weight")))?;
     let tare_in_quantity_unit = qm_core::units::convert(tare, &vessel.tare_unit, &req.unit)
         .map_err(|err| {
-            ApiError::Internal(anyhow::anyhow!(
-                "converting storage vessel tare weight: {err}"
-            ))
+            ApiError::Internal(anyhow::anyhow!("converting tare profile weight: {err}"))
         })?;
     let net = gross - tare_in_quantity_unit;
     if net <= Decimal::ZERO {
         return Err(ApiError::BadRequest(
-            "quantity must be greater than storage vessel tare weight".into(),
+            "quantity must be greater than tare profile weight".into(),
+        ));
+    }
+    Ok(net.normalize().to_string())
+}
+
+fn split_remainder_quantity(
+    remainder: &SplitStockRemainderRequest,
+    unit: &str,
+    storage_vessel: Option<&StorageVesselRow>,
+) -> ApiResult<String> {
+    let quantity = Decimal::from_str(&remainder.quantity)
+        .map_err(|_| ApiError::BadRequest("quantity not a valid decimal".into()))?;
+    if quantity <= Decimal::ZERO {
+        return Err(ApiError::BadRequest(
+            "remainder quantity must be greater than zero".into(),
+        ));
+    }
+    if !remainder.quantity_includes_storage_vessel.unwrap_or(false) {
+        return Ok(quantity.normalize().to_string());
+    }
+    let vessel = storage_vessel.ok_or_else(|| {
+        ApiError::BadRequest(
+            "storage_vessel_id is required when quantity includes the container".into(),
+        )
+    })?;
+    let unit = qm_core::units::lookup(unit).map_err(|_| ApiError::UnknownUnit(unit.to_owned()))?;
+    if unit.family.as_str() != "mass" {
+        return Err(ApiError::BadRequest(
+            "quantity_includes_storage_vessel requires a mass unit".into(),
+        ));
+    }
+    let tare = Decimal::from_str(&vessel.tare_weight)
+        .map_err(|_| ApiError::Internal(anyhow::anyhow!("invalid tare profile weight")))?;
+    let tare_in_quantity_unit = qm_core::units::convert(tare, &vessel.tare_unit, unit.code)
+        .map_err(|err| {
+            ApiError::Internal(anyhow::anyhow!("converting tare profile weight: {err}"))
+        })?;
+    let net = quantity - tare_in_quantity_unit;
+    if net <= Decimal::ZERO {
+        return Err(ApiError::BadRequest(
+            "quantity must be greater than tare profile weight".into(),
         ));
     }
     Ok(net.normalize().to_string())
@@ -1144,6 +1244,17 @@ fn derive_open_expiry(opened_on: &str, max_open_days: Option<i64>) -> ApiResult<
     Ok(expires.to_string())
 }
 
+fn derive_split_expiry(
+    opened_on: &str,
+    max_open_days: Option<i64>,
+    source_expires_on: Option<&str>,
+) -> ApiResult<Option<String>> {
+    match max_open_days {
+        Some(_) => derive_open_expiry(opened_on, max_open_days).map(Some),
+        None => Ok(source_expires_on.map(str::to_owned)),
+    }
+}
+
 fn validate_remainder_expiry(opened_on: &str, expires_on: &str) -> ApiResult<()> {
     let opened = Date::from_str(opened_on)
         .map_err(|_| ApiError::BadRequest(format!("date must be YYYY-MM-DD (got {opened_on})")))?;
@@ -1157,19 +1268,26 @@ fn validate_remainder_expiry(opened_on: &str, expires_on: &str) -> ApiResult<()>
     Ok(())
 }
 
-fn consume_and_store_error(err: ConsumeAndStoreError) -> ApiError {
+fn split_stock_error(err: SplitStockError) -> ApiError {
     match err {
-        ConsumeAndStoreError::NotFound => ApiError::NotFound,
-        ConsumeAndStoreError::Depleted => {
-            ApiError::BadRequest("depleted stock cannot be consumed and stored".into())
+        SplitStockError::NotFound => ApiError::NotFound,
+        SplitStockError::Depleted => {
+            ApiError::BadRequest("depleted stock cannot be split or repacked".into())
         }
-        ConsumeAndStoreError::QuantityNotPositive => {
+        SplitStockError::EmptyRemainders => {
+            ApiError::BadRequest("remainders must contain at least one item".into())
+        }
+        SplitStockError::QuantityNotPositive => {
             ApiError::BadRequest("quantity must be greater than zero".into())
         }
-        ConsumeAndStoreError::QuantityNotPartial => ApiError::BadRequest(
-            "used_quantity must be less than the current batch quantity".into(),
+        SplitStockError::InvalidTotal => ApiError::BadRequest(
+            "used_quantity plus remainder quantities cannot exceed the current batch quantity"
+                .into(),
         ),
-        ConsumeAndStoreError::Database(err) => ApiError::Database(err),
+        SplitStockError::InvalidOperation => ApiError::BadRequest(
+            "operation_id must reference an existing split operation for this batch".into(),
+        ),
+        SplitStockError::Database(err) => ApiError::Database(err),
     }
 }
 

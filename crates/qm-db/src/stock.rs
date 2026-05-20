@@ -22,7 +22,8 @@ use uuid::Uuid;
 use crate::products::ProductRow;
 use crate::reminders::ExpiryReminderPolicy;
 use crate::stock_events::{
-    latest_for_batch_tx, EVENT_ADD, EVENT_ADJUST, EVENT_CONSUME, EVENT_DISCARD, EVENT_RESTORE,
+    latest_for_batch_tx, EVENT_ADD, EVENT_ADJUST, EVENT_CONSUME, EVENT_DISCARD, EVENT_REPACK_IN,
+    EVENT_REPACK_OUT, EVENT_RESTORE,
 };
 use crate::storage_vessels::StorageVesselRow;
 use crate::{now_utc_rfc3339, Backend, Database};
@@ -34,6 +35,8 @@ pub struct StockBatchRow {
     pub product_id: Uuid,
     pub location_id: Uuid,
     pub storage_vessel_id: Option<Uuid>,
+    pub source_batch_id: Option<Uuid>,
+    pub source_operation_id: Option<Uuid>,
     /// Amount the batch was originally added with. Immutable after creation.
     pub initial_quantity: String,
     /// Cached current balance; sum of stock_event.quantity_delta for this batch.
@@ -78,25 +81,36 @@ pub struct StockBatchWithProduct {
 }
 
 #[derive(Debug)]
-pub enum ConsumeAndStoreError {
+pub enum SplitStockError {
     NotFound,
     Depleted,
+    EmptyRemainders,
+    InvalidTotal,
+    InvalidOperation,
     QuantityNotPositive,
-    QuantityNotPartial,
     Database(sqlx::Error),
 }
 
-impl From<sqlx::Error> for ConsumeAndStoreError {
+impl From<sqlx::Error> for SplitStockError {
     fn from(e: sqlx::Error) -> Self {
         Self::Database(e)
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct ConsumeAndStoreResult {
+pub struct SplitRemainder {
+    pub location_id: Uuid,
+    pub storage_vessel_id: Option<Uuid>,
+    pub quantity: String,
+    pub expires_on: Option<String>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SplitStockResult {
     pub source: StockBatchRow,
-    pub remainder: StockBatchRow,
-    pub consume_request_id: Uuid,
+    pub remainders: Vec<StockBatchRow>,
+    pub operation_id: Uuid,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -117,6 +131,7 @@ pub async fn list(
         "SELECT \
             s.id AS s_id, s.household_id AS s_household_id, s.product_id AS s_product_id, \
             s.location_id AS s_location_id, s.storage_vessel_id AS s_storage_vessel_id, \
+            s.source_batch_id AS s_source_batch_id, s.source_operation_id AS s_source_operation_id, \
             s.initial_quantity AS s_initial_quantity, \
             s.quantity AS s_quantity, s.unit AS s_unit, \
             s.package_quantity AS s_package_quantity, s.package_unit AS s_package_unit, \
@@ -200,6 +215,7 @@ async fn get_with_product_inner(
         "SELECT \
             s.id AS s_id, s.household_id AS s_household_id, s.product_id AS s_product_id, \
             s.location_id AS s_location_id, s.storage_vessel_id AS s_storage_vessel_id, \
+            s.source_batch_id AS s_source_batch_id, s.source_operation_id AS s_source_operation_id, \
             s.initial_quantity AS s_initial_quantity, \
             s.quantity AS s_quantity, s.unit AS s_unit, \
             s.package_quantity AS s_package_quantity, s.package_unit AS s_package_unit, \
@@ -239,7 +255,7 @@ pub async fn get(
     id: Uuid,
 ) -> Result<Option<StockBatchRow>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT id, household_id, product_id, location_id, storage_vessel_id, initial_quantity, quantity, unit, \
+        "SELECT id, household_id, product_id, location_id, storage_vessel_id, source_batch_id, source_operation_id, initial_quantity, quantity, unit, \
                 package_quantity, package_unit, produced_on, expires_on, opened_on, note, \
                 created_at, created_by, depleted_at \
          FROM stock_batch WHERE id = ? AND household_id = ?",
@@ -309,8 +325,8 @@ pub async fn create_with_storage_vessel(
 
     sqlx::query(
         "INSERT INTO stock_batch \
-         (id, household_id, product_id, location_id, storage_vessel_id, initial_quantity, quantity, unit, package_quantity, package_unit, produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, (SELECT package_quantity FROM product WHERE id = ?), (SELECT package_unit FROM product WHERE id = ?), ?, ?, ?, ?, ?, ?, NULL)",
+         (id, household_id, product_id, location_id, storage_vessel_id, source_batch_id, source_operation_id, initial_quantity, quantity, unit, package_quantity, package_unit, produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at) \
+         VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, (SELECT package_quantity FROM product WHERE id = ?), (SELECT package_unit FROM product WHERE id = ?), ?, ?, ?, ?, ?, ?, NULL)",
     )
     .bind(id.to_string())
     .bind(household_id.to_string())
@@ -738,7 +754,7 @@ pub async fn list_active_batches(
     location_id: Option<Uuid>,
 ) -> Result<Vec<StockBatchRow>, sqlx::Error> {
     let mut sql = String::from(
-        "SELECT id, household_id, product_id, location_id, storage_vessel_id, initial_quantity, quantity, unit, \
+        "SELECT id, household_id, product_id, location_id, storage_vessel_id, source_batch_id, source_operation_id, initial_quantity, quantity, unit, \
                 package_quantity, package_unit, produced_on, expires_on, opened_on, note, \
                 created_at, created_by, depleted_at \
          FROM stock_batch \
@@ -831,25 +847,36 @@ pub async fn apply_consumption(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn consume_and_store_remainder(
+pub async fn split_repack(
     db: &Database,
     household_id: Uuid,
     source_batch_id: Uuid,
+    operation_id: Option<Uuid>,
     used_quantity: &str,
-    remainder_location_id: Uuid,
     opened_on: &str,
-    remainder_expires_on: &str,
-    note: Option<&str>,
+    operation_note: Option<&str>,
+    remainders: &[SplitRemainder],
     actor: Uuid,
     reminder_policy: Option<&ExpiryReminderPolicy>,
-) -> Result<ConsumeAndStoreResult, ConsumeAndStoreError> {
+) -> Result<SplitStockResult, SplitStockError> {
+    if remainders.is_empty() {
+        return Err(SplitStockError::EmptyRemainders);
+    }
     let used = Decimal::from_str(used_quantity).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-    if used <= Decimal::ZERO {
-        return Err(ConsumeAndStoreError::QuantityNotPositive);
+    if used < Decimal::ZERO {
+        return Err(SplitStockError::QuantityNotPositive);
     }
 
-    let consume_request_id = Uuid::now_v7();
-    let remainder_id = Uuid::now_v7();
+    let mut parsed_remainders = Vec::with_capacity(remainders.len());
+    for remainder in remainders {
+        let quantity =
+            Decimal::from_str(&remainder.quantity).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+        if quantity <= Decimal::ZERO {
+            return Err(SplitStockError::QuantityNotPositive);
+        }
+        parsed_remainders.push(quantity);
+    }
+
     let now = now_utc_rfc3339();
     let mut tx = db.pool.begin().await?;
 
@@ -858,110 +885,169 @@ pub async fn consume_and_store_remainder(
         db.backend(),
         household_id,
         source_batch_id,
-        "id, household_id, product_id, location_id, initial_quantity, quantity, unit, \
-         storage_vessel_id, package_quantity, package_unit, produced_on, expires_on, opened_on, note, \
-         created_at, created_by, depleted_at",
+        "id, household_id, product_id, location_id, storage_vessel_id, source_batch_id, \
+         source_operation_id, initial_quantity, quantity, unit, package_quantity, package_unit, \
+         produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at",
     )
     .await?
-    .ok_or(ConsumeAndStoreError::NotFound)?;
+    .ok_or(SplitStockError::NotFound)?;
     let source = row_to_batch(row)?;
     if source.depleted_at.is_some() {
-        return Err(ConsumeAndStoreError::Depleted);
+        return Err(SplitStockError::Depleted);
     }
+    let operation_id = match operation_id {
+        Some(operation_id) => {
+            let row = sqlx::query(
+                "SELECT id FROM stock_event \
+                 WHERE household_id = ? AND batch_id = ? AND operation_id = ? \
+                 LIMIT 1",
+            )
+            .bind(household_id.to_string())
+            .bind(source_batch_id.to_string())
+            .bind(operation_id.to_string())
+            .fetch_optional(&mut *tx)
+            .await?;
+            if row.is_none() {
+                return Err(SplitStockError::InvalidOperation);
+            }
+            operation_id
+        }
+        None => Uuid::now_v7(),
+    };
 
     let current =
         Decimal::from_str(&source.quantity).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-    if used >= current {
-        return Err(ConsumeAndStoreError::QuantityNotPartial);
+    let remainder_total: Decimal = parsed_remainders.iter().copied().sum();
+    let transferred_total = used + remainder_total;
+    if transferred_total > current {
+        return Err(SplitStockError::InvalidTotal);
     }
-    let remainder_quantity = current - used;
+    let remaining = current - transferred_total;
+    let depletes = remaining <= Decimal::ZERO;
 
-    insert_event(
+    if !used.is_zero() {
+        insert_event_with_operation(
+            &mut tx,
+            household_id,
+            source_batch_id,
+            EVENT_CONSUME,
+            &(-used).to_string(),
+            operation_note.or(Some("used during split/repack")),
+            actor,
+            None,
+            Some(operation_id),
+        )
+        .await?;
+    }
+
+    insert_event_with_operation(
         &mut tx,
         household_id,
         source_batch_id,
-        EVENT_CONSUME,
-        &(-used).to_string(),
-        Some("consumed via POST /stock/{id}/consume-and-store"),
+        EVENT_REPACK_OUT,
+        &(-remainder_total).to_string(),
+        operation_note.or(Some("repacked into remainder batches")),
         actor,
-        Some(consume_request_id),
-    )
-    .await?;
-    insert_event(
-        &mut tx,
-        household_id,
-        source_batch_id,
-        EVENT_CONSUME,
-        &(-remainder_quantity).to_string(),
-        Some(&format!("stored remainder as batch {remainder_id}")),
-        actor,
-        Some(consume_request_id),
+        None,
+        Some(operation_id),
     )
     .await?;
 
-    sqlx::query(
-        "UPDATE stock_batch SET quantity = '0', depleted_at = ? \
-         WHERE id = ? AND household_id = ?",
-    )
-    .bind(&now)
-    .bind(source_batch_id.to_string())
-    .bind(household_id.to_string())
-    .execute(&mut *tx)
-    .await?;
+    if depletes {
+        sqlx::query(
+            "UPDATE stock_batch SET quantity = '0', opened_on = COALESCE(opened_on, ?), depleted_at = ? \
+             WHERE id = ? AND household_id = ?",
+        )
+        .bind(opened_on)
+        .bind(&now)
+        .bind(source_batch_id.to_string())
+        .bind(household_id.to_string())
+        .execute(&mut *tx)
+        .await?;
+    } else {
+        sqlx::query(
+            "UPDATE stock_batch SET quantity = ?, opened_on = COALESCE(opened_on, ?), depleted_at = NULL \
+             WHERE id = ? AND household_id = ?",
+        )
+        .bind(remaining.to_string())
+        .bind(opened_on)
+        .bind(source_batch_id.to_string())
+        .bind(household_id.to_string())
+        .execute(&mut *tx)
+        .await?;
+    }
 
-    sqlx::query(
-        "INSERT INTO stock_batch \
-         (id, household_id, product_id, location_id, initial_quantity, quantity, unit, \
-          storage_vessel_id, package_quantity, package_unit, produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
-    )
-    .bind(remainder_id.to_string())
-    .bind(household_id.to_string())
-    .bind(source.product_id.to_string())
-    .bind(remainder_location_id.to_string())
-    .bind(remainder_quantity.to_string())
-    .bind(remainder_quantity.to_string())
-    .bind(&source.unit)
-    .bind(source.package_quantity.as_deref())
-    .bind(source.package_unit.as_deref())
-    .bind(source.produced_on.as_deref())
-    .bind(remainder_expires_on)
-    .bind(opened_on)
-    .bind(note)
-    .bind(&now)
-    .bind(actor.to_string())
-    .execute(&mut *tx)
-    .await?;
+    let mut remainder_ids = Vec::with_capacity(remainders.len());
+    for (remainder, quantity) in remainders.iter().zip(parsed_remainders.iter()) {
+        let remainder_id = Uuid::now_v7();
+        remainder_ids.push(remainder_id);
+        sqlx::query(
+            "INSERT INTO stock_batch \
+             (id, household_id, product_id, location_id, storage_vessel_id, source_batch_id, \
+              source_operation_id, initial_quantity, quantity, unit, package_quantity, package_unit, \
+              produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+        )
+        .bind(remainder_id.to_string())
+        .bind(household_id.to_string())
+        .bind(source.product_id.to_string())
+        .bind(remainder.location_id.to_string())
+        .bind(remainder.storage_vessel_id.map(|id| id.to_string()))
+        .bind(source_batch_id.to_string())
+        .bind(operation_id.to_string())
+        .bind(quantity.to_string())
+        .bind(quantity.to_string())
+        .bind(&source.unit)
+        .bind(source.package_quantity.as_deref())
+        .bind(source.package_unit.as_deref())
+        .bind(source.produced_on.as_deref())
+        .bind(remainder.expires_on.as_deref())
+        .bind(opened_on)
+        .bind(remainder.note.as_deref())
+        .bind(&now)
+        .bind(actor.to_string())
+        .execute(&mut *tx)
+        .await?;
 
-    insert_event(
-        &mut tx,
-        household_id,
-        remainder_id,
-        EVENT_ADD,
-        &remainder_quantity.to_string(),
-        Some("stored remainder"),
-        actor,
-        Some(consume_request_id),
-    )
-    .await?;
+        insert_event_with_operation(
+            &mut tx,
+            household_id,
+            remainder_id,
+            EVENT_REPACK_IN,
+            &quantity.to_string(),
+            remainder.note.as_deref().or(Some("repacked remainder")),
+            actor,
+            None,
+            Some(operation_id),
+        )
+        .await?;
+
+        if let Some(policy) = reminder_policy {
+            crate::reminders::sync_expiry_for_batch_tx(&mut tx, remainder_id, policy).await?;
+        }
+    }
 
     if let Some(policy) = reminder_policy {
         crate::reminders::sync_expiry_for_batch_tx(&mut tx, source_batch_id, policy).await?;
-        crate::reminders::sync_expiry_for_batch_tx(&mut tx, remainder_id, policy).await?;
     }
 
     tx.commit().await?;
 
     let source = get(db, household_id, source_batch_id)
         .await?
-        .ok_or(ConsumeAndStoreError::NotFound)?;
-    let remainder = get(db, household_id, remainder_id)
-        .await?
-        .ok_or(ConsumeAndStoreError::NotFound)?;
-    Ok(ConsumeAndStoreResult {
+        .ok_or(SplitStockError::NotFound)?;
+    let mut remainder_rows = Vec::with_capacity(remainder_ids.len());
+    for id in remainder_ids {
+        remainder_rows.push(
+            get(db, household_id, id)
+                .await?
+                .ok_or(SplitStockError::NotFound)?,
+        );
+    }
+    Ok(SplitStockResult {
         source,
-        remainder,
-        consume_request_id,
+        remainders: remainder_rows,
+        operation_id,
     })
 }
 
@@ -1091,10 +1177,36 @@ async fn insert_event(
     created_by: Uuid,
     consume_request_id: Option<Uuid>,
 ) -> Result<(), sqlx::Error> {
+    insert_event_with_operation(
+        tx,
+        household_id,
+        batch_id,
+        event_type,
+        delta,
+        note,
+        created_by,
+        consume_request_id,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn insert_event_with_operation(
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    household_id: Uuid,
+    batch_id: Uuid,
+    event_type: &str,
+    delta: &str,
+    note: Option<&str>,
+    created_by: Uuid,
+    consume_request_id: Option<Uuid>,
+    operation_id: Option<Uuid>,
+) -> Result<(), sqlx::Error> {
     let id = Uuid::now_v7();
     sqlx::query(
-        "INSERT INTO stock_event (id, household_id, batch_id, event_type, quantity_delta, package_quantity, package_unit, note, created_at, created_by, consume_request_id) \
-         VALUES (?, ?, ?, ?, ?, (SELECT package_quantity FROM stock_batch WHERE id = ?), (SELECT package_unit FROM stock_batch WHERE id = ?), ?, ?, ?, ?)",
+        "INSERT INTO stock_event (id, household_id, batch_id, event_type, quantity_delta, package_quantity, package_unit, note, created_at, created_by, consume_request_id, operation_id) \
+         VALUES (?, ?, ?, ?, ?, (SELECT package_quantity FROM stock_batch WHERE id = ?), (SELECT package_unit FROM stock_batch WHERE id = ?), ?, ?, ?, ?, ?)",
     )
     .bind(id.to_string())
     .bind(household_id.to_string())
@@ -1107,6 +1219,7 @@ async fn insert_event(
     .bind(now_utc_rfc3339())
     .bind(created_by.to_string())
     .bind(consume_request_id.map(|u| u.to_string()))
+    .bind(operation_id.map(|u| u.to_string()))
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -1136,6 +1249,8 @@ fn row_to_batch(row: sqlx::any::AnyRow) -> Result<StockBatchRow, sqlx::Error> {
     let product_id: String = row.try_get("product_id")?;
     let location_id: String = row.try_get("location_id")?;
     let storage_vessel_id: Option<String> = row.try_get("storage_vessel_id")?;
+    let source_batch_id: Option<String> = row.try_get("source_batch_id")?;
+    let source_operation_id: Option<String> = row.try_get("source_operation_id")?;
     let created_by: String = row.try_get("created_by")?;
     Ok(StockBatchRow {
         id: Uuid::parse_str(&id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
@@ -1144,6 +1259,14 @@ fn row_to_batch(row: sqlx::any::AnyRow) -> Result<StockBatchRow, sqlx::Error> {
         product_id: Uuid::parse_str(&product_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         location_id: Uuid::parse_str(&location_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         storage_vessel_id: storage_vessel_id
+            .map(|s| Uuid::parse_str(&s))
+            .transpose()
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+        source_batch_id: source_batch_id
+            .map(|s| Uuid::parse_str(&s))
+            .transpose()
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+        source_operation_id: source_operation_id
             .map(|s| Uuid::parse_str(&s))
             .transpose()
             .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
@@ -1170,6 +1293,16 @@ fn row_to_joined(row: sqlx::any::AnyRow) -> Result<StockBatchWithProduct, sqlx::
         location_id: uuid_from(&row, "s_location_id")?,
         storage_vessel_id: row
             .try_get::<Option<String>, _>("s_storage_vessel_id")?
+            .map(|s| Uuid::parse_str(&s))
+            .transpose()
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+        source_batch_id: row
+            .try_get::<Option<String>, _>("s_source_batch_id")?
+            .map(|s| Uuid::parse_str(&s))
+            .transpose()
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+        source_operation_id: row
+            .try_get::<Option<String>, _>("s_source_operation_id")?
             .map(|s| Uuid::parse_str(&s))
             .transpose()
             .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
@@ -1284,7 +1417,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn consume_and_store_remainder_closes_source_and_creates_new_batch() {
+    async fn split_repack_closes_source_and_creates_remainder_batches() {
         let (db, hid, uid, pantry, pid) = setup().await;
         let fridge = locations::list_for_household(&db, hid)
             .await
@@ -1310,15 +1443,30 @@ mod tests {
         .await
         .unwrap();
 
-        let result = consume_and_store_remainder(
+        let result = split_repack(
             &db,
             hid,
             batch.id,
+            None,
             "125",
-            fridge,
             "2026-05-01",
-            "2026-05-04",
             Some("stored in bowl"),
+            &[
+                SplitRemainder {
+                    location_id: fridge,
+                    storage_vessel_id: None,
+                    quantity: "200".into(),
+                    expires_on: Some("2026-05-04".into()),
+                    note: Some("stored in bowl A".into()),
+                },
+                SplitRemainder {
+                    location_id: fridge,
+                    storage_vessel_id: None,
+                    quantity: "175".into(),
+                    expires_on: Some("2026-05-04".into()),
+                    note: Some("stored in bowl B".into()),
+                },
+            ],
             uid,
             None,
         )
@@ -1327,35 +1475,163 @@ mod tests {
 
         assert_eq!(result.source.quantity, "0");
         assert!(result.source.depleted_at.is_some());
-        assert_eq!(result.remainder.location_id, fridge);
-        assert_eq!(result.remainder.quantity, "375");
-        assert_eq!(result.remainder.initial_quantity, "375");
-        assert_eq!(result.remainder.opened_on.as_deref(), Some("2026-05-01"));
-        assert_eq!(result.remainder.expires_on.as_deref(), Some("2026-05-04"));
-        assert_eq!(result.remainder.note.as_deref(), Some("stored in bowl"));
+        assert_eq!(result.remainders.len(), 2);
+        assert_eq!(result.remainders[0].location_id, fridge);
+        assert_eq!(result.remainders[0].quantity, "200");
+        assert_eq!(result.remainders[0].initial_quantity, "200");
+        assert_eq!(
+            result.remainders[0].opened_on.as_deref(),
+            Some("2026-05-01")
+        );
+        assert_eq!(
+            result.remainders[0].expires_on.as_deref(),
+            Some("2026-05-04")
+        );
+        assert_eq!(result.remainders[0].source_batch_id, Some(batch.id));
+        assert_eq!(
+            result.remainders[0].source_operation_id,
+            Some(result.operation_id)
+        );
+        assert_eq!(result.remainders[1].quantity, "175");
         assert_eq!(balance_from_events(&db, batch.id).await, Decimal::ZERO);
         assert_eq!(
-            balance_from_events(&db, result.remainder.id).await,
-            Decimal::from(375)
+            balance_from_events(&db, result.remainders[0].id).await,
+            Decimal::from(200)
         );
 
         let source_events = stock_events::list_for_batch(&db, batch.id).await.unwrap();
         assert_eq!(source_events.len(), 3);
-        assert_eq!(
-            source_events[1].consume_request_id,
-            Some(result.consume_request_id)
-        );
-        assert_eq!(
-            source_events[2].consume_request_id,
-            Some(result.consume_request_id)
-        );
-        let remainder_events = stock_events::list_for_batch(&db, result.remainder.id)
+        assert_eq!(source_events[1].event_type, "consume");
+        assert_eq!(source_events[1].operation_id, Some(result.operation_id));
+        assert_eq!(source_events[2].event_type, "repack_out");
+        assert_eq!(source_events[2].operation_id, Some(result.operation_id));
+        let remainder_events = stock_events::list_for_batch(&db, result.remainders[0].id)
             .await
             .unwrap();
-        assert_eq!(remainder_events[0].event_type, "add");
+        assert_eq!(remainder_events[0].event_type, "repack_in");
+        assert_eq!(remainder_events[0].operation_id, Some(result.operation_id));
+    }
+
+    #[tokio::test]
+    async fn split_repack_can_allocate_source_incrementally() {
+        let (db, hid, uid, pantry, pid) = setup().await;
+        let fridge = locations::list_for_household(&db, hid)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|l| l.kind == "fridge")
+            .unwrap()
+            .id;
+        let batch = create(
+            &db, hid, pid, pantry, "500", "g", None, None, None, None, uid, None,
+        )
+        .await
+        .unwrap();
+
+        let first = split_repack(
+            &db,
+            hid,
+            batch.id,
+            None,
+            "125",
+            "2026-05-01",
+            Some("first weigh-in"),
+            &[SplitRemainder {
+                location_id: fridge,
+                storage_vessel_id: None,
+                quantity: "200".into(),
+                expires_on: None,
+                note: Some("first container".into()),
+            }],
+            uid,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(first.source.quantity, "175");
+        assert!(first.source.depleted_at.is_none());
+        assert_eq!(first.source.opened_on.as_deref(), Some("2026-05-01"));
+        assert_eq!(first.remainders.len(), 1);
+        assert_eq!(first.remainders[0].source_batch_id, Some(batch.id));
         assert_eq!(
-            remainder_events[0].consume_request_id,
-            Some(result.consume_request_id)
+            first.remainders[0].source_operation_id,
+            Some(first.operation_id)
+        );
+        assert_eq!(balance_from_events(&db, batch.id).await, Decimal::from(175));
+
+        let err = split_repack(
+            &db,
+            hid,
+            batch.id,
+            Some(Uuid::now_v7()),
+            "0",
+            "2026-05-02",
+            None,
+            &[SplitRemainder {
+                location_id: fridge,
+                storage_vessel_id: None,
+                quantity: "1".into(),
+                expires_on: None,
+                note: None,
+            }],
+            uid,
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, SplitStockError::InvalidOperation));
+
+        let second = split_repack(
+            &db,
+            hid,
+            batch.id,
+            Some(first.operation_id),
+            "0",
+            "2026-05-02",
+            Some("second weigh-in"),
+            &[SplitRemainder {
+                location_id: fridge,
+                storage_vessel_id: None,
+                quantity: "175".into(),
+                expires_on: None,
+                note: Some("second container".into()),
+            }],
+            uid,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(second.operation_id, first.operation_id);
+        assert_eq!(second.source.quantity, "0");
+        assert!(second.source.depleted_at.is_some());
+        assert_eq!(second.source.opened_on.as_deref(), Some("2026-05-01"));
+        assert_eq!(
+            second.remainders[0].source_operation_id,
+            Some(first.operation_id)
+        );
+        assert_eq!(balance_from_events(&db, batch.id).await, Decimal::ZERO);
+
+        let source_events = stock_events::list_for_batch(&db, batch.id).await.unwrap();
+        let operation_events: Vec<_> = source_events
+            .iter()
+            .filter(|event| event.operation_id == Some(first.operation_id))
+            .collect();
+        assert_eq!(operation_events.len(), 3);
+        assert_eq!(
+            operation_events
+                .iter()
+                .filter(|event| event.event_type == EVENT_CONSUME)
+                .count(),
+            1
+        );
+        assert_eq!(
+            operation_events
+                .iter()
+                .filter(|event| event.event_type == EVENT_REPACK_OUT)
+                .count(),
+            2
         );
     }
 

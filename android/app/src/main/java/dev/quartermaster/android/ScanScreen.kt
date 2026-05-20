@@ -217,12 +217,12 @@ internal fun ScanScreen(
                             style = MaterialTheme.typography.bodySmall,
                         )
                         SelectionCard(
-                            title = "Storage vessel",
-                            options = listOf("" to "No vessel") + storageVessels.map {
+                            title = "Tare profile",
+                            options = listOf("" to "No tare profile") + storageVessels.map {
                                 it.id.toString() to "${it.name} (${it.tareWeight} ${it.tareUnit})"
                             },
                             selected = storageVesselId,
-                            emptyText = "No storage vessels yet. Add one from Settings after weighing it empty.",
+                            emptyText = "No tare profiles yet. Add one from Settings after weighing a container empty.",
                             onSelect = { storageVesselId = it },
                         )
                         Row(
@@ -234,12 +234,12 @@ internal fun ScanScreen(
                                 enabled = storageVesselEligible,
                             )
                             Column {
-                                Text("Entered weight includes vessel")
+                                Text("Entered weight includes container")
                                 Text(
                                     if (storageVesselEligible) {
                                         "Quartermaster will subtract the selected tare weight before saving stock."
                                     } else {
-                                        "Available for exact mass entries with a selected storage vessel."
+                                        "Available for exact mass entries with a selected tare profile."
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                 )

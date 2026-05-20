@@ -742,9 +742,9 @@ private struct ConsumeForm: View {
         if entryMode == .exact {
           ToolbarItem(placement: .bottomBar) {
             Button {
-              Task { await submitAndStoreRemainder() }
+              Task { await submitSplitRemainder() }
             } label: {
-              Label("Open and Store Remainder", systemImage: "shippingbox")
+              Label("Split Batch", systemImage: "shippingbox")
             }
             .disabled(!canStoreRemainder || isSubmitting)
           }
@@ -805,7 +805,7 @@ private struct ConsumeForm: View {
 
   private func submit() async {
     if hasRemainderDetails {
-      await submitAndStoreRemainder()
+      await submitSplitRemainder()
       return
     }
 
@@ -831,7 +831,7 @@ private struct ConsumeForm: View {
     isSubmitting = false
   }
 
-  private func submitAndStoreRemainder() async {
+  private func submitSplitRemainder() async {
     guard
       let stockAmount = stockQuantityAndUnit(),
       let usedQuantity = quantityForBatchUnit(stockAmount)
@@ -842,20 +842,45 @@ private struct ConsumeForm: View {
     isSubmitting = true
     errorMessage = nil
     let trimmedNote = remainderNote.trimmingCharacters(in: .whitespaces)
-    let request = ConsumeAndStoreRequest(
+    guard
+      let current = Decimal(string: batch.quantity),
+      let used = Decimal(string: usedQuantity),
+      current > used
+    else {
+      errorMessage = "Use less than the current batch quantity."
+      isSubmitting = false
+      return
+    }
+    let remainderQuantity = Self.format(current - used)
+    let request = SplitStockRequest(
       note: trimmedNote.isEmpty ? nil : trimmedNote,
       openedOn: StockBatch.yyyymmdd.string(from: openedOn),
-      remainderExpiresOn: hasExpiryOverride
-        ? StockBatch.yyyymmdd.string(from: expiryOverride) : nil,
-      remainderLocationId: remainderLocationID,
+      remainders: [
+        SplitStockRemainderRequest(
+          expiresOn: hasExpiryOverride ? StockBatch.yyyymmdd.string(from: expiryOverride) : nil,
+          locationId: remainderLocationID,
+          note: trimmedNote.isEmpty ? nil : trimmedNote,
+          quantity: remainderQuantity,
+          quantityIncludesStorageVessel: nil,
+          storageVesselId: nil,
+        )
+      ],
       usedQuantity: usedQuantity,
     )
     do {
-      let response = try await appState.api.consumeAndStoreStock(id: batch.id, request: request)
+      let response = try await appState.api.splitStock(id: batch.id, request: request)
       await appState.refreshRemindersAfterInventoryMutation()
-      successRemainder = response.remainder
+      successRemainder = response.remainders.first
+      if let successRemainder {
+        _ = try? await appState.api.printStockLabel(
+          id: successRemainder.id,
+          copies: 1,
+          includeQuantity: false,
+          labelSize: .standard,
+        )
+      }
       successMessage =
-        "Used \(stockAmount.quantity) \(stockAmount.unit) and stored \(response.remainder.quantity) \(response.remainder.unit)."
+        "Used \(stockAmount.quantity) \(stockAmount.unit) and split \(response.remainders.count) remainder \(response.remainders.count == 1 ? "batch" : "batches")."
     } catch let err as APIError {
       errorMessage = err.userFacingMessage
     } catch {

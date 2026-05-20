@@ -204,8 +204,9 @@ typealias UpdateStorageVesselRequest = Components.Schemas.UpdateStorageVesselReq
 typealias ConsumeRequest = Components.Schemas.ConsumeRequest
 typealias ConsumedBatch = Components.Schemas.ConsumedBatchDto
 typealias ConsumeResponse = Components.Schemas.ConsumeResponse
-typealias ConsumeAndStoreRequest = Components.Schemas.ConsumeAndStoreRequest
-typealias ConsumeAndStoreResponse = Components.Schemas.ConsumeAndStoreResponse
+typealias SplitStockRemainderRequest = Components.Schemas.SplitStockRemainderRequest
+typealias SplitStockRequest = Components.Schemas.SplitStockRequest
+typealias SplitStockResponse = Components.Schemas.SplitStockResponse
 typealias RestoreManyRequest = Components.Schemas.RestoreManyRequest
 typealias RestoreManyResponse = Components.Schemas.RestoreManyResponse
 typealias PrintStockLabelRequest = Components.Schemas.PrintStockLabelRequest
@@ -350,6 +351,8 @@ extension StockEventType {
     case .adjust: "Adjusted"
     case .discard: "Discarded"
     case .restore: "Restored"
+    case .repackIn: "Repacked in"
+    case .repackOut: "Repacked out"
     }
   }
 
@@ -360,6 +363,8 @@ extension StockEventType {
     case .adjust: "pencil"
     case .discard: "trash"
     case .restore: "arrow.uturn.backward"
+    case .repackIn: "shippingbox"
+    case .repackOut: "shippingbox.and.arrow.backward"
     }
   }
 }
@@ -367,6 +372,7 @@ extension StockEventType {
 extension StockEvent: Identifiable {
   var batchID: String { batchId }
   var consumeRequestID: String? { consumeRequestId }
+  var operationID: String? { operationId }
   var batchExpiresOnDate: Date? {
     guard let batchExpiresOn else { return nil }
     return StockBatch.yyyymmdd.date(from: batchExpiresOn)

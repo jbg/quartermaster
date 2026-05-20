@@ -466,13 +466,13 @@ struct ScanScreen: View {
   @ViewBuilder
   private func storageVesselControls(for draft: ScannedStockDraft) -> some View {
     Picker(
-      "Storage vessel",
+      "Tare profile",
       selection: Binding(
         get: { self.draft?.storageVesselID },
         set: { self.draft?.storageVesselID = $0 }
       )
     ) {
-      Text("None").tag(Optional<String>.none)
+      Text("No tare profile").tag(Optional<String>.none)
       ForEach(storageVessels) { vessel in
         Text("\(vessel.name) (\(vessel.displayTare))").tag(Optional(vessel.id))
       }
@@ -480,7 +480,7 @@ struct ScanScreen: View {
 
     if grossVesselWeightEligible(for: draft) {
       Toggle(
-        "Amount includes vessel",
+        "Amount includes container",
         isOn: Binding(
           get: { self.draft?.quantityIncludesStorageVessel ?? false },
           set: { self.draft?.quantityIncludesStorageVessel = $0 }

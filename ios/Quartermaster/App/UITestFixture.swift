@@ -275,9 +275,7 @@ import UIKit
     func consumeStock(_ request: ConsumeRequest) async throws -> ConsumeResponse {
       throw APIError.unknown
     }
-    func consumeAndStoreStock(id: String, request: ConsumeAndStoreRequest) async throws
-      -> ConsumeAndStoreResponse
-    {
+    func splitStock(id: String, request: SplitStockRequest) async throws -> SplitStockResponse {
       throw APIError.unknown
     }
     func printStockLabel(

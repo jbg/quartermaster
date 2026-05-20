@@ -777,9 +777,7 @@ private actor FakeAPI: AppStateAPI {
   func consumeStock(_ request: ConsumeRequest) async throws -> ConsumeResponse {
     fatalError("unused")
   }
-  func consumeAndStoreStock(id: String, request: ConsumeAndStoreRequest) async throws
-    -> ConsumeAndStoreResponse
-  {
+  func splitStock(id: String, request: SplitStockRequest) async throws -> SplitStockResponse {
     fatalError("unused")
   }
   func printStockLabel(

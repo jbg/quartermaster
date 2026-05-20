@@ -60,20 +60,6 @@ export type ConfirmEmailVerificationRequest = {
     code: string;
 };
 
-export type ConsumeAndStoreRequest = {
-    note?: string | null;
-    opened_on?: string | null;
-    remainder_expires_on?: string | null;
-    remainder_location_id: string;
-    used_quantity: string;
-};
-
-export type ConsumeAndStoreResponse = {
-    consume_request_id: string;
-    remainder: StockBatchDto;
-    source: StockBatchDto;
-};
-
 export type ConsumeRequest = {
     location_id?: string | null;
     product_id: string;
@@ -185,7 +171,8 @@ export type CreateStockRequest = {
     quantity: string;
     /**
      * When true, `quantity` is the gross measured mass including the selected
-     * vessel. The API stores net stock after subtracting the vessel tare.
+     * container. The API stores net stock after subtracting the reusable tare
+     * profile referenced by `storage_vessel_id`.
      */
     quantity_includes_storage_vessel?: boolean | null;
     storage_vessel_id?: string | null;
@@ -286,6 +273,8 @@ export type ExportStockBatch = {
     produced_on?: string | null;
     product_id: string;
     quantity: string;
+    source_batch_id?: string | null;
+    source_operation_id?: string | null;
     storage_vessel_id?: string | null;
     unit: string;
 };
@@ -297,6 +286,7 @@ export type ExportStockEvent = {
     event_type: string;
     id: string;
     note?: string | null;
+    operation_id?: string | null;
     package_quantity?: string | null;
     package_unit?: string | null;
     quantity_delta: string;
@@ -725,6 +715,37 @@ export type SaveOpenFoodFactsCredentialsRequest = {
     username: string;
 };
 
+export type SplitStockRemainderRequest = {
+    expires_on?: string | null;
+    location_id: string;
+    note?: string | null;
+    quantity: string;
+    quantity_includes_storage_vessel?: boolean | null;
+    /**
+     * Reusable tare profile used for gross-weight entry, not a unique
+     * physical container instance.
+     */
+    storage_vessel_id?: string | null;
+};
+
+export type SplitStockRequest = {
+    note?: string | null;
+    opened_on?: string | null;
+    /**
+     * Existing split/repack operation to append to. When omitted, the server
+     * creates a new operation id.
+     */
+    operation_id?: string | null;
+    remainders: Array<SplitStockRemainderRequest>;
+    used_quantity: string;
+};
+
+export type SplitStockResponse = {
+    operation_id: string;
+    remainders: Array<StockBatchDto>;
+    source: StockBatchDto;
+};
+
 export type StockBatchDto = {
     created_at: string;
     depleted_at?: string | null;
@@ -746,6 +767,8 @@ export type StockBatchDto = {
     produced_on?: string | null;
     product: ProductDto;
     quantity: string;
+    source_batch_id?: string | null;
+    source_operation_id?: string | null;
     storage_vessel?: null | StorageVesselDto;
     unit: string;
 };
@@ -766,6 +789,10 @@ export type StockEventDto = {
     event_type: StockEventType;
     id: string;
     note?: string | null;
+    /**
+     * Shared by all rows written by a single split/repack operation.
+     */
+    operation_id?: string | null;
     /**
      * Package size snapshot for the event/batch, when known.
      */
@@ -795,7 +822,7 @@ export type StockEventListResponse = {
     next_before_id?: string | null;
 };
 
-export type StockEventType = 'add' | 'consume' | 'adjust' | 'discard' | 'restore';
+export type StockEventType = 'add' | 'consume' | 'adjust' | 'discard' | 'restore' | 'repack_in' | 'repack_out';
 
 export type StockListResponse = {
     items: Array<StockBatchDto>;
@@ -2353,28 +2380,6 @@ export type StockUpdateResponses = {
 
 export type StockUpdateResponse = StockUpdateResponses[keyof StockUpdateResponses];
 
-export type StockConsumeAndStoreData = {
-    body: ConsumeAndStoreRequest;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/stock/{id}/consume-and-store';
-};
-
-export type StockConsumeAndStoreErrors = {
-    400: ApiErrorBody;
-    404: ApiErrorBody;
-};
-
-export type StockConsumeAndStoreError = StockConsumeAndStoreErrors[keyof StockConsumeAndStoreErrors];
-
-export type StockConsumeAndStoreResponses = {
-    200: ConsumeAndStoreResponse;
-};
-
-export type StockConsumeAndStoreResponse = StockConsumeAndStoreResponses[keyof StockConsumeAndStoreResponses];
-
 export type StockListBatchEventsData = {
     body?: never;
     path: {
@@ -2466,6 +2471,28 @@ export type StockRestoreResponses = {
 };
 
 export type StockRestoreResponse = StockRestoreResponses[keyof StockRestoreResponses];
+
+export type StockSplitData = {
+    body: SplitStockRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/stock/{id}/split';
+};
+
+export type StockSplitErrors = {
+    400: ApiErrorBody;
+    404: ApiErrorBody;
+};
+
+export type StockSplitError = StockSplitErrors[keyof StockSplitErrors];
+
+export type StockSplitResponses = {
+    200: SplitStockResponse;
+};
+
+export type StockSplitResponse = StockSplitResponses[keyof StockSplitResponses];
 
 export type StorageVesselsListData = {
     body?: never;
