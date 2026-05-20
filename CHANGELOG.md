@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.30.0](https://github.com/jbg/quartermaster/compare/1.29.1...1.30.0) (2026-05-20)
+
+
+### Features
+
+* **android:** apply design system ([e7be603](https://github.com/jbg/quartermaster/commit/e7be603f113478b0f81d6ab57f32b6de2fa0c64e))
+* **web:** apply design system ([a9ff505](https://github.com/jbg/quartermaster/commit/a9ff505ed6d0bbe84bb1398b83af109e553a5c9c))
+
 ## [1.29.1](https://github.com/jbg/quartermaster/compare/1.29.0...1.29.1) (2026-05-20)
 
 
