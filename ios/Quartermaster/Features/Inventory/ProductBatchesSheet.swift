@@ -54,8 +54,9 @@ struct ProductBatchesSheet: View {
             Section {
               Text("No active batches in \(location.name).")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .quartermasterMetadata()
             }
+            .quartermasterPanelRow()
           }
           if !depletedBatches.isEmpty {
             Section {
@@ -72,7 +73,9 @@ struct ProductBatchesSheet: View {
                 )
               }
               .accessibilityIdentifier("batch.toggle-depleted")
+              .foregroundStyle(Color.quartermasterTextSecondary)
             }
+            .quartermasterPanelRow()
           }
           Section {
             Button {
@@ -83,7 +86,9 @@ struct ProductBatchesSheet: View {
             .accessibilityIdentifier("batch.consume")
             .disabled(activeBatches.isEmpty)
           }
+          .quartermasterPanelRow()
         }
+        .quartermasterScreenBackground()
         .task(id: highlightBatchID) { await flashHighlight(proxy: proxy) }
       }
       .navigationTitle(product.displayTitle)
@@ -249,9 +254,10 @@ struct ProductBatchesSheet: View {
     }
     .listRowBackground(
       flashingBatchID == batch.id
-        ? QuartermasterBrand.sage100
-        : Color.clear,
+        ? Color.quartermasterSubtleSurface
+        : Color.quartermasterPanelSurface,
     )
+    .listRowSeparatorTint(Color.quartermasterBorder)
     .animation(.easeOut(duration: 0.4), value: flashingBatchID)
     .id(batch.id)
   }
@@ -343,27 +349,28 @@ struct BatchRow: View {
   var onPrintLabel: ((Bool, LabelPrintSize) -> Void)?
 
   var body: some View {
-    HStack {
-      VStack(alignment: .leading, spacing: 2) {
+    HStack(spacing: QuartermasterSpacing.x3) {
+      VStack(alignment: .leading, spacing: 3) {
         Text("\(batch.quantity) \(batch.unit)")
           .font(.body.weight(.medium))
+          .foregroundStyle(Color.quartermasterTextPrimary)
         if let note = batch.note, !note.isEmpty {
-          Text(note).font(.caption).foregroundStyle(.secondary)
+          Text(note).font(.caption).quartermasterMetadata()
         }
         if let opened = batch.openedOnDate {
           Label("Opened \(Self.relativeDate(opened))", systemImage: "seal")
             .font(.caption2)
-            .foregroundStyle(.secondary)
+            .quartermasterMetadata()
         }
         if let produced = batch.producedOnDate {
           Label("Prepared \(Self.relativeDate(produced))", systemImage: "fork.knife")
             .font(.caption2)
-            .foregroundStyle(.secondary)
+            .quartermasterMetadata()
         }
         if isDepleted(batch) {
           Label("Depleted", systemImage: "archivebox")
             .font(.caption2.weight(.semibold))
-            .foregroundStyle(.secondary)
+            .quartermasterMetadata()
         }
       }
       Spacer()
@@ -407,7 +414,7 @@ struct BatchRow: View {
     .accessibilityIdentifier(
       isDepleted(batch) ? "batch.row.depleted.\(batch.id)" : "batch.row.active.\(batch.id)"
     )
-    .padding(.vertical, 2)
+    .padding(.vertical, QuartermasterSpacing.x1)
   }
 
   private static func relativeDate(_ d: Date) -> String {
@@ -480,7 +487,7 @@ private struct EditBatchForm: View {
         Section {
           DecimalField(title: "Amount", text: $quantity)
           LabeledContent("Unit", value: batch.unit)
-            .foregroundStyle(.secondary)
+            .quartermasterMetadata()
         } header: {
           Text("Quantity")
         } footer: {
@@ -503,7 +510,7 @@ private struct EditBatchForm: View {
           if hadProducedOriginally && !hasProduced {
             Text("Saving will remove the prepared date from this batch.")
               .font(.footnote)
-              .foregroundStyle(.secondary)
+              .quartermasterMetadata()
           }
         }
         Section {
@@ -519,7 +526,7 @@ private struct EditBatchForm: View {
           if hadExpiryOriginally && !hasExpiry {
             Text("Saving will remove the expiry date from this batch.")
               .font(.footnote)
-              .foregroundStyle(.secondary)
+              .quartermasterMetadata()
           }
         }
         Section {
@@ -535,6 +542,7 @@ private struct EditBatchForm: View {
           Section { Text(msg).foregroundStyle(Color.quartermasterError) }
         }
       }
+      .quartermasterScreenBackground()
       .navigationTitle("Edit batch")
       .navigationBarTitleDisplayMode(.inline)
       .sheet(isPresented: $showExpiryScanner) {
@@ -699,7 +707,7 @@ private struct ConsumeForm: View {
         Section {
           Text("We'll take from the batch that expires soonest first.")
             .font(.footnote)
-            .foregroundStyle(.secondary)
+            .quartermasterMetadata()
         }
         if entryMode == .exact {
           Section {
@@ -725,6 +733,7 @@ private struct ConsumeForm: View {
           Section { Text(msg).foregroundStyle(Color.quartermasterError) }
         }
       }
+      .quartermasterScreenBackground()
       .navigationTitle("Use \(product.name)")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {

@@ -12,14 +12,15 @@ struct ProductRow: View {
   var body: some View {
     HStack(spacing: 12) {
       productThumb
-      VStack(alignment: .leading, spacing: 2) {
+      VStack(alignment: .leading, spacing: 3) {
         Text(product.name)
-          .font(.body)
+          .font(.body.weight(.medium))
+          .foregroundStyle(Color.quartermasterTextPrimary)
           .lineLimit(2)
         if let brand = product.brand, !brand.isEmpty {
           Text(brand)
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .quartermasterMetadata()
             .lineLimit(1)
         }
         quantityLine
@@ -47,14 +48,18 @@ struct ProductRow: View {
       }
     }
     .frame(width: 40, height: 40)
-    .clipShape(RoundedRectangle(cornerRadius: 6))
+    .clipShape(RoundedRectangle(cornerRadius: QuartermasterRadius.sm))
+    .overlay {
+      RoundedRectangle(cornerRadius: QuartermasterRadius.sm)
+        .stroke(Color.quartermasterBorder, lineWidth: 1)
+    }
   }
 
   private var placeholder: some View {
     Image(systemName: icon)
-      .foregroundStyle(.secondary)
+      .foregroundStyle(Color.quartermasterTextMuted)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .background(Color.secondary.opacity(0.1))
+      .background(Color.quartermasterSubtleSurface)
   }
 
   private var icon: String {
@@ -81,28 +86,30 @@ struct ProductRow: View {
         if filterHidingSomething, let allTotal {
           Text("\(formatDecimal(visibleTotal)) \(product.preferredUnit) matching")
             .font(.subheadline.weight(.medium))
+            .foregroundStyle(Color.quartermasterTextPrimary)
           Text("·")
-            .foregroundStyle(.secondary)
+            .quartermasterMetadata()
           Text("\(formatDecimal(allTotal)) \(product.preferredUnit) total")
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .quartermasterMetadata()
         } else {
           Text("\(formatDecimal(visibleTotal)) \(product.preferredUnit)")
             .font(.subheadline.weight(.medium))
+            .foregroundStyle(Color.quartermasterTextPrimary)
         }
       } else {
         Text("Mixed units")
           .font(.subheadline.weight(.medium))
-          .foregroundStyle(.secondary)
+          .quartermasterMetadata()
       }
       if filterHidingSomething {
         Text("· \(visibleBatches.count)/\(allBatches.count) batches")
           .font(.caption)
-          .foregroundStyle(.secondary)
+          .quartermasterMetadata()
       } else if visibleBatches.count > 1 {
         Text("· \(visibleBatches.count) batches")
           .font(.caption)
-          .foregroundStyle(.secondary)
+          .quartermasterMetadata()
       }
     }
   }

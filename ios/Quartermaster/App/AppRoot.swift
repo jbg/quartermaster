@@ -103,12 +103,12 @@ private struct LaunchView: View {
         .foregroundStyle(QuartermasterBrand.green800)
       Text("Quartermaster")
         .font(.title.weight(.semibold))
+        .foregroundStyle(Color.quartermasterTextPrimary)
       ProgressView()
         .padding(.top, 24)
     }
-    .foregroundStyle(.primary)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(.background)
+    .background(Color.quartermasterAppSurface)
   }
 }
 
@@ -126,7 +126,7 @@ private struct LaunchFailureView: View {
         .font(.title.weight(.semibold))
       Text(message)
         .font(.body)
-        .foregroundStyle(.secondary)
+        .quartermasterMetadata()
         .multilineTextAlignment(.center)
       Button("Try again") {
         appState.phase = .launching
@@ -140,6 +140,6 @@ private struct LaunchFailureView: View {
     }
     .padding(.horizontal, 24)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(.background)
+    .background(Color.quartermasterAppSurface)
   }
 }

@@ -6,11 +6,15 @@ struct ExpiryBadge: View {
 
   var body: some View {
     Text(label)
-      .font(.caption.weight(.medium))
-      .foregroundStyle(foreground)
+      .font(.caption.weight(.semibold))
+      .foregroundStyle(statusStyle.foreground)
       .padding(.horizontal, 8)
       .padding(.vertical, 3)
-      .background(background, in: Capsule())
+      .background(statusStyle.background, in: Capsule())
+      .overlay {
+        Capsule()
+          .stroke(statusStyle.border, lineWidth: 1)
+      }
   }
 
   private var label: String {
@@ -35,21 +39,12 @@ struct ExpiryBadge: View {
     return .ok
   }
 
-  private var foreground: Color {
+  private var statusStyle: QuartermasterStatusStyle {
     switch severity {
-    case .expired: .white
-    case .soon: QuartermasterBrand.warningForeground
-    case .ok: QuartermasterBrand.successForeground
-    case .none: QuartermasterBrand.neutralForeground
-    }
-  }
-
-  private var background: AnyShapeStyle {
-    switch severity {
-    case .expired: AnyShapeStyle(QuartermasterBrand.beetStrong)
-    case .soon: AnyShapeStyle(QuartermasterBrand.warningBackground)
-    case .ok: AnyShapeStyle(QuartermasterBrand.successBackground)
-    case .none: AnyShapeStyle(QuartermasterBrand.neutralBackground)
+    case .expired: .expiredStrong
+    case .soon: .soon
+    case .ok: .available
+    case .none: .neutral
     }
   }
 

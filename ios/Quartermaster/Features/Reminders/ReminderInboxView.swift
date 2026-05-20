@@ -19,10 +19,11 @@ struct ReminderInboxView: View {
               )
             )
             .font(.footnote)
-            .foregroundStyle(.secondary)
+            .quartermasterMetadata()
           }
           .padding(.vertical, 2)
         }
+        .quartermasterPanelRow()
       }
 
       Section {
@@ -60,16 +61,17 @@ struct ReminderInboxView: View {
             VStack(alignment: .leading, spacing: 8) {
               Text(reminder.displayTitle)
                 .font(.headline)
+                .foregroundStyle(Color.quartermasterTextPrimary)
               Text(reminder.displayBody)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.quartermasterTextSecondary)
               if let expiresOn = reminder.expiresOn {
                 Text(
                   appState.reminderUrgencyText(for: reminder)
                     ?? NSLocalizedString("REMINDER_INBOX_EXPIRY_REMINDER", comment: "")
                 )
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .quartermasterMetadata()
                 Text(
                   String(
                     format: NSLocalizedString("REMINDER_INBOX_EXPIRY_DATE", comment: ""),
@@ -77,19 +79,19 @@ struct ReminderInboxView: View {
                   )
                 )
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .quartermasterMetadata()
               }
               if let schedule = scheduleText(for: reminder) {
                 Text(schedule)
                   .font(.caption)
-                  .foregroundStyle(.secondary)
+                  .quartermasterMetadata()
               }
               if appState.isReminderActionInFlight(id: reminder.id) {
                 HStack(spacing: 8) {
                   ProgressView()
                   Text(NSLocalizedString("REMINDER_INBOX_UPDATING", comment: ""))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .quartermasterMetadata()
                 }
               }
               HStack {
@@ -106,10 +108,12 @@ struct ReminderInboxView: View {
               }
             }
             .padding(.vertical, 4)
+            .quartermasterPanelRow()
           }
         }
       }
     }
+    .quartermasterScreenBackground()
     .navigationTitle(NSLocalizedString("REMINDER_INBOX_TITLE", comment: ""))
     .refreshable {
       await appState.refreshRemindersAfterUserAction(limit: 50)
