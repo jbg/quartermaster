@@ -34,8 +34,35 @@
   --qm-neutral-fg: #58645f;
   --qm-low-fg: #7a4b12;
   --qm-frozen-fg: #1d5c73;
+  --qm-status-available-bg: var(--qm-success-bg);
+  --qm-status-available-fg: var(--qm-success-fg);
+  --qm-status-available-border: #b9dec8;
+  --qm-status-soon-bg: var(--qm-warning-bg);
+  --qm-status-soon-fg: var(--qm-warning-fg);
+  --qm-status-soon-border: #e9c289;
+  --qm-status-expired-bg: #f8e2e5;
+  --qm-status-expired-fg: var(--qm-beet);
+  --qm-status-expired-border: #e3a8b1;
+  --qm-status-neutral-bg: var(--qm-neutral-bg);
+  --qm-status-neutral-fg: var(--qm-neutral-fg);
+  --qm-status-neutral-border: #d5dcd4;
+  --qm-color-text-primary: var(--qm-ink);
+  --qm-color-text-secondary: var(--qm-slate-700);
+  --qm-color-text-muted: var(--qm-slate-500);
+  --qm-color-surface-app: var(--qm-paper);
+  --qm-color-surface-panel: var(--qm-white);
+  --qm-color-surface-subtle: var(--qm-sage-100);
+  --qm-color-surface-label: var(--qm-label);
+  --qm-color-border-default: var(--qm-line);
+  --qm-color-border-strong: var(--qm-line-strong);
+  --qm-color-action-primary-bg: var(--qm-green-800);
+  --qm-color-action-primary-fg: var(--qm-white);
+  --qm-color-action-secondary-fg: var(--qm-green-800);
+  --qm-color-link: var(--qm-blueprint);
+  --qm-radius-xs: 4px;
   --qm-radius-sm: 6px;
   --qm-radius-md: 8px;
+  --qm-radius-lg: 12px;
   --qm-space-1: 4px;
   --qm-space-2: 8px;
   --qm-space-3: 12px;
@@ -43,7 +70,10 @@
   --qm-space-5: 20px;
   --qm-space-6: 24px;
   --qm-space-8: 32px;
-  --qm-shadow-panel: 0 1px 2px rgba(24, 32, 28, 0.05), 0 12px 30px rgba(24, 32, 28, 0.06);
+  --qm-space-10: 40px;
+  --qm-space-12: 48px;
+  --qm-space-16: 64px;
+  --qm-shadow-panel: 0 1px 2px rgba(24, 32, 28, 0.05);
 
   color: var(--qm-ink);
   background: var(--qm-paper);
@@ -96,7 +126,19 @@
     --qm-neutral-fg: #b8c5be;
     --qm-low-fg: #e6b66e;
     --qm-frozen-fg: #9ed3e8;
-    --qm-shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.42), 0 18px 36px rgba(0, 0, 0, 0.28);
+    --qm-status-available-bg: #183326;
+    --qm-status-available-fg: #9fe0b7;
+    --qm-status-available-border: #2f5b40;
+    --qm-status-soon-bg: #3a2a18;
+    --qm-status-soon-fg: #f0b56f;
+    --qm-status-soon-border: #6c4a22;
+    --qm-status-expired-bg: #3a2023;
+    --qm-status-expired-fg: #f09aa4;
+    --qm-status-expired-border: #704047;
+    --qm-status-neutral-bg: #232c26;
+    --qm-status-neutral-fg: #b8c5be;
+    --qm-status-neutral-border: #3a473f;
+    --qm-shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.32);
   }
 }
 
@@ -106,6 +148,7 @@
 
 html {
   background: var(--qm-paper);
+  font-size: 16px;
 }
 
 body {
@@ -131,12 +174,34 @@ button {
   cursor: pointer;
 }
 
+button,
+a,
+input,
+select {
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
 a {
   color: var(--qm-blueprint);
 }
 
 .app-shell {
-  width: min(1180px, calc(100vw - 32px));
+  width: min(1120px, calc(100vw - 32px));
   margin: 0 auto;
   padding: 28px 0 56px;
 }
@@ -256,8 +321,22 @@ a {
 
 .topbar h1 {
   color: var(--qm-green-900);
-  font-size: 32px;
-  line-height: 1.08;
+  font-size: 34px;
+  line-height: 42px;
+}
+
+.section-heading h2,
+.empty-state h2,
+.join-panel h1 {
+  color: var(--qm-green-900);
+  font-size: 26px;
+  line-height: 34px;
+}
+
+.section-heading h3 {
+  color: var(--qm-green-900);
+  font-size: 20px;
+  line-height: 28px;
 }
 
 .eyebrow {
@@ -276,7 +355,7 @@ a {
 .join-panel {
   border: 1px solid var(--qm-line);
   border-radius: var(--qm-radius-md);
-  background: color-mix(in srgb, var(--qm-white) 92%, transparent);
+  background: var(--qm-white);
   box-shadow: var(--qm-shadow-panel);
 }
 
@@ -352,6 +431,20 @@ select {
   background: var(--qm-white);
   color: var(--qm-ink);
   padding: 0 11px;
+}
+
+input[type='checkbox'] {
+  width: 18px;
+  min-height: 18px;
+  height: 18px;
+  accent-color: var(--qm-green-800);
+  padding: 0;
+}
+
+label:has(> input[type='checkbox']) {
+  display: flex;
+  align-items: center;
+  gap: var(--qm-space-2);
 }
 
 input::placeholder {
@@ -448,7 +541,7 @@ a:focus-visible {
 
 .success-text {
   margin: 0;
-  color: var(--qm-green-800);
+  color: var(--qm-success-fg);
   font-weight: 750;
 }
 
@@ -464,7 +557,7 @@ a:focus-visible {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(320px, 420px);
+  grid-template-columns: minmax(320px, 1fr) minmax(320px, 420px);
   gap: var(--qm-space-4);
   margin-top: 22px;
 }
@@ -781,9 +874,9 @@ a:focus-visible {
 .detail-region > .section-heading .heading-actions strong {
   order: -1;
   color: var(--qm-green-900);
-  font-size: 20px;
+  font-size: 26px;
   font-variant-numeric: tabular-nums;
-  line-height: 1;
+  line-height: 34px;
 }
 
 .inventory-region,
@@ -878,6 +971,10 @@ a:focus-visible {
   text-align: left;
 }
 
+.stock-row {
+  position: relative;
+}
+
 .stock-row h3,
 .stock-row p,
 .reminder-row h3,
@@ -905,12 +1002,53 @@ a:focus-visible {
 
 .stock-row.active {
   border-color: var(--qm-green-800);
-  background: var(--qm-success-bg);
+  background: var(--qm-sage-100);
   box-shadow: inset 0 0 0 1px var(--qm-green-800);
 }
 
 .stock-row.highlight {
-  background: var(--qm-success-bg);
+  background: var(--qm-sage-100);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 26px;
+  border: 1px solid var(--qm-status-neutral-border);
+  border-radius: var(--qm-radius-xs);
+  background: var(--qm-status-neutral-bg);
+  color: var(--qm-status-neutral-fg);
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.status-badge.available {
+  border-color: var(--qm-status-available-border);
+  background: var(--qm-status-available-bg);
+  color: var(--qm-status-available-fg);
+}
+
+.status-badge.soon {
+  border-color: var(--qm-status-soon-border);
+  background: var(--qm-status-soon-bg);
+  color: var(--qm-status-soon-fg);
+}
+
+.status-badge.expired {
+  border-color: var(--qm-status-expired-border);
+  background: var(--qm-status-expired-bg);
+  color: var(--qm-status-expired-fg);
+}
+
+.status-badge.neutral {
+  border-color: var(--qm-status-neutral-border);
+  background: var(--qm-status-neutral-bg);
+  color: var(--qm-status-neutral-fg);
 }
 
 .product-group-block {
@@ -957,12 +1095,12 @@ a:focus-visible {
 
 .batch-choice-row.active {
   border-color: var(--qm-green-800);
-  background: var(--qm-success-bg);
+  background: var(--qm-sage-100);
   box-shadow: inset 0 0 0 1px var(--qm-green-800);
 }
 
 .batch-choice-row.highlight {
-  background: var(--qm-success-bg);
+  background: var(--qm-sage-100);
 }
 
 .batch-choice-row.depleted {
@@ -1002,7 +1140,8 @@ a:focus-visible {
   display: inline-flex;
   width: fit-content;
   margin: 8px 6px 0 0;
-  border-radius: 999px;
+  border: 1px solid var(--qm-status-neutral-border);
+  border-radius: var(--qm-radius-xs);
   background: var(--qm-neutral-bg);
   color: var(--qm-slate-700);
   font-size: 12px;
@@ -1012,13 +1151,15 @@ a:focus-visible {
 }
 
 .reminder-row span:first-of-type {
+  border-color: var(--qm-status-soon-border);
   background: var(--qm-warning-bg);
   color: var(--qm-warning-fg);
 }
 
 .reminder-row .inline-status {
+  border-color: var(--qm-status-available-border);
   background: var(--qm-success-bg);
-  color: var(--qm-green-800);
+  color: var(--qm-success-fg);
 }
 
 .row-actions,

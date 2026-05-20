@@ -28,6 +28,7 @@
     stockDepletedAt,
     stockEditFields,
     stockExpiry,
+    stockExpiryValue,
     stockInitialQuantity,
     stockLocation,
     stockLocationId,
@@ -1216,8 +1217,8 @@
 
   function productGroupMeta(group: InventoryProductGroup): string {
     const parts = [
-      group.earliestExpiry ? `Earliest ${group.earliestExpiry}` : 'No expiry date',
-      `${group.visibleBatches.length} ${group.visibleBatches.length === 1 ? 'batch' : 'batches'}`
+      `${group.visibleBatches.length} ${group.visibleBatches.length === 1 ? 'batch' : 'batches'}`,
+      group.earliestExpiry ? `Earliest ${group.earliestExpiry}` : 'No expiry date'
     ];
     if (group.depletedCount > 0 && group.activeCount === 0) {
       parts.push('depleted history');
@@ -1239,8 +1240,8 @@
 
   function packageGroupMeta(group: InventoryBatchPackageGroup): string {
     const parts = [
-      group.earliestExpiry ? `Earliest ${group.earliestExpiry}` : 'No expiry date',
-      `${group.count} ${group.count === 1 ? 'batch' : 'batches'}`
+      `${group.count} ${group.count === 1 ? 'batch' : 'batches'}`,
+      group.earliestExpiry ? `Earliest ${group.earliestExpiry}` : 'No expiry date'
     ];
     if (group.depletedCount > 0 && group.activeCount === 0) {
       parts.push('depleted history');
@@ -1248,6 +1249,62 @@
       parts.push(`${group.depletedCount} depleted`);
     }
     return parts.join(' - ');
+  }
+
+  function expiryBadgeLabel(expiry: string | null, depletedCount = 0, activeCount = 1): string {
+    if (activeCount === 0 && depletedCount > 0) {
+      return 'Depleted';
+    }
+    if (!expiry) {
+      return 'No date';
+    }
+    const days = daysFromToday(expiry);
+    if (days === null) {
+      return expiry;
+    }
+    if (days < 0) {
+      const count = Math.abs(days);
+      return count === 1 ? 'Expired yesterday' : `Expired ${count}d ago`;
+    }
+    if (days === 0) {
+      return 'Today';
+    }
+    if (days === 1) {
+      return 'Tomorrow';
+    }
+    if (days < 7) {
+      return `${days}d`;
+    }
+    return expiry;
+  }
+
+  function expiryBadgeClass(expiry: string | null, depletedCount = 0, activeCount = 1): string {
+    if (activeCount === 0 && depletedCount > 0) {
+      return 'neutral';
+    }
+    if (!expiry) {
+      return 'neutral';
+    }
+    const days = daysFromToday(expiry);
+    if (days === null) {
+      return 'neutral';
+    }
+    if (days < 0) {
+      return 'expired';
+    }
+    if (days < 7) {
+      return 'soon';
+    }
+    return 'available';
+  }
+
+  function daysFromToday(dateKey: string): number | null {
+    const expiry = new Date(`${dateKey}T00:00:00`);
+    if (Number.isNaN(expiry.getTime())) {
+      return null;
+    }
+    const today = new Date(`${localDateKey(new Date())}T00:00:00`);
+    return Math.round((expiry.getTime() - today.getTime()) / 86_400_000);
   }
 </script>
 
@@ -1758,6 +1815,19 @@
                           </p>
                         </div>
                         <div class="product-group-summary">
+                          <span
+                            class={`status-badge ${expiryBadgeClass(
+                              productGroup.earliestExpiry,
+                              productGroup.depletedCount,
+                              productGroup.activeCount
+                            )}`}
+                          >
+                            {expiryBadgeLabel(
+                              productGroup.earliestExpiry,
+                              productGroup.depletedCount,
+                              productGroup.activeCount
+                            )}
+                          </span>
                           <strong>{productGroupQuantity(productGroup)}</strong>
                         </div>
                       </button>
@@ -1783,6 +1853,19 @@
                                 <strong>{packageGroupQuantity(packageGroup)}</strong>
                                 <p>{packageGroupMeta(packageGroup)}</p>
                               </div>
+                              <span
+                                class={`status-badge ${expiryBadgeClass(
+                                  packageGroup.earliestExpiry,
+                                  packageGroup.depletedCount,
+                                  packageGroup.activeCount
+                                )}`}
+                              >
+                                {expiryBadgeLabel(
+                                  packageGroup.earliestExpiry,
+                                  packageGroup.depletedCount,
+                                  packageGroup.activeCount
+                                )}
+                              </span>
                             </button>
                           {/each}
                         </div>
@@ -1817,6 +1900,19 @@
               <strong data-testid="detail-quantity"
                 >{selectedBatch.quantity ?? '?'} {stockUnit(selectedBatch)}</strong
               >
+              <span
+                class={`status-badge ${expiryBadgeClass(
+                  stockExpiryValue(selectedBatch),
+                  isDepleted(selectedBatch) ? 1 : 0,
+                  isDepleted(selectedBatch) ? 0 : 1
+                )}`}
+              >
+                {expiryBadgeLabel(
+                  stockExpiryValue(selectedBatch),
+                  isDepleted(selectedBatch) ? 1 : 0,
+                  isDepleted(selectedBatch) ? 0 : 1
+                )}
+              </span>
             </div>
           </div>
 
