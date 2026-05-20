@@ -184,6 +184,41 @@ impl FromStr for LabelPrinterDriver {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
+pub enum LabelPrinterDelivery {
+    Server,
+    Client,
+}
+
+impl LabelPrinterDelivery {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Server => "server",
+            Self::Client => "client",
+        }
+    }
+}
+
+impl fmt::Display for LabelPrinterDelivery {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for LabelPrinterDelivery {
+    type Err = ApiError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "server" => Ok(Self::Server),
+            "client" => Ok(Self::Client),
+            other => Err(ApiError::Internal(anyhow::anyhow!(
+                "unknown label printer delivery in DB row: {other}",
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum LabelPrinterMedia {
     #[serde(rename = "dk_62_continuous")]
     Dk62Continuous,

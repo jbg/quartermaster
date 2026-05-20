@@ -15,13 +15,20 @@ actor APIClient: AppStateAPI {
   private let tokenStore: TokenStore
   private let baseURL: URL
   private let session: URLSession
+  private let labelPrinterClient: LabelPrinterSending
   private let jsonDecoder: JSONDecoder
   private let jsonEncoder: JSONEncoder
 
-  init(baseURL: URL, tokenStore: TokenStore, session: URLSession = .shared) {
+  init(
+    baseURL: URL,
+    tokenStore: TokenStore,
+    session: URLSession = .shared,
+    labelPrinterClient: LabelPrinterSending = LabelPrinterClient()
+  ) {
     self.tokenStore = tokenStore
     self.baseURL = baseURL
     self.session = session
+    self.labelPrinterClient = labelPrinterClient
     self.jsonDecoder = JSONDecoder()
     self.jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
     self.jsonEncoder = JSONEncoder()
@@ -930,11 +937,51 @@ actor APIClient: AppStateAPI {
       ))
     switch response {
     case .ok(let ok): return try ok.body.json
-    case .badRequest(let err): throw APIError.server(status: 400, body: try? err.body.json)
+    case .badRequest(let err):
+      let body = try? err.body.json
+      if body?.message.contains("client delivery") == true {
+        return try await renderAndSendStockLabel(id: id, request: request)
+      }
+      throw APIError.server(status: 400, body: body)
     case .notFound(let err): throw APIError.server(status: 404, body: try? err.body.json)
     case .undocumented(let statusCode, _):
       throw APIError.server(status: statusCode, body: nil)
     }
+  }
+
+  private func renderAndSendStockLabel(id: String, request: PrintStockLabelRequest) async throws
+    -> PrintStockLabelResponse
+  {
+    let response = try await client.stockLabelRender(
+      .init(path: .init(id: id), body: .json(request)))
+    let artifact: RenderLabelResponse
+    switch response {
+    case .ok(let ok):
+      artifact = try ok.body.json
+    case .badRequest(let err):
+      throw APIError.server(status: 400, body: try? err.body.json)
+    case .notFound(let err):
+      throw APIError.server(status: 404, body: try? err.body.json)
+    case .undocumented(let statusCode, _):
+      throw APIError.server(status: statusCode, body: nil)
+    }
+
+    guard let payload = Data(base64Encoded: artifact.payload) else {
+      throw APIError.decoding(
+        DecodingError.dataCorrupted(
+          .init(
+            codingPath: [],
+            debugDescription: "Label artifact payload is not valid base64"
+          )))
+    }
+    try await labelPrinterClient.send(payload, to: artifact.address, port: Int(artifact.port))
+    return PrintStockLabelResponse(
+      batchId: artifact.batchId,
+      batchUrl: artifact.batchUrl,
+      copies: Int32(artifact.copies),
+      printerId: artifact.printerId,
+      status: .sent
+    )
   }
 
   func listStockEvents(

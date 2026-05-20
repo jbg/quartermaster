@@ -112,6 +112,7 @@ enum class StockAction {
     Update,
     Consume,
     ConsumeAndStore,
+    PrintLabel,
     Discard,
     Restore,
 }
@@ -279,6 +280,7 @@ interface QuartermasterBackend {
     suspend fun updateStock(id: String, request: StockUpdateRequest): StockBatchDto
     suspend fun consumeStock(request: ConsumeRequest): ConsumeResponse
     suspend fun consumeAndStoreStock(batchId: String, request: ConsumeAndStoreRequest): ConsumeAndStoreResponse
+    suspend fun printStockLabel(batchId: String): PrintStockLabelResponse
     suspend fun discardStock(batchId: String)
     suspend fun restoreStock(batchId: String): StockBatchDto
 }
@@ -448,6 +450,7 @@ class QuartermasterApiBackend(
         batchId: String,
         request: ConsumeAndStoreRequest,
     ): ConsumeAndStoreResponse = api.consumeAndStoreStock(batchId, request)
+    override suspend fun printStockLabel(batchId: String): PrintStockLabelResponse = api.printStockLabel(batchId)
     override suspend fun discardStock(batchId: String) = api.discardStock(batchId)
     override suspend fun restoreStock(batchId: String): StockBatchDto = api.restoreStock(batchId)
 }
@@ -1507,6 +1510,10 @@ class QuartermasterAppState(
             saved = true
         }
         return saved
+    }
+
+    suspend fun printLabelForBatch(batchId: String) = runStockAction(batchId, StockAction.PrintLabel) {
+        backend.printStockLabel(batchId)
     }
 
     suspend fun discardBatch(batchId: String) = runStockAction(batchId, StockAction.Discard) {

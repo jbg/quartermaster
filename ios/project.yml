@@ -70,6 +70,9 @@ targets:
         INFOPLIST_KEY_NSCameraUsageDescription: >-
           Quartermaster scans barcodes to look up products when you add items to
           your inventory.
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: >-
+          Quartermaster connects to label printers on your local network when
+          printing stock labels from a hosted server.
         TARGETED_DEVICE_FAMILY: 1,2
         ENABLE_PREVIEWS: 'YES'
         GENERATE_INFOPLIST_FILE: 'YES'

@@ -21,6 +21,33 @@ export type ApiErrorBody = {
     unrestorable_ids?: Array<string> | null;
 };
 
+export type AuthHandoffAcceptRequest = {
+    device_label?: string | null;
+    id: string;
+    token: string;
+};
+
+export type AuthHandoffCreateResponse = {
+    expires_at: string;
+    handoff_url: string;
+    id: string;
+    target_device_label?: string | null;
+};
+
+export type AuthHandoffPreviewResponse = {
+    expires_at: string;
+    household_id?: string | null;
+    id: string;
+    source_display_name: string;
+    source_email: string;
+    target_device_label?: string | null;
+};
+
+export type AuthHandoffTokenRequest = {
+    id: string;
+    token: string;
+};
+
 export type BarcodeLookupResponse = {
     product: ProductDto;
     /**
@@ -84,6 +111,11 @@ export type ConsumedBatchDto = {
     unit: string;
 };
 
+export type CreateAuthHandoffRequest = {
+    server_url?: string | null;
+    target_device_label?: string | null;
+};
+
 export type CreateHouseholdRequest = {
     measurement_system?: null | MeasurementSystem;
     name: string;
@@ -97,6 +129,7 @@ export type CreateInviteRequest = {
 
 export type CreateLabelPrinterRequest = {
     address: string;
+    delivery?: null | LabelPrinterDelivery;
     driver: LabelPrinterDriver;
     enabled?: boolean | null;
     is_default?: boolean | null;
@@ -195,6 +228,7 @@ export type ExportHousehold = {
 export type ExportLabelPrinter = {
     address: string;
     created_at: string;
+    delivery?: string;
     driver: string;
     enabled: boolean;
     id: string;
@@ -371,11 +405,14 @@ export type JsonPatchOperation = {
 
 export type LabelPrintStatus = 'sent' | 'rendered';
 
+export type LabelPrinterDelivery = 'server' | 'client';
+
 export type LabelPrinterDriver = 'brother_ql_raster';
 
 export type LabelPrinterDto = {
     address: string;
     created_at: string;
+    delivery: LabelPrinterDelivery;
     driver: LabelPrinterDriver;
     enabled: boolean;
     id: string;
@@ -466,6 +503,47 @@ export type OnboardingStatusResponse = {
 export type OpenFoodFactsCredentialStatusResponse = {
     configured: boolean;
     username?: string | null;
+};
+
+export type PasskeyCredentialDto = {
+    created_at: string;
+    id: string;
+    label?: string | null;
+    last_used_at?: string | null;
+};
+
+export type PasskeyListResponse = {
+    credentials: Array<PasskeyCredentialDto>;
+};
+
+export type PasskeyLoginFinishRequest = {
+    ceremony_id: string;
+    credential: unknown;
+    device_label?: string | null;
+};
+
+export type PasskeyLoginStartRequest = {
+    email: string;
+};
+
+export type PasskeyLoginStartResponse = {
+    ceremony_id: string;
+    public_key: unknown;
+};
+
+export type PasskeyRegistrationFinishRequest = {
+    ceremony_id: string;
+    credential: unknown;
+    label?: string | null;
+};
+
+export type PasskeyRegistrationStartRequest = {
+    label?: string | null;
+};
+
+export type PasskeyRegistrationStartResponse = {
+    ceremony_id: string;
+    public_key: unknown;
 };
 
 export type PasswordResetConfirmRequest = {
@@ -604,6 +682,21 @@ export type ReminderListResponse = {
 };
 
 export type ReminderUrgency = 'expired' | 'expires_today' | 'expires_tomorrow' | 'expires_future';
+
+export type RenderLabelResponse = {
+    address: string;
+    batch_id: string;
+    batch_url: string;
+    copies: number;
+    driver: LabelPrinterDriver;
+    media: LabelPrinterMedia;
+    /**
+     * Base64-encoded printer-ready command stream for the selected driver.
+     */
+    payload: string;
+    port: number;
+    printer_id: string;
+};
 
 export type RequestEmailVerificationRequest = {
     email: string;
@@ -748,6 +841,7 @@ export type UpdateHouseholdRequest = {
 
 export type UpdateLabelPrinterRequest = {
     address?: string | null;
+    delivery?: null | LabelPrinterDelivery;
     enabled?: boolean | null;
     is_default?: boolean | null;
     media?: null | LabelPrinterMedia;
@@ -896,6 +990,87 @@ export type AuthEmailVerificationConfirmResponses = {
 
 export type AuthEmailVerificationConfirmResponse = AuthEmailVerificationConfirmResponses[keyof AuthEmailVerificationConfirmResponses];
 
+export type AuthHandoffCreateData = {
+    body: CreateAuthHandoffRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/handoffs';
+};
+
+export type AuthHandoffCreateErrors = {
+    400: ApiErrorBody;
+    401: ApiErrorBody;
+};
+
+export type AuthHandoffCreateError = AuthHandoffCreateErrors[keyof AuthHandoffCreateErrors];
+
+export type AuthHandoffCreateResponses = {
+    201: AuthHandoffCreateResponse;
+};
+
+export type AuthHandoffCreateResponse2 = AuthHandoffCreateResponses[keyof AuthHandoffCreateResponses];
+
+export type AuthHandoffAcceptData = {
+    body: AuthHandoffAcceptRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/handoffs/accept';
+};
+
+export type AuthHandoffAcceptErrors = {
+    400: ApiErrorBody;
+    401: ApiErrorBody;
+};
+
+export type AuthHandoffAcceptError = AuthHandoffAcceptErrors[keyof AuthHandoffAcceptErrors];
+
+export type AuthHandoffAcceptResponses = {
+    200: TokenPair;
+};
+
+export type AuthHandoffAcceptResponse = AuthHandoffAcceptResponses[keyof AuthHandoffAcceptResponses];
+
+export type AuthHandoffPreviewData = {
+    body: AuthHandoffTokenRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/handoffs/preview';
+};
+
+export type AuthHandoffPreviewErrors = {
+    400: ApiErrorBody;
+};
+
+export type AuthHandoffPreviewError = AuthHandoffPreviewErrors[keyof AuthHandoffPreviewErrors];
+
+export type AuthHandoffPreviewResponses = {
+    200: AuthHandoffPreviewResponse;
+};
+
+export type AuthHandoffPreviewResponse2 = AuthHandoffPreviewResponses[keyof AuthHandoffPreviewResponses];
+
+export type AuthHandoffCancelData = {
+    body?: never;
+    path: {
+        handoff_id: string;
+    };
+    query?: never;
+    url: '/api/v1/auth/handoffs/{handoff_id}';
+};
+
+export type AuthHandoffCancelErrors = {
+    401: ApiErrorBody;
+    404: ApiErrorBody;
+};
+
+export type AuthHandoffCancelError = AuthHandoffCancelErrors[keyof AuthHandoffCancelErrors];
+
+export type AuthHandoffCancelResponses = {
+    204: void;
+};
+
+export type AuthHandoffCancelResponse = AuthHandoffCancelResponses[keyof AuthHandoffCancelResponses];
+
 export type AuthLoginData = {
     body: LoginRequest;
     path?: never;
@@ -953,6 +1128,130 @@ export type AuthMeResponses = {
 };
 
 export type AuthMeResponse = AuthMeResponses[keyof AuthMeResponses];
+
+export type AuthPasskeysListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/passkeys';
+};
+
+export type AuthPasskeysListErrors = {
+    401: ApiErrorBody;
+};
+
+export type AuthPasskeysListError = AuthPasskeysListErrors[keyof AuthPasskeysListErrors];
+
+export type AuthPasskeysListResponses = {
+    200: PasskeyListResponse;
+};
+
+export type AuthPasskeysListResponse = AuthPasskeysListResponses[keyof AuthPasskeysListResponses];
+
+export type AuthPasskeyLoginFinishData = {
+    body: PasskeyLoginFinishRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/passkeys/login/finish';
+};
+
+export type AuthPasskeyLoginFinishErrors = {
+    400: ApiErrorBody;
+    401: ApiErrorBody;
+    503: ApiErrorBody;
+};
+
+export type AuthPasskeyLoginFinishError = AuthPasskeyLoginFinishErrors[keyof AuthPasskeyLoginFinishErrors];
+
+export type AuthPasskeyLoginFinishResponses = {
+    200: TokenPair;
+};
+
+export type AuthPasskeyLoginFinishResponse = AuthPasskeyLoginFinishResponses[keyof AuthPasskeyLoginFinishResponses];
+
+export type AuthPasskeyLoginStartData = {
+    body: PasskeyLoginStartRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/passkeys/login/start';
+};
+
+export type AuthPasskeyLoginStartErrors = {
+    401: ApiErrorBody;
+    503: ApiErrorBody;
+};
+
+export type AuthPasskeyLoginStartError = AuthPasskeyLoginStartErrors[keyof AuthPasskeyLoginStartErrors];
+
+export type AuthPasskeyLoginStartResponses = {
+    200: PasskeyLoginStartResponse;
+};
+
+export type AuthPasskeyLoginStartResponse = AuthPasskeyLoginStartResponses[keyof AuthPasskeyLoginStartResponses];
+
+export type AuthPasskeyRegistrationFinishData = {
+    body: PasskeyRegistrationFinishRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/passkeys/register/finish';
+};
+
+export type AuthPasskeyRegistrationFinishErrors = {
+    400: ApiErrorBody;
+    401: ApiErrorBody;
+    409: ApiErrorBody;
+    503: ApiErrorBody;
+};
+
+export type AuthPasskeyRegistrationFinishError = AuthPasskeyRegistrationFinishErrors[keyof AuthPasskeyRegistrationFinishErrors];
+
+export type AuthPasskeyRegistrationFinishResponses = {
+    201: PasskeyCredentialDto;
+};
+
+export type AuthPasskeyRegistrationFinishResponse = AuthPasskeyRegistrationFinishResponses[keyof AuthPasskeyRegistrationFinishResponses];
+
+export type AuthPasskeyRegistrationStartData = {
+    body: PasskeyRegistrationStartRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/passkeys/register/start';
+};
+
+export type AuthPasskeyRegistrationStartErrors = {
+    401: ApiErrorBody;
+    503: ApiErrorBody;
+};
+
+export type AuthPasskeyRegistrationStartError = AuthPasskeyRegistrationStartErrors[keyof AuthPasskeyRegistrationStartErrors];
+
+export type AuthPasskeyRegistrationStartResponses = {
+    200: PasskeyRegistrationStartResponse;
+};
+
+export type AuthPasskeyRegistrationStartResponse = AuthPasskeyRegistrationStartResponses[keyof AuthPasskeyRegistrationStartResponses];
+
+export type AuthPasskeyDeleteData = {
+    body?: never;
+    path: {
+        credential_id: string;
+    };
+    query?: never;
+    url: '/api/v1/auth/passkeys/{credential_id}';
+};
+
+export type AuthPasskeyDeleteErrors = {
+    401: ApiErrorBody;
+    404: ApiErrorBody;
+};
+
+export type AuthPasskeyDeleteError = AuthPasskeyDeleteErrors[keyof AuthPasskeyDeleteErrors];
+
+export type AuthPasskeyDeleteResponses = {
+    204: void;
+};
+
+export type AuthPasskeyDeleteResponse = AuthPasskeyDeleteResponses[keyof AuthPasskeyDeleteResponses];
 
 export type AuthPasswordResetConfirmData = {
     body: PasswordResetConfirmRequest;
@@ -1379,6 +1678,21 @@ export type LabelPrintersTestResponses = {
 };
 
 export type LabelPrintersTestResponse = LabelPrintersTestResponses[keyof LabelPrintersTestResponses];
+
+export type LabelPrintersTestRenderData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/label-printers/{id}/test/render';
+};
+
+export type LabelPrintersTestRenderResponses = {
+    200: RenderLabelResponse;
+};
+
+export type LabelPrintersTestRenderResponse = LabelPrintersTestRenderResponses[keyof LabelPrintersTestRenderResponses];
 
 export type LocationsListData = {
     body?: never;
@@ -2108,6 +2422,28 @@ export type StockLabelPrintResponses = {
 };
 
 export type StockLabelPrintResponse = StockLabelPrintResponses[keyof StockLabelPrintResponses];
+
+export type StockLabelRenderData = {
+    body: PrintStockLabelRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/stock/{id}/labels/render';
+};
+
+export type StockLabelRenderErrors = {
+    400: ApiErrorBody;
+    404: ApiErrorBody;
+};
+
+export type StockLabelRenderError = StockLabelRenderErrors[keyof StockLabelRenderErrors];
+
+export type StockLabelRenderResponses = {
+    200: RenderLabelResponse;
+};
+
+export type StockLabelRenderResponse = StockLabelRenderResponses[keyof StockLabelRenderResponses];
 
 export type StockRestoreData = {
     body?: never;

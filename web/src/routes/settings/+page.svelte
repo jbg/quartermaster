@@ -23,6 +23,7 @@
     createBrowserSessionStorage,
     QuartermasterSession,
     type LabelPrinter,
+    type LabelPrinterDelivery,
     type LabelPrinterMedia,
     type Location,
     type MeResponse,
@@ -81,6 +82,7 @@
   let printerAddress = $state('');
   let printerPort = $state('9100');
   let printerMedia = $state<LabelPrinterMedia>('dk_62_continuous');
+  let printerDelivery = $state<LabelPrinterDelivery>('server');
   let printerDefault = $state(false);
 
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
@@ -438,6 +440,7 @@
     printerAddress = '';
     printerPort = '9100';
     printerMedia = 'dk_62_continuous';
+    printerDelivery = 'server';
     printerDefault = false;
     printerError = null;
     printerMessage = null;
@@ -469,6 +472,7 @@
     printerAddress = printer.address;
     printerPort = String(printer.port);
     printerMedia = printer.media;
+    printerDelivery = printer.delivery ?? 'server';
     printerDefault = printer.is_default || printer.isDefault || false;
     printerError = null;
     printerMessage = null;
@@ -690,6 +694,7 @@
           address,
           port,
           media: printerMedia,
+          delivery: printerDelivery,
           is_default: printerDefault
         });
       } else {
@@ -699,6 +704,7 @@
           address,
           port,
           media: printerMedia,
+          delivery: printerDelivery,
           enabled: true,
           is_default: printerDefault || printers.length === 0
         });
@@ -756,8 +762,14 @@
     printerError = null;
     printerMessage = null;
     try {
-      await session.labelPrintersTest(printer.id);
-      printerMessage = 'Test label sent.';
+      if (printer.delivery === 'client') {
+        await session.labelPrintersTestRender(printer.id);
+        printerMessage =
+          'Test label rendered. Open iOS or Android on the printer network to send it.';
+      } else {
+        await session.labelPrintersTest(printer.id);
+        printerMessage = 'Test label sent.';
+      }
     } catch {
       printerError = 'Test label could not be sent.';
     } finally {
@@ -1160,6 +1172,7 @@
                   <h3>{printer.name}</h3>
                   <p>
                     {printer.address}:{printer.port} - {printer.media}
+                    - {printer.delivery === 'client' ? 'client-reached' : 'server-reached'}
                     {#if printer.is_default || printer.isDefault}
                       - default{/if}
                     {#if !printer.enabled}
@@ -1240,6 +1253,13 @@
               <option value="dk_62_continuous">DK 62 continuous</option>
               <option value="dk_62_red_black_continuous">DK 62 red/black continuous</option>
               <option value="dk_29x90">DK 29 x 90</option>
+            </select>
+          </label>
+          <label>
+            Delivery
+            <select bind:value={printerDelivery}>
+              <option value="server">Server reaches printer</option>
+              <option value="client">Phone or tablet reaches printer</option>
             </select>
           </label>
           <label class="checkbox-row">

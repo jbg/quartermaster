@@ -1,5 +1,6 @@
 package dev.quartermaster.android
 
+import android.util.Base64
 import dev.quartermaster.android.generated.infrastructure.Serializer
 import dev.quartermaster.android.generated.models.BarcodeLookupResponse
 import dev.quartermaster.android.generated.models.ConfirmEmailVerificationRequest
@@ -207,8 +208,48 @@ data class JsonPatchOperation(
     constructor(op: String, path: String, value: Long) : this(op, path, JsonPrimitive(value))
 }
 
+@Serializable
+data class PrintStockLabelRequest(
+    val copies: Int = 1,
+    @SerialName("include_quantity")
+    val includeQuantity: Boolean = false,
+    @SerialName("label_size")
+    val labelSize: String = "standard",
+    @SerialName("printer_id")
+    val printerId: String? = null,
+)
+
+@Serializable
+data class PrintStockLabelResponse(
+    @SerialName("printer_id")
+    val printerId: String,
+    @SerialName("batch_id")
+    val batchId: String,
+    @SerialName("batch_url")
+    val batchUrl: String,
+    val copies: Int,
+    val status: String,
+)
+
+@Serializable
+data class RenderLabelResponse(
+    @SerialName("printer_id")
+    val printerId: String,
+    @SerialName("batch_id")
+    val batchId: String,
+    @SerialName("batch_url")
+    val batchUrl: String,
+    val driver: String,
+    val media: String,
+    val address: String,
+    val port: Int,
+    val copies: Int,
+    val payload: String,
+)
+
 class QuartermasterApi(
     private val authStore: AuthStore,
+    private val labelPrinterSender: LabelPrinterSender = TcpLabelPrinterSender(),
 ) {
     private val apiPrefix = "/api/v1"
     private val json = Serializer.kotlinxSerializationJson
@@ -691,6 +732,35 @@ class QuartermasterApi(
         path = "/stock/${batchId.urlEncode()}/consume-and-store",
         body = request,
     )
+
+    suspend fun printStockLabel(batchId: String): PrintStockLabelResponse {
+        val request = PrintStockLabelRequest()
+        return try {
+            authedJson(
+                method = "POST",
+                path = "/stock/${batchId.urlEncode()}/labels/print",
+                body = request,
+            )
+        } catch (failure: ApiFailure) {
+            if (!failure.message.contains("client delivery", ignoreCase = true)) {
+                throw failure
+            }
+            val artifact: RenderLabelResponse = authedJson(
+                method = "POST",
+                path = "/stock/${batchId.urlEncode()}/labels/render",
+                body = request,
+            )
+            val payload = Base64.decode(artifact.payload, Base64.DEFAULT)
+            labelPrinterSender.send(payload, artifact.address, artifact.port)
+            PrintStockLabelResponse(
+                printerId = artifact.printerId,
+                batchId = artifact.batchId,
+                batchUrl = artifact.batchUrl,
+                copies = artifact.copies,
+                status = "sent",
+            )
+        }
+    }
 
     suspend fun discardStock(batchId: String) {
         authedUnit("DELETE", "/stock/${batchId.urlEncode()}")

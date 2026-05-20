@@ -980,6 +980,9 @@
         if (message.includes('no enabled label printer')) {
           return 'Add an enabled label printer in Settings first.';
         }
+        if (message.includes('client delivery')) {
+          return 'This printer is reached from iOS or Android on your local network. Web printing is not supported for client-reached printers.';
+        }
       }
     }
     return 'Label could not be printed.';
