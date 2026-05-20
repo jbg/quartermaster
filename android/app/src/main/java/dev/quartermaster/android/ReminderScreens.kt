@@ -121,6 +121,7 @@ private fun ReminderCard(
     val title = reminderDisplayTitle(reminder)
     val body = reminderDisplayBody(reminder)
     val urgency = reminderUrgencyText(reminder)
+    val badge = reminderStatusBadge(reminder)
     Card {
         Column(
             modifier = Modifier
@@ -129,18 +130,26 @@ private fun ReminderCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(body)
-            urgency?.let {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Text(
-                    it,
-                    style = MaterialTheme.typography.bodySmall,
+                    title,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
                 )
+                badge?.let { StatusBadge(it.first, it.second) }
+            }
+            Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            urgency?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall)
             }
             reminder.expiresOn?.let { expiresOn ->
                 Text(
                     stringResource(R.string.reminder_inbox_expiry_date, formatReminderDate(expiresOn)),
                     style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Text(
@@ -150,6 +159,7 @@ private fun ReminderCard(
                     reminder.householdTimezone,
                 ),
                 style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (action != null) {
                 InlineStatusCard(
@@ -192,6 +202,14 @@ private fun ReminderCard(
             }
         }
     }
+}
+
+private fun reminderStatusBadge(reminder: ReminderDto): Pair<String, StatusTone>? = when (reminder.urgency) {
+    ReminderUrgency.EXPIRED -> "Expired" to StatusTone.Expired
+    ReminderUrgency.EXPIRES_TODAY -> "Today" to StatusTone.Soon
+    ReminderUrgency.EXPIRES_TOMORROW -> "Tomorrow" to StatusTone.Soon
+    ReminderUrgency.EXPIRES_FUTURE -> "Use soon" to StatusTone.Soon
+    null -> null
 }
 
 @Composable
