@@ -1059,11 +1059,15 @@ export class QuartermasterSession {
 }
 
 function stableBrowserDeviceId(): string {
+  return browserRandomId('web');
+}
+
+export function browserRandomId(prefix: string): string {
   const randomUUID = globalThis.crypto?.randomUUID?.bind(globalThis.crypto);
   if (randomUUID) {
-    return `web-${randomUUID()}`;
+    return `${prefix}-${randomUUID()}`;
   }
-  return `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
 export function unwrap<T>(result: ApiResult<T>): T {
