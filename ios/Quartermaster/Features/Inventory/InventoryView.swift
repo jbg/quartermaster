@@ -110,8 +110,9 @@ struct InventoryView: View {
         Section {
           Text("Expiry dates follow \(appState.householdTimeZoneID ?? "the household timezone").")
             .font(.footnote)
-            .foregroundStyle(.secondary)
+            .quartermasterMetadata()
         }
+        .quartermasterPanelRow()
       }
       Section {
         Picker("Filter", selection: $filter.animation(.easeInOut(duration: 0.15))) {
@@ -144,16 +145,19 @@ struct InventoryView: View {
               }
               .accessibilityIdentifier("inventory.product.\(group.product.id)")
               .buttonStyle(.plain)
+              .quartermasterPanelRow()
             }
           }
         } header: {
           Label(location.name, systemImage: icon(for: location.kind))
             .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Color.quartermasterTextSecondary)
             .textCase(nil)
         }
       }
     }
     .listStyle(.insetGrouped)
+    .quartermasterScreenBackground()
   }
 
   private struct ProductGroup {
@@ -223,12 +227,12 @@ struct InventoryView: View {
     case .expiringSoon:
       Text("Nothing expiring in the next week here.")
         .font(.footnote)
-        .foregroundStyle(.secondary)
+        .quartermasterMetadata()
         .frame(maxWidth: .infinity, alignment: .leading)
     case .expired:
       Text("Nothing expired here.")
         .font(.footnote)
-        .foregroundStyle(.secondary)
+        .quartermasterMetadata()
         .frame(maxWidth: .infinity, alignment: .leading)
     }
   }

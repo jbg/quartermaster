@@ -67,7 +67,9 @@ struct BatchDetailView: View {
           VStack(alignment: .leading, spacing: 2) {
             Text(batch.product.displayTitle)
               .font(.headline)
-              .foregroundStyle(batch.product.isDeleted ? .secondary : .primary)
+              .foregroundStyle(
+                batch.product.isDeleted
+                  ? Color.quartermasterTextMuted : Color.quartermasterTextPrimary)
             HStack(spacing: 4) {
               Text(batch.product.family.displayName)
               if batch.product.isDeleted {
@@ -75,19 +77,21 @@ struct BatchDetailView: View {
               }
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .quartermasterMetadata()
           }
         }
       }
+      .quartermasterPanelRow()
 
       Section("Current state") {
         LabeledContent("Quantity") {
           if isDepleted(batch) {
             Text("Depleted")
-              .foregroundStyle(.secondary)
+              .quartermasterMetadata()
           } else {
             Text("\(batch.quantity) \(batch.unit)")
               .fontWeight(.medium)
+              .foregroundStyle(Color.quartermasterTextPrimary)
           }
         }
         LabeledContent("Initial", value: "\(batch.initialQuantity) \(batch.unit)")
@@ -105,6 +109,7 @@ struct BatchDetailView: View {
           LabeledContent("Note", value: note)
         }
       }
+      .quartermasterPanelRow()
 
       if appState.timezonesDiffer {
         Section {
@@ -112,13 +117,15 @@ struct BatchDetailView: View {
             "Expiry dates in this household follow \(appState.householdTimeZoneID ?? "the household timezone")."
           )
           .font(.footnote)
-          .foregroundStyle(.secondary)
+          .quartermasterMetadata()
         }
+        .quartermasterPanelRow()
       }
 
       Section("Recent history for this batch") {
         MiniBatchHistory(entries: recentEvents)
       }
+      .quartermasterPanelRow()
 
       Section {
         // Restore is only meaningful when the batch was explicitly
@@ -151,7 +158,9 @@ struct BatchDetailView: View {
           }
         }
       }
+      .quartermasterPanelRow()
     }
+    .quartermasterScreenBackground()
   }
 
   private func productThumb(_ product: Product) -> some View {
@@ -162,18 +171,22 @@ struct BatchDetailView: View {
           case .success(let image):
             image.resizable().scaledToFit()
           default:
-            Color.secondary.opacity(0.1)
+            Color.quartermasterSubtleSurface
           }
         }
       } else {
         Image(systemName: icon(for: product.family))
-          .foregroundStyle(.secondary)
+          .foregroundStyle(Color.quartermasterTextMuted)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
-          .background(Color.secondary.opacity(0.1))
+          .background(Color.quartermasterSubtleSurface)
       }
     }
     .frame(width: 48, height: 48)
-    .clipShape(RoundedRectangle(cornerRadius: 8))
+    .clipShape(RoundedRectangle(cornerRadius: QuartermasterRadius.md))
+    .overlay {
+      RoundedRectangle(cornerRadius: QuartermasterRadius.md)
+        .stroke(Color.quartermasterBorder, lineWidth: 1)
+    }
   }
 
   private func icon(for family: ProductFamily) -> String {
@@ -261,7 +274,7 @@ private struct MiniBatchHistory: View {
     if entries.isEmpty {
       Text("No events recorded.")
         .font(.footnote)
-        .foregroundStyle(.secondary)
+        .quartermasterMetadata()
     } else {
       ForEach(entries) { event in
         StockEventRowView(event: event)

@@ -57,12 +57,13 @@ struct OnboardingView: View {
         if let resetMessage {
           Section {
             Text(resetMessage)
-              .foregroundStyle(.secondary)
+              .quartermasterMetadata()
           }
         }
       }
       .navigationTitle("Quartermaster")
       .navigationBarTitleDisplayMode(.inline)
+      .quartermasterScreenBackground()
       .task {
         serverURL = appState.serverURL.absoluteString
         applyPendingInviteContext()
@@ -87,10 +88,10 @@ struct OnboardingView: View {
       VStack(alignment: .leading, spacing: 2) {
         Text("Quartermaster")
           .font(.title2.weight(.semibold))
-          .foregroundStyle(.primary)
+          .foregroundStyle(Color.quartermasterTextPrimary)
         Text("Kitchen inventory, kept in order.")
           .font(.footnote)
-          .foregroundStyle(.secondary)
+          .quartermasterMetadata()
       }
     }
     .padding(.vertical, 8)
