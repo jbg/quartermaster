@@ -7,7 +7,7 @@ COPY xtask ./xtask
 
 RUN cargo build --release -p qm-server
 
-FROM node:26.1.0-bookworm AS web-builder
+FROM node:26.2.0-bookworm AS web-builder
 WORKDIR /src
 
 ENV VOLTA_HOME=/root/.volta
