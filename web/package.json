@@ -17,19 +17,19 @@
   "dependencies": {
     "qrcode": "1.5.4",
     "@sveltejs/adapter-static": "3.0.10",
-    "@sveltejs/kit": "2.60.1",
+    "@sveltejs/kit": "2.61.1",
     "@sveltejs/vite-plugin-svelte": "7.1.2",
     "svelte": "5.55.9",
-    "vite": "8.0.13"
+    "vite": "8.0.14"
   },
   "devDependencies": {
-    "@hey-api/openapi-ts": "0.97.2",
+    "@hey-api/openapi-ts": "0.97.3",
     "@types/qrcode": "1.5.6",
     "@types/node": "25.9.1",
     "svelte-check": "4.4.8",
     "typescript": "6.0.3",
     "prettier": "3.8.3",
-    "prettier-plugin-svelte": "3.5.2",
+    "prettier-plugin-svelte": "4.0.1",
     "@playwright/test": "1.60.0",
     "vitest": "4.1.7"
   }
