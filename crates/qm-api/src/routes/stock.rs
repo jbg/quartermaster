@@ -828,6 +828,8 @@ pub struct StockEventDto {
     pub consume_request_id: Option<Uuid>,
     /// Shared by all rows written by a single split/repack operation.
     pub operation_id: Option<Uuid>,
+    /// Shared by consume/add rows written by one recipe execution.
+    pub recipe_execution_id: Option<Uuid>,
 }
 
 impl TryFrom<TimelineEntryRow> for StockEventDto {
@@ -850,6 +852,7 @@ impl TryFrom<TimelineEntryRow> for StockEventDto {
             product: r.product.try_into()?,
             consume_request_id: r.event.consume_request_id,
             operation_id: r.event.operation_id,
+            recipe_execution_id: r.event.recipe_execution_id,
         })
     }
 }

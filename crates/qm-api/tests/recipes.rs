@@ -2,7 +2,10 @@ mod support;
 
 use axum::http::{Method, StatusCode};
 use qm_api::{ApiConfig, RegistrationMode};
+use rust_decimal::Decimal;
 use serde_json::json;
+use sqlx::Row;
+use std::str::FromStr;
 use support::{me_current_household_id, TestApp};
 use uuid::Uuid;
 
@@ -337,4 +340,346 @@ async fn household_export_import_round_trips_ingredients_and_recipes() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(imported_recipes["items"].as_array().unwrap().len(), 1);
     assert_eq!(imported_recipes["items"][0]["name"], "Tomato snack");
+}
+
+#[tokio::test]
+async fn recipe_execution_preflights_adjusted_recipe_and_is_idempotent() {
+    let app = TestApp::start(ApiConfig::default()).await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let (household_id, pantry_id) = household_and_pantry(&app, &alice).await;
+
+    let rice_id = create_product(&app, &alice, "Rice", "mass", "g").await;
+    let leftovers_id = create_product(&app, &alice, "Cooked rice", "mass", "g").await;
+    let first_batch = create_stock(
+        &app,
+        &alice,
+        rice_id,
+        pantry_id,
+        "500",
+        "g",
+        Some("2026-06-01"),
+    )
+    .await;
+    let second_batch = create_stock(
+        &app,
+        &alice,
+        rice_id,
+        pantry_id,
+        "300",
+        "g",
+        Some("2026-06-10"),
+    )
+    .await;
+
+    let (status, preflight) = app
+        .send(
+            Method::POST,
+            "/api/v1/recipes/executions/preflight",
+            Some(json!({
+                "recipe_name": "Rice bowls",
+                "serving_scale": "1",
+                "ingredients": [{
+                    "line_id": "rice",
+                    "display_name": "rice",
+                    "product_id": rice_id,
+                    "quantity": "600",
+                    "unit": "g"
+                }],
+                "outputs": [{
+                    "product_id": leftovers_id,
+                    "location_id": pantry_id,
+                    "quantity": "100",
+                    "unit": "g",
+                    "expires_on": "2026-06-03"
+                }]
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(preflight["can_execute"], true);
+    assert_eq!(
+        preflight["ingredients"][0]["matched_batches"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+
+    let (status, cooked) = app
+        .send(
+            Method::POST,
+            "/api/v1/recipes/executions",
+            Some(json!({
+                "recipe_name": "Rice bowls",
+                "serving_scale": "1",
+                "idempotency_key": "cook-rice-once",
+                "ingredients": [{
+                    "line_id": "rice",
+                    "display_name": "rice",
+                    "product_id": rice_id,
+                    "quantity": "450",
+                    "unit": "g"
+                }],
+                "outputs": [{
+                    "product_id": leftovers_id,
+                    "location_id": pantry_id,
+                    "quantity": "80",
+                    "unit": "g",
+                    "expires_on": "2026-06-03"
+                }]
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(cooked["idempotent_replay"], false);
+    assert_eq!(
+        cooked["plan"]["ingredients"][0]["requested_quantity"],
+        "450"
+    );
+    assert_eq!(cooked["output_batches"][0]["quantity"], "80");
+    let execution_id = cooked["execution_id"].as_str().unwrap();
+    let consume_request_id = cooked["consume_request_id"].as_str().unwrap();
+
+    assert_eq!(
+        app.send(
+            Method::GET,
+            &format!("/api/v1/stock/{first_batch}"),
+            None,
+            Some(&alice),
+        )
+        .await
+        .1["quantity"],
+        "50"
+    );
+    assert_eq!(
+        app.send(
+            Method::GET,
+            &format!("/api/v1/stock/{second_batch}"),
+            None,
+            Some(&alice),
+        )
+        .await
+        .1["quantity"],
+        "300"
+    );
+
+    let events = qm_db::stock_events::list_for_batch(&app.db, first_batch)
+        .await
+        .unwrap();
+    let consume_event = events
+        .iter()
+        .find(|event| event.event_type == "consume")
+        .unwrap();
+    assert_eq!(
+        consume_event.recipe_execution_id.unwrap().to_string(),
+        execution_id
+    );
+    assert_eq!(
+        consume_event.consume_request_id.unwrap().to_string(),
+        consume_request_id
+    );
+
+    let output_batch_id =
+        Uuid::parse_str(cooked["output_batches"][0]["id"].as_str().unwrap()).unwrap();
+    let output_events = qm_db::stock_events::list_for_batch(&app.db, output_batch_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        output_events[0].recipe_execution_id.unwrap().to_string(),
+        execution_id
+    );
+
+    let (status, replay) = app
+        .send(
+            Method::POST,
+            "/api/v1/recipes/executions",
+            Some(json!({
+                "recipe_name": "Rice bowls",
+                "serving_scale": "1",
+                "idempotency_key": "cook-rice-once",
+                "ingredients": [{
+                    "line_id": "rice",
+                    "display_name": "rice",
+                    "product_id": rice_id,
+                    "quantity": "10",
+                    "unit": "g"
+                }]
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(replay["idempotent_replay"], true);
+    assert_eq!(replay["execution_id"], execution_id);
+    assert_eq!(
+        app.send(
+            Method::GET,
+            &format!("/api/v1/stock/{first_batch}"),
+            None,
+            Some(&alice),
+        )
+        .await
+        .1["quantity"],
+        "50"
+    );
+
+    assert_ledger_balances(&app, household_id).await;
+}
+
+#[tokio::test]
+async fn recipe_execution_requires_confirmation_for_missing_required_ingredients() {
+    let app = TestApp::start(ApiConfig::default()).await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let (_household_id, pantry_id) = household_and_pantry(&app, &alice).await;
+
+    let flour_id = create_product(&app, &alice, "Flour", "mass", "g").await;
+    let batch_id = create_stock(&app, &alice, flour_id, pantry_id, "100", "g", None).await;
+
+    let request = json!({
+        "recipe_name": "Bread",
+        "ingredients": [{
+            "line_id": "flour",
+            "display_name": "flour",
+            "product_id": flour_id,
+            "quantity": "250",
+            "unit": "g"
+        }]
+    });
+    let (status, preflight) = app
+        .send(
+            Method::POST,
+            "/api/v1/recipes/executions/preflight",
+            Some(request.clone()),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(preflight["can_execute"], false);
+    assert_eq!(
+        preflight["missing_ingredients"][0]["missing_quantity"],
+        "150"
+    );
+
+    let (status, body) = app
+        .send(
+            Method::POST,
+            "/api/v1/recipes/executions",
+            Some(request),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "bad_request");
+    assert_eq!(
+        app.send(
+            Method::GET,
+            &format!("/api/v1/stock/{batch_id}"),
+            None,
+            Some(&alice),
+        )
+        .await
+        .1["quantity"],
+        "100"
+    );
+}
+
+async fn household_and_pantry(app: &TestApp, bearer: &str) -> (Uuid, Uuid) {
+    let me = app.me(bearer).await;
+    let household_id = Uuid::parse_str(me_current_household_id(&me).unwrap()).unwrap();
+    let pantry = qm_db::locations::list_for_household(&app.db, household_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|loc| loc.kind == "pantry")
+        .unwrap();
+    (household_id, pantry.id)
+}
+
+async fn create_product(
+    app: &TestApp,
+    bearer: &str,
+    name: &str,
+    family: &str,
+    preferred_unit: &str,
+) -> Uuid {
+    let (status, body) = app
+        .send(
+            Method::POST,
+            "/api/v1/products",
+            Some(json!({
+                "name": name,
+                "brand": null,
+                "family": family,
+                "preferred_unit": preferred_unit,
+                "barcode": null,
+                "image_url": null
+            })),
+            Some(bearer),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    Uuid::parse_str(body["id"].as_str().unwrap()).unwrap()
+}
+
+async fn create_stock(
+    app: &TestApp,
+    bearer: &str,
+    product_id: Uuid,
+    location_id: Uuid,
+    quantity: &str,
+    unit: &str,
+    expires_on: Option<&str>,
+) -> Uuid {
+    let (status, body) = app
+        .send(
+            Method::POST,
+            "/api/v1/stock",
+            Some(json!({
+                "product_id": product_id,
+                "location_id": location_id,
+                "quantity": quantity,
+                "unit": unit,
+                "expires_on": expires_on
+            })),
+            Some(bearer),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    Uuid::parse_str(body["id"].as_str().unwrap()).unwrap()
+}
+
+async fn assert_ledger_balances(app: &TestApp, household_id: Uuid) {
+    let rows = sqlx::query(
+        "SELECT b.id, b.quantity \
+         FROM stock_batch b \
+         WHERE b.household_id = ?",
+    )
+    .bind(household_id.to_string())
+    .fetch_all(&app.db.pool)
+    .await
+    .unwrap();
+
+    for row in rows {
+        let batch_id: String = row.try_get("id").unwrap();
+        let quantity: String = row.try_get("quantity").unwrap();
+        let events =
+            qm_db::stock_events::list_for_batch(&app.db, Uuid::parse_str(&batch_id).unwrap())
+                .await
+                .unwrap();
+        let sum = events.into_iter().fold(Decimal::ZERO, |acc, event| {
+            acc + Decimal::from_str(&event.quantity_delta).unwrap()
+        });
+        assert_eq!(
+            sum.normalize().to_string(),
+            Decimal::from_str(&quantity)
+                .unwrap()
+                .normalize()
+                .to_string(),
+            "ledger mismatch for {batch_id}"
+        );
+    }
 }
