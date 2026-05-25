@@ -2,7 +2,7 @@ use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{now_utc_rfc3339, Database};
+use crate::{audited_sql, now_utc_rfc3339, Database};
 
 const INGREDIENT_COLS: &str = "id, household_id, display_name, category, default_family, \
                                aliases_json, dietary_tags_json, allergen_tags_json, notes, \
@@ -166,7 +166,7 @@ pub async fn list(
          ORDER BY display_name ASC \
          LIMIT ?"
     );
-    let mut q = sqlx::query(&sql).bind(household_id.to_string());
+    let mut q = sqlx::query(audited_sql(sql)).bind(household_id.to_string());
     let pattern = trimmed.map(|value| format!("%{}%", value.replace('%', r"\%")));
     if let Some(pattern) = pattern.as_deref() {
         q = q.bind(pattern).bind(pattern);
@@ -181,7 +181,7 @@ pub async fn find(
     id: Uuid,
 ) -> Result<Option<IngredientRow>, sqlx::Error> {
     let sql = format!("SELECT {INGREDIENT_COLS} FROM ingredient WHERE household_id = ? AND id = ?");
-    let row = sqlx::query(&sql)
+    let row = sqlx::query(audited_sql(sql))
         .bind(household_id.to_string())
         .bind(id.to_string())
         .fetch_optional(&db.pool)
@@ -270,7 +270,7 @@ pub async fn list_mappings(
          WHERE household_id = ? AND ingredient_id = ? \
          ORDER BY rank ASC, created_at ASC"
     );
-    let rows = sqlx::query(&sql)
+    let rows = sqlx::query(audited_sql(sql))
         .bind(household_id.to_string())
         .bind(ingredient_id.to_string())
         .fetch_all(&db.pool)
@@ -338,7 +338,7 @@ pub async fn find_mapping(
          FROM ingredient_product_mapping \
          WHERE household_id = ? AND ingredient_id = ? AND id = ?"
     );
-    let row = sqlx::query(&sql)
+    let row = sqlx::query(audited_sql(sql))
         .bind(household_id.to_string())
         .bind(ingredient_id.to_string())
         .bind(id.to_string())
@@ -424,7 +424,7 @@ pub async fn find_product_metadata(
          FROM product_recipe_metadata \
          WHERE household_id = ? AND product_id = ?"
     );
-    let row = sqlx::query(&sql)
+    let row = sqlx::query(audited_sql(sql))
         .bind(household_id.to_string())
         .bind(product_id.to_string())
         .fetch_optional(&db.pool)

@@ -3433,6 +3433,338 @@
         ]
       }
     },
+    "/api/v1/recipes": {
+      "get": {
+        "tags": [
+          "recipes"
+        ],
+        "operationId": "recipe_list",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "recipes"
+        ],
+        "operationId": "recipe_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRecipeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/recipes/imports/text": {
+      "post": {
+        "tags": [
+          "recipes"
+        ],
+        "operationId": "recipe_import_text",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportTextRecipeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/recipes/{id}": {
+      "get": {
+        "tags": [
+          "recipes"
+        ],
+        "operationId": "recipe_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "recipes"
+        ],
+        "operationId": "recipe_update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRecipeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "recipes"
+        ],
+        "operationId": "recipe_delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/recipes/{id}/scale": {
+      "post": {
+        "tags": [
+          "recipes"
+        ],
+        "operationId": "recipe_scale",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScaleRecipeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeScaleResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/recipes/{id}/validate": {
+      "get": {
+        "tags": [
+          "recipes"
+        ],
+        "operationId": "recipe_validate",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeValidationResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/reminders": {
       "get": {
         "tags": [
@@ -5240,6 +5572,69 @@
           }
         }
       },
+      "CreateRecipeRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "serving_count"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ingredients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeIngredientDto"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeOutputDto"
+            }
+          },
+          "provenance": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeProvenanceDto"
+            }
+          },
+          "serving_count": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/RecipeSource"
+          },
+          "source_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeStepDto"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/RecipeVisibility"
+          }
+        }
+      },
       "CreateStockRequest": {
         "type": "object",
         "required": [
@@ -5418,6 +5813,191 @@
           },
           "timezone": {
             "type": "string"
+          }
+        }
+      },
+      "ExportIngredient": {
+        "type": "object",
+        "required": [
+          "id",
+          "display_name",
+          "aliases_json",
+          "dietary_tags_json",
+          "allergen_tags_json",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "aliases_json": {
+            "type": "string"
+          },
+          "allergen_tags_json": {
+            "type": "string"
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "default_family": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dietary_tags_json": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "ExportIngredientProductMapping": {
+        "type": "object",
+        "required": [
+          "id",
+          "ingredient_id",
+          "product_id",
+          "rank",
+          "match_kind",
+          "match_metadata_json",
+          "recipe_to_taste",
+          "inventory_to_taste",
+          "created_at"
+        ],
+        "properties": {
+          "conversion_notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "conversion_provenance": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ingredient_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "inventory_amount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inventory_family": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inventory_preparation_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inventory_range_max": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inventory_range_min": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inventory_to_taste": {
+            "type": "boolean"
+          },
+          "inventory_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "match_kind": {
+            "type": "string"
+          },
+          "match_metadata_json": {
+            "type": "string"
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rank": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "recipe_amount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recipe_family": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recipe_preparation_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recipe_range_max": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recipe_range_min": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recipe_to_taste": {
+            "type": "boolean"
+          },
+          "recipe_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -5620,6 +6200,492 @@
           },
           "source": {
             "type": "string"
+          }
+        }
+      },
+      "ExportProductRecipeMetadata": {
+        "type": "object",
+        "required": [
+          "product_id",
+          "counts_as_aliases_json",
+          "updated_at"
+        ],
+        "properties": {
+          "counts_as_aliases_json": {
+            "type": "string"
+          },
+          "density_inventory_quantity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "density_inventory_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "density_provenance": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "density_recipe_quantity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "density_recipe_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "drained_quantity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "drained_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "edible_yield_percent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preparation_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "ExportRecipe": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "serving_count",
+          "source",
+          "visibility",
+          "tags_json",
+          "latest_version_id",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "latest_version_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "serving_count": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "tags_json": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        }
+      },
+      "ExportRecipeIngredient": {
+        "type": "object",
+        "required": [
+          "id",
+          "recipe_id",
+          "recipe_version_id",
+          "sort_order",
+          "display_name",
+          "to_taste",
+          "optional",
+          "substitution_hints_json",
+          "created_at"
+        ],
+        "properties": {
+          "amount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "family": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "group_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ingredient_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "preparation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "range_max": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "range_min": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recipe_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recipe_version_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "substitution_hints_json": {
+            "type": "string"
+          },
+          "to_taste": {
+            "type": "boolean"
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ExportRecipeOutput": {
+        "type": "object",
+        "required": [
+          "id",
+          "recipe_id",
+          "recipe_version_id",
+          "sort_order",
+          "name",
+          "to_taste",
+          "created_at"
+        ],
+        "properties": {
+          "amount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "expires_after_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "family": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "preparation_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "range_max": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "range_min": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recipe_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recipe_version_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "storage_notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to_taste": {
+            "type": "boolean"
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ExportRecipeProvenance": {
+        "type": "object",
+        "required": [
+          "id",
+          "recipe_id",
+          "recipe_version_id",
+          "source_type",
+          "user_edits_json",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "imported_file_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "imported_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "imported_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parser_confidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recipe_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recipe_version_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_type": {
+            "type": "string"
+          },
+          "user_edits_json": {
+            "type": "string"
+          }
+        }
+      },
+      "ExportRecipeStep": {
+        "type": "object",
+        "required": [
+          "id",
+          "recipe_id",
+          "recipe_version_id",
+          "sort_order",
+          "instruction",
+          "timers_json",
+          "equipment_json",
+          "ingredient_refs_json",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "equipment_json": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ingredient_refs_json": {
+            "type": "string"
+          },
+          "instruction": {
+            "type": "string"
+          },
+          "recipe_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recipe_version_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "timers_json": {
+            "type": "string"
+          }
+        }
+      },
+      "ExportRecipeVersion": {
+        "type": "object",
+        "required": [
+          "id",
+          "recipe_id",
+          "version_number",
+          "serving_count",
+          "payload_json",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "payload_json": {
+            "type": "string"
+          },
+          "recipe_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serving_count": {
+            "type": "string"
+          },
+          "source_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version_number": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -5976,6 +7042,18 @@
           "household": {
             "$ref": "#/components/schemas/ExportHousehold"
           },
+          "ingredient_product_mappings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportIngredientProductMapping"
+            }
+          },
+          "ingredients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportIngredient"
+            }
+          },
           "label_printers": {
             "type": "array",
             "items": {
@@ -5988,10 +7066,52 @@
               "$ref": "#/components/schemas/ExportLocation"
             }
           },
+          "product_recipe_metadata": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportProductRecipeMetadata"
+            }
+          },
           "products": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ExportProduct"
+            }
+          },
+          "recipe_ingredients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportRecipeIngredient"
+            }
+          },
+          "recipe_outputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportRecipeOutput"
+            }
+          },
+          "recipe_provenance": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportRecipeProvenance"
+            }
+          },
+          "recipe_steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportRecipeStep"
+            }
+          },
+          "recipe_versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportRecipeVersion"
+            }
+          },
+          "recipes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportRecipe"
             }
           },
           "schema_version": {
@@ -6052,6 +7172,35 @@
             "$ref": "#/components/schemas/MembershipRole"
           },
           "timezone": {
+            "type": "string"
+          }
+        }
+      },
+      "ImportTextRecipeRequest": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "serving_count": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "text": {
             "type": "string"
           }
         }
@@ -7219,6 +8368,551 @@
           }
         }
       },
+      "RecipeDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "serving_count",
+          "source",
+          "visibility",
+          "tags",
+          "version",
+          "validation",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "serving_count": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/RecipeSource"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "updated_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/RecipeValidationResponse"
+          },
+          "version": {
+            "$ref": "#/components/schemas/RecipeVersionDto"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/RecipeVisibility"
+          }
+        }
+      },
+      "RecipeIngredientDto": {
+        "type": "object",
+        "required": [
+          "display_name",
+          "quantity"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "group_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "ingredient_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "preparation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "quantity": {
+            "$ref": "#/components/schemas/StructuredQuantityDto"
+          },
+          "substitution_hints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RecipeListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeSummaryDto"
+            }
+          }
+        }
+      },
+      "RecipeOutputDto": {
+        "type": "object",
+        "required": [
+          "name",
+          "quantity"
+        ],
+        "properties": {
+          "expires_after_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "product_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "quantity": {
+            "$ref": "#/components/schemas/StructuredQuantityDto"
+          },
+          "storage_notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "RecipeProvenanceDto": {
+        "type": "object",
+        "required": [
+          "source_type"
+        ],
+        "properties": {
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "imported_file_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "imported_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "imported_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parser_confidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_type": {
+            "$ref": "#/components/schemas/RecipeProvenanceSource"
+          },
+          "user_edits": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RecipeProvenanceSource": {
+        "type": "string",
+        "enum": [
+          "user_authored",
+          "plain_text_paste",
+          "structured_json",
+          "url",
+          "file",
+          "llm"
+        ]
+      },
+      "RecipeScaleResponse": {
+        "type": "object",
+        "required": [
+          "recipe_id",
+          "from_serving_count",
+          "to_serving_count",
+          "ingredients",
+          "outputs",
+          "validation"
+        ],
+        "properties": {
+          "from_serving_count": {
+            "type": "string"
+          },
+          "ingredients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScaledRecipeIngredientDto"
+            }
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScaledRecipeOutputDto"
+            }
+          },
+          "recipe_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "to_serving_count": {
+            "type": "string"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/RecipeValidationResponse"
+          }
+        }
+      },
+      "RecipeSource": {
+        "type": "string",
+        "enum": [
+          "manual",
+          "plain_text_import",
+          "structured_json_import",
+          "llm_generated"
+        ]
+      },
+      "RecipeStepDto": {
+        "type": "object",
+        "required": [
+          "instruction"
+        ],
+        "properties": {
+          "equipment": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "ingredient_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "instruction": {
+            "type": "string"
+          },
+          "timers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeTimerDto"
+            }
+          }
+        }
+      },
+      "RecipeSummaryDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "serving_count",
+          "source",
+          "visibility",
+          "tags",
+          "latest_version_id",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "latest_version_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "serving_count": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/RecipeSource"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "updated_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/RecipeVisibility"
+          }
+        }
+      },
+      "RecipeTimerDto": {
+        "type": "object",
+        "required": [
+          "duration_seconds"
+        ],
+        "properties": {
+          "duration_seconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "RecipeValidationIssueDto": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "path"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "RecipeValidationResponse": {
+        "type": "object",
+        "required": [
+          "valid",
+          "errors",
+          "warnings"
+        ],
+        "properties": {
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeValidationIssueDto"
+            }
+          },
+          "valid": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeValidationIssueDto"
+            }
+          }
+        }
+      },
+      "RecipeVersionDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "recipe_id",
+          "version_number",
+          "serving_count",
+          "ingredients",
+          "steps",
+          "outputs",
+          "provenance",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ingredients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeIngredientDto"
+            }
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeOutputDto"
+            }
+          },
+          "provenance": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeProvenanceDto"
+            }
+          },
+          "recipe_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serving_count": {
+            "type": "string"
+          },
+          "source_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeStepDto"
+            }
+          },
+          "version_number": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "RecipeVisibility": {
+        "type": "string",
+        "enum": [
+          "household"
+        ]
+      },
       "RedeemInviteRequest": {
         "type": "object",
         "required": [
@@ -7551,6 +9245,76 @@
           },
           "username": {
             "type": "string"
+          }
+        }
+      },
+      "ScaleRecipeRequest": {
+        "type": "object",
+        "required": [
+          "serving_count"
+        ],
+        "properties": {
+          "serving_count": {
+            "type": "string"
+          }
+        }
+      },
+      "ScaledRecipeIngredientDto": {
+        "type": "object",
+        "required": [
+          "display_name",
+          "quantity",
+          "scaled_quantity"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "ingredient_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "product_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "quantity": {
+            "$ref": "#/components/schemas/StructuredQuantityDto"
+          },
+          "scaled_quantity": {
+            "$ref": "#/components/schemas/StructuredQuantityDto"
+          }
+        }
+      },
+      "ScaledRecipeOutputDto": {
+        "type": "object",
+        "required": [
+          "name",
+          "quantity",
+          "scaled_quantity"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "product_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "quantity": {
+            "$ref": "#/components/schemas/StructuredQuantityDto"
+          },
+          "scaled_quantity": {
+            "$ref": "#/components/schemas/StructuredQuantityDto"
           }
         }
       },
@@ -8257,6 +10021,10 @@
     {
       "name": "ingredients",
       "description": "Recipe ingredients, product mappings, and recipe-layer conversion metadata"
+    },
+    {
+      "name": "recipes",
+      "description": "Household-scoped reusable recipes, versions, validation, and scaling"
     },
     {
       "name": "reminders",

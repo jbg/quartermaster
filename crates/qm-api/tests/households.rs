@@ -516,7 +516,7 @@ async fn household_export_import_round_trips_inventory_audit_data() {
         )
         .await;
     assert_eq!(export_status, StatusCode::OK);
-    assert_eq!(document["schema_version"], 1);
+    assert_eq!(document["schema_version"], 2);
     assert_eq!(document["products"].as_array().unwrap().len(), 1);
     assert_eq!(document["stock_events"].as_array().unwrap().len(), 2);
     assert!(document.get("memberships").is_none());

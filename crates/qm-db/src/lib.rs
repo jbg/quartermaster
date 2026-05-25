@@ -28,6 +28,7 @@ pub mod off_credentials;
 pub mod passkeys;
 pub mod products;
 pub mod quotas;
+pub mod recipes;
 pub mod reminders;
 pub mod stock;
 pub mod stock_events;
