@@ -428,6 +428,85 @@ impl FromStr for AiTaskUserState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
+pub enum PantrySuggestionSource {
+    SavedRecipe,
+    AiRecipe,
+}
+
+impl PantrySuggestionSource {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SavedRecipe => "saved_recipe",
+            Self::AiRecipe => "ai_recipe",
+        }
+    }
+}
+
+impl fmt::Display for PantrySuggestionSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for PantrySuggestionSource {
+    type Err = ApiError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "saved_recipe" => Ok(Self::SavedRecipe),
+            "ai_recipe" => Ok(Self::AiRecipe),
+            other => Err(ApiError::Internal(anyhow::anyhow!(
+                "unknown pantry suggestion source in DB row: {other}",
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PantrySuggestionStatus {
+    Suggested,
+    Dismissed,
+    SavedAsRecipe,
+    Cooked,
+    DraftShopping,
+}
+
+impl PantrySuggestionStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Suggested => "suggested",
+            Self::Dismissed => "dismissed",
+            Self::SavedAsRecipe => "saved_as_recipe",
+            Self::Cooked => "cooked",
+            Self::DraftShopping => "draft_shopping",
+        }
+    }
+}
+
+impl fmt::Display for PantrySuggestionStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for PantrySuggestionStatus {
+    type Err = ApiError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "suggested" => Ok(Self::Suggested),
+            "dismissed" => Ok(Self::Dismissed),
+            "saved_as_recipe" => Ok(Self::SavedAsRecipe),
+            "cooked" => Ok(Self::Cooked),
+            "draft_shopping" => Ok(Self::DraftShopping),
+            other => Err(ApiError::Internal(anyhow::anyhow!(
+                "unknown pantry suggestion status in DB row: {other}",
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum StockEventType {
     Add,
     Consume,

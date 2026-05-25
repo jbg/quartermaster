@@ -4,6 +4,46 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type AiProvider = 'disabled' | 'open_router';
+
+export type AiStatusResponse = {
+    configured: boolean;
+    enabled: boolean;
+    model?: string | null;
+    provider: AiProvider;
+    raw_response_retention: boolean;
+    structured_outputs: boolean;
+};
+
+export type AiTaskDto = {
+    created_at: string;
+    created_by?: string | null;
+    credentials_assertion: boolean;
+    id: string;
+    input_digest: string;
+    input_summary: unknown;
+    model?: string | null;
+    output_json?: unknown;
+    prompt_version: string;
+    provider: AiProvider;
+    raw_response_json?: unknown;
+    task_type: AiTaskType;
+    updated_at: string;
+    user_state: AiTaskUserState;
+    validation_errors: Array<string>;
+    validation_status: AiTaskValidationStatus;
+};
+
+export type AiTaskListResponse = {
+    items: Array<AiTaskDto>;
+};
+
+export type AiTaskType = 'recipe_import' | 'recipe_generation' | 'ingredient_matching' | 'pantry_suggestion' | 'storage_suggestion' | 'supplier_mapping';
+
+export type AiTaskUserState = 'proposed' | 'accepted' | 'edited' | 'rejected';
+
+export type AiTaskValidationStatus = 'pending' | 'valid' | 'rejected';
+
 export type ApiErrorBody = {
     /**
      * Stable error code, machine-readable.
@@ -157,6 +197,16 @@ export type CreateOnboardingHouseholdRequest = {
     household_name: string;
     password: string;
     timezone: string;
+};
+
+export type CreatePantrySuggestionsRequest = {
+    dietary_constraints?: Array<string>;
+    equipment?: Array<string>;
+    excluded_location_ids?: Array<string>;
+    excluded_product_ids?: Array<string>;
+    generate_recipe_ideas?: boolean;
+    max_ai_suggestions?: number | null;
+    max_missing_required?: number | null;
 };
 
 export type CreateProductRequest = {
@@ -497,6 +547,17 @@ export type ExportStorageVessel = {
     updated_at: string;
 };
 
+export type GeneratedRecipeIdeaDto = {
+    description?: string | null;
+    explanation?: string | null;
+    ingredients?: Array<RecipeIngredientDto>;
+    name: string;
+    serving_count: string;
+    steps?: Array<RecipeStepDto>;
+    substitutions?: Array<string>;
+    unresolved_conversions?: Array<string>;
+};
+
 export type HealthResponse = {
     status: string;
 };
@@ -743,6 +804,84 @@ export type OnboardingStatusResponse = {
 export type OpenFoodFactsCredentialStatusResponse = {
     configured: boolean;
     username?: string | null;
+};
+
+export type PantryContextDto = {
+    dietary_constraints: Array<string>;
+    equipment: Array<string>;
+    excluded_location_ids: Array<string>;
+    excluded_product_ids: Array<string>;
+    inventory: Array<PantryInventoryItemDto>;
+};
+
+export type PantryExpiryUrgency = 'none' | 'future' | 'soon' | 'today' | 'expired';
+
+export type PantryInventoryBatchDto = {
+    batch_id: string;
+    expires_on?: string | null;
+    expiry_urgency: PantryExpiryUrgency;
+    location_id: string;
+    quantity: string;
+    unit: string;
+};
+
+export type PantryInventoryItemDto = {
+    batches: Array<PantryInventoryBatchDto>;
+    expiry_urgency: PantryExpiryUrgency;
+    product: ProductDto;
+    total_quantity: string;
+    unit: string;
+};
+
+export type PantrySuggestionDto = {
+    ai_task_id?: string | null;
+    created_at: string;
+    created_by?: string | null;
+    generated_recipe?: null | GeneratedRecipeIdeaDto;
+    id: string;
+    missing: Array<PantrySuggestionMissingDto>;
+    pantry_items: Array<string>;
+    recipe_id?: string | null;
+    recipe_version_id?: string | null;
+    score: number;
+    score_breakdown: PantrySuggestionScoreDto;
+    source: PantrySuggestionSource;
+    status: PantrySuggestionStatus;
+    summary?: string | null;
+    title: string;
+    updated_at: string;
+};
+
+export type PantrySuggestionListResponse = {
+    items: Array<PantrySuggestionDto>;
+};
+
+export type PantrySuggestionMissingDto = {
+    display_name: string;
+    optional: boolean;
+    quantity?: string | null;
+    reason: string;
+    unit?: string | null;
+};
+
+export type PantrySuggestionScoreDto = {
+    cookable: boolean;
+    expiring_match_count: number;
+    notes: Array<string>;
+    optional_missing_count: number;
+    required_missing_count: number;
+    unresolved_count: number;
+};
+
+export type PantrySuggestionSource = 'saved_recipe' | 'ai_recipe';
+
+export type PantrySuggestionStatus = 'suggested' | 'dismissed' | 'saved_as_recipe' | 'cooked' | 'draft_shopping';
+
+export type PantrySuggestionsResponse = {
+    context: PantryContextDto;
+    generation_task?: string | null;
+    suggestions: Array<PantrySuggestionDto>;
+    warnings: Array<string>;
 };
 
 export type PasskeyCredentialDto = {
@@ -1391,6 +1530,10 @@ export type UnitDto = {
 
 export type UnitFamily = 'mass' | 'volume' | 'count';
 
+export type UpdateAiTaskStateRequest = {
+    user_state: AiTaskUserState;
+};
+
 export type UpdateHouseholdRequest = {
     measurement_system: MeasurementSystem;
     name: string;
@@ -1411,6 +1554,10 @@ export type UpdateLocationRequest = {
     kind: string;
     name: string;
     sort_order: number;
+};
+
+export type UpdatePantrySuggestionStateRequest = {
+    status: PantrySuggestionStatus;
 };
 
 export type UpdateStorageVesselRequest = {
@@ -1487,6 +1634,76 @@ export type AccountOpenfoodfactsStatusResponses = {
 };
 
 export type AccountOpenfoodfactsStatusResponse = AccountOpenfoodfactsStatusResponses[keyof AccountOpenfoodfactsStatusResponses];
+
+export type AiStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ai/status';
+};
+
+export type AiStatusResponses = {
+    200: AiStatusResponse;
+};
+
+export type AiStatusResponse2 = AiStatusResponses[keyof AiStatusResponses];
+
+export type AiTaskListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        limit?: number | null;
+    };
+    url: '/api/v1/ai/tasks';
+};
+
+export type AiTaskListResponses = {
+    200: AiTaskListResponse;
+};
+
+export type AiTaskListResponse2 = AiTaskListResponses[keyof AiTaskListResponses];
+
+export type AiTaskGetData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/ai/tasks/{id}';
+};
+
+export type AiTaskGetErrors = {
+    404: ApiErrorBody;
+};
+
+export type AiTaskGetError = AiTaskGetErrors[keyof AiTaskGetErrors];
+
+export type AiTaskGetResponses = {
+    200: AiTaskDto;
+};
+
+export type AiTaskGetResponse = AiTaskGetResponses[keyof AiTaskGetResponses];
+
+export type AiTaskStateUpdateData = {
+    body: UpdateAiTaskStateRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/ai/tasks/{id}/state';
+};
+
+export type AiTaskStateUpdateErrors = {
+    404: ApiErrorBody;
+};
+
+export type AiTaskStateUpdateError = AiTaskStateUpdateErrors[keyof AiTaskStateUpdateErrors];
+
+export type AiTaskStateUpdateResponses = {
+    200: AiTaskDto;
+};
+
+export type AiTaskStateUpdateResponse = AiTaskStateUpdateResponses[keyof AiTaskStateUpdateResponses];
 
 export type AuthEmailClearData = {
     body?: never;
@@ -2532,6 +2749,76 @@ export type OnboardingStatusResponses = {
 };
 
 export type OnboardingStatusResponse2 = OnboardingStatusResponses[keyof OnboardingStatusResponses];
+
+export type PantrySuggestionsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        limit?: number | null;
+    };
+    url: '/api/v1/pantry/suggestions';
+};
+
+export type PantrySuggestionsListResponses = {
+    200: PantrySuggestionListResponse;
+};
+
+export type PantrySuggestionsListResponse = PantrySuggestionsListResponses[keyof PantrySuggestionsListResponses];
+
+export type PantrySuggestionsCreateData = {
+    body: CreatePantrySuggestionsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/pantry/suggestions';
+};
+
+export type PantrySuggestionsCreateResponses = {
+    200: PantrySuggestionsResponse;
+};
+
+export type PantrySuggestionsCreateResponse = PantrySuggestionsCreateResponses[keyof PantrySuggestionsCreateResponses];
+
+export type PantrySuggestionGetData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/pantry/suggestions/{id}';
+};
+
+export type PantrySuggestionGetErrors = {
+    404: ApiErrorBody;
+};
+
+export type PantrySuggestionGetError = PantrySuggestionGetErrors[keyof PantrySuggestionGetErrors];
+
+export type PantrySuggestionGetResponses = {
+    200: PantrySuggestionDto;
+};
+
+export type PantrySuggestionGetResponse = PantrySuggestionGetResponses[keyof PantrySuggestionGetResponses];
+
+export type PantrySuggestionStateUpdateData = {
+    body: UpdatePantrySuggestionStateRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/pantry/suggestions/{id}/state';
+};
+
+export type PantrySuggestionStateUpdateErrors = {
+    404: ApiErrorBody;
+};
+
+export type PantrySuggestionStateUpdateError = PantrySuggestionStateUpdateErrors[keyof PantrySuggestionStateUpdateErrors];
+
+export type PantrySuggestionStateUpdateResponses = {
+    200: PantrySuggestionDto;
+};
+
+export type PantrySuggestionStateUpdateResponse = PantrySuggestionStateUpdateResponses[keyof PantrySuggestionStateUpdateResponses];
 
 export type ProductListData = {
     body?: never;

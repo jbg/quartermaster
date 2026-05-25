@@ -2774,6 +2774,180 @@
         }
       }
     },
+    "/api/v1/pantry/suggestions": {
+      "get": {
+        "tags": [
+          "pantry"
+        ],
+        "operationId": "pantry_suggestions_list",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PantrySuggestionListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "pantry"
+        ],
+        "operationId": "pantry_suggestions_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePantrySuggestionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PantrySuggestionsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/pantry/suggestions/{id}": {
+      "get": {
+        "tags": [
+          "pantry"
+        ],
+        "operationId": "pantry_suggestion_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PantrySuggestionDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/pantry/suggestions/{id}/state": {
+      "patch": {
+        "tags": [
+          "pantry"
+        ],
+        "operationId": "pantry_suggestion_state_update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePantrySuggestionStateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PantrySuggestionDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/products": {
       "get": {
         "tags": [
@@ -5921,6 +6095,54 @@
           }
         }
       },
+      "CreatePantrySuggestionsRequest": {
+        "type": "object",
+        "properties": {
+          "dietary_constraints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "equipment": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_location_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "excluded_product_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "generate_recipe_ideas": {
+            "type": "boolean"
+          },
+          "max_ai_suggestions": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "max_missing_required": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
       "CreateProductRequest": {
         "type": "object",
         "required": [
@@ -7365,6 +7587,57 @@
           }
         }
       },
+      "GeneratedRecipeIdeaDto": {
+        "type": "object",
+        "required": [
+          "name",
+          "serving_count"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "explanation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ingredients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeIngredientDto"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "serving_count": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeStepDto"
+            }
+          },
+          "substitutions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unresolved_conversions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "HealthResponse": {
         "type": "object",
         "required": [
@@ -8314,6 +8587,357 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "PantryContextDto": {
+        "type": "object",
+        "required": [
+          "inventory",
+          "excluded_product_ids",
+          "excluded_location_ids",
+          "dietary_constraints",
+          "equipment"
+        ],
+        "properties": {
+          "dietary_constraints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "equipment": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_location_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "excluded_product_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "inventory": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PantryInventoryItemDto"
+            }
+          }
+        }
+      },
+      "PantryExpiryUrgency": {
+        "type": "string",
+        "enum": [
+          "none",
+          "future",
+          "soon",
+          "today",
+          "expired"
+        ]
+      },
+      "PantryInventoryBatchDto": {
+        "type": "object",
+        "required": [
+          "batch_id",
+          "location_id",
+          "quantity",
+          "unit",
+          "expiry_urgency"
+        ],
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expires_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expiry_urgency": {
+            "$ref": "#/components/schemas/PantryExpiryUrgency"
+          },
+          "location_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
+      "PantryInventoryItemDto": {
+        "type": "object",
+        "required": [
+          "product",
+          "total_quantity",
+          "unit",
+          "expiry_urgency",
+          "batches"
+        ],
+        "properties": {
+          "batches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PantryInventoryBatchDto"
+            }
+          },
+          "expiry_urgency": {
+            "$ref": "#/components/schemas/PantryExpiryUrgency"
+          },
+          "product": {
+            "$ref": "#/components/schemas/ProductDto"
+          },
+          "total_quantity": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
+      "PantrySuggestionDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "status",
+          "title",
+          "score",
+          "score_breakdown",
+          "missing",
+          "pantry_items",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "ai_task_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "generated_recipe": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/GeneratedRecipeIdeaDto"
+              }
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PantrySuggestionMissingDto"
+            }
+          },
+          "pantry_items": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "recipe_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "recipe_version_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "score": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "score_breakdown": {
+            "$ref": "#/components/schemas/PantrySuggestionScoreDto"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PantrySuggestionSource"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PantrySuggestionStatus"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "PantrySuggestionListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PantrySuggestionDto"
+            }
+          }
+        }
+      },
+      "PantrySuggestionMissingDto": {
+        "type": "object",
+        "required": [
+          "display_name",
+          "optional",
+          "reason"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "quantity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PantrySuggestionScoreDto": {
+        "type": "object",
+        "required": [
+          "cookable",
+          "required_missing_count",
+          "optional_missing_count",
+          "unresolved_count",
+          "expiring_match_count",
+          "notes"
+        ],
+        "properties": {
+          "cookable": {
+            "type": "boolean"
+          },
+          "expiring_match_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "optional_missing_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "required_missing_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unresolved_count": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "PantrySuggestionSource": {
+        "type": "string",
+        "enum": [
+          "saved_recipe",
+          "ai_recipe"
+        ]
+      },
+      "PantrySuggestionStatus": {
+        "type": "string",
+        "enum": [
+          "suggested",
+          "dismissed",
+          "saved_as_recipe",
+          "cooked",
+          "draft_shopping"
+        ]
+      },
+      "PantrySuggestionsResponse": {
+        "type": "object",
+        "required": [
+          "context",
+          "suggestions",
+          "warnings"
+        ],
+        "properties": {
+          "context": {
+            "$ref": "#/components/schemas/PantryContextDto"
+          },
+          "generation_task": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "suggestions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PantrySuggestionDto"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -10821,6 +11445,17 @@
           }
         }
       },
+      "UpdatePantrySuggestionStateRequest": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/PantrySuggestionStatus"
+          }
+        }
+      },
       "UpdateStorageVesselRequest": {
         "type": "object",
         "required": [
@@ -10904,6 +11539,10 @@
     {
       "name": "ai",
       "description": "AI provider status and durable task audit records"
+    },
+    {
+      "name": "pantry",
+      "description": "Inventory-aware recipe suggestions and generated ideas"
     },
     {
       "name": "devices",

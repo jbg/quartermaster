@@ -9,6 +9,7 @@ pub mod label_printers;
 pub mod locations;
 pub mod maintenance;
 pub mod onboarding;
+pub mod pantry;
 pub mod patch;
 pub mod products;
 pub mod recipes;

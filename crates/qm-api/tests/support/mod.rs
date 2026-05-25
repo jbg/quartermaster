@@ -24,6 +24,28 @@ impl TestApp {
         Self::start_with_http(config, reqwest::Client::new()).await
     }
 
+    #[allow(dead_code)]
+    pub async fn start_with_ai_provider(
+        config: ApiConfig,
+        ai_provider: qm_ai::AiProviderRef,
+    ) -> Self {
+        let db = test_db().await;
+        let config = Arc::new(config);
+        let state = AppState {
+            db: db.clone(),
+            off_breaker: Arc::new(qm_api::openfoodfacts::OffCircuitBreaker::default()),
+            rate_limiters: Arc::new(qm_api::rate_limit::RateLimiters::new(&config)),
+            config,
+            http: reqwest::Client::new(),
+            ai_provider,
+            email_transport: Some(Arc::new(qm_api::email::LogEmailTransport)),
+        };
+        Self {
+            app: qm_api::router(state),
+            db,
+        }
+    }
+
     pub async fn start_with_http(config: ApiConfig, http: reqwest::Client) -> Self {
         Self::start_with_http_and_email(
             config,
