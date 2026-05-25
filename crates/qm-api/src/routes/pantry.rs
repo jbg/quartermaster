@@ -1,0 +1,948 @@
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+};
+
+use axum::{
+    extract::{Path, Query, State},
+    routing::{get, patch},
+    Json, Router,
+};
+use jiff::{civil::Date, tz, Timestamp};
+use qm_core::units::MeasurementSystem;
+use qm_db::{
+    pantry_suggestions::{NewPantrySuggestion, PantrySuggestionRow},
+    products::ProductRow,
+    recipes::{RecipeFull, RecipeIngredientRow},
+    stock::StockFilter,
+};
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use utoipa::{IntoParams, ToSchema};
+use uuid::Uuid;
+
+use crate::{
+    auth::{self, CurrentUser},
+    error::{ApiError, ApiResult},
+    routes::{
+        products::ProductDto,
+        recipes::{RecipeIngredientDto, RecipeStepDto},
+    },
+    types::{AiTaskUserState, PantrySuggestionSource, PantrySuggestionStatus},
+    AppState,
+};
+
+const PROMPT_VERSION: &str = "pantry-suggestion.v1";
+
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/pantry/suggestions",
+            get(list_suggestions).post(create_suggestions),
+        )
+        .route("/pantry/suggestions/{id}", get(get_suggestion))
+        .route(
+            "/pantry/suggestions/{id}/state",
+            patch(update_suggestion_state),
+        )
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct PantrySuggestionListQuery {
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreatePantrySuggestionsRequest {
+    #[serde(default)]
+    pub excluded_product_ids: Vec<Uuid>,
+    #[serde(default)]
+    pub excluded_location_ids: Vec<Uuid>,
+    #[serde(default)]
+    pub dietary_constraints: Vec<String>,
+    #[serde(default)]
+    pub equipment: Vec<String>,
+    pub max_missing_required: Option<i64>,
+    #[serde(default)]
+    pub generate_recipe_ideas: bool,
+    pub max_ai_suggestions: Option<i64>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PantrySuggestionsResponse {
+    pub context: PantryContextDto,
+    pub suggestions: Vec<PantrySuggestionDto>,
+    pub generation_task: Option<Uuid>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PantrySuggestionListResponse {
+    pub items: Vec<PantrySuggestionDto>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PantryContextDto {
+    pub inventory: Vec<PantryInventoryItemDto>,
+    pub excluded_product_ids: Vec<Uuid>,
+    pub excluded_location_ids: Vec<Uuid>,
+    pub dietary_constraints: Vec<String>,
+    pub equipment: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct PantryInventoryItemDto {
+    pub product: ProductDto,
+    pub total_quantity: String,
+    pub unit: String,
+    pub expiry_urgency: PantryExpiryUrgency,
+    pub batches: Vec<PantryInventoryBatchDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct PantryInventoryBatchDto {
+    pub batch_id: Uuid,
+    pub location_id: Uuid,
+    pub quantity: String,
+    pub unit: String,
+    pub expires_on: Option<String>,
+    pub expiry_urgency: PantryExpiryUrgency,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum PantryExpiryUrgency {
+    None,
+    Future,
+    Soon,
+    Today,
+    Expired,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PantrySuggestionDto {
+    pub id: Uuid,
+    pub source: PantrySuggestionSource,
+    pub status: PantrySuggestionStatus,
+    pub recipe_id: Option<Uuid>,
+    pub recipe_version_id: Option<Uuid>,
+    pub ai_task_id: Option<Uuid>,
+    pub title: String,
+    pub summary: Option<String>,
+    pub score: i64,
+    pub score_breakdown: PantrySuggestionScoreDto,
+    pub missing: Vec<PantrySuggestionMissingDto>,
+    pub pantry_items: Vec<Uuid>,
+    pub generated_recipe: Option<GeneratedRecipeIdeaDto>,
+    pub created_by: Option<Uuid>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct PantrySuggestionScoreDto {
+    pub cookable: bool,
+    pub required_missing_count: i64,
+    pub optional_missing_count: i64,
+    pub unresolved_count: i64,
+    pub expiring_match_count: i64,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct PantrySuggestionMissingDto {
+    pub display_name: String,
+    pub quantity: Option<String>,
+    pub unit: Option<String>,
+    pub optional: bool,
+    pub reason: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct GeneratedRecipeIdeaDto {
+    pub name: String,
+    pub description: Option<String>,
+    pub serving_count: String,
+    #[serde(default)]
+    pub ingredients: Vec<RecipeIngredientDto>,
+    #[serde(default)]
+    pub steps: Vec<RecipeStepDto>,
+    #[serde(default)]
+    pub explanation: Option<String>,
+    #[serde(default)]
+    pub unresolved_conversions: Vec<String>,
+    #[serde(default)]
+    pub substitutions: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdatePantrySuggestionStateRequest {
+    pub status: PantrySuggestionStatus,
+}
+
+#[utoipa::path(
+    post,
+    path = "/pantry/suggestions",
+    operation_id = "pantry_suggestions_create",
+    tag = "pantry",
+    request_body = CreatePantrySuggestionsRequest,
+    responses((status = 200, body = PantrySuggestionsResponse)),
+    security(("bearer" = [])),
+)]
+pub async fn create_suggestions(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Json(req): Json<CreatePantrySuggestionsRequest>,
+) -> ApiResult<Json<PantrySuggestionsResponse>> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
+    let constraints = SanitizedSuggestionConstraints::from_request(req)?;
+    let ctx = build_pantry_context(&state, household_id, &constraints).await?;
+    let recipe_scores = score_saved_recipes(&state, household_id, &ctx, &constraints).await?;
+    let mut suggestions = Vec::with_capacity(recipe_scores.len());
+    for score in recipe_scores {
+        let row = insert_suggestion(&state, household_id, current.user_id, &score, None).await?;
+        suggestions.push(suggestion_into_dto(row)?);
+    }
+
+    let mut warnings = Vec::new();
+    let mut generation_task = None;
+    if constraints.generate_recipe_ideas {
+        match generate_recipe_ideas(&state, household_id, current.user_id, &ctx, &constraints).await
+        {
+            Ok(generated) => {
+                generation_task = Some(generated.task_id);
+                for score in generated.suggestions {
+                    let row = insert_suggestion(
+                        &state,
+                        household_id,
+                        current.user_id,
+                        &score,
+                        Some(generated.task_id),
+                    )
+                    .await?;
+                    suggestions.push(suggestion_into_dto(row)?);
+                }
+            }
+            Err(err) => warnings.push(err),
+        }
+    }
+
+    suggestions.sort_by(|a, b| b.score.cmp(&a.score).then(a.title.cmp(&b.title)));
+    Ok(Json(PantrySuggestionsResponse {
+        context: ctx.dto,
+        suggestions,
+        generation_task,
+        warnings,
+    }))
+}
+
+#[utoipa::path(
+    get,
+    path = "/pantry/suggestions",
+    operation_id = "pantry_suggestions_list",
+    tag = "pantry",
+    params(PantrySuggestionListQuery),
+    responses((status = 200, body = PantrySuggestionListResponse)),
+    security(("bearer" = [])),
+)]
+pub async fn list_suggestions(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Query(query): Query<PantrySuggestionListQuery>,
+) -> ApiResult<Json<PantrySuggestionListResponse>> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    let limit = query.limit.unwrap_or(50).clamp(1, 100);
+    let rows = qm_db::pantry_suggestions::list(&state.db, household_id, limit).await?;
+    Ok(Json(PantrySuggestionListResponse {
+        items: rows
+            .into_iter()
+            .map(suggestion_into_dto)
+            .collect::<ApiResult<_>>()?,
+    }))
+}
+
+#[utoipa::path(
+    get,
+    path = "/pantry/suggestions/{id}",
+    operation_id = "pantry_suggestion_get",
+    tag = "pantry",
+    params(("id" = Uuid, Path)),
+    responses((status = 200, body = PantrySuggestionDto), (status = 404, body = crate::error::ApiErrorBody)),
+    security(("bearer" = [])),
+)]
+pub async fn get_suggestion(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<PantrySuggestionDto>> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    let row = qm_db::pantry_suggestions::find(&state.db, household_id, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok(Json(suggestion_into_dto(row)?))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/pantry/suggestions/{id}/state",
+    operation_id = "pantry_suggestion_state_update",
+    tag = "pantry",
+    params(("id" = Uuid, Path)),
+    request_body = UpdatePantrySuggestionStateRequest,
+    responses((status = 200, body = PantrySuggestionDto), (status = 404, body = crate::error::ApiErrorBody)),
+    security(("bearer" = [])),
+)]
+pub async fn update_suggestion_state(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdatePantrySuggestionStateRequest>,
+) -> ApiResult<Json<PantrySuggestionDto>> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
+    let row =
+        qm_db::pantry_suggestions::update_status(&state.db, household_id, id, req.status.as_str())
+            .await?
+            .ok_or(ApiError::NotFound)?;
+    Ok(Json(suggestion_into_dto(row)?))
+}
+
+struct SanitizedSuggestionConstraints {
+    excluded_product_ids: HashSet<Uuid>,
+    excluded_location_ids: HashSet<Uuid>,
+    dietary_constraints: Vec<String>,
+    equipment: Vec<String>,
+    max_missing_required: i64,
+    generate_recipe_ideas: bool,
+    max_ai_suggestions: i64,
+}
+
+impl SanitizedSuggestionConstraints {
+    fn from_request(req: CreatePantrySuggestionsRequest) -> ApiResult<Self> {
+        Ok(Self {
+            excluded_product_ids: req.excluded_product_ids.into_iter().collect(),
+            excluded_location_ids: req.excluded_location_ids.into_iter().collect(),
+            dietary_constraints: validate_text_list(
+                "dietary_constraints",
+                req.dietary_constraints,
+                32,
+                64,
+            )?,
+            equipment: validate_text_list("equipment", req.equipment, 64, 64)?,
+            max_missing_required: req.max_missing_required.unwrap_or(2).clamp(0, 25),
+            generate_recipe_ideas: req.generate_recipe_ideas,
+            max_ai_suggestions: req.max_ai_suggestions.unwrap_or(3).clamp(1, 5),
+        })
+    }
+}
+
+struct PantryContext {
+    dto: PantryContextDto,
+    by_product: HashMap<Uuid, ProductInventory>,
+    measurement_system: MeasurementSystem,
+}
+
+struct ProductInventory {
+    product: ProductDto,
+    total_quantity: Decimal,
+    unit: String,
+    batches: Vec<PantryInventoryBatchDto>,
+}
+
+async fn build_pantry_context(
+    state: &AppState,
+    household_id: Uuid,
+    constraints: &SanitizedSuggestionConstraints,
+) -> ApiResult<PantryContext> {
+    let household = qm_db::households::find_by_id(&state.db, household_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let measurement_system =
+        crate::routes::households::measurement_system_from_db(&household.measurement_system)?;
+    let today = household_today(&household.timezone)?;
+    let stock = qm_db::stock::list(
+        &state.db,
+        household_id,
+        &StockFilter {
+            include_depleted: false,
+            ..StockFilter::default()
+        },
+    )
+    .await?;
+    let mut by_product: HashMap<Uuid, ProductInventory> = HashMap::new();
+    for item in stock {
+        if constraints.excluded_product_ids.contains(&item.product.id)
+            || constraints
+                .excluded_location_ids
+                .contains(&item.batch.location_id)
+        {
+            continue;
+        }
+        let product_dto = ProductDto::try_from(item.product.clone())?;
+        let unit = product_dto.preferred_unit.clone();
+        let quantity = Decimal::from_str(&item.batch.quantity)
+            .map_err(|err| ApiError::Internal(anyhow::Error::from(err)))?;
+        let normalized_quantity =
+            convert_decimal(quantity, &item.batch.unit, &unit, measurement_system)?;
+        let expiry_urgency = expiry_urgency(item.batch.expires_on.as_deref(), today)?;
+        let entry = by_product
+            .entry(item.product.id)
+            .or_insert_with(|| ProductInventory {
+                product: product_dto,
+                total_quantity: Decimal::ZERO,
+                unit,
+                batches: Vec::new(),
+            });
+        entry.total_quantity += normalized_quantity;
+        entry.batches.push(PantryInventoryBatchDto {
+            batch_id: item.batch.id,
+            location_id: item.batch.location_id,
+            quantity: item.batch.quantity,
+            unit: item.batch.unit,
+            expires_on: item.batch.expires_on,
+            expiry_urgency,
+        });
+    }
+    let mut inventory = by_product
+        .values()
+        .map(|item| PantryInventoryItemDto {
+            product: item.product.clone(),
+            total_quantity: normalize_decimal(item.total_quantity),
+            unit: item.unit.clone(),
+            expiry_urgency: item
+                .batches
+                .iter()
+                .map(|batch| batch.expiry_urgency)
+                .max()
+                .unwrap_or(PantryExpiryUrgency::None),
+            batches: item.batches.clone(),
+        })
+        .collect::<Vec<_>>();
+    inventory.sort_by(|a, b| a.product.name.cmp(&b.product.name));
+    Ok(PantryContext {
+        dto: PantryContextDto {
+            inventory,
+            excluded_product_ids: sorted_ids(&constraints.excluded_product_ids),
+            excluded_location_ids: sorted_ids(&constraints.excluded_location_ids),
+            dietary_constraints: constraints.dietary_constraints.clone(),
+            equipment: constraints.equipment.clone(),
+        },
+        by_product,
+        measurement_system,
+    })
+}
+
+struct ScoredSuggestion {
+    source: PantrySuggestionSource,
+    recipe_id: Option<Uuid>,
+    recipe_version_id: Option<Uuid>,
+    title: String,
+    summary: Option<String>,
+    score: i64,
+    score_breakdown: PantrySuggestionScoreDto,
+    missing: Vec<PantrySuggestionMissingDto>,
+    pantry_items: Vec<Uuid>,
+    generated_recipe: Option<GeneratedRecipeIdeaDto>,
+}
+
+async fn score_saved_recipes(
+    state: &AppState,
+    household_id: Uuid,
+    ctx: &PantryContext,
+    constraints: &SanitizedSuggestionConstraints,
+) -> ApiResult<Vec<ScoredSuggestion>> {
+    let recipes = qm_db::recipes::list(&state.db, household_id).await?;
+    let mut suggestions = Vec::new();
+    for recipe in recipes {
+        let Some(full) = qm_db::recipes::find(&state.db, household_id, recipe.id).await? else {
+            continue;
+        };
+        let scored = score_recipe(state, household_id, ctx, &full).await?;
+        if scored.score_breakdown.required_missing_count <= constraints.max_missing_required {
+            suggestions.push(scored);
+        }
+    }
+    suggestions.sort_by(|a, b| b.score.cmp(&a.score).then(a.title.cmp(&b.title)));
+    Ok(suggestions.into_iter().take(20).collect())
+}
+
+async fn score_recipe(
+    state: &AppState,
+    household_id: Uuid,
+    ctx: &PantryContext,
+    recipe: &RecipeFull,
+) -> ApiResult<ScoredSuggestion> {
+    let mut missing = Vec::new();
+    let mut pantry_items = HashSet::new();
+    let mut required_missing = 0;
+    let mut optional_missing = 0;
+    let mut unresolved = 0;
+    let mut expiring_match_count = 0;
+    let mut notes = Vec::new();
+
+    for ingredient in &recipe.ingredients {
+        let Some((product, source_note)) =
+            resolve_recipe_product(state, household_id, ingredient).await?
+        else {
+            unresolved += 1;
+            missing.push(missing_from_ingredient(
+                ingredient,
+                "no product mapping selected",
+            ));
+            continue;
+        };
+        if let Some(note) = source_note {
+            notes.push(note);
+        }
+        let Some(amount) = ingredient.amount.as_deref() else {
+            if !ingredient.to_taste {
+                unresolved += 1;
+            }
+            continue;
+        };
+        let Some(unit) = ingredient.unit.as_deref() else {
+            unresolved += 1;
+            missing.push(missing_from_ingredient(ingredient, "missing recipe unit"));
+            continue;
+        };
+        let requested = Decimal::from_str(amount)
+            .map_err(|err| ApiError::Internal(anyhow::Error::from(err)))?;
+        let Some(inventory) = ctx.by_product.get(&product.id) else {
+            if ingredient.optional {
+                optional_missing += 1;
+            } else {
+                required_missing += 1;
+            }
+            missing.push(missing_from_ingredient(
+                ingredient,
+                "not in active inventory",
+            ));
+            continue;
+        };
+        let available = convert_decimal(
+            inventory.total_quantity,
+            &inventory.unit,
+            unit,
+            ctx.measurement_system,
+        )?;
+        if available < requested {
+            if ingredient.optional {
+                optional_missing += 1;
+            } else {
+                required_missing += 1;
+            }
+            missing.push(missing_from_ingredient(ingredient, "insufficient stock"));
+        } else {
+            pantry_items.insert(product.id);
+            if inventory
+                .batches
+                .iter()
+                .any(|batch| batch.expiry_urgency >= PantryExpiryUrgency::Soon)
+            {
+                expiring_match_count += 1;
+            }
+        }
+    }
+
+    let cookable = required_missing == 0 && unresolved == 0;
+    let mut score = 100 - (required_missing * 25) - (optional_missing * 5) - (unresolved * 15)
+        + (expiring_match_count * 8);
+    score = score.clamp(0, 150);
+    let score_breakdown = PantrySuggestionScoreDto {
+        cookable,
+        required_missing_count: required_missing,
+        optional_missing_count: optional_missing,
+        unresolved_count: unresolved,
+        expiring_match_count,
+        notes,
+    };
+    let mut pantry_items = pantry_items.into_iter().collect::<Vec<_>>();
+    pantry_items.sort();
+    Ok(ScoredSuggestion {
+        source: PantrySuggestionSource::SavedRecipe,
+        recipe_id: Some(recipe.recipe.id),
+        recipe_version_id: Some(recipe.version.id),
+        title: recipe.recipe.name.clone(),
+        summary: recipe.recipe.description.clone(),
+        score,
+        score_breakdown,
+        missing,
+        pantry_items,
+        generated_recipe: None,
+    })
+}
+
+async fn resolve_recipe_product(
+    state: &AppState,
+    household_id: Uuid,
+    ingredient: &RecipeIngredientRow,
+) -> ApiResult<Option<(ProductRow, Option<String>)>> {
+    if let Some(product_id) = ingredient.product_id {
+        let product = qm_db::products::find_for_household(&state.db, household_id, product_id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+        return Ok(Some((product, None)));
+    }
+    let Some(ingredient_id) = ingredient.ingredient_id else {
+        return Ok(None);
+    };
+    let Some(mapping) = qm_db::ingredients::list_mappings(&state.db, household_id, ingredient_id)
+        .await?
+        .into_iter()
+        .next()
+    else {
+        return Ok(None);
+    };
+    let product = qm_db::products::find_for_household(&state.db, household_id, mapping.product_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok(Some((
+        product,
+        mapping.conversion_provenance.map(|provenance| {
+            format!(
+                "{} uses {provenance} conversion metadata",
+                ingredient.display_name
+            )
+        }),
+    )))
+}
+
+struct GeneratedSuggestions {
+    task_id: Uuid,
+    suggestions: Vec<ScoredSuggestion>,
+}
+
+async fn generate_recipe_ideas(
+    state: &AppState,
+    household_id: Uuid,
+    actor: Uuid,
+    ctx: &PantryContext,
+    constraints: &SanitizedSuggestionConstraints,
+) -> Result<GeneratedSuggestions, String> {
+    let status = state.ai_provider.status();
+    if !status.enabled || !status.configured {
+        return Err("AI recipe generation is not enabled or configured".into());
+    }
+    let input_summary = json!({
+        "inventory": ctx.dto.inventory,
+        "dietary_constraints": constraints.dietary_constraints,
+        "equipment": constraints.equipment,
+        "max_suggestions": constraints.max_ai_suggestions,
+        "policy": "Generate candidates only; Quartermaster validates before saving or executing. No credentials are included.",
+    });
+    let input_summary_json =
+        serde_json::to_string(&input_summary).map_err(|err| err.to_string())?;
+    let input_digest = format!(
+        "sha256:{}",
+        Sha256::digest(input_summary_json.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    );
+    let schema = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ideas"],
+        "properties": {
+            "ideas": {
+                "type": "array",
+                "maxItems": constraints.max_ai_suggestions,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "required": ["name", "serving_count", "ingredients", "steps", "explanation"],
+                    "properties": {
+                        "name": {"type": "string"},
+                        "description": {"type": ["string", "null"]},
+                        "serving_count": {"type": "string"},
+                        "ingredients": {"type": "array"},
+                        "steps": {"type": "array"},
+                        "explanation": {"type": "string"},
+                        "unresolved_conversions": {"type": "array", "items": {"type": "string"}},
+                        "substitutions": {"type": "array", "items": {"type": "string"}}
+                    }
+                }
+            }
+        }
+    });
+    let response = state
+        .ai_provider
+        .complete_structured(qm_ai::StructuredOutputRequest {
+            task_type: "recipe_generation".into(),
+            prompt_version: PROMPT_VERSION.into(),
+            model: None,
+            system_prompt: "You suggest practical recipes from pantry inventory. Return strict JSON only. Mark unresolved conversions and substitutions explicitly. Never claim the recipe is executable; Quartermaster will validate it.".into(),
+            user_prompt: input_summary_json.clone(),
+            json_schema_name: "pantry_recipe_ideas".into(),
+            json_schema: schema,
+        })
+        .await
+        .map_err(|err| err.to_string())?;
+    let ideas: Vec<GeneratedRecipeIdeaDto> = serde_json::from_value(
+        response
+            .output_json
+            .get("ideas")
+            .cloned()
+            .unwrap_or_else(|| Value::Array(Vec::new())),
+    )
+    .map_err(|err| err.to_string())?;
+    let validation_errors = validate_generated_ideas(&ideas);
+    let output_json =
+        serde_json::to_string(&response.output_json).map_err(|err| err.to_string())?;
+    let raw_response_json = response
+        .raw_response_json
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|err| err.to_string())?;
+    let validation_errors_json =
+        serde_json::to_string(&validation_errors).map_err(|err| err.to_string())?;
+    let task = qm_db::ai_tasks::create(
+        &state.db,
+        household_id,
+        &qm_db::ai_tasks::NewAiTask {
+            created_by: Some(actor),
+            task_type: "recipe_generation",
+            provider: response.provider.as_str(),
+            model: Some(&response.model),
+            prompt_version: PROMPT_VERSION,
+            input_digest: &input_digest,
+            input_summary_json: &input_summary_json,
+            output_json: Some(&output_json),
+            validation_status: if validation_errors.is_empty() {
+                "valid"
+            } else {
+                "rejected"
+            },
+            validation_errors_json: &validation_errors_json,
+            user_state: AiTaskUserState::Proposed.as_str(),
+            credentials_assertion: true,
+            raw_response_json: raw_response_json.as_deref(),
+        },
+    )
+    .await
+    .map_err(|err| err.to_string())?;
+    if !validation_errors.is_empty() {
+        return Ok(GeneratedSuggestions {
+            task_id: task.id,
+            suggestions: Vec::new(),
+        });
+    }
+    let suggestions = ideas
+        .into_iter()
+        .map(|idea| {
+            let title = idea.name.clone();
+            let summary = idea.explanation.clone().or(idea.description.clone());
+            ScoredSuggestion {
+                source: PantrySuggestionSource::AiRecipe,
+                recipe_id: None,
+                recipe_version_id: None,
+                title,
+                summary,
+                score: 60,
+                score_breakdown: PantrySuggestionScoreDto {
+                    cookable: false,
+                    required_missing_count: 0,
+                    optional_missing_count: 0,
+                    unresolved_count: idea.unresolved_conversions.len() as i64,
+                    expiring_match_count: 0,
+                    notes: vec![
+                        "AI-generated candidate requires review before saving or cooking".into(),
+                    ],
+                },
+                missing: Vec::new(),
+                pantry_items: Vec::new(),
+                generated_recipe: Some(idea),
+            }
+        })
+        .collect();
+    Ok(GeneratedSuggestions {
+        task_id: task.id,
+        suggestions,
+    })
+}
+
+fn validate_generated_ideas(ideas: &[GeneratedRecipeIdeaDto]) -> Vec<String> {
+    let mut errors = Vec::new();
+    if ideas.is_empty() {
+        errors.push("ideas must include at least one recipe candidate".into());
+    }
+    for (idx, idea) in ideas.iter().enumerate() {
+        if idea.name.trim().is_empty() {
+            errors.push(format!("ideas[{idx}].name is required"));
+        }
+        if Decimal::from_str(idea.serving_count.trim()).map_or(true, |value| value <= Decimal::ZERO)
+        {
+            errors.push(format!(
+                "ideas[{idx}].serving_count must be a positive decimal"
+            ));
+        }
+        if idea.steps.is_empty() {
+            errors.push(format!("ideas[{idx}].steps must not be empty"));
+        }
+    }
+    errors
+}
+
+async fn insert_suggestion(
+    state: &AppState,
+    household_id: Uuid,
+    actor: Uuid,
+    suggestion: &ScoredSuggestion,
+    ai_task_id: Option<Uuid>,
+) -> ApiResult<PantrySuggestionRow> {
+    let score_breakdown_json = serde_json::to_string(&suggestion.score_breakdown)
+        .map_err(|err| ApiError::Internal(err.into()))?;
+    let missing_json =
+        serde_json::to_string(&suggestion.missing).map_err(|err| ApiError::Internal(err.into()))?;
+    let pantry_items_json = serde_json::to_string(&suggestion.pantry_items)
+        .map_err(|err| ApiError::Internal(err.into()))?;
+    let generated_recipe_json = suggestion
+        .generated_recipe
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|err| ApiError::Internal(err.into()))?;
+    qm_db::pantry_suggestions::create(
+        &state.db,
+        household_id,
+        &NewPantrySuggestion {
+            created_by: Some(actor),
+            source: suggestion.source.as_str(),
+            status: PantrySuggestionStatus::Suggested.as_str(),
+            recipe_id: suggestion.recipe_id,
+            recipe_version_id: suggestion.recipe_version_id,
+            ai_task_id,
+            title: &suggestion.title,
+            summary: suggestion.summary.as_deref(),
+            score: suggestion.score,
+            score_breakdown_json: &score_breakdown_json,
+            missing_json: &missing_json,
+            pantry_items_json: &pantry_items_json,
+            generated_recipe_json: generated_recipe_json.as_deref(),
+        },
+    )
+    .await
+    .map_err(ApiError::from)
+}
+
+fn suggestion_into_dto(row: PantrySuggestionRow) -> ApiResult<PantrySuggestionDto> {
+    Ok(PantrySuggestionDto {
+        id: row.id,
+        source: PantrySuggestionSource::from_str(&row.source)?,
+        status: PantrySuggestionStatus::from_str(&row.status)?,
+        recipe_id: row.recipe_id,
+        recipe_version_id: row.recipe_version_id,
+        ai_task_id: row.ai_task_id,
+        title: row.title,
+        summary: row.summary,
+        score: row.score,
+        score_breakdown: serde_json::from_str(&row.score_breakdown_json)
+            .map_err(|err| ApiError::Internal(err.into()))?,
+        missing: serde_json::from_str(&row.missing_json)
+            .map_err(|err| ApiError::Internal(err.into()))?,
+        pantry_items: serde_json::from_str(&row.pantry_items_json)
+            .map_err(|err| ApiError::Internal(err.into()))?,
+        generated_recipe: row
+            .generated_recipe_json
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()
+            .map_err(|err| ApiError::Internal(err.into()))?,
+        created_by: row.created_by,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
+}
+
+fn missing_from_ingredient(
+    ingredient: &RecipeIngredientRow,
+    reason: &str,
+) -> PantrySuggestionMissingDto {
+    PantrySuggestionMissingDto {
+        display_name: ingredient.display_name.clone(),
+        quantity: ingredient.amount.clone(),
+        unit: ingredient.unit.clone(),
+        optional: ingredient.optional,
+        reason: reason.into(),
+    }
+}
+
+fn household_today(timezone: &str) -> ApiResult<Date> {
+    let time_zone = tz::db()
+        .get(timezone)
+        .map_err(|_| ApiError::BadRequest("household timezone must be a valid IANA zone".into()))?;
+    Ok(Timestamp::now().to_zoned(time_zone).date())
+}
+
+fn expiry_urgency(value: Option<&str>, today: Date) -> ApiResult<PantryExpiryUrgency> {
+    let Some(value) = value else {
+        return Ok(PantryExpiryUrgency::None);
+    };
+    let date = Date::from_str(value)
+        .map_err(|_| ApiError::BadRequest(format!("date must be YYYY-MM-DD (got {value})")))?;
+    if date < today {
+        return Ok(PantryExpiryUrgency::Expired);
+    }
+    if date == today {
+        return Ok(PantryExpiryUrgency::Today);
+    }
+    let days = date
+        .since(today)
+        .map_err(|err| ApiError::Internal(anyhow::Error::from(err)))?
+        .get_days();
+    if days <= 7 {
+        Ok(PantryExpiryUrgency::Soon)
+    } else {
+        Ok(PantryExpiryUrgency::Future)
+    }
+}
+
+fn convert_decimal(
+    quantity: Decimal,
+    from: &str,
+    to: &str,
+    measurement_system: MeasurementSystem,
+) -> ApiResult<Decimal> {
+    qm_core::units::convert_with_measurement_system(quantity, from, to, measurement_system)
+        .map_err(ApiError::Domain)
+}
+
+fn normalize_decimal(value: Decimal) -> String {
+    value.normalize().to_string()
+}
+
+fn sorted_ids(ids: &HashSet<Uuid>) -> Vec<Uuid> {
+    let mut ids = ids.iter().copied().collect::<Vec<_>>();
+    ids.sort();
+    ids
+}
+
+fn validate_text_list(
+    field: &str,
+    values: Vec<String>,
+    max_items: usize,
+    max_len: usize,
+) -> ApiResult<Vec<String>> {
+    if values.len() > max_items {
+        return Err(ApiError::BadRequest(format!(
+            "{field} must have at most {max_items} items"
+        )));
+    }
+    let mut out = Vec::with_capacity(values.len());
+    for value in values {
+        let value = value.trim();
+        if value.is_empty() || value.len() > max_len {
+            return Err(ApiError::BadRequest(format!(
+                "{field} entries must be 1..={max_len} chars"
+            )));
+        }
+        if !out.iter().any(|existing| existing == value) {
+            out.push(value.to_owned());
+        }
+    }
+    Ok(out)
+}
