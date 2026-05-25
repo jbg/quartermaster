@@ -214,6 +214,7 @@ jobs:
         run: cargo build -p qm-server
 
       - name: Install Playwright browser
+        timeout-minutes: 10
         run: pnpm -C web exec playwright install --with-deps chromium
 
       - name: Run web browser smoke
