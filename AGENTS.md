@@ -22,9 +22,11 @@ These are enforced in code, but the _why_ lives here. Respect them.
 - **JSON Patch support is intentionally narrow.** Product and stock PATCH accept only top-level `replace` and `remove` operations because those map to inventory edit semantics. If future endpoints need array edits, test/move/copy, nested paths, or optimistic concurrency, expand the shared helper deliberately or introduce an endpoint-specific contract.
 - **JSON Patch `value` stays loosely typed in OpenAPI.** The schema exposes arbitrary JSON for `value`, which is standard and avoids nullable merge-patch ambiguity. If native client ergonomics suffer, prefer small shared helper aliases/builders over endpoint-specific override DTOs.
 - **OpenFoodFacts credentials are per-user and server-encrypted.** Product contribution uses saved OFF credentials only when `QM_OFF_CREDENTIAL_ENCRYPTION_KEY` is configured. Keep credential storage behind the account helpers and don't log or return plaintext credentials.
+- **AI and integration credentials are isolated from AI context.** AI/supplier features are advisory until deterministic domain code validates an execution. Credentials may only be read by the provider/plugin code making authenticated calls; never serialize them into prompts, tool contexts, task records, debug payloads, generated recipes, or drafts.
 
 ## Workflow
 
+- **Install Node dependencies before running pnpm commands.** Run `pnpm install` at the repo root before attempting `pnpm`, `pnpm -C web`, or other pnpm-backed commands in a fresh checkout/worktree; otherwise local executables such as Prettier may be missing.
 - **Regenerate the OpenAPI spec after any DTO, route, or enum change:**
   ```sh
   cargo xtask export-openapi
