@@ -33,6 +33,7 @@ pub struct StockEventRow {
     pub created_by: Uuid,
     pub consume_request_id: Option<Uuid>,
     pub operation_id: Option<Uuid>,
+    pub recipe_execution_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone)]
@@ -60,7 +61,8 @@ pub async fn list_for_batch(
 ) -> Result<Vec<StockEventRow>, sqlx::Error> {
     let rows = sqlx::query(
         "SELECT id, household_id, batch_id, event_type, quantity_delta, package_quantity, \
-                package_unit, note, created_at, created_by, consume_request_id, operation_id \
+                package_unit, note, created_at, created_by, consume_request_id, operation_id, \
+                recipe_execution_id \
          FROM stock_event \
          WHERE batch_id = ? \
          ORDER BY created_at ASC, id ASC",
@@ -78,7 +80,8 @@ pub async fn list_for_household(
 ) -> Result<Vec<StockEventRow>, sqlx::Error> {
     let rows = sqlx::query(
         "SELECT id, household_id, batch_id, event_type, quantity_delta, package_quantity, \
-                package_unit, note, created_at, created_by, consume_request_id, operation_id \
+                package_unit, note, created_at, created_by, consume_request_id, operation_id, \
+                recipe_execution_id \
          FROM stock_event \
          WHERE household_id = ? \
          ORDER BY created_at DESC, id DESC \
@@ -116,6 +119,7 @@ pub async fn list_timeline(
             e.package_quantity AS e_package_quantity, e.package_unit AS e_package_unit, \
             e.note AS e_note, e.created_at AS e_created_at, e.created_by AS e_created_by, \
             e.consume_request_id AS e_consume_request_id, e.operation_id AS e_operation_id, \
+            e.recipe_execution_id AS e_recipe_execution_id, \
             b.unit AS b_unit, b.package_quantity AS b_package_quantity, \
             b.package_unit AS b_package_unit, b.expires_on AS b_expires_on, \
             p.id AS p_id, p.source AS p_source, p.off_barcode AS p_off_barcode, \
@@ -169,7 +173,8 @@ pub async fn latest_for_batch_tx(
 ) -> Result<Option<StockEventRow>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT id, household_id, batch_id, event_type, quantity_delta, package_quantity, \
-                package_unit, note, created_at, created_by, consume_request_id, operation_id \
+                package_unit, note, created_at, created_by, consume_request_id, operation_id, \
+                recipe_execution_id \
          FROM stock_event \
          WHERE batch_id = ? \
          ORDER BY created_at DESC, id DESC \
@@ -188,6 +193,7 @@ fn row_to_event(row: sqlx::any::AnyRow) -> Result<StockEventRow, sqlx::Error> {
     let created_by: String = row.try_get("created_by")?;
     let consume_request_id: Option<String> = row.try_get("consume_request_id")?;
     let operation_id: Option<String> = row.try_get("operation_id")?;
+    let recipe_execution_id: Option<String> = row.try_get("recipe_execution_id")?;
     Ok(StockEventRow {
         id: Uuid::parse_str(&id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         household_id: Uuid::parse_str(&household_id)
@@ -208,6 +214,10 @@ fn row_to_event(row: sqlx::any::AnyRow) -> Result<StockEventRow, sqlx::Error> {
             .map(|s| Uuid::parse_str(&s))
             .transpose()
             .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+        recipe_execution_id: recipe_execution_id
+            .map(|s| Uuid::parse_str(&s))
+            .transpose()
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
     })
 }
 
@@ -218,6 +228,7 @@ fn row_to_timeline_entry(row: sqlx::any::AnyRow) -> Result<TimelineEntryRow, sql
     let e_by: String = row.try_get("e_created_by")?;
     let e_corr: Option<String> = row.try_get("e_consume_request_id")?;
     let e_operation: Option<String> = row.try_get("e_operation_id")?;
+    let e_recipe_execution: Option<String> = row.try_get("e_recipe_execution_id")?;
 
     let event = StockEventRow {
         id: Uuid::parse_str(&e_id).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
@@ -236,6 +247,10 @@ fn row_to_timeline_entry(row: sqlx::any::AnyRow) -> Result<TimelineEntryRow, sql
             .transpose()
             .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
         operation_id: e_operation
+            .map(|s| Uuid::parse_str(&s))
+            .transpose()
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+        recipe_execution_id: e_recipe_execution
             .map(|s| Uuid::parse_str(&s))
             .transpose()
             .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,

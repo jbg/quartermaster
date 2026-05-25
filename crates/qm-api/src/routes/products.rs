@@ -52,7 +52,7 @@ pub fn router(rate_limit_state: RateLimitLayerState) -> Router<AppState> {
         .route("/products/{id}/restore", post(restore))
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ProductDto {
     pub id: Uuid,
     pub name: String,

@@ -6,10 +6,18 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use qm_core::units::UnitFamily;
+use jiff::civil::Date;
+use qm_core::{
+    batch::BatchConsumption,
+    units::{MeasurementSystem, UnitFamily},
+};
 use qm_db::recipes::{
     NewRecipeIngredient, NewRecipeOutput, NewRecipeProvenance, NewRecipeStep, RecipeFull,
     RecipeIngredientRow, RecipeOutputRow, RecipeProvenanceRow, RecipeRow, RecipeStepRow,
+};
+use qm_db::{
+    products::ProductRow,
+    stock::{NewRecipeExecution, RecipeStockOutput},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -21,6 +29,8 @@ use crate::{
     auth::{self, CurrentUser},
     error::{ApiError, ApiResult},
     routes::ingredients::{QuantityRangeDto, StructuredQuantityDto},
+    routes::products::ProductDto,
+    routes::stock::StockBatchDto,
     types::{RecipeProvenanceSource, RecipeSource, RecipeVisibility},
     AppState,
 };
@@ -32,6 +42,8 @@ pub fn router() -> Router<AppState> {
         .route("/recipes/{id}", get(get_one).put(update).delete(delete_one))
         .route("/recipes/{id}/scale", post(scale))
         .route("/recipes/{id}/validate", get(validate))
+        .route("/recipes/executions/preflight", post(preflight))
+        .route("/recipes/executions", post(execute))
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -221,6 +233,124 @@ pub struct RecipeValidationIssueDto {
     pub code: String,
     pub message: String,
     pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RecipeExecutionIngredientRequest {
+    pub line_id: Option<String>,
+    pub display_name: Option<String>,
+    pub ingredient_id: Option<Uuid>,
+    pub product_id: Option<Uuid>,
+    pub location_id: Option<Uuid>,
+    pub quantity: String,
+    pub unit: String,
+    #[serde(default)]
+    pub optional: bool,
+    pub substitution_of: Option<String>,
+    pub preparation: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RecipeExecutionOutputRequest {
+    pub product_id: Uuid,
+    pub location_id: Uuid,
+    pub quantity: String,
+    pub unit: String,
+    pub produced_on: Option<String>,
+    pub expires_on: Option<String>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RecipeExecutionRequest {
+    pub recipe_id: Option<Uuid>,
+    pub recipe_version_id: Option<Uuid>,
+    pub recipe_name: Option<String>,
+    pub serving_scale: Option<String>,
+    #[serde(default)]
+    pub ingredients: Vec<RecipeExecutionIngredientRequest>,
+    #[serde(default)]
+    pub outputs: Vec<RecipeExecutionOutputRequest>,
+    pub use_expiring_first: Option<bool>,
+    pub allow_partial: Option<bool>,
+    pub idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RecipeExecutionPreflightResponse {
+    pub recipe_id: Option<Uuid>,
+    pub recipe_version_id: Option<Uuid>,
+    pub recipe_name: Option<String>,
+    pub serving_scale: String,
+    pub use_expiring_first: bool,
+    pub ingredients: Vec<RecipeIngredientPlanDto>,
+    pub missing_ingredients: Vec<RecipeMissingIngredientDto>,
+    pub outputs: Vec<RecipeOutputPreviewDto>,
+    pub warnings: Vec<String>,
+    pub can_execute: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RecipeIngredientPlanDto {
+    pub line_id: Option<String>,
+    pub display_name: Option<String>,
+    pub ingredient_id: Option<Uuid>,
+    pub mapping_id: Option<Uuid>,
+    pub product: ProductDto,
+    pub requested_quantity: String,
+    pub requested_unit: String,
+    pub inventory_quantity: String,
+    pub inventory_unit: String,
+    pub optional: bool,
+    pub substitution_of: Option<String>,
+    pub conversion_assumption: Option<String>,
+    pub matched_batches: Vec<RecipeMatchedBatchDto>,
+    pub missing_quantity: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RecipeMatchedBatchDto {
+    pub batch_id: Uuid,
+    pub location_id: Uuid,
+    pub quantity: String,
+    pub unit: String,
+    pub quantity_in_requested_unit: String,
+    pub requested_unit: String,
+    pub expires_on: Option<String>,
+    pub depleted: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RecipeMissingIngredientDto {
+    pub line_id: Option<String>,
+    pub display_name: Option<String>,
+    pub ingredient_id: Option<Uuid>,
+    pub product_id: Option<Uuid>,
+    pub requested_quantity: String,
+    pub requested_unit: String,
+    pub missing_quantity: String,
+    pub optional: bool,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RecipeOutputPreviewDto {
+    pub product: ProductDto,
+    pub location_id: Uuid,
+    pub quantity: String,
+    pub unit: String,
+    pub produced_on: Option<String>,
+    pub expires_on: Option<String>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RecipeExecutionResponse {
+    pub execution_id: Uuid,
+    pub consume_request_id: Uuid,
+    pub idempotent_replay: bool,
+    pub plan: RecipeExecutionPreflightResponse,
+    pub output_batches: Vec<StockBatchDto>,
 }
 
 #[utoipa::path(
@@ -476,6 +606,121 @@ pub async fn scale(
             })
             .collect(),
         validation,
+    }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/recipes/executions/preflight",
+    operation_id = "recipe_execution_preflight",
+    tag = "recipes",
+    request_body = RecipeExecutionRequest,
+    responses((status = 200, body = RecipeExecutionPreflightResponse), (status = 400, body = crate::error::ApiErrorBody)),
+    security(("bearer" = [])),
+)]
+pub async fn preflight(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Json(req): Json<RecipeExecutionRequest>,
+) -> ApiResult<Json<RecipeExecutionPreflightResponse>> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    let plan = build_preflight(&state, household_id, &req).await?;
+    Ok(Json(plan))
+}
+
+#[utoipa::path(
+    post,
+    path = "/recipes/executions",
+    operation_id = "recipe_execution_execute",
+    tag = "recipes",
+    request_body = RecipeExecutionRequest,
+    responses((status = 200, body = RecipeExecutionResponse), (status = 400, body = crate::error::ApiErrorBody)),
+    security(("bearer" = [])),
+)]
+pub async fn execute(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Json(req): Json<RecipeExecutionRequest>,
+) -> ApiResult<Json<RecipeExecutionResponse>> {
+    let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
+    auth::require_read_write(&current)?;
+
+    if let Some(key) = req
+        .idempotency_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        if let Some(row) =
+            qm_db::recipes::find_execution_by_idempotency_key(&state.db, household_id, key).await?
+        {
+            let plan: RecipeExecutionPreflightResponse =
+                serde_json::from_str(&row.preflight_json).map_err(anyhow::Error::from)?;
+            let output_batches = output_batch_dtos(&state, household_id, row.id).await?;
+            return Ok(Json(RecipeExecutionResponse {
+                execution_id: row.id,
+                consume_request_id: row.consume_request_id,
+                idempotent_replay: true,
+                plan,
+                output_batches,
+            }));
+        }
+    }
+
+    let plan = build_preflight(&state, household_id, &req).await?;
+    let blocking_missing = plan
+        .missing_ingredients
+        .iter()
+        .any(|missing| !missing.optional);
+    if blocking_missing && !req.allow_partial.unwrap_or(false) {
+        return Err(ApiError::BadRequest(
+            "recipe execution has missing required ingredients; re-submit with allow_partial=true to confirm partial execution".into(),
+        ));
+    }
+
+    let execution_id = Uuid::now_v7();
+    let adjusted_recipe_json = serde_json::to_string(&req).map_err(anyhow::Error::from)?;
+    let preflight_json = serde_json::to_string(&plan).map_err(anyhow::Error::from)?;
+    let consumption = consumption_from_plan(&plan)?;
+    let outputs = recipe_stock_outputs(&req.outputs);
+    let serving_scale = plan.serving_scale.clone();
+    let idempotency_key = req
+        .idempotency_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let execution = NewRecipeExecution {
+        id: execution_id,
+        recipe_id: req.recipe_id,
+        recipe_version_id: req.recipe_version_id,
+        recipe_name: req.recipe_name.as_deref(),
+        serving_scale: &serving_scale,
+        idempotency_key,
+        adjusted_recipe_json: &adjusted_recipe_json,
+        preflight_json: &preflight_json,
+    };
+    let application = qm_db::stock::apply_recipe_execution(
+        &state.db,
+        household_id,
+        &execution,
+        &consumption,
+        &outputs,
+        current.user_id,
+        Some(&state.config.expiry_reminder_policy),
+    )
+    .await?;
+
+    let mut output_batches = Vec::with_capacity(application.output_batch_ids.len());
+    for id in application.output_batch_ids {
+        output_batches.push(stock_dto(&state, household_id, id).await?);
+    }
+
+    Ok(Json(RecipeExecutionResponse {
+        execution_id,
+        consume_request_id: application.consume_request_id,
+        idempotent_replay: false,
+        plan,
+        output_batches,
     }))
 }
 
@@ -1267,4 +1512,403 @@ fn validate_positive_decimal(field: &str, value: String) -> ApiResult<String> {
         return Err(ApiError::BadRequest(format!("{field} must be > 0")));
     }
     Ok(parsed.normalize().to_string())
+}
+
+async fn build_preflight(
+    state: &AppState,
+    household_id: Uuid,
+    req: &RecipeExecutionRequest,
+) -> ApiResult<RecipeExecutionPreflightResponse> {
+    let serving_scale = req.serving_scale.as_deref().unwrap_or("1");
+    validate_positive_decimal_field("serving_scale", serving_scale)?;
+    if req.ingredients.is_empty() && req.outputs.is_empty() {
+        return Err(ApiError::BadRequest(
+            "recipe execution needs at least one ingredient or output".into(),
+        ));
+    }
+
+    let measurement_system = household_measurement_system(state, household_id).await?;
+    let use_expiring_first = req.use_expiring_first.unwrap_or(true);
+    let mut ingredients = Vec::new();
+    let mut missing_ingredients = Vec::new();
+    let mut warnings = Vec::new();
+
+    for ingredient in &req.ingredients {
+        validate_positive_decimal_field("quantity", &ingredient.quantity)?;
+        let requested = Decimal::from_str(&ingredient.quantity)
+            .map_err(|_| ApiError::BadRequest("quantity not a valid decimal".into()))?;
+        let resolved =
+            resolve_execution_ingredient(state, household_id, ingredient, measurement_system)
+                .await?;
+        let Some(resolved) = resolved else {
+            missing_ingredients.push(RecipeMissingIngredientDto {
+                line_id: ingredient.line_id.clone(),
+                display_name: ingredient.display_name.clone(),
+                ingredient_id: ingredient.ingredient_id,
+                product_id: ingredient.product_id,
+                requested_quantity: ingredient.quantity.clone(),
+                requested_unit: ingredient.unit.clone(),
+                missing_quantity: ingredient.quantity.clone(),
+                optional: ingredient.optional,
+                reason: "no mapped product was selected or available".into(),
+            });
+            continue;
+        };
+
+        let mut batches = qm_db::stock::list_active_batches(
+            &state.db,
+            household_id,
+            resolved.product.id,
+            ingredient.location_id,
+        )
+        .await?;
+        if !use_expiring_first {
+            batches.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.cmp(&b.id)));
+        }
+
+        let mut remaining = resolved.inventory_quantity;
+        let mut matched_batches = Vec::new();
+        for batch in batches {
+            if remaining <= Decimal::ZERO {
+                break;
+            }
+            let available = Decimal::from_str(&batch.quantity)
+                .map_err(|err| ApiError::Internal(anyhow::Error::from(err)))?;
+            if available <= Decimal::ZERO {
+                continue;
+            }
+            let available_in_requested = convert_decimal(
+                available,
+                &batch.unit,
+                &resolved.inventory_unit,
+                measurement_system,
+            )?;
+            if available_in_requested <= Decimal::ZERO {
+                continue;
+            }
+            let take_requested = remaining.min(available_in_requested);
+            let take_batch = convert_decimal(
+                take_requested,
+                &resolved.inventory_unit,
+                &batch.unit,
+                measurement_system,
+            )?;
+            let depleted = (available - take_batch) <= Decimal::ZERO;
+            matched_batches.push(RecipeMatchedBatchDto {
+                batch_id: batch.id,
+                location_id: batch.location_id,
+                quantity: normalize_decimal(take_batch),
+                unit: batch.unit,
+                quantity_in_requested_unit: normalize_decimal(take_requested),
+                requested_unit: resolved.inventory_unit.clone(),
+                expires_on: batch.expires_on,
+                depleted,
+            });
+            remaining -= take_requested;
+        }
+
+        let missing_quantity = if remaining > Decimal::ZERO {
+            let missing = normalize_decimal(remaining);
+            missing_ingredients.push(RecipeMissingIngredientDto {
+                line_id: ingredient.line_id.clone(),
+                display_name: ingredient.display_name.clone(),
+                ingredient_id: ingredient.ingredient_id,
+                product_id: Some(resolved.product.id),
+                requested_quantity: ingredient.quantity.clone(),
+                requested_unit: ingredient.unit.clone(),
+                missing_quantity: missing.clone(),
+                optional: ingredient.optional,
+                reason: "insufficient stock".into(),
+            });
+            Some(missing)
+        } else {
+            None
+        };
+
+        if resolved.conversion_assumption.is_some() {
+            warnings.push(format!(
+                "{} uses recipe-layer conversion metadata",
+                ingredient_label(ingredient)
+            ));
+        }
+
+        ingredients.push(RecipeIngredientPlanDto {
+            line_id: ingredient.line_id.clone(),
+            display_name: ingredient.display_name.clone(),
+            ingredient_id: ingredient.ingredient_id,
+            mapping_id: resolved.mapping_id,
+            product: resolved.product.try_into()?,
+            requested_quantity: normalize_decimal(requested),
+            requested_unit: ingredient.unit.clone(),
+            inventory_quantity: normalize_decimal(resolved.inventory_quantity),
+            inventory_unit: resolved.inventory_unit,
+            optional: ingredient.optional,
+            substitution_of: ingredient.substitution_of.clone(),
+            conversion_assumption: resolved.conversion_assumption,
+            matched_batches,
+            missing_quantity,
+        });
+    }
+
+    let mut outputs = Vec::with_capacity(req.outputs.len());
+    for output in &req.outputs {
+        validate_positive_decimal_field("output quantity", &output.quantity)?;
+        validate_optional_date(output.produced_on.as_deref())?;
+        validate_optional_date(output.expires_on.as_deref())?;
+        let product = load_product_for_write(state, household_id, output.product_id).await?;
+        validate_unit_family(&output.unit, &product.family)?;
+        validate_location(state, household_id, output.location_id).await?;
+        outputs.push(RecipeOutputPreviewDto {
+            product: product.try_into()?,
+            location_id: output.location_id,
+            quantity: output.quantity.clone(),
+            unit: output.unit.clone(),
+            produced_on: output.produced_on.clone(),
+            expires_on: output.expires_on.clone(),
+            note: output.note.clone(),
+        });
+    }
+
+    let can_execute = missing_ingredients.iter().all(|missing| missing.optional);
+    Ok(RecipeExecutionPreflightResponse {
+        recipe_id: req.recipe_id,
+        recipe_version_id: req.recipe_version_id,
+        recipe_name: req.recipe_name.clone(),
+        serving_scale: serving_scale.to_owned(),
+        use_expiring_first,
+        ingredients,
+        missing_ingredients,
+        outputs,
+        warnings,
+        can_execute,
+    })
+}
+
+struct ResolvedIngredient {
+    product: ProductRow,
+    mapping_id: Option<Uuid>,
+    inventory_quantity: Decimal,
+    inventory_unit: String,
+    conversion_assumption: Option<String>,
+}
+
+async fn resolve_execution_ingredient(
+    state: &AppState,
+    household_id: Uuid,
+    ingredient: &RecipeExecutionIngredientRequest,
+    measurement_system: MeasurementSystem,
+) -> ApiResult<Option<ResolvedIngredient>> {
+    if let Some(product_id) = ingredient.product_id {
+        let product = load_product_for_write(state, household_id, product_id).await?;
+        validate_unit_family(&ingredient.unit, &product.family)?;
+        return Ok(Some(ResolvedIngredient {
+            product,
+            mapping_id: None,
+            inventory_quantity: Decimal::from_str(&ingredient.quantity)
+                .map_err(|_| ApiError::BadRequest("quantity not a valid decimal".into()))?,
+            inventory_unit: ingredient.unit.clone(),
+            conversion_assumption: None,
+        }));
+    }
+
+    let Some(ingredient_id) = ingredient.ingredient_id else {
+        return Ok(None);
+    };
+    if qm_db::ingredients::find(&state.db, household_id, ingredient_id)
+        .await?
+        .is_none()
+    {
+        return Ok(None);
+    }
+    let mappings =
+        qm_db::ingredients::list_mappings(&state.db, household_id, ingredient_id).await?;
+    let Some(mapping) = mappings.into_iter().next() else {
+        return Ok(None);
+    };
+    let product = load_product_for_write(state, household_id, mapping.product_id).await?;
+
+    let requested = Decimal::from_str(&ingredient.quantity)
+        .map_err(|_| ApiError::BadRequest("quantity not a valid decimal".into()))?;
+    if let (Some(recipe_amount), Some(recipe_unit), Some(inventory_amount), Some(inventory_unit)) = (
+        mapping.recipe_amount.as_deref(),
+        mapping.recipe_unit.as_deref(),
+        mapping.inventory_amount.as_deref(),
+        mapping.inventory_unit.as_deref(),
+    ) {
+        validate_unit_family(inventory_unit, &product.family)?;
+        let recipe_amount = Decimal::from_str(recipe_amount).map_err(|_| {
+            ApiError::BadRequest("ingredient mapping recipe quantity is not a valid decimal".into())
+        })?;
+        let inventory_amount = Decimal::from_str(inventory_amount).map_err(|_| {
+            ApiError::BadRequest(
+                "ingredient mapping inventory quantity is not a valid decimal".into(),
+            )
+        })?;
+        if recipe_amount <= Decimal::ZERO || inventory_amount <= Decimal::ZERO {
+            return Err(ApiError::BadRequest(
+                "ingredient mapping conversion quantities must be positive".into(),
+            ));
+        }
+        let requested_in_mapping_unit =
+            convert_decimal(requested, &ingredient.unit, recipe_unit, measurement_system)?;
+        let inventory_quantity = requested_in_mapping_unit / recipe_amount * inventory_amount;
+        return Ok(Some(ResolvedIngredient {
+            product,
+            mapping_id: Some(mapping.id),
+            inventory_quantity,
+            inventory_unit: inventory_unit.to_owned(),
+            conversion_assumption: Some(format!(
+                "{} {recipe_unit} maps to {} {inventory_unit}",
+                normalize_decimal(recipe_amount),
+                normalize_decimal(inventory_amount)
+            )),
+        }));
+    }
+
+    validate_unit_family(&ingredient.unit, &product.family)?;
+    Ok(Some(ResolvedIngredient {
+        product,
+        mapping_id: Some(mapping.id),
+        inventory_quantity: requested,
+        inventory_unit: ingredient.unit.clone(),
+        conversion_assumption: None,
+    }))
+}
+
+fn consumption_from_plan(
+    plan: &RecipeExecutionPreflightResponse,
+) -> ApiResult<Vec<BatchConsumption>> {
+    let mut consumption = Vec::new();
+    for ingredient in &plan.ingredients {
+        for batch in &ingredient.matched_batches {
+            let quantity = Decimal::from_str(&batch.quantity)
+                .map_err(|_| ApiError::BadRequest("planned quantity not a valid decimal".into()))?;
+            if quantity > Decimal::ZERO {
+                consumption.push(BatchConsumption {
+                    batch_id: batch.batch_id,
+                    quantity,
+                    depletes: batch.depleted,
+                });
+            }
+        }
+    }
+    Ok(consumption)
+}
+
+fn recipe_stock_outputs(outputs: &[RecipeExecutionOutputRequest]) -> Vec<RecipeStockOutput<'_>> {
+    outputs
+        .iter()
+        .map(|output| RecipeStockOutput {
+            product_id: output.product_id,
+            location_id: output.location_id,
+            quantity: &output.quantity,
+            unit: &output.unit,
+            produced_on: output.produced_on.as_deref(),
+            expires_on: output.expires_on.as_deref(),
+            note: output.note.as_deref(),
+        })
+        .collect()
+}
+
+async fn output_batch_dtos(
+    state: &AppState,
+    household_id: Uuid,
+    execution_id: Uuid,
+) -> ApiResult<Vec<StockBatchDto>> {
+    let ids = qm_db::recipes::output_batch_ids_for_execution(&state.db, household_id, execution_id)
+        .await?;
+    let mut output_batches = Vec::with_capacity(ids.len());
+    for id in ids {
+        output_batches.push(stock_dto(state, household_id, id).await?);
+    }
+    Ok(output_batches)
+}
+
+async fn stock_dto(state: &AppState, household_id: Uuid, id: Uuid) -> ApiResult<StockBatchDto> {
+    let row = qm_db::stock::get_with_product(&state.db, household_id, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    row.try_into()
+}
+
+async fn load_product_for_write(
+    state: &AppState,
+    household_id: Uuid,
+    product_id: Uuid,
+) -> ApiResult<ProductRow> {
+    qm_db::products::find_for_household(&state.db, household_id, product_id)
+        .await?
+        .ok_or(ApiError::NotFound)
+}
+
+async fn validate_location(
+    state: &AppState,
+    household_id: Uuid,
+    location_id: Uuid,
+) -> ApiResult<()> {
+    qm_db::locations::find(&state.db, household_id, location_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok(())
+}
+
+async fn household_measurement_system(
+    state: &AppState,
+    household_id: Uuid,
+) -> ApiResult<MeasurementSystem> {
+    let household = qm_db::households::find_by_id(&state.db, household_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    crate::routes::households::measurement_system_from_db(&household.measurement_system)
+}
+
+fn validate_positive_decimal_field(field: &str, value: &str) -> ApiResult<()> {
+    let parsed = Decimal::from_str(value)
+        .map_err(|_| ApiError::BadRequest(format!("{field} not a valid decimal")))?;
+    if parsed <= Decimal::ZERO {
+        return Err(ApiError::BadRequest(format!("{field} must be > 0")));
+    }
+    Ok(())
+}
+
+fn validate_optional_date(value: Option<&str>) -> ApiResult<()> {
+    if let Some(value) = value {
+        Date::from_str(value)
+            .map(|_| ())
+            .map_err(|_| ApiError::BadRequest(format!("date must be YYYY-MM-DD (got {value})")))?;
+    }
+    Ok(())
+}
+
+fn validate_unit_family(unit: &str, product_family: &str) -> ApiResult<()> {
+    let u = qm_core::units::lookup(unit).map_err(|_| ApiError::UnknownUnit(unit.to_owned()))?;
+    if u.family.as_str() != product_family {
+        return Err(ApiError::UnitFamilyMismatch {
+            product_family: product_family.to_owned(),
+            unit: unit.to_owned(),
+        });
+    }
+    Ok(())
+}
+
+fn convert_decimal(
+    quantity: Decimal,
+    from: &str,
+    to: &str,
+    measurement_system: MeasurementSystem,
+) -> ApiResult<Decimal> {
+    qm_core::units::convert_with_measurement_system(quantity, from, to, measurement_system)
+        .map_err(ApiError::Domain)
+}
+
+fn normalize_decimal(value: Decimal) -> String {
+    value.normalize().to_string()
+}
+
+fn ingredient_label(ingredient: &RecipeExecutionIngredientRequest) -> String {
+    ingredient
+        .display_name
+        .clone()
+        .or_else(|| ingredient.line_id.clone())
+        .unwrap_or_else(|| "ingredient".into())
 }

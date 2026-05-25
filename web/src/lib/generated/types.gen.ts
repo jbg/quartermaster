@@ -899,6 +899,62 @@ export type RecipeDto = {
     visibility: RecipeVisibility;
 };
 
+export type RecipeExecutionIngredientRequest = {
+    display_name?: string | null;
+    ingredient_id?: string | null;
+    line_id?: string | null;
+    location_id?: string | null;
+    optional?: boolean;
+    preparation?: string | null;
+    product_id?: string | null;
+    quantity: string;
+    substitution_of?: string | null;
+    unit: string;
+};
+
+export type RecipeExecutionOutputRequest = {
+    expires_on?: string | null;
+    location_id: string;
+    note?: string | null;
+    produced_on?: string | null;
+    product_id: string;
+    quantity: string;
+    unit: string;
+};
+
+export type RecipeExecutionPreflightResponse = {
+    can_execute: boolean;
+    ingredients: Array<RecipeIngredientPlanDto>;
+    missing_ingredients: Array<RecipeMissingIngredientDto>;
+    outputs: Array<RecipeOutputPreviewDto>;
+    recipe_id?: string | null;
+    recipe_name?: string | null;
+    recipe_version_id?: string | null;
+    serving_scale: string;
+    use_expiring_first: boolean;
+    warnings: Array<string>;
+};
+
+export type RecipeExecutionRequest = {
+    allow_partial?: boolean | null;
+    idempotency_key?: string | null;
+    ingredients?: Array<RecipeExecutionIngredientRequest>;
+    outputs?: Array<RecipeExecutionOutputRequest>;
+    recipe_id?: string | null;
+    recipe_name?: string | null;
+    recipe_version_id?: string | null;
+    serving_scale?: string | null;
+    use_expiring_first?: boolean | null;
+};
+
+export type RecipeExecutionResponse = {
+    consume_request_id: string;
+    execution_id: string;
+    idempotent_replay: boolean;
+    output_batches: Array<StockBatchDto>;
+    plan: RecipeExecutionPreflightResponse;
+};
+
 export type RecipeIngredientDto = {
     display_name: string;
     group_label?: string | null;
@@ -911,8 +967,48 @@ export type RecipeIngredientDto = {
     substitution_hints?: Array<string>;
 };
 
+export type RecipeIngredientPlanDto = {
+    conversion_assumption?: string | null;
+    display_name?: string | null;
+    ingredient_id?: string | null;
+    inventory_quantity: string;
+    inventory_unit: string;
+    line_id?: string | null;
+    mapping_id?: string | null;
+    matched_batches: Array<RecipeMatchedBatchDto>;
+    missing_quantity?: string | null;
+    optional: boolean;
+    product: ProductDto;
+    requested_quantity: string;
+    requested_unit: string;
+    substitution_of?: string | null;
+};
+
 export type RecipeListResponse = {
     items: Array<RecipeSummaryDto>;
+};
+
+export type RecipeMatchedBatchDto = {
+    batch_id: string;
+    depleted: boolean;
+    expires_on?: string | null;
+    location_id: string;
+    quantity: string;
+    quantity_in_requested_unit: string;
+    requested_unit: string;
+    unit: string;
+};
+
+export type RecipeMissingIngredientDto = {
+    display_name?: string | null;
+    ingredient_id?: string | null;
+    line_id?: string | null;
+    missing_quantity: string;
+    optional: boolean;
+    product_id?: string | null;
+    reason: string;
+    requested_quantity: string;
+    requested_unit: string;
 };
 
 export type RecipeOutputDto = {
@@ -922,6 +1018,16 @@ export type RecipeOutputDto = {
     product_id?: string | null;
     quantity: StructuredQuantityDto;
     storage_notes?: string | null;
+};
+
+export type RecipeOutputPreviewDto = {
+    expires_on?: string | null;
+    location_id: string;
+    note?: string | null;
+    produced_on?: string | null;
+    product: ProductDto;
+    quantity: string;
+    unit: string;
 };
 
 export type RecipeProvenanceDto = {
@@ -1215,6 +1321,10 @@ export type StockEventDto = {
      * Signed decimal in `unit`.
      */
     quantity_delta: string;
+    /**
+     * Shared by consume/add rows written by one recipe execution.
+     */
+    recipe_execution_id?: string | null;
     unit: string;
 };
 
@@ -2754,6 +2864,44 @@ export type RecipeCreateResponses = {
 };
 
 export type RecipeCreateResponse = RecipeCreateResponses[keyof RecipeCreateResponses];
+
+export type RecipeExecutionExecuteData = {
+    body: RecipeExecutionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/recipes/executions';
+};
+
+export type RecipeExecutionExecuteErrors = {
+    400: ApiErrorBody;
+};
+
+export type RecipeExecutionExecuteError = RecipeExecutionExecuteErrors[keyof RecipeExecutionExecuteErrors];
+
+export type RecipeExecutionExecuteResponses = {
+    200: RecipeExecutionResponse;
+};
+
+export type RecipeExecutionExecuteResponse = RecipeExecutionExecuteResponses[keyof RecipeExecutionExecuteResponses];
+
+export type RecipeExecutionPreflightData = {
+    body: RecipeExecutionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/recipes/executions/preflight';
+};
+
+export type RecipeExecutionPreflightErrors = {
+    400: ApiErrorBody;
+};
+
+export type RecipeExecutionPreflightError = RecipeExecutionPreflightErrors[keyof RecipeExecutionPreflightErrors];
+
+export type RecipeExecutionPreflightResponses = {
+    200: RecipeExecutionPreflightResponse;
+};
+
+export type RecipeExecutionPreflightResponse2 = RecipeExecutionPreflightResponses[keyof RecipeExecutionPreflightResponses];
 
 export type RecipeImportTextData = {
     body: ImportTextRecipeRequest;

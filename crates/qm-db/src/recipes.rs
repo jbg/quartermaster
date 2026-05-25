@@ -206,6 +206,22 @@ pub struct NewRecipeProvenance<'a> {
     pub parser_confidence: Option<&'a str>,
 }
 
+#[derive(Debug, Clone)]
+pub struct RecipeExecutionRow {
+    pub id: Uuid,
+    pub household_id: Uuid,
+    pub recipe_id: Option<Uuid>,
+    pub recipe_version_id: Option<Uuid>,
+    pub recipe_name: Option<String>,
+    pub serving_scale: String,
+    pub idempotency_key: Option<String>,
+    pub adjusted_recipe_json: String,
+    pub preflight_json: String,
+    pub consume_request_id: Uuid,
+    pub created_at: String,
+    pub created_by: Uuid,
+}
+
 pub async fn list(db: &Database, household_id: Uuid) -> Result<Vec<RecipeRow>, sqlx::Error> {
     let sql = format!(
         "SELECT {RECIPE_COLS} FROM recipe \
@@ -363,6 +379,45 @@ pub async fn delete(db: &Database, household_id: Uuid, id: Uuid) -> Result<bool,
         .execute(&db.pool)
         .await?;
     Ok(res.rows_affected() > 0)
+}
+
+pub async fn find_execution_by_idempotency_key(
+    db: &Database,
+    household_id: Uuid,
+    idempotency_key: &str,
+) -> Result<Option<RecipeExecutionRow>, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT id, household_id, recipe_id, recipe_version_id, recipe_name, serving_scale, \
+                idempotency_key, adjusted_recipe_json, preflight_json, consume_request_id, \
+                created_at, created_by \
+         FROM recipe_execution \
+         WHERE household_id = ? AND idempotency_key = ?",
+    )
+    .bind(household_id.to_string())
+    .bind(idempotency_key)
+    .fetch_optional(&db.pool)
+    .await?;
+    row.map(row_to_execution).transpose()
+}
+
+pub async fn output_batch_ids_for_execution(
+    db: &Database,
+    household_id: Uuid,
+    execution_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT DISTINCT batch_id \
+         FROM stock_event \
+         WHERE household_id = ? AND recipe_execution_id = ? AND event_type = 'add' \
+         ORDER BY batch_id ASC",
+    )
+    .bind(household_id.to_string())
+    .bind(execution_id.to_string())
+    .fetch_all(&db.pool)
+    .await?;
+    rows.into_iter()
+        .map(|row| row_uuid(&row, "batch_id"))
+        .collect()
 }
 
 async fn insert_version_graph_tx(
@@ -716,5 +771,22 @@ fn row_to_provenance(row: sqlx::any::AnyRow) -> Result<RecipeProvenanceRow, sqlx
         user_edits_json: row.try_get("user_edits_json")?,
         parser_confidence: row.try_get("parser_confidence")?,
         created_at: row.try_get("created_at")?,
+    })
+}
+
+fn row_to_execution(row: sqlx::any::AnyRow) -> Result<RecipeExecutionRow, sqlx::Error> {
+    Ok(RecipeExecutionRow {
+        id: row_uuid(&row, "id")?,
+        household_id: row_uuid(&row, "household_id")?,
+        recipe_id: optional_uuid(&row, "recipe_id")?,
+        recipe_version_id: optional_uuid(&row, "recipe_version_id")?,
+        recipe_name: row.try_get("recipe_name")?,
+        serving_scale: row.try_get("serving_scale")?,
+        idempotency_key: row.try_get("idempotency_key")?,
+        adjusted_recipe_json: row.try_get("adjusted_recipe_json")?,
+        preflight_json: row.try_get("preflight_json")?,
+        consume_request_id: row_uuid(&row, "consume_request_id")?,
+        created_at: row.try_get("created_at")?,
+        created_by: row_uuid(&row, "created_by")?,
     })
 }

@@ -3491,6 +3491,96 @@
         ]
       }
     },
+    "/api/v1/recipes/executions": {
+      "post": {
+        "tags": [
+          "recipes"
+        ],
+        "operationId": "recipe_execution_execute",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecipeExecutionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeExecutionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/recipes/executions/preflight": {
+      "post": {
+        "tags": [
+          "recipes"
+        ],
+        "operationId": "recipe_execution_preflight",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecipeExecutionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeExecutionPreflightResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/recipes/imports/text": {
       "post": {
         "tags": [
@@ -8439,6 +8529,272 @@
           }
         }
       },
+      "RecipeExecutionIngredientRequest": {
+        "type": "object",
+        "required": [
+          "quantity",
+          "unit"
+        ],
+        "properties": {
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ingredient_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "line_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "preparation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "substitution_of": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
+      "RecipeExecutionOutputRequest": {
+        "type": "object",
+        "required": [
+          "product_id",
+          "location_id",
+          "quantity",
+          "unit"
+        ],
+        "properties": {
+          "expires_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "produced_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
+      "RecipeExecutionPreflightResponse": {
+        "type": "object",
+        "required": [
+          "serving_scale",
+          "use_expiring_first",
+          "ingredients",
+          "missing_ingredients",
+          "outputs",
+          "warnings",
+          "can_execute"
+        ],
+        "properties": {
+          "can_execute": {
+            "type": "boolean"
+          },
+          "ingredients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeIngredientPlanDto"
+            }
+          },
+          "missing_ingredients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeMissingIngredientDto"
+            }
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeOutputPreviewDto"
+            }
+          },
+          "recipe_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "recipe_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recipe_version_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "serving_scale": {
+            "type": "string"
+          },
+          "use_expiring_first": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RecipeExecutionRequest": {
+        "type": "object",
+        "properties": {
+          "allow_partial": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "idempotency_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ingredients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeExecutionIngredientRequest"
+            }
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeExecutionOutputRequest"
+            }
+          },
+          "recipe_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "recipe_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recipe_version_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "serving_scale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "use_expiring_first": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "RecipeExecutionResponse": {
+        "type": "object",
+        "required": [
+          "execution_id",
+          "consume_request_id",
+          "idempotent_replay",
+          "plan",
+          "output_batches"
+        ],
+        "properties": {
+          "consume_request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "execution_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "idempotent_replay": {
+            "type": "boolean"
+          },
+          "output_batches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StockBatchDto"
+            }
+          },
+          "plan": {
+            "$ref": "#/components/schemas/RecipeExecutionPreflightResponse"
+          }
+        }
+      },
       "RecipeIngredientDto": {
         "type": "object",
         "required": [
@@ -8496,6 +8852,88 @@
           }
         }
       },
+      "RecipeIngredientPlanDto": {
+        "type": "object",
+        "required": [
+          "product",
+          "requested_quantity",
+          "requested_unit",
+          "inventory_quantity",
+          "inventory_unit",
+          "optional",
+          "matched_batches"
+        ],
+        "properties": {
+          "conversion_assumption": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ingredient_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "inventory_quantity": {
+            "type": "string"
+          },
+          "inventory_unit": {
+            "type": "string"
+          },
+          "line_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mapping_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "matched_batches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipeMatchedBatchDto"
+            }
+          },
+          "missing_quantity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "product": {
+            "$ref": "#/components/schemas/ProductDto"
+          },
+          "requested_quantity": {
+            "type": "string"
+          },
+          "requested_unit": {
+            "type": "string"
+          },
+          "substitution_of": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "RecipeListResponse": {
         "type": "object",
         "required": [
@@ -8507,6 +8945,102 @@
             "items": {
               "$ref": "#/components/schemas/RecipeSummaryDto"
             }
+          }
+        }
+      },
+      "RecipeMatchedBatchDto": {
+        "type": "object",
+        "required": [
+          "batch_id",
+          "location_id",
+          "quantity",
+          "unit",
+          "quantity_in_requested_unit",
+          "requested_unit",
+          "depleted"
+        ],
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "depleted": {
+            "type": "boolean"
+          },
+          "expires_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "quantity_in_requested_unit": {
+            "type": "string"
+          },
+          "requested_unit": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
+      "RecipeMissingIngredientDto": {
+        "type": "object",
+        "required": [
+          "requested_quantity",
+          "requested_unit",
+          "missing_quantity",
+          "optional",
+          "reason"
+        ],
+        "properties": {
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ingredient_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "line_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "missing_quantity": {
+            "type": "string"
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "product_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requested_quantity": {
+            "type": "string"
+          },
+          "requested_unit": {
+            "type": "string"
           }
         }
       },
@@ -8549,6 +9083,48 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "RecipeOutputPreviewDto": {
+        "type": "object",
+        "required": [
+          "product",
+          "location_id",
+          "quantity",
+          "unit"
+        ],
+        "properties": {
+          "expires_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "produced_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product": {
+            "$ref": "#/components/schemas/ProductDto"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
           }
         }
       },
@@ -9610,6 +10186,14 @@
           "quantity_delta": {
             "type": "string",
             "description": "Signed decimal in `unit`."
+          },
+          "recipe_execution_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Shared by consume/add rows written by one recipe execution."
           },
           "unit": {
             "type": "string"

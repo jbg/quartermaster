@@ -113,6 +113,35 @@ pub struct SplitStockResult {
     pub operation_id: Uuid,
 }
 
+#[derive(Debug, Clone)]
+pub struct NewRecipeExecution<'a> {
+    pub id: Uuid,
+    pub recipe_id: Option<Uuid>,
+    pub recipe_version_id: Option<Uuid>,
+    pub recipe_name: Option<&'a str>,
+    pub serving_scale: &'a str,
+    pub idempotency_key: Option<&'a str>,
+    pub adjusted_recipe_json: &'a str,
+    pub preflight_json: &'a str,
+}
+
+#[derive(Debug, Clone)]
+pub struct RecipeStockOutput<'a> {
+    pub product_id: Uuid,
+    pub location_id: Uuid,
+    pub quantity: &'a str,
+    pub unit: &'a str,
+    pub produced_on: Option<&'a str>,
+    pub expires_on: Option<&'a str>,
+    pub note: Option<&'a str>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RecipeExecutionApplication {
+    pub consume_request_id: Uuid,
+    pub output_batch_ids: Vec<Uuid>,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct StockFilter {
     pub location_id: Option<Uuid>,
@@ -846,6 +875,149 @@ pub async fn apply_consumption(
     Ok(consume_request_id)
 }
 
+/// Atomically records a recipe execution, consumes ingredient batches, and
+/// adds any produced output batches. This keeps the execution audit record and
+/// every ledger event in one transaction.
+pub async fn apply_recipe_execution(
+    db: &Database,
+    household_id: Uuid,
+    execution: &NewRecipeExecution<'_>,
+    consumption: &[BatchConsumption],
+    outputs: &[RecipeStockOutput<'_>],
+    actor: Uuid,
+    reminder_policy: Option<&ExpiryReminderPolicy>,
+) -> Result<RecipeExecutionApplication, sqlx::Error> {
+    let consume_request_id = Uuid::now_v7();
+    let mut output_batch_ids = Vec::with_capacity(outputs.len());
+    let mut tx = db.pool.begin().await?;
+    let now = now_utc_rfc3339();
+
+    sqlx::query(
+        "INSERT INTO recipe_execution \
+         (id, household_id, recipe_id, recipe_version_id, recipe_name, serving_scale, \
+          idempotency_key, adjusted_recipe_json, preflight_json, consume_request_id, \
+          created_at, created_by) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(execution.id.to_string())
+    .bind(household_id.to_string())
+    .bind(execution.recipe_id.map(|id| id.to_string()))
+    .bind(execution.recipe_version_id.map(|id| id.to_string()))
+    .bind(execution.recipe_name)
+    .bind(execution.serving_scale)
+    .bind(execution.idempotency_key)
+    .bind(execution.adjusted_recipe_json)
+    .bind(execution.preflight_json)
+    .bind(consume_request_id.to_string())
+    .bind(&now)
+    .bind(actor.to_string())
+    .execute(&mut *tx)
+    .await?;
+
+    for c in consumption {
+        let row =
+            fetch_locked_batch_row(&mut tx, db.backend(), household_id, c.batch_id, "quantity")
+                .await?
+                .ok_or(sqlx::Error::RowNotFound)?;
+        let existing: String = row.try_get("quantity")?;
+        let cur = Decimal::from_str(&existing).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+        let applied = if c.quantity >= cur { cur } else { c.quantity };
+        let new_qty = cur - applied;
+        let depletes = new_qty <= Decimal::ZERO;
+
+        if applied.is_zero() {
+            continue;
+        }
+
+        insert_event_with_recipe_execution(
+            &mut tx,
+            household_id,
+            c.batch_id,
+            EVENT_CONSUME,
+            &(-applied).to_string(),
+            Some("consumed via recipe execution"),
+            actor,
+            Some(consume_request_id),
+            execution.id,
+        )
+        .await?;
+
+        if depletes {
+            sqlx::query(
+                "UPDATE stock_batch SET quantity = '0', depleted_at = ? \
+                 WHERE id = ? AND household_id = ?",
+            )
+            .bind(&now)
+            .bind(c.batch_id.to_string())
+            .bind(household_id.to_string())
+            .execute(&mut *tx)
+            .await?;
+        } else {
+            sqlx::query(
+                "UPDATE stock_batch SET quantity = ?, depleted_at = NULL WHERE id = ? AND household_id = ?",
+            )
+            .bind(new_qty.to_string())
+            .bind(c.batch_id.to_string())
+            .bind(household_id.to_string())
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        if let Some(policy) = reminder_policy {
+            crate::reminders::sync_expiry_for_batch_tx(&mut tx, c.batch_id, policy).await?;
+        }
+    }
+
+    for output in outputs {
+        let batch_id = Uuid::now_v7();
+        output_batch_ids.push(batch_id);
+        sqlx::query(
+            "INSERT INTO stock_batch \
+             (id, household_id, product_id, location_id, storage_vessel_id, source_batch_id, source_operation_id, initial_quantity, quantity, unit, package_quantity, package_unit, produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at) \
+             VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, (SELECT package_quantity FROM product WHERE id = ?), (SELECT package_unit FROM product WHERE id = ?), ?, ?, NULL, ?, ?, ?, NULL)",
+        )
+        .bind(batch_id.to_string())
+        .bind(household_id.to_string())
+        .bind(output.product_id.to_string())
+        .bind(output.location_id.to_string())
+        .bind(output.quantity)
+        .bind(output.quantity)
+        .bind(output.unit)
+        .bind(output.product_id.to_string())
+        .bind(output.product_id.to_string())
+        .bind(output.produced_on)
+        .bind(output.expires_on)
+        .bind(output.note)
+        .bind(&now)
+        .bind(actor.to_string())
+        .execute(&mut *tx)
+        .await?;
+
+        insert_event_with_recipe_execution(
+            &mut tx,
+            household_id,
+            batch_id,
+            EVENT_ADD,
+            output.quantity,
+            Some("produced via recipe execution"),
+            actor,
+            None,
+            execution.id,
+        )
+        .await?;
+
+        if let Some(policy) = reminder_policy {
+            crate::reminders::sync_expiry_for_batch_tx(&mut tx, batch_id, policy).await?;
+        }
+    }
+
+    tx.commit().await?;
+    Ok(RecipeExecutionApplication {
+        consume_request_id,
+        output_batch_ids,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn split_repack(
     db: &Database,
@@ -1203,10 +1375,65 @@ async fn insert_event_with_operation(
     consume_request_id: Option<Uuid>,
     operation_id: Option<Uuid>,
 ) -> Result<(), sqlx::Error> {
+    insert_event_with_metadata(
+        tx,
+        household_id,
+        batch_id,
+        event_type,
+        delta,
+        note,
+        created_by,
+        consume_request_id,
+        operation_id,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn insert_event_with_recipe_execution(
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    household_id: Uuid,
+    batch_id: Uuid,
+    event_type: &str,
+    delta: &str,
+    note: Option<&str>,
+    created_by: Uuid,
+    consume_request_id: Option<Uuid>,
+    recipe_execution_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    insert_event_with_metadata(
+        tx,
+        household_id,
+        batch_id,
+        event_type,
+        delta,
+        note,
+        created_by,
+        consume_request_id,
+        None,
+        Some(recipe_execution_id),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn insert_event_with_metadata(
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    household_id: Uuid,
+    batch_id: Uuid,
+    event_type: &str,
+    delta: &str,
+    note: Option<&str>,
+    created_by: Uuid,
+    consume_request_id: Option<Uuid>,
+    operation_id: Option<Uuid>,
+    recipe_execution_id: Option<Uuid>,
+) -> Result<(), sqlx::Error> {
     let id = Uuid::now_v7();
     sqlx::query(
-        "INSERT INTO stock_event (id, household_id, batch_id, event_type, quantity_delta, package_quantity, package_unit, note, created_at, created_by, consume_request_id, operation_id) \
-         VALUES (?, ?, ?, ?, ?, (SELECT package_quantity FROM stock_batch WHERE id = ?), (SELECT package_unit FROM stock_batch WHERE id = ?), ?, ?, ?, ?, ?)",
+        "INSERT INTO stock_event (id, household_id, batch_id, event_type, quantity_delta, package_quantity, package_unit, note, created_at, created_by, consume_request_id, operation_id, recipe_execution_id) \
+         VALUES (?, ?, ?, ?, ?, (SELECT package_quantity FROM stock_batch WHERE id = ?), (SELECT package_unit FROM stock_batch WHERE id = ?), ?, ?, ?, ?, ?, ?)",
     )
     .bind(id.to_string())
     .bind(household_id.to_string())
@@ -1220,6 +1447,7 @@ async fn insert_event_with_operation(
     .bind(created_by.to_string())
     .bind(consume_request_id.map(|u| u.to_string()))
     .bind(operation_id.map(|u| u.to_string()))
+    .bind(recipe_execution_id.map(|u| u.to_string()))
     .execute(&mut **tx)
     .await?;
     Ok(())
