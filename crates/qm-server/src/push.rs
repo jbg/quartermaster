@@ -1671,6 +1671,7 @@ mod tests {
             db: db.clone(),
             config: config.clone(),
             http: reqwest::Client::new(),
+            ai_provider: Arc::new(qm_ai::DisabledProvider),
             off_breaker: Arc::new(qm_api::openfoodfacts::OffCircuitBreaker::default()),
             rate_limiters: Arc::new(qm_api::rate_limit::RateLimiters::new(&config)),
             email_transport: None,

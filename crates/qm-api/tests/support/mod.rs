@@ -54,6 +54,7 @@ impl TestApp {
             rate_limiters: Arc::new(qm_api::rate_limit::RateLimiters::new(&config)),
             config,
             http,
+            ai_provider: Arc::new(qm_ai::DisabledProvider),
             email_transport,
         };
         Self {

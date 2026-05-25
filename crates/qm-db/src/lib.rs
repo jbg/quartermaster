@@ -11,6 +11,7 @@ use sqlx::AnyPool;
 #[cfg(any(test, feature = "test-support"))]
 use std::sync::Arc;
 
+pub mod ai_tasks;
 pub mod auth_handoff;
 pub mod auth_sessions;
 pub mod barcode_cache;

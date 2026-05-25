@@ -258,6 +258,176 @@ impl FromStr for RecipeProvenanceSource {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
+pub enum AiProvider {
+    Disabled,
+    OpenRouter,
+}
+
+impl AiProvider {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::OpenRouter => "openrouter",
+        }
+    }
+}
+
+impl fmt::Display for AiProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for AiProvider {
+    type Err = ApiError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "disabled" => Ok(Self::Disabled),
+            "openrouter" => Ok(Self::OpenRouter),
+            other => Err(ApiError::Internal(anyhow::anyhow!(
+                "unknown AI provider in DB row: {other}",
+            ))),
+        }
+    }
+}
+
+impl From<qm_ai::AiProviderKind> for AiProvider {
+    fn from(value: qm_ai::AiProviderKind) -> Self {
+        match value {
+            qm_ai::AiProviderKind::Disabled => Self::Disabled,
+            qm_ai::AiProviderKind::OpenRouter => Self::OpenRouter,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AiTaskType {
+    RecipeImport,
+    RecipeGeneration,
+    IngredientMatching,
+    PantrySuggestion,
+    StorageSuggestion,
+    SupplierMapping,
+}
+
+impl AiTaskType {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::RecipeImport => "recipe_import",
+            Self::RecipeGeneration => "recipe_generation",
+            Self::IngredientMatching => "ingredient_matching",
+            Self::PantrySuggestion => "pantry_suggestion",
+            Self::StorageSuggestion => "storage_suggestion",
+            Self::SupplierMapping => "supplier_mapping",
+        }
+    }
+}
+
+impl fmt::Display for AiTaskType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for AiTaskType {
+    type Err = ApiError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "recipe_import" => Ok(Self::RecipeImport),
+            "recipe_generation" => Ok(Self::RecipeGeneration),
+            "ingredient_matching" => Ok(Self::IngredientMatching),
+            "pantry_suggestion" => Ok(Self::PantrySuggestion),
+            "storage_suggestion" => Ok(Self::StorageSuggestion),
+            "supplier_mapping" => Ok(Self::SupplierMapping),
+            other => Err(ApiError::Internal(anyhow::anyhow!(
+                "unknown AI task type in DB row: {other}",
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AiTaskValidationStatus {
+    Pending,
+    Valid,
+    Rejected,
+}
+
+impl AiTaskValidationStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Valid => "valid",
+            Self::Rejected => "rejected",
+        }
+    }
+}
+
+impl fmt::Display for AiTaskValidationStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for AiTaskValidationStatus {
+    type Err = ApiError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pending" => Ok(Self::Pending),
+            "valid" => Ok(Self::Valid),
+            "rejected" => Ok(Self::Rejected),
+            other => Err(ApiError::Internal(anyhow::anyhow!(
+                "unknown AI validation status in DB row: {other}",
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AiTaskUserState {
+    Proposed,
+    Accepted,
+    Edited,
+    Rejected,
+}
+
+impl AiTaskUserState {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Proposed => "proposed",
+            Self::Accepted => "accepted",
+            Self::Edited => "edited",
+            Self::Rejected => "rejected",
+        }
+    }
+}
+
+impl fmt::Display for AiTaskUserState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for AiTaskUserState {
+    type Err = ApiError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "proposed" => Ok(Self::Proposed),
+            "accepted" => Ok(Self::Accepted),
+            "edited" => Ok(Self::Edited),
+            "rejected" => Ok(Self::Rejected),
+            other => Err(ApiError::Internal(anyhow::anyhow!(
+                "unknown AI user state in DB row: {other}",
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum StockEventType {
     Add,
     Consume,

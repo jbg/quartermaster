@@ -11,6 +11,7 @@ name = "qm-server"
 path = "src/main.rs"
 
 [dependencies]
+qm-ai = { path = "../qm-ai", default-features = false, features = [] }
 qm-api = { path = "../qm-api", default-features = false, features = [] }
 qm-core = { path = "../qm-core", default-features = false, features = [] }
 qm-db = { path = "../qm-db", default-features = false, features = [] }

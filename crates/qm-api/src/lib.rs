@@ -46,6 +46,7 @@ pub struct AppState {
     pub db: qm_db::Database,
     pub config: Arc<ApiConfig>,
     pub http: reqwest::Client,
+    pub ai_provider: qm_ai::AiProviderRef,
     pub off_breaker: Arc<OffCircuitBreaker>,
     pub rate_limiters: Arc<rate_limit::RateLimiters>,
     pub email_transport: Option<Arc<dyn email::EmailTransport>>,
@@ -89,6 +90,7 @@ pub struct ApiConfig {
     pub expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy,
     pub expiry_reminder_trigger_secret: Option<String>,
     pub smoke_seed_trigger_secret: Option<String>,
+    pub ai: qm_ai::AiConfig,
     pub web_dist_dir: Option<PathBuf>,
     pub web_auth_allowed_origins: Vec<String>,
 }
@@ -239,6 +241,7 @@ impl Default for ApiConfig {
             expiry_reminder_policy: qm_db::reminders::ExpiryReminderPolicy::default(),
             expiry_reminder_trigger_secret: None,
             smoke_seed_trigger_secret: None,
+            ai: qm_ai::AiConfig::default(),
             web_dist_dir: None,
             web_auth_allowed_origins: Vec::new(),
         }
@@ -320,6 +323,10 @@ impl Modify for SecurityAddon {
         routes::accounts::get_openfoodfacts_status,
         routes::accounts::put_openfoodfacts_credentials,
         routes::accounts::delete_openfoodfacts_credentials,
+        routes::ai::status,
+        routes::ai::list_tasks,
+        routes::ai::get_task,
+        routes::ai::update_task_state,
         routes::devices::register,
         routes::households::create_household,
         routes::households::import_household,
@@ -409,6 +416,10 @@ impl Modify for SecurityAddon {
         types::RecipeSource,
         types::RecipeVisibility,
         types::RecipeProvenanceSource,
+        types::AiProvider,
+        types::AiTaskType,
+        types::AiTaskValidationStatus,
+        types::AiTaskUserState,
         types::StockEventType,
         types::MembershipRole,
         types::ReminderKind,
@@ -429,6 +440,10 @@ impl Modify for SecurityAddon {
         routes::accounts::ConfirmEmailVerificationRequest,
         routes::accounts::OpenFoodFactsCredentialStatusResponse,
         routes::accounts::SaveOpenFoodFactsCredentialsRequest,
+        routes::ai::AiStatusResponse,
+        routes::ai::AiTaskDto,
+        routes::ai::AiTaskListResponse,
+        routes::ai::UpdateAiTaskStateRequest,
         routes::accounts::UserDto,
         routes::accounts::HouseholdDto,
         routes::devices::RegisterDeviceRequest,
@@ -549,6 +564,7 @@ impl Modify for SecurityAddon {
     tags(
         (name = "health", description = "Liveness / readiness"),
         (name = "accounts", description = "Authentication and session"),
+        (name = "ai", description = "AI provider status and durable task audit records"),
         (name = "devices", description = "Notification-capable client registrations"),
         (name = "households", description = "Household administration, invites, and members"),
         (name = "onboarding", description = "First-launch server setup and joining"),
@@ -579,6 +595,7 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             RateLimitTarget::Auth,
         )))
+        .merge(routes::ai::router())
         .merge(routes::onboarding::router(RateLimitLayerState::new(
             state.clone(),
             RateLimitTarget::Auth,
