@@ -2,6 +2,7 @@ pub mod accounts;
 pub mod devices;
 pub mod health;
 pub mod households;
+pub mod ingredients;
 pub mod join;
 pub mod label_printers;
 pub mod locations;

@@ -50,6 +50,94 @@ impl FromStr for ProductSource {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
+pub enum IngredientMatchKind {
+    ExactProductLink,
+    Alias,
+    Category,
+    PackageSize,
+    AiSuggestion,
+}
+
+impl IngredientMatchKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ExactProductLink => "exact_product_link",
+            Self::Alias => "alias",
+            Self::Category => "category",
+            Self::PackageSize => "package_size",
+            Self::AiSuggestion => "ai_suggestion",
+        }
+    }
+}
+
+impl fmt::Display for IngredientMatchKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for IngredientMatchKind {
+    type Err = ApiError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "exact_product_link" => Ok(Self::ExactProductLink),
+            "alias" => Ok(Self::Alias),
+            "category" => Ok(Self::Category),
+            "package_size" => Ok(Self::PackageSize),
+            "ai_suggestion" => Ok(Self::AiSuggestion),
+            other => Err(ApiError::Internal(anyhow::anyhow!(
+                "unknown ingredient match kind in DB row: {other}",
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ConversionProvenance {
+    ExactUnitConversion,
+    ProductPackageSize,
+    UserEnteredDensityYield,
+    ImportedSource,
+    LlmSuggestion,
+}
+
+impl ConversionProvenance {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ExactUnitConversion => "exact_unit_conversion",
+            Self::ProductPackageSize => "product_package_size",
+            Self::UserEnteredDensityYield => "user_entered_density_yield",
+            Self::ImportedSource => "imported_source",
+            Self::LlmSuggestion => "llm_suggestion",
+        }
+    }
+}
+
+impl fmt::Display for ConversionProvenance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for ConversionProvenance {
+    type Err = ApiError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "exact_unit_conversion" => Ok(Self::ExactUnitConversion),
+            "product_package_size" => Ok(Self::ProductPackageSize),
+            "user_entered_density_yield" => Ok(Self::UserEnteredDensityYield),
+            "imported_source" => Ok(Self::ImportedSource),
+            "llm_suggestion" => Ok(Self::LlmSuggestion),
+            other => Err(ApiError::Internal(anyhow::anyhow!(
+                "unknown conversion provenance in DB row: {other}",
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum StockEventType {
     Add,
     Consume,
