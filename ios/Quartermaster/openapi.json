@@ -1644,6 +1644,376 @@
         ]
       }
     },
+    "/api/v1/ingredients": {
+      "get": {
+        "tags": [
+          "ingredients"
+        ],
+        "operationId": "ingredient_list",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngredientListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "ingredients"
+        ],
+        "operationId": "ingredient_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIngredientRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngredientDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ingredients/{id}": {
+      "get": {
+        "tags": [
+          "ingredients"
+        ],
+        "operationId": "ingredient_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngredientDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "ingredients"
+        ],
+        "operationId": "ingredient_update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIngredientRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngredientDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "ingredients"
+        ],
+        "operationId": "ingredient_delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ingredients/{id}/availability": {
+      "get": {
+        "tags": [
+          "ingredients"
+        ],
+        "operationId": "ingredient_availability",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngredientAvailabilityResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ingredients/{id}/product-mappings": {
+      "post": {
+        "tags": [
+          "ingredients"
+        ],
+        "operationId": "ingredient_product_mapping_create",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIngredientProductMappingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngredientProductMappingDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ingredients/{id}/product-mappings/{mapping_id}": {
+      "delete": {
+        "tags": [
+          "ingredients"
+        ],
+        "operationId": "ingredient_product_mapping_delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "mapping_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/invites/redeem": {
       "post": {
         "tags": [
@@ -2819,6 +3189,106 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OffContributionPreviewResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/products/{id}/recipe-metadata": {
+      "get": {
+        "tags": [
+          "ingredients"
+        ],
+        "operationId": "product_recipe_metadata_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductRecipeMetadataDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "ingredients"
+        ],
+        "operationId": "product_recipe_metadata_put",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductRecipeMetadataDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductRecipeMetadataDto"
                 }
               }
             }
@@ -4452,6 +4922,16 @@
           }
         }
       },
+      "ConversionProvenance": {
+        "type": "string",
+        "enum": [
+          "exact_unit_conversion",
+          "product_package_size",
+          "user_entered_density_yield",
+          "imported_source",
+          "llm_suggestion"
+        ]
+      },
       "CreateAuthHandoffRequest": {
         "type": "object",
         "properties": {
@@ -4491,6 +4971,88 @@
           },
           "timezone": {
             "type": "string"
+          }
+        }
+      },
+      "CreateIngredientProductMappingRequest": {
+        "type": "object",
+        "required": [
+          "product_id",
+          "match_kind"
+        ],
+        "properties": {
+          "conversion": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/IngredientProductConversionDto"
+              }
+            ]
+          },
+          "match_kind": {
+            "$ref": "#/components/schemas/IngredientMatchKind"
+          },
+          "match_metadata": {},
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rank": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CreateIngredientRequest": {
+        "type": "object",
+        "required": [
+          "display_name"
+        ],
+        "properties": {
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allergen_tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default_family": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UnitFamily"
+              }
+            ]
+          },
+          "dietary_tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -5494,6 +6056,244 @@
           }
         }
       },
+      "IngredientAvailabilityDto": {
+        "type": "object",
+        "required": [
+          "ingredient_id",
+          "mapping_id",
+          "product_id",
+          "product_name",
+          "location_id",
+          "location_name",
+          "batch_id",
+          "quantity",
+          "unit"
+        ],
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expires_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ingredient_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "location_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "location_name": {
+            "type": "string"
+          },
+          "mapping_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
+      "IngredientAvailabilityResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IngredientAvailabilityDto"
+            }
+          }
+        }
+      },
+      "IngredientDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "display_name",
+          "aliases",
+          "dietary_tags",
+          "allergen_tags",
+          "mappings",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allergen_tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "default_family": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UnitFamily"
+              }
+            ]
+          },
+          "dietary_tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mappings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IngredientProductMappingDto"
+            }
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "IngredientListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IngredientDto"
+            }
+          }
+        }
+      },
+      "IngredientMatchKind": {
+        "type": "string",
+        "enum": [
+          "exact_product_link",
+          "alias",
+          "category",
+          "package_size",
+          "ai_suggestion"
+        ]
+      },
+      "IngredientProductConversionDto": {
+        "type": "object",
+        "required": [
+          "recipe_quantity",
+          "inventory_quantity",
+          "provenance"
+        ],
+        "properties": {
+          "inventory_quantity": {
+            "$ref": "#/components/schemas/StructuredQuantityDto"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ConversionProvenance"
+          },
+          "recipe_quantity": {
+            "$ref": "#/components/schemas/StructuredQuantityDto"
+          }
+        }
+      },
+      "IngredientProductMappingDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "ingredient_id",
+          "product_id",
+          "rank",
+          "match_kind",
+          "match_metadata",
+          "created_at"
+        ],
+        "properties": {
+          "conversion": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/IngredientProductConversionDto"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ingredient_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "match_kind": {
+            "$ref": "#/components/schemas/IngredientMatchKind"
+          },
+          "match_metadata": {},
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rank": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "InviteDto": {
         "type": "object",
         "required": [
@@ -6285,6 +7085,95 @@
           }
         }
       },
+      "ProductRecipeMetadataDto": {
+        "type": "object",
+        "required": [
+          "product_id",
+          "counts_as_aliases"
+        ],
+        "properties": {
+          "counts_as_aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "density_inventory_quantity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "density_inventory_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "density_provenance": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ConversionProvenance"
+              }
+            ]
+          },
+          "density_recipe_quantity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "density_recipe_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "drained_quantity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "drained_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "edible_yield_percent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preparation_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "ProductSearchResponse": {
         "type": "object",
         "required": [
@@ -6314,6 +7203,21 @@
           "authorized",
           "provisional"
         ]
+      },
+      "QuantityRangeDto": {
+        "type": "object",
+        "required": [
+          "min",
+          "max"
+        ],
+        "properties": {
+          "max": {
+            "type": "string"
+          },
+          "min": {
+            "type": "string"
+          }
+        }
       },
       "RedeemInviteRequest": {
         "type": "object",
@@ -7032,6 +7936,52 @@
           }
         }
       },
+      "StructuredQuantityDto": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "family": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UnitFamily"
+              }
+            ]
+          },
+          "preparation_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "range": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/QuantityRangeDto"
+              }
+            ]
+          },
+          "to_taste": {
+            "type": "boolean"
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "SwitchHouseholdRequest": {
         "type": "object",
         "required": [
@@ -7303,6 +8253,10 @@
     {
       "name": "products",
       "description": "Product catalogue and barcode lookup"
+    },
+    {
+      "name": "ingredients",
+      "description": "Recipe ingredients, product mappings, and recipe-layer conversion metadata"
     },
     {
       "name": "reminders",

@@ -18,6 +18,7 @@ pub mod billing;
 pub mod devices;
 pub mod household_exports;
 pub mod households;
+pub mod ingredients;
 pub mod invites;
 pub mod jobs;
 pub mod label_printers;
