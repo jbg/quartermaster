@@ -1,6 +1,6 @@
 use std::{any::Any, str::FromStr, sync::Arc};
 
-use sqlx::{any::AnyPoolOptions, postgres::PgConnection, Connection, Executor};
+use sqlx::{any::AnyPoolOptions, postgres::PgConnection, Connection};
 use testcontainers::ContainerAsync;
 use testcontainers_modules::{postgres::Postgres, testcontainers::runners::AsyncRunner};
 use tokio::sync::{Barrier, Mutex};
@@ -216,9 +216,11 @@ async fn connect_isolated_postgres(
 
     let db_name = format!("qm_test_{}", Uuid::now_v7().simple());
     let mut admin = PgConnection::connect(&admin_url).await?;
-    admin
-        .execute(format!(r#"CREATE DATABASE "{db_name}""#).as_str())
-        .await?;
+    sqlx::query(crate::audited_sql(format!(
+        r#"CREATE DATABASE "{db_name}""#
+    )))
+    .execute(&mut admin)
+    .await?;
     admin.close().await?;
 
     let db_url = db_url_with_database(&admin_url, &db_name);

@@ -226,7 +226,7 @@ pub async fn upsert_from_off(
 
 pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<ProductRow>, sqlx::Error> {
     let sql = format!("SELECT {COLS} FROM product WHERE id = ? AND deleted_at IS NULL");
-    let row = sqlx::query(&sql)
+    let row = sqlx::query(crate::audited_sql(sql))
         .bind(id.to_string())
         .fetch_optional(&db.pool)
         .await?;
@@ -242,7 +242,7 @@ pub async fn find_for_household(
         "SELECT {COLS} FROM product \
          WHERE id = ? AND created_by_household_id = ? AND deleted_at IS NULL"
     );
-    let row = sqlx::query(&sql)
+    let row = sqlx::query(crate::audited_sql(sql))
         .bind(id.to_string())
         .bind(household_id.to_string())
         .fetch_optional(&db.pool)
@@ -258,7 +258,7 @@ pub async fn find_including_deleted(
     id: Uuid,
 ) -> Result<Option<ProductRow>, sqlx::Error> {
     let sql = format!("SELECT {COLS} FROM product WHERE id = ?");
-    let row = sqlx::query(&sql)
+    let row = sqlx::query(crate::audited_sql(sql))
         .bind(id.to_string())
         .fetch_optional(&db.pool)
         .await?;
@@ -271,7 +271,7 @@ pub async fn find_for_household_including_deleted(
     id: Uuid,
 ) -> Result<Option<ProductRow>, sqlx::Error> {
     let sql = format!("SELECT {COLS} FROM product WHERE id = ? AND created_by_household_id = ?");
-    let row = sqlx::query(&sql)
+    let row = sqlx::query(crate::audited_sql(sql))
         .bind(id.to_string())
         .bind(household_id.to_string())
         .fetch_optional(&db.pool)
@@ -288,7 +288,7 @@ pub async fn find_by_off_barcode(
         "SELECT {COLS} FROM product \
          WHERE off_barcode = ? AND source = ? AND created_by_household_id = ? AND deleted_at IS NULL"
     );
-    let row = sqlx::query(&sql)
+    let row = sqlx::query(crate::audited_sql(sql))
         .bind(barcode)
         .bind(SOURCE_OFF)
         .bind(household_id.to_string())
@@ -321,7 +321,7 @@ pub async fn search_with_deleted(
          ORDER BY name ASC \
          LIMIT ?"
     );
-    let rows = sqlx::query(&sql)
+    let rows = sqlx::query(crate::audited_sql(sql))
         .bind(household_id.to_string())
         .bind(&pattern)
         .bind(&pattern)
@@ -360,7 +360,7 @@ pub async fn list_visible(
          ORDER BY name ASC \
          LIMIT ?"
     );
-    let mut query_builder = sqlx::query(&sql).bind(household_id.to_string());
+    let mut query_builder = sqlx::query(crate::audited_sql(sql)).bind(household_id.to_string());
     let pattern = trimmed.map(|q| format!("%{}%", q.replace('%', r"\%")));
     if let Some(pattern) = pattern.as_deref() {
         query_builder = query_builder.bind(pattern).bind(pattern);

@@ -86,7 +86,11 @@ pub async fn count_user_push_devices(db: &Database, user_id: Uuid) -> Result<i64
     row.try_get("n")
 }
 
-async fn scalar_count(db: &Database, sql: &str, household_id: Uuid) -> Result<i64, sqlx::Error> {
+async fn scalar_count(
+    db: &Database,
+    sql: &'static str,
+    household_id: Uuid,
+) -> Result<i64, sqlx::Error> {
     let row = sqlx::query(sql)
         .bind(household_id.to_string())
         .fetch_one(&db.pool)
