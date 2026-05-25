@@ -17,6 +17,7 @@ argon2 = { workspace = true, default-features = false, features = [
     "password-hash",
     "rand",
 ] }
+password-hash = { workspace = true, default-features = false, features = ["getrandom"] }
 brother_ql = { workspace = true, default-features = false, features = [] }
 freetype-rs = { workspace = true, default-features = false, features = ["bundled"] }
 axum = { workspace = true, default-features = false, features = [

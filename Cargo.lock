@@ -3085,6 +3085,7 @@ dependencies = [
  "image",
  "jiff",
  "metrics",
+ "password-hash",
  "percent-encoding",
  "qm-core",
  "qm-db",

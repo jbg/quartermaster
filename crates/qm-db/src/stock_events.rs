@@ -142,7 +142,7 @@ pub async fn list_timeline(
     }
     sql.push_str("ORDER BY e.created_at DESC, e.id DESC LIMIT ?");
 
-    let mut q = sqlx::query(&sql).bind(household_id.to_string());
+    let mut q = sqlx::query(crate::audited_sql(sql)).bind(household_id.to_string());
     if let Some(bid) = batch_id {
         q = q.bind(bid.to_string());
     }

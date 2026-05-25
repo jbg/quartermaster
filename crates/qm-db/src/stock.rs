@@ -174,7 +174,7 @@ pub async fn list(
         "ORDER BY CASE WHEN s.expires_on IS NULL THEN 1 ELSE 0 END, s.expires_on ASC, s.created_at ASC",
     );
 
-    let mut q = sqlx::query(&sql).bind(household_id.to_string());
+    let mut q = sqlx::query(crate::audited_sql(sql)).bind(household_id.to_string());
     if let Some(lid) = filter.location_id {
         q = q.bind(lid.to_string());
     }
@@ -241,7 +241,7 @@ async fn get_with_product_inner(
     if !include_deleted_product {
         sql.push_str(" AND p.deleted_at IS NULL");
     }
-    let row = sqlx::query(&sql)
+    let row = sqlx::query(crate::audited_sql(sql))
         .bind(household_id.to_string())
         .bind(id.to_string())
         .fetch_optional(&db.pool)
@@ -767,7 +767,7 @@ pub async fn list_active_batches(
         "ORDER BY CASE WHEN expires_on IS NULL THEN 1 ELSE 0 END, expires_on ASC, created_at ASC",
     );
 
-    let mut q = sqlx::query(&sql)
+    let mut q = sqlx::query(crate::audited_sql(sql))
         .bind(household_id.to_string())
         .bind(product_id.to_string());
     if let Some(lid) = location_id {
@@ -1108,7 +1108,7 @@ pub async fn convert_active_piece_stock_to_package_unit(
     if db.backend() == Backend::Postgres {
         sql.push_str(" FOR UPDATE");
     }
-    let batches = sqlx::query(&sql)
+    let batches = sqlx::query(crate::audited_sql(sql))
         .bind(product_id.to_string())
         .fetch_all(&mut *tx)
         .await?;
@@ -1236,7 +1236,7 @@ async fn fetch_locked_batch_row(
     if backend == Backend::Postgres {
         sql.push_str(" FOR UPDATE");
     }
-    sqlx::query(&sql)
+    sqlx::query(crate::audited_sql(sql))
         .bind(id.to_string())
         .bind(household_id.to_string())
         .fetch_optional(&mut **tx)

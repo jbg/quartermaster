@@ -211,7 +211,7 @@ pub async fn list_due(
         (Some(fire_at), Some(id)) => {
             sql.push_str("AND (r.fire_at > ? OR (r.fire_at = ? AND r.id > ?)) ");
             sql.push_str("ORDER BY r.fire_at ASC, r.id ASC LIMIT ?");
-            let mut query = sqlx::query(&sql);
+            let mut query = sqlx::query(crate::audited_sql(sql));
             if let Some(device_id) = &bind_device_id {
                 query = query.bind(device_id);
             }
@@ -229,7 +229,7 @@ pub async fn list_due(
         (Some(fire_at), None) => {
             sql.push_str("AND r.fire_at > ? ");
             sql.push_str("ORDER BY r.fire_at ASC, r.id ASC LIMIT ?");
-            let mut query = sqlx::query(&sql);
+            let mut query = sqlx::query(crate::audited_sql(sql));
             if let Some(device_id) = &bind_device_id {
                 query = query.bind(device_id);
             }
@@ -251,7 +251,7 @@ pub async fn list_due(
     }
 
     sql.push_str("ORDER BY r.fire_at ASC, r.id ASC LIMIT ?");
-    let mut query = sqlx::query(&sql);
+    let mut query = sqlx::query(crate::audited_sql(sql));
     if let Some(device_id) = &bind_device_id {
         query = query.bind(device_id);
     }
@@ -332,7 +332,7 @@ pub async fn ack_pending_for_products(
         "UPDATE stock_reminder SET acked_at = ? \
          WHERE household_id = ? AND acked_at IS NULL AND product_id IN ({placeholders})"
     );
-    let mut query = sqlx::query(&sql)
+    let mut query = sqlx::query(crate::audited_sql(sql))
         .bind(acked_at)
         .bind(household_id.to_string());
     for product_id in product_ids {

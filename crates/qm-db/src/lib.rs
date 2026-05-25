@@ -213,6 +213,10 @@ pub fn now_utc_rfc3339() -> String {
     time::now_utc_rfc3339()
 }
 
+pub(crate) fn audited_sql(sql: String) -> sqlx::AssertSqlSafe<String> {
+    sqlx::AssertSqlSafe(sql)
+}
+
 #[cfg(any(test, feature = "test-support"))]
 impl Database {
     pub async fn install_invite_race_gate(&self, gate: Arc<test_support::InviteRaceGate>) {
