@@ -138,6 +138,126 @@ impl FromStr for ConversionProvenance {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
+pub enum RecipeSource {
+    Manual,
+    PlainTextImport,
+    StructuredJsonImport,
+    LlmGenerated,
+}
+
+impl RecipeSource {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::PlainTextImport => "plain_text_import",
+            Self::StructuredJsonImport => "structured_json_import",
+            Self::LlmGenerated => "llm_generated",
+        }
+    }
+}
+
+impl fmt::Display for RecipeSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for RecipeSource {
+    type Err = ApiError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "manual" => Ok(Self::Manual),
+            "plain_text_import" => Ok(Self::PlainTextImport),
+            "structured_json_import" => Ok(Self::StructuredJsonImport),
+            "llm_generated" => Ok(Self::LlmGenerated),
+            other => Err(ApiError::Internal(anyhow::anyhow!(
+                "unknown recipe source in DB row: {other}",
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RecipeVisibility {
+    Household,
+}
+
+impl RecipeVisibility {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Household => "household",
+        }
+    }
+}
+
+impl fmt::Display for RecipeVisibility {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for RecipeVisibility {
+    type Err = ApiError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "household" => Ok(Self::Household),
+            other => Err(ApiError::Internal(anyhow::anyhow!(
+                "unknown recipe visibility in DB row: {other}",
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RecipeProvenanceSource {
+    UserAuthored,
+    PlainTextPaste,
+    StructuredJson,
+    Url,
+    File,
+    Llm,
+}
+
+impl RecipeProvenanceSource {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::UserAuthored => "user_authored",
+            Self::PlainTextPaste => "plain_text_paste",
+            Self::StructuredJson => "structured_json",
+            Self::Url => "url",
+            Self::File => "file",
+            Self::Llm => "llm",
+        }
+    }
+}
+
+impl fmt::Display for RecipeProvenanceSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for RecipeProvenanceSource {
+    type Err = ApiError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "user_authored" => Ok(Self::UserAuthored),
+            "plain_text_paste" => Ok(Self::PlainTextPaste),
+            "structured_json" => Ok(Self::StructuredJson),
+            "url" => Ok(Self::Url),
+            "file" => Ok(Self::File),
+            "llm" => Ok(Self::Llm),
+            other => Err(ApiError::Internal(anyhow::anyhow!(
+                "unknown recipe provenance source in DB row: {other}",
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum StockEventType {
     Add,
     Consume,

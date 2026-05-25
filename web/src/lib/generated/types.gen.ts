@@ -97,6 +97,8 @@ export type ConsumedBatchDto = {
     unit: string;
 };
 
+export type ConversionProvenance = 'exact_unit_conversion' | 'product_package_size' | 'user_entered_density_yield' | 'imported_source' | 'llm_suggestion';
+
 export type CreateAuthHandoffRequest = {
     server_url?: string | null;
     target_device_label?: string | null;
@@ -106,6 +108,24 @@ export type CreateHouseholdRequest = {
     measurement_system?: null | MeasurementSystem;
     name: string;
     timezone: string;
+};
+
+export type CreateIngredientProductMappingRequest = {
+    conversion?: null | IngredientProductConversionDto;
+    match_kind: IngredientMatchKind;
+    match_metadata?: unknown;
+    product_id: string;
+    rank?: number;
+};
+
+export type CreateIngredientRequest = {
+    aliases?: Array<string>;
+    allergen_tags?: Array<string>;
+    category?: string | null;
+    default_family?: null | UnitFamily;
+    dietary_tags?: Array<string>;
+    display_name: string;
+    notes?: string | null;
 };
 
 export type CreateInviteRequest = {
@@ -161,6 +181,20 @@ export type CreateProductRequest = {
     preferred_unit?: string | null;
 };
 
+export type CreateRecipeRequest = {
+    description?: string | null;
+    ingredients?: Array<RecipeIngredientDto>;
+    name: string;
+    outputs?: Array<RecipeOutputDto>;
+    provenance?: Array<RecipeProvenanceDto>;
+    serving_count: string;
+    source?: RecipeSource;
+    source_text?: string | null;
+    steps?: Array<RecipeStepDto>;
+    tags?: Array<string>;
+    visibility?: RecipeVisibility;
+};
+
 export type CreateStockRequest = {
     expires_on?: string | null;
     location_id: string;
@@ -212,6 +246,45 @@ export type ExportHousehold = {
     timezone: string;
 };
 
+export type ExportIngredient = {
+    aliases_json: string;
+    allergen_tags_json: string;
+    category?: string | null;
+    created_at: string;
+    default_family?: string | null;
+    dietary_tags_json: string;
+    display_name: string;
+    id: string;
+    notes?: string | null;
+    updated_at: string;
+};
+
+export type ExportIngredientProductMapping = {
+    conversion_notes?: string | null;
+    conversion_provenance?: string | null;
+    created_at: string;
+    id: string;
+    ingredient_id: string;
+    inventory_amount?: string | null;
+    inventory_family?: string | null;
+    inventory_preparation_note?: string | null;
+    inventory_range_max?: string | null;
+    inventory_range_min?: string | null;
+    inventory_to_taste: boolean;
+    inventory_unit?: string | null;
+    match_kind: string;
+    match_metadata_json: string;
+    product_id: string;
+    rank: number;
+    recipe_amount?: string | null;
+    recipe_family?: string | null;
+    recipe_preparation_note?: string | null;
+    recipe_range_max?: string | null;
+    recipe_range_min?: string | null;
+    recipe_to_taste: boolean;
+    recipe_unit?: string | null;
+};
+
 export type ExportLabelPrinter = {
     address: string;
     created_at: string;
@@ -257,6 +330,112 @@ export type ExportProduct = {
     package_size_local_override: boolean;
     package_unit?: string | null;
     source: string;
+};
+
+export type ExportProductRecipeMetadata = {
+    counts_as_aliases_json: string;
+    density_inventory_quantity?: string | null;
+    density_inventory_unit?: string | null;
+    density_provenance?: string | null;
+    density_recipe_quantity?: string | null;
+    density_recipe_unit?: string | null;
+    drained_quantity?: string | null;
+    drained_unit?: string | null;
+    edible_yield_percent?: string | null;
+    notes?: string | null;
+    preparation_state?: string | null;
+    product_id: string;
+    updated_at: string;
+};
+
+export type ExportRecipe = {
+    created_at: string;
+    description?: string | null;
+    id: string;
+    latest_version_id: string;
+    name: string;
+    serving_count: string;
+    source: string;
+    tags_json: string;
+    updated_at: string;
+    visibility: string;
+};
+
+export type ExportRecipeIngredient = {
+    amount?: string | null;
+    created_at: string;
+    display_name: string;
+    family?: string | null;
+    group_label?: string | null;
+    id: string;
+    ingredient_id?: string | null;
+    optional: boolean;
+    preparation?: string | null;
+    product_id?: string | null;
+    range_max?: string | null;
+    range_min?: string | null;
+    recipe_id: string;
+    recipe_version_id: string;
+    sort_order: number;
+    substitution_hints_json: string;
+    to_taste: boolean;
+    unit?: string | null;
+};
+
+export type ExportRecipeOutput = {
+    amount?: string | null;
+    created_at: string;
+    expires_after_days?: number | null;
+    family?: string | null;
+    id: string;
+    name: string;
+    preparation_note?: string | null;
+    product_id?: string | null;
+    range_max?: string | null;
+    range_min?: string | null;
+    recipe_id: string;
+    recipe_version_id: string;
+    sort_order: number;
+    storage_notes?: string | null;
+    to_taste: boolean;
+    unit?: string | null;
+};
+
+export type ExportRecipeProvenance = {
+    created_at: string;
+    id: string;
+    imported_file_name?: string | null;
+    imported_text?: string | null;
+    imported_url?: string | null;
+    model?: string | null;
+    parser_confidence?: string | null;
+    prompt_version?: string | null;
+    recipe_id: string;
+    recipe_version_id: string;
+    source_type: string;
+    user_edits_json: string;
+};
+
+export type ExportRecipeStep = {
+    created_at: string;
+    equipment_json: string;
+    id: string;
+    ingredient_refs_json: string;
+    instruction: string;
+    recipe_id: string;
+    recipe_version_id: string;
+    sort_order: number;
+    timers_json: string;
+};
+
+export type ExportRecipeVersion = {
+    created_at: string;
+    id: string;
+    payload_json: string;
+    recipe_id: string;
+    serving_count: string;
+    source_text?: string | null;
+    version_number: number;
 };
 
 export type ExportStockBatch = {
@@ -340,9 +519,18 @@ export type HouseholdExportDocument = {
     barcode_cache: Array<ExportBarcodeCacheEntry>;
     exported_at: string;
     household: ExportHousehold;
+    ingredient_product_mappings?: Array<ExportIngredientProductMapping>;
+    ingredients?: Array<ExportIngredient>;
     label_printers: Array<ExportLabelPrinter>;
     locations: Array<ExportLocation>;
+    product_recipe_metadata?: Array<ExportProductRecipeMetadata>;
     products: Array<ExportProduct>;
+    recipe_ingredients?: Array<ExportRecipeIngredient>;
+    recipe_outputs?: Array<ExportRecipeOutput>;
+    recipe_provenance?: Array<ExportRecipeProvenance>;
+    recipe_steps?: Array<ExportRecipeStep>;
+    recipe_versions?: Array<ExportRecipeVersion>;
+    recipes?: Array<ExportRecipe>;
     schema_version: number;
     stock_batches: Array<ExportStockBatch>;
     stock_events: Array<ExportStockEvent>;
@@ -357,6 +545,68 @@ export type HouseholdSummaryDto = {
     name: string;
     role: MembershipRole;
     timezone: string;
+};
+
+export type ImportTextRecipeRequest = {
+    name?: string | null;
+    serving_count?: string | null;
+    tags?: Array<string>;
+    text: string;
+};
+
+export type IngredientAvailabilityDto = {
+    batch_id: string;
+    expires_on?: string | null;
+    ingredient_id: string;
+    location_id: string;
+    location_name: string;
+    mapping_id: string;
+    product_id: string;
+    product_name: string;
+    quantity: string;
+    unit: string;
+};
+
+export type IngredientAvailabilityResponse = {
+    items: Array<IngredientAvailabilityDto>;
+};
+
+export type IngredientDto = {
+    aliases: Array<string>;
+    allergen_tags: Array<string>;
+    category?: string | null;
+    created_at: string;
+    default_family?: null | UnitFamily;
+    dietary_tags: Array<string>;
+    display_name: string;
+    id: string;
+    mappings: Array<IngredientProductMappingDto>;
+    notes?: string | null;
+    updated_at: string;
+};
+
+export type IngredientListResponse = {
+    items: Array<IngredientDto>;
+};
+
+export type IngredientMatchKind = 'exact_product_link' | 'alias' | 'category' | 'package_size' | 'ai_suggestion';
+
+export type IngredientProductConversionDto = {
+    inventory_quantity: StructuredQuantityDto;
+    notes?: string | null;
+    provenance: ConversionProvenance;
+    recipe_quantity: StructuredQuantityDto;
+};
+
+export type IngredientProductMappingDto = {
+    conversion?: null | IngredientProductConversionDto;
+    created_at: string;
+    id: string;
+    ingredient_id: string;
+    match_kind: IngredientMatchKind;
+    match_metadata: unknown;
+    product_id: string;
+    rank: number;
 };
 
 export type InviteDto = {
@@ -604,6 +854,22 @@ export type ProductDto = {
     source: ProductSource;
 };
 
+export type ProductRecipeMetadataDto = {
+    counts_as_aliases: Array<string>;
+    density_inventory_quantity?: string | null;
+    density_inventory_unit?: string | null;
+    density_provenance?: null | ConversionProvenance;
+    density_recipe_quantity?: string | null;
+    density_recipe_unit?: string | null;
+    drained_quantity?: string | null;
+    drained_unit?: string | null;
+    edible_yield_percent?: string | null;
+    notes?: string | null;
+    preparation_state?: string | null;
+    product_id: string;
+    updated_at?: string | null;
+};
+
 export type ProductSearchResponse = {
     items: Array<ProductDto>;
 };
@@ -611,6 +877,133 @@ export type ProductSearchResponse = {
 export type ProductSource = 'openfoodfacts' | 'manual';
 
 export type PushAuthorizationStatus = 'not_determined' | 'denied' | 'authorized' | 'provisional';
+
+export type QuantityRangeDto = {
+    max: string;
+    min: string;
+};
+
+export type RecipeDto = {
+    created_at: string;
+    created_by?: string | null;
+    description?: string | null;
+    id: string;
+    name: string;
+    serving_count: string;
+    source: RecipeSource;
+    tags: Array<string>;
+    updated_at: string;
+    updated_by?: string | null;
+    validation: RecipeValidationResponse;
+    version: RecipeVersionDto;
+    visibility: RecipeVisibility;
+};
+
+export type RecipeIngredientDto = {
+    display_name: string;
+    group_label?: string | null;
+    id?: string | null;
+    ingredient_id?: string | null;
+    optional?: boolean;
+    preparation?: string | null;
+    product_id?: string | null;
+    quantity: StructuredQuantityDto;
+    substitution_hints?: Array<string>;
+};
+
+export type RecipeListResponse = {
+    items: Array<RecipeSummaryDto>;
+};
+
+export type RecipeOutputDto = {
+    expires_after_days?: number | null;
+    id?: string | null;
+    name: string;
+    product_id?: string | null;
+    quantity: StructuredQuantityDto;
+    storage_notes?: string | null;
+};
+
+export type RecipeProvenanceDto = {
+    id?: string | null;
+    imported_file_name?: string | null;
+    imported_text?: string | null;
+    imported_url?: string | null;
+    model?: string | null;
+    parser_confidence?: string | null;
+    prompt_version?: string | null;
+    source_type: RecipeProvenanceSource;
+    user_edits?: Array<string>;
+};
+
+export type RecipeProvenanceSource = 'user_authored' | 'plain_text_paste' | 'structured_json' | 'url' | 'file' | 'llm';
+
+export type RecipeScaleResponse = {
+    from_serving_count: string;
+    ingredients: Array<ScaledRecipeIngredientDto>;
+    outputs: Array<ScaledRecipeOutputDto>;
+    recipe_id: string;
+    to_serving_count: string;
+    validation: RecipeValidationResponse;
+};
+
+export type RecipeSource = 'manual' | 'plain_text_import' | 'structured_json_import' | 'llm_generated';
+
+export type RecipeStepDto = {
+    equipment?: Array<string>;
+    id?: string | null;
+    ingredient_refs?: Array<string>;
+    instruction: string;
+    timers?: Array<RecipeTimerDto>;
+};
+
+export type RecipeSummaryDto = {
+    created_at: string;
+    created_by?: string | null;
+    description?: string | null;
+    id: string;
+    latest_version_id: string;
+    name: string;
+    serving_count: string;
+    source: RecipeSource;
+    tags: Array<string>;
+    updated_at: string;
+    updated_by?: string | null;
+    visibility: RecipeVisibility;
+};
+
+export type RecipeTimerDto = {
+    duration_seconds: number;
+    label?: string | null;
+};
+
+export type RecipeValidationIssueDto = {
+    code: string;
+    message: string;
+    path: string;
+};
+
+export type RecipeValidationResponse = {
+    errors: Array<RecipeValidationIssueDto>;
+    valid: boolean;
+    warnings: Array<RecipeValidationIssueDto>;
+};
+
+export type RecipeVersionDto = {
+    created_at: string;
+    created_by?: string | null;
+    id: string;
+    ingredients: Array<RecipeIngredientDto>;
+    outputs: Array<RecipeOutputDto>;
+    provenance: Array<RecipeProvenanceDto>;
+    recipe_id: string;
+    serving_count: string;
+    source_text?: string | null;
+    steps: Array<RecipeStepDto>;
+    version_number: number;
+};
+
+export type RecipeVisibility = 'household';
 
 export type RedeemInviteRequest = {
     invite_code: string;
@@ -713,6 +1106,25 @@ export type RestoreManyResponse = {
 export type SaveOpenFoodFactsCredentialsRequest = {
     password: string;
     username: string;
+};
+
+export type ScaleRecipeRequest = {
+    serving_count: string;
+};
+
+export type ScaledRecipeIngredientDto = {
+    display_name: string;
+    ingredient_id?: string | null;
+    product_id?: string | null;
+    quantity: StructuredQuantityDto;
+    scaled_quantity: StructuredQuantityDto;
+};
+
+export type ScaledRecipeOutputDto = {
+    name: string;
+    product_id?: string | null;
+    quantity: StructuredQuantityDto;
+    scaled_quantity: StructuredQuantityDto;
 };
 
 export type SplitStockRemainderRequest = {
@@ -834,6 +1246,15 @@ export type StorageVesselDto = {
     sort_order: number;
     tare_unit: string;
     tare_weight: string;
+};
+
+export type StructuredQuantityDto = {
+    amount?: string | null;
+    family?: null | UnitFamily;
+    preparation_note?: string | null;
+    range?: null | QuantityRangeDto;
+    to_taste?: boolean;
+    unit?: string | null;
 };
 
 export type SwitchHouseholdRequest = {
@@ -1595,6 +2016,162 @@ export type HouseholdImportResponses = {
 
 export type HouseholdImportResponse = HouseholdImportResponses[keyof HouseholdImportResponses];
 
+export type IngredientListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        q?: string | null;
+        limit?: number | null;
+    };
+    url: '/api/v1/ingredients';
+};
+
+export type IngredientListResponses = {
+    200: IngredientListResponse;
+};
+
+export type IngredientListResponse2 = IngredientListResponses[keyof IngredientListResponses];
+
+export type IngredientCreateData = {
+    body: CreateIngredientRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ingredients';
+};
+
+export type IngredientCreateResponses = {
+    201: IngredientDto;
+};
+
+export type IngredientCreateResponse = IngredientCreateResponses[keyof IngredientCreateResponses];
+
+export type IngredientDeleteData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/ingredients/{id}';
+};
+
+export type IngredientDeleteErrors = {
+    404: ApiErrorBody;
+};
+
+export type IngredientDeleteError = IngredientDeleteErrors[keyof IngredientDeleteErrors];
+
+export type IngredientDeleteResponses = {
+    204: void;
+};
+
+export type IngredientDeleteResponse = IngredientDeleteResponses[keyof IngredientDeleteResponses];
+
+export type IngredientGetData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/ingredients/{id}';
+};
+
+export type IngredientGetErrors = {
+    404: ApiErrorBody;
+};
+
+export type IngredientGetError = IngredientGetErrors[keyof IngredientGetErrors];
+
+export type IngredientGetResponses = {
+    200: IngredientDto;
+};
+
+export type IngredientGetResponse = IngredientGetResponses[keyof IngredientGetResponses];
+
+export type IngredientUpdateData = {
+    body: CreateIngredientRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/ingredients/{id}';
+};
+
+export type IngredientUpdateErrors = {
+    404: ApiErrorBody;
+};
+
+export type IngredientUpdateError = IngredientUpdateErrors[keyof IngredientUpdateErrors];
+
+export type IngredientUpdateResponses = {
+    200: IngredientDto;
+};
+
+export type IngredientUpdateResponse = IngredientUpdateResponses[keyof IngredientUpdateResponses];
+
+export type IngredientAvailabilityData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/ingredients/{id}/availability';
+};
+
+export type IngredientAvailabilityErrors = {
+    404: ApiErrorBody;
+};
+
+export type IngredientAvailabilityError = IngredientAvailabilityErrors[keyof IngredientAvailabilityErrors];
+
+export type IngredientAvailabilityResponses = {
+    200: IngredientAvailabilityResponse;
+};
+
+export type IngredientAvailabilityResponse2 = IngredientAvailabilityResponses[keyof IngredientAvailabilityResponses];
+
+export type IngredientProductMappingCreateData = {
+    body: CreateIngredientProductMappingRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/ingredients/{id}/product-mappings';
+};
+
+export type IngredientProductMappingCreateErrors = {
+    404: ApiErrorBody;
+};
+
+export type IngredientProductMappingCreateError = IngredientProductMappingCreateErrors[keyof IngredientProductMappingCreateErrors];
+
+export type IngredientProductMappingCreateResponses = {
+    201: IngredientProductMappingDto;
+};
+
+export type IngredientProductMappingCreateResponse = IngredientProductMappingCreateResponses[keyof IngredientProductMappingCreateResponses];
+
+export type IngredientProductMappingDeleteData = {
+    body?: never;
+    path: {
+        id: string;
+        mapping_id: string;
+    };
+    query?: never;
+    url: '/api/v1/ingredients/{id}/product-mappings/{mapping_id}';
+};
+
+export type IngredientProductMappingDeleteErrors = {
+    404: ApiErrorBody;
+};
+
+export type IngredientProductMappingDeleteError = IngredientProductMappingDeleteErrors[keyof IngredientProductMappingDeleteErrors];
+
+export type IngredientProductMappingDeleteResponses = {
+    204: void;
+};
+
+export type IngredientProductMappingDeleteResponse = IngredientProductMappingDeleteResponses[keyof IngredientProductMappingDeleteResponses];
+
 export type InviteRedeemData = {
     body: RedeemInviteRequest;
     path?: never;
@@ -2065,6 +2642,48 @@ export type ProductOffContributionPreviewResponses = {
 
 export type ProductOffContributionPreviewResponse = ProductOffContributionPreviewResponses[keyof ProductOffContributionPreviewResponses];
 
+export type ProductRecipeMetadataGetData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/products/{id}/recipe-metadata';
+};
+
+export type ProductRecipeMetadataGetErrors = {
+    404: ApiErrorBody;
+};
+
+export type ProductRecipeMetadataGetError = ProductRecipeMetadataGetErrors[keyof ProductRecipeMetadataGetErrors];
+
+export type ProductRecipeMetadataGetResponses = {
+    200: ProductRecipeMetadataDto;
+};
+
+export type ProductRecipeMetadataGetResponse = ProductRecipeMetadataGetResponses[keyof ProductRecipeMetadataGetResponses];
+
+export type ProductRecipeMetadataPutData = {
+    body: ProductRecipeMetadataDto;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/products/{id}/recipe-metadata';
+};
+
+export type ProductRecipeMetadataPutErrors = {
+    404: ApiErrorBody;
+};
+
+export type ProductRecipeMetadataPutError = ProductRecipeMetadataPutErrors[keyof ProductRecipeMetadataPutErrors];
+
+export type ProductRecipeMetadataPutResponses = {
+    200: ProductRecipeMetadataDto;
+};
+
+export type ProductRecipeMetadataPutResponse = ProductRecipeMetadataPutResponses[keyof ProductRecipeMetadataPutResponses];
+
 export type ProductRefreshData = {
     body?: never;
     path: {
@@ -2109,6 +2728,150 @@ export type ProductRestoreResponses = {
 };
 
 export type ProductRestoreResponse = ProductRestoreResponses[keyof ProductRestoreResponses];
+
+export type RecipeListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/recipes';
+};
+
+export type RecipeListResponses = {
+    200: RecipeListResponse;
+};
+
+export type RecipeListResponse2 = RecipeListResponses[keyof RecipeListResponses];
+
+export type RecipeCreateData = {
+    body: CreateRecipeRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/recipes';
+};
+
+export type RecipeCreateResponses = {
+    201: RecipeDto;
+};
+
+export type RecipeCreateResponse = RecipeCreateResponses[keyof RecipeCreateResponses];
+
+export type RecipeImportTextData = {
+    body: ImportTextRecipeRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/recipes/imports/text';
+};
+
+export type RecipeImportTextResponses = {
+    201: RecipeDto;
+};
+
+export type RecipeImportTextResponse = RecipeImportTextResponses[keyof RecipeImportTextResponses];
+
+export type RecipeDeleteData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/recipes/{id}';
+};
+
+export type RecipeDeleteErrors = {
+    404: ApiErrorBody;
+};
+
+export type RecipeDeleteError = RecipeDeleteErrors[keyof RecipeDeleteErrors];
+
+export type RecipeDeleteResponses = {
+    204: void;
+};
+
+export type RecipeDeleteResponse = RecipeDeleteResponses[keyof RecipeDeleteResponses];
+
+export type RecipeGetData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/recipes/{id}';
+};
+
+export type RecipeGetErrors = {
+    404: ApiErrorBody;
+};
+
+export type RecipeGetError = RecipeGetErrors[keyof RecipeGetErrors];
+
+export type RecipeGetResponses = {
+    200: RecipeDto;
+};
+
+export type RecipeGetResponse = RecipeGetResponses[keyof RecipeGetResponses];
+
+export type RecipeUpdateData = {
+    body: CreateRecipeRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/recipes/{id}';
+};
+
+export type RecipeUpdateErrors = {
+    404: ApiErrorBody;
+};
+
+export type RecipeUpdateError = RecipeUpdateErrors[keyof RecipeUpdateErrors];
+
+export type RecipeUpdateResponses = {
+    200: RecipeDto;
+};
+
+export type RecipeUpdateResponse = RecipeUpdateResponses[keyof RecipeUpdateResponses];
+
+export type RecipeScaleData = {
+    body: ScaleRecipeRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/recipes/{id}/scale';
+};
+
+export type RecipeScaleErrors = {
+    404: ApiErrorBody;
+};
+
+export type RecipeScaleError = RecipeScaleErrors[keyof RecipeScaleErrors];
+
+export type RecipeScaleResponses = {
+    200: RecipeScaleResponse;
+};
+
+export type RecipeScaleResponse2 = RecipeScaleResponses[keyof RecipeScaleResponses];
+
+export type RecipeValidateData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/recipes/{id}/validate';
+};
+
+export type RecipeValidateErrors = {
+    404: ApiErrorBody;
+};
+
+export type RecipeValidateError = RecipeValidateErrors[keyof RecipeValidateErrors];
+
+export type RecipeValidateResponses = {
+    200: RecipeValidationResponse;
+};
+
+export type RecipeValidateResponse = RecipeValidateResponses[keyof RecipeValidateResponses];
 
 export type RemindersListData = {
     body?: never;

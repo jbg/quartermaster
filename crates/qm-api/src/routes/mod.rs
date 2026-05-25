@@ -10,6 +10,7 @@ pub mod maintenance;
 pub mod onboarding;
 pub mod patch;
 pub mod products;
+pub mod recipes;
 pub mod reminders;
 pub mod stock;
 pub mod storage_vessels;
