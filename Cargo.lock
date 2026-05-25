@@ -3071,6 +3071,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e0c5ccf5294c6ccd63a74f1565028353830a9c2f5eb0c682c355c471726a6e3f"
 
 [[package]]
+name = "qm-ai"
+version = "1.30.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "qm-api"
 version = "1.30.0"
 dependencies = [
@@ -3087,6 +3098,7 @@ dependencies = [
  "metrics",
  "password-hash",
  "percent-encoding",
+ "qm-ai",
  "qm-core",
  "qm-db",
  "qrcode",
@@ -3151,6 +3163,7 @@ dependencies = [
  "lettre",
  "metrics",
  "metrics-exporter-prometheus",
+ "qm-ai",
  "qm-api",
  "qm-core",
  "qm-db",

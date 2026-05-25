@@ -136,6 +136,172 @@
         ]
       }
     },
+    "/api/v1/ai/status": {
+      "get": {
+        "tags": [
+          "ai"
+        ],
+        "operationId": "ai_status",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiStatusResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/tasks": {
+      "get": {
+        "tags": [
+          "ai"
+        ],
+        "operationId": "ai_task_list",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiTaskListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/tasks/{id}": {
+      "get": {
+        "tags": [
+          "ai"
+        ],
+        "operationId": "ai_task_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiTaskDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/tasks/{id}/state": {
+      "patch": {
+        "tags": [
+          "ai"
+        ],
+        "operationId": "ai_task_state_update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAiTaskStateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiTaskDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/auth/email": {
       "delete": {
         "tags": [
@@ -5094,6 +5260,160 @@
   },
   "components": {
     "schemas": {
+      "AiProvider": {
+        "type": "string",
+        "enum": [
+          "disabled",
+          "open_router"
+        ]
+      },
+      "AiStatusResponse": {
+        "type": "object",
+        "required": [
+          "provider",
+          "enabled",
+          "configured",
+          "structured_outputs",
+          "raw_response_retention"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "$ref": "#/components/schemas/AiProvider"
+          },
+          "raw_response_retention": {
+            "type": "boolean"
+          },
+          "structured_outputs": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AiTaskDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "task_type",
+          "provider",
+          "prompt_version",
+          "input_digest",
+          "input_summary",
+          "validation_status",
+          "validation_errors",
+          "user_state",
+          "credentials_assertion",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "credentials_assertion": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "input_digest": {
+            "type": "string"
+          },
+          "input_summary": {},
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "output_json": {},
+          "prompt_version": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/AiProvider"
+          },
+          "raw_response_json": {},
+          "task_type": {
+            "$ref": "#/components/schemas/AiTaskType"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "user_state": {
+            "$ref": "#/components/schemas/AiTaskUserState"
+          },
+          "validation_errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "validation_status": {
+            "$ref": "#/components/schemas/AiTaskValidationStatus"
+          }
+        }
+      },
+      "AiTaskListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiTaskDto"
+            }
+          }
+        }
+      },
+      "AiTaskType": {
+        "type": "string",
+        "enum": [
+          "recipe_import",
+          "recipe_generation",
+          "ingredient_matching",
+          "pantry_suggestion",
+          "storage_suggestion",
+          "supplier_mapping"
+        ]
+      },
+      "AiTaskUserState": {
+        "type": "string",
+        "enum": [
+          "proposed",
+          "accepted",
+          "edited",
+          "rejected"
+        ]
+      },
+      "AiTaskValidationStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "valid",
+          "rejected"
+        ]
+      },
       "ApiErrorBody": {
         "type": "object",
         "required": [
@@ -10395,6 +10715,17 @@
           "count"
         ]
       },
+      "UpdateAiTaskStateRequest": {
+        "type": "object",
+        "required": [
+          "user_state"
+        ],
+        "properties": {
+          "user_state": {
+            "$ref": "#/components/schemas/AiTaskUserState"
+          }
+        }
+      },
       "UpdateHouseholdRequest": {
         "type": "object",
         "required": [
@@ -10569,6 +10900,10 @@
     {
       "name": "accounts",
       "description": "Authentication and session"
+    },
+    {
+      "name": "ai",
+      "description": "AI provider status and durable task audit records"
     },
     {
       "name": "devices",

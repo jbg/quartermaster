@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/qm-ai",
     "crates/qm-core",
     "crates/qm-db",
     "crates/qm-api",

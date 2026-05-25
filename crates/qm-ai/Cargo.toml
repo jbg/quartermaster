@@ -1,0 +1,21 @@
+[package]
+name = "qm-ai"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+reqwest = { workspace = true, default-features = false, features = [
+    "default-tls",
+    "charset",
+    "http2",
+    "system-proxy",
+    "json",
+    "rustls-tls",
+] }
+serde = { workspace = true, default-features = false, features = ["std", "derive"] }
+serde_json = { workspace = true, default-features = false, features = ["std"] }
+thiserror = { workspace = true, default-features = false, features = ["std"] }
+tracing = { workspace = true, default-features = false, features = ["std", "attributes"] }

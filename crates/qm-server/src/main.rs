@@ -39,6 +39,11 @@ struct RawConfig {
     off_api_base_url: String,
     off_write_url: String,
     off_credential_encryption_key: Option<String>,
+    ai_provider: String,
+    ai_model: Option<String>,
+    ai_retain_raw_responses: bool,
+    ai_openrouter_api_key: Option<String>,
+    ai_openrouter_base_url: String,
     public_base_url: Option<String>,
     passkeys_enabled: bool,
     passkey_rp_id: Option<String>,
@@ -137,6 +142,11 @@ impl Default for RawConfig {
             off_api_base_url: "https://world.openfoodfacts.org/api/v2/product".into(),
             off_write_url: "https://world.openfoodfacts.org/cgi/product_jqm2.pl".into(),
             off_credential_encryption_key: None,
+            ai_provider: "disabled".into(),
+            ai_model: None,
+            ai_retain_raw_responses: false,
+            ai_openrouter_api_key: None,
+            ai_openrouter_base_url: "https://openrouter.ai/api/v1".into(),
             public_base_url: None,
             passkeys_enabled: false,
             passkey_rp_id: None,
@@ -361,6 +371,15 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         raw.expiry_reminder_trigger_secret,
         "QM_EXPIRY_REMINDER_TRIGGER_SECRET",
     )?;
+    let ai_provider =
+        qm_ai::AiProviderKind::from_str(&raw.ai_provider).map_err(anyhow::Error::msg)?;
+    let ai_model = normalize_optional_secret(raw.ai_model, "QM_AI_MODEL")?;
+    let ai_openrouter_api_key =
+        normalize_optional_secret(raw.ai_openrouter_api_key, "QM_AI_OPENROUTER_API_KEY")?;
+    let ai_openrouter_base_url = raw.ai_openrouter_base_url.trim().to_owned();
+    if ai_openrouter_base_url.is_empty() {
+        anyhow::bail!("QM_AI_OPENROUTER_BASE_URL must not be blank");
+    }
 
     if raw.expiry_reminder_fire_hour > 23 {
         anyhow::bail!("QM_EXPIRY_REMINDER_FIRE_HOUR must be between 0 and 23");
@@ -525,6 +544,15 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         },
         expiry_reminder_trigger_secret,
         smoke_seed_trigger_secret,
+        ai: qm_ai::AiConfig {
+            provider: ai_provider,
+            model: ai_model,
+            retain_raw_responses: raw.ai_retain_raw_responses,
+            openrouter: qm_ai::OpenRouterConfig {
+                api_key: ai_openrouter_api_key,
+                base_url: ai_openrouter_base_url,
+            },
+        },
         web_dist_dir,
         web_auth_allowed_origins,
     });
@@ -781,11 +809,14 @@ async fn main() -> anyhow::Result<()> {
         .timeout(loaded.api_config.off_timeout)
         .build()
         .context("building HTTP client")?;
+    let ai_provider = qm_ai::build_provider(http.clone(), &loaded.api_config.ai)
+        .context("building AI provider")?;
 
     let state = AppState {
         db: db.clone(),
         config: loaded.api_config.clone(),
         http: http.clone(),
+        ai_provider,
         off_breaker: Arc::new(qm_api::openfoodfacts::OffCircuitBreaker::default()),
         rate_limiters: Arc::new(qm_api::rate_limit::RateLimiters::new(&loaded.api_config)),
         email_transport: loaded.email_transport.clone(),
