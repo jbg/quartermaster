@@ -4,7 +4,13 @@
   import { appPath } from '$lib/paths';
   import type { HouseholdSummary } from '$lib/session-core';
 
-  type ActiveSection = 'inventory' | 'products' | 'reminders' | 'settings';
+  type ActiveSection =
+    | 'inventory'
+    | 'products'
+    | 'recipes'
+    | 'automation'
+    | 'reminders'
+    | 'settings';
 
   interface NavItem {
     key: ActiveSection;
@@ -40,6 +46,8 @@
   const navItems = $derived<NavItem[]>([
     { key: 'inventory', label: 'Inventory', href: appPath('/', page.url) },
     { key: 'products', label: 'Products', href: appPath('/products', page.url) },
+    { key: 'recipes', label: 'Recipes', href: appPath('/recipes', page.url) },
+    { key: 'automation', label: 'Automation', href: appPath('/suppliers/review', page.url) },
     { key: 'reminders', label: 'Reminders', href: appPath('/reminders', page.url) },
     { key: 'settings', label: 'Settings', href: appPath('/settings', page.url) }
   ]);
