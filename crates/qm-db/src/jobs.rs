@@ -13,6 +13,8 @@ pub const KIND_AUTH_SESSION_CLEANUP: &str = "auth_session_cleanup";
 pub const KIND_EXPIRY_REMINDER_RECONCILE: &str = "expiry_reminder_reconcile";
 pub const KIND_BILLING_SYNC: &str = "billing_sync";
 pub const KIND_HOUSEHOLD_PURGE: &str = "household_purge";
+pub const KIND_SUPPLIER_CART_SUBMIT: &str = "supplier_cart_submit";
+pub const KIND_SUPPLIER_ORDER_STATUS_SYNC: &str = "supplier_order_status_sync";
 
 #[derive(Debug, Clone)]
 pub struct JobRow {
