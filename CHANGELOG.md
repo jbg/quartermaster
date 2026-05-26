@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.31.2](https://github.com/jbg/quartermaster/compare/1.31.1...1.31.2) (2026-05-26)
+
+
+### Bug Fixes
+
+* **ha:** forward AI and supplier options ([2a6d5ec](https://github.com/jbg/quartermaster/commit/2a6d5ec16e908714504cb669c151a5e6f06a2f50))
+* move backup import into settings ([9d3f3e7](https://github.com/jbg/quartermaster/commit/9d3f3e70b42c8c4c272a87dae97f5a74fe79068f))
+
 ## [1.31.1](https://github.com/jbg/quartermaster/compare/1.31.0...1.31.1) (2026-05-26)
 
 
