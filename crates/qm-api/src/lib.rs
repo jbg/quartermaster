@@ -67,6 +67,7 @@ pub struct ApiConfig {
     pub off_api_base_url: String,
     pub off_write_url: String,
     pub off_credential_encryption_key: Option<String>,
+    pub supplier_credential_encryption_key: Option<String>,
     pub public_base_url: Option<String>,
     pub passkeys: PasskeyConfig,
     /// Which client-IP source to use for rate-limit keys.
@@ -198,6 +199,7 @@ impl Default for ApiConfig {
             off_api_base_url: "https://world.openfoodfacts.org/api/v2/product".into(),
             off_write_url: "https://world.openfoodfacts.org/cgi/product_jqm2.pl".into(),
             off_credential_encryption_key: None,
+            supplier_credential_encryption_key: None,
             public_base_url: None,
             passkeys: PasskeyConfig::default(),
             rate_limit_client_ip_mode: ClientIpMode::Socket,
@@ -577,6 +579,26 @@ impl Modify for SecurityAddon {
         routes::stock::StockEventListResponse,
         routes::stock::RestoreManyRequest,
         routes::stock::RestoreManyResponse,
+        routes::suppliers::SupplierAccountDto,
+        routes::suppliers::SupplierAccountListResponse,
+        routes::suppliers::SupplierCapabilityDto,
+        routes::suppliers::SupplierCapabilitiesResponse,
+        routes::suppliers::SupplierCartDraftDto,
+        routes::suppliers::SupplierCatalogItemDto,
+        routes::suppliers::SupplierCatalogSearchQuery,
+        routes::suppliers::SupplierCatalogSearchResponse,
+        routes::suppliers::SupplierCreateAccountRequest,
+        routes::suppliers::SupplierCreateCartDraftRequest,
+        routes::suppliers::SupplierMappingDto,
+        routes::suppliers::SupplierMappingListResponse,
+        routes::suppliers::SupplierOrderDto,
+        routes::suppliers::SupplierOrderListResponse,
+        routes::suppliers::SupplierPatchCartDraftRequest,
+        routes::suppliers::SupplierPutMappingRequest,
+        routes::suppliers::SupplierPutSecretRequest,
+        routes::suppliers::SupplierReceiveOrderRequest,
+        routes::suppliers::SupplierSecretDto,
+        routes::suppliers::SupplierUpdateAccountRequest,
         error::ApiErrorBody,
     )),
     tags(
@@ -596,6 +618,7 @@ impl Modify for SecurityAddon {
         (name = "recipes", description = "Household-scoped reusable recipes, versions, validation, and scaling"),
         (name = "reminders", description = "Backend-owned household reminders"),
         (name = "stock", description = "Batches of stock and FIFO consumption"),
+        (name = "suppliers", description = "Supplier setup, catalog mapping, cart drafts, and order lifecycle foundations"),
     ),
 )]
 pub struct ApiDoc;
@@ -637,6 +660,7 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             RateLimitTarget::History,
         )))
+        .merge(routes::suppliers::router())
         .route(
             "/openapi.json",
             get(move || {
