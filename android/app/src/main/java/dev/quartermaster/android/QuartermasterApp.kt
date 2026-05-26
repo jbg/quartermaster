@@ -308,7 +308,7 @@ private fun AuthenticatedNavHost(
             )
         }
         composable(AppRoute.Cook) {
-            CookAndCartsScreen(
+            CookScreen(
                 appState = appState,
                 onBack = { navController.popBackStack() },
             )

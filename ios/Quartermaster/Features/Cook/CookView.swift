@@ -7,6 +7,8 @@ struct CookView: View {
   @State private var selectedRecipe: Recipe?
   @State private var preflight: RecipeExecutionPreflight?
   @State private var execution: RecipeExecutionResult?
+  @State private var suggestions: [PantrySuggestion] = []
+  @State private var suggestionWarnings: [String] = []
   @State private var cartRun: ReplenishmentCartRun?
   @State private var cartDraft: SupplierCartDraft?
   @State private var supplierOrder: SupplierOrder?
@@ -18,7 +20,7 @@ struct CookView: View {
   enum CookSection: String, CaseIterable, Identifiable {
     case recipes = "Recipes"
     case suggestions = "Suggestions"
-    case carts = "Carts"
+    case shopping = "Shopping"
     var id: String { rawValue }
   }
 
@@ -38,9 +40,9 @@ struct CookView: View {
         case .recipes:
           recipeList
         case .suggestions:
-          suggestionPlaceholder
-        case .carts:
-          cartReview
+          suggestionList
+        case .shopping:
+          shoppingReview
         }
       }
     }
@@ -60,18 +62,34 @@ struct CookView: View {
   private var recipeList: some View {
     List {
       Section("Recipes") {
-        ForEach(recipes) { recipe in
-          Button {
-            Task { await openRecipe(recipe.id) }
-          } label: {
-            VStack(alignment: .leading) {
-              Text(recipe.name)
-              Text("\(recipe.servingCount) servings")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        if recipes.isEmpty {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("No recipes yet")
+              .font(.headline)
+            Text(
+              "Find pantry suggestions to see saved recipes that match your current stock, or import recipes on the web client."
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            Button("Find pantry suggestions") {
+              selectedSection = .suggestions
+              Task { await generateSuggestions() }
             }
           }
-          .accessibilityIdentifier("recipe.row.\(recipe.id)")
+        } else {
+          ForEach(recipes) { recipe in
+            Button {
+              Task { await openRecipe(recipe.id) }
+            } label: {
+              VStack(alignment: .leading) {
+                Text(recipe.name)
+                Text("\(recipe.servingCount) servings")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+            }
+            .accessibilityIdentifier("recipe.row.\(recipe.id)")
+          }
         }
       }
 
@@ -136,18 +154,87 @@ struct CookView: View {
     .accessibilityIdentifier("recipe.list")
   }
 
-  private var suggestionPlaceholder: some View {
-    ContentUnavailableView(
-      "Suggestions",
-      systemImage: "sparkles",
-      description: Text("Pantry suggestions will use the same review surfaces before cooking.")
-    )
+  private var suggestionList: some View {
+    List {
+      Section {
+        Button {
+          Task { await generateSuggestions() }
+        } label: {
+          Label("Find ideas from pantry", systemImage: "sparkles")
+        }
+        .disabled(isLoading)
+        .accessibilityIdentifier("pantry.suggestions.generate")
+      } footer: {
+        Text(
+          "Suggestions rank saved recipes against your current stock. If AI ideas are enabled on the server, this can also request generated candidates."
+        )
+      }
+
+      Section("Suggested to cook") {
+        if suggestions.isEmpty {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("No suggestions yet")
+              .font(.headline)
+            Text(
+              "Generate suggestions after adding stock and recipes. Cookable saved recipes can be reviewed here before inventory is changed."
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+          }
+        } else {
+          ForEach(suggestions) { suggestion in
+            VStack(alignment: .leading, spacing: 8) {
+              HStack(alignment: .firstTextBaseline) {
+                Text(suggestion.title)
+                  .font(.headline)
+                Spacer()
+                Text("\(suggestion.score)")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+              if let summary = suggestion.summary {
+                Text(summary)
+                  .font(.subheadline)
+                  .foregroundStyle(.secondary)
+              }
+              Text(suggestion.scoreBreakdown.cookable ? "Ready to cook" : "Needs ingredients")
+                .font(.caption)
+                .foregroundStyle(suggestion.scoreBreakdown.cookable ? .green : .orange)
+              ForEach(Array(suggestion.missing.enumerated()), id: \.offset) { _, missing in
+                Text(
+                  "Missing: \(missing.displayName)\(missing.quantity.map { " \($0)" } ?? "")\(missing.unit.map { " \($0)" } ?? "")"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              }
+              if let recipeID = suggestion.recipeId {
+                Button("Review recipe") {
+                  selectedSection = .recipes
+                  Task { await openRecipe(recipeID) }
+                }
+                .accessibilityIdentifier("pantry.suggestion.review.\(suggestion.id)")
+              }
+            }
+            .accessibilityIdentifier("pantry.suggestion.row.\(suggestion.id)")
+          }
+        }
+      }
+
+      if !suggestionWarnings.isEmpty {
+        Section("Warnings") {
+          ForEach(suggestionWarnings, id: \.self) { warning in
+            Text(warning)
+          }
+        }
+      }
+    }
+    .accessibilityIdentifier("pantry.suggestion.list")
   }
 
-  private var cartReview: some View {
+  private var shoppingReview: some View {
     List {
-      Section("Cart run") {
-        Button("Generate mock cart") {
+      Section {
+        Button("Build suggested cart") {
           Task { await generateCart() }
         }
         .accessibilityIdentifier("cart.generate")
@@ -160,10 +247,16 @@ struct CookView: View {
           }
           .accessibilityIdentifier("cart.guardrail.banner")
         }
+      } header: {
+        Text("Shopping review")
+      } footer: {
+        Text(
+          "Build a draft cart from replenishment rules and review it before anything is submitted to a supplier."
+        )
       }
 
       if let cartDraft {
-        Section("Draft") {
+        Section("Cart to approve") {
           ForEach(cartDraft.lines) { line in
             VStack(alignment: .leading) {
               Text(line.supplierItemId)
@@ -202,8 +295,10 @@ struct CookView: View {
     do {
       async let recipeTask = appState.api.recipes()
       async let locationTask = appState.api.locations()
+      async let suggestionTask = appState.api.pantrySuggestions()
       recipes = try await recipeTask
       locations = try await locationTask
+      suggestions = try await suggestionTask
     } catch {
       errorMessage = userMessage(error)
     }
@@ -235,6 +330,18 @@ struct CookView: View {
     do {
       execution = try await appState.api.executeRecipe(selectedRecipe, allowPartial: allowPartial)
       preflight = execution?.plan
+    } catch {
+      errorMessage = userMessage(error)
+    }
+  }
+
+  private func generateSuggestions() async {
+    isLoading = true
+    defer { isLoading = false }
+    do {
+      let response = try await appState.api.createPantrySuggestions(generateRecipeIdeas: true)
+      suggestions = response.suggestions
+      suggestionWarnings = response.warnings
     } catch {
       errorMessage = userMessage(error)
     }

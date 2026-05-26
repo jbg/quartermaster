@@ -126,6 +126,8 @@ protocol AppStateAPI: Actor {
   func preflightRecipe(_ recipe: Recipe, allowPartial: Bool) async throws
     -> RecipeExecutionPreflight
   func executeRecipe(_ recipe: Recipe, allowPartial: Bool) async throws -> RecipeExecutionResult
+  func pantrySuggestions() async throws -> [PantrySuggestion]
+  func createPantrySuggestions(generateRecipeIdeas: Bool) async throws -> PantrySuggestionsResponse
   func generateCartDraft() async throws -> ReplenishmentCreateCartDraftResponse
   func getCartRun(id: String) async throws -> ReplenishmentCartRun
   func getSupplierCartDraft(id: String) async throws -> SupplierCartDraft

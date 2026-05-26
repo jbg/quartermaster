@@ -29,6 +29,9 @@ import dev.quartermaster.android.generated.models.OffContributionPreviewResponse
 import dev.quartermaster.android.generated.models.OffContributionResponse
 import dev.quartermaster.android.generated.models.OnboardingStatusResponse
 import dev.quartermaster.android.generated.models.OpenFoodFactsCredentialStatusResponse
+import dev.quartermaster.android.generated.models.PantrySuggestionDto
+import dev.quartermaster.android.generated.models.PantrySuggestionListResponse
+import dev.quartermaster.android.generated.models.PantrySuggestionsResponse
 import dev.quartermaster.android.generated.models.PasswordResetConfirmRequest
 import dev.quartermaster.android.generated.models.PasswordResetRequest
 import dev.quartermaster.android.generated.models.PrintStockLabelRequest
@@ -188,6 +191,16 @@ data class AuthHandoffCreateResponse(
     val expiresAt: String,
     @SerialName("target_device_label")
     val targetDeviceLabel: String? = null,
+)
+
+@Serializable
+data class PantrySuggestionsRequest(
+    @SerialName("generate_recipe_ideas")
+    val generateRecipeIdeas: Boolean,
+    @SerialName("max_missing_required")
+    val maxMissingRequired: Long = 2,
+    @SerialName("max_ai_suggestions")
+    val maxAiSuggestions: Long = 3,
 )
 
 @Serializable
@@ -675,10 +688,18 @@ class QuartermasterApi(
         ),
     )
 
-    suspend fun listPantrySuggestions(): List<dev.quartermaster.android.generated.models.PantrySuggestionDto> = authedJson<dev.quartermaster.android.generated.models.PantrySuggestionListResponse>(
+    suspend fun listPantrySuggestions(): List<PantrySuggestionDto> = authedJson<PantrySuggestionListResponse>(
         method = "GET",
         path = "/pantry/suggestions",
     ).items
+
+    suspend fun createPantrySuggestions(generateRecipeIdeas: Boolean): PantrySuggestionsResponse = authedJson(
+        method = "POST",
+        path = "/pantry/suggestions",
+        body = PantrySuggestionsRequest(
+            generateRecipeIdeas = generateRecipeIdeas,
+        ),
+    )
 
     suspend fun listAiTasks(): List<AiTaskDto> = authedJson<AiTaskListResponse>(
         method = "GET",
