@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AccountOpenfoodfactsDeleteData, AccountOpenfoodfactsDeleteErrors, AccountOpenfoodfactsDeleteResponses, AccountOpenfoodfactsPutData, AccountOpenfoodfactsPutErrors, AccountOpenfoodfactsPutResponses, AccountOpenfoodfactsStatusData, AccountOpenfoodfactsStatusErrors, AccountOpenfoodfactsStatusResponses, AiStatusData, AiStatusResponses, AiTaskGetData, AiTaskGetErrors, AiTaskGetResponses, AiTaskListData, AiTaskListResponses, AiTaskStateUpdateData, AiTaskStateUpdateErrors, AiTaskStateUpdateResponses, AuthEmailClearData, AuthEmailClearErrors, AuthEmailClearResponses, AuthEmailVerificationConfirmData, AuthEmailVerificationConfirmErrors, AuthEmailVerificationConfirmResponses, AuthEmailVerificationRequestData, AuthEmailVerificationRequestErrors, AuthEmailVerificationRequestResponses, AuthHandoffAcceptData, AuthHandoffAcceptErrors, AuthHandoffAcceptResponses, AuthHandoffCancelData, AuthHandoffCancelErrors, AuthHandoffCancelResponses, AuthHandoffCreateData, AuthHandoffCreateErrors, AuthHandoffCreateResponses, AuthHandoffPreviewData, AuthHandoffPreviewErrors, AuthHandoffPreviewResponses, AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthMeData, AuthMeErrors, AuthMeResponses, AuthPasskeyDeleteData, AuthPasskeyDeleteErrors, AuthPasskeyDeleteResponses, AuthPasskeyLoginFinishData, AuthPasskeyLoginFinishErrors, AuthPasskeyLoginFinishResponses, AuthPasskeyLoginStartData, AuthPasskeyLoginStartErrors, AuthPasskeyLoginStartResponses, AuthPasskeyRegistrationFinishData, AuthPasskeyRegistrationFinishErrors, AuthPasskeyRegistrationFinishResponses, AuthPasskeyRegistrationStartData, AuthPasskeyRegistrationStartErrors, AuthPasskeyRegistrationStartResponses, AuthPasskeysListData, AuthPasskeysListErrors, AuthPasskeysListResponses, AuthPasswordResetConfirmData, AuthPasswordResetConfirmErrors, AuthPasswordResetConfirmResponses, AuthPasswordResetRequestData, AuthPasswordResetRequestErrors, AuthPasswordResetRequestResponses, AuthRefreshData, AuthRefreshErrors, AuthRefreshResponses, AuthRegisterData, AuthRegisterErrors, AuthRegisterResponses, AuthSwitchHouseholdData, AuthSwitchHouseholdErrors, AuthSwitchHouseholdResponses, DeviceRegisterData, DeviceRegisterErrors, DeviceRegisterResponses, HealthzData, HealthzResponses, HouseholdCreateData, HouseholdCreateErrors, HouseholdCreateResponses, HouseholdCurrentDeletionRequestData, HouseholdCurrentDeletionRequestErrors, HouseholdCurrentDeletionRequestResponses, HouseholdCurrentExportData, HouseholdCurrentExportErrors, HouseholdCurrentExportResponses, HouseholdCurrentGetData, HouseholdCurrentGetErrors, HouseholdCurrentGetResponses, HouseholdCurrentUpdateData, HouseholdCurrentUpdateErrors, HouseholdCurrentUpdateResponses, HouseholdImportData, HouseholdImportErrors, HouseholdImportResponses, HouseholdInviteCreateData, HouseholdInviteCreateErrors, HouseholdInviteCreateResponses, HouseholdInvitesListData, HouseholdInvitesListResponses, HouseholdMemberRemoveData, HouseholdMemberRemoveErrors, HouseholdMemberRemoveResponses, HouseholdMembersListData, HouseholdMembersListResponses, IngredientAvailabilityData, IngredientAvailabilityErrors, IngredientAvailabilityResponses, IngredientCreateData, IngredientCreateResponses, IngredientDeleteData, IngredientDeleteErrors, IngredientDeleteResponses, IngredientGetData, IngredientGetErrors, IngredientGetResponses, IngredientListData, IngredientListResponses, IngredientProductMappingCreateData, IngredientProductMappingCreateErrors, IngredientProductMappingCreateResponses, IngredientProductMappingDeleteData, IngredientProductMappingDeleteErrors, IngredientProductMappingDeleteResponses, IngredientUpdateData, IngredientUpdateErrors, IngredientUpdateResponses, InviteRedeemData, InviteRedeemErrors, InviteRedeemResponses, InviteRevokeData, InviteRevokeErrors, InviteRevokeResponses, LabelPrintersCreateData, LabelPrintersCreateResponses, LabelPrintersDeleteData, LabelPrintersDeleteResponses, LabelPrintersListData, LabelPrintersListResponses, LabelPrintersTestData, LabelPrintersTestRenderData, LabelPrintersTestRenderResponses, LabelPrintersTestResponses, LabelPrintersUpdateData, LabelPrintersUpdateResponses, LocationsCreateData, LocationsCreateResponses, LocationsDeleteData, LocationsDeleteErrors, LocationsDeleteResponses, LocationsListData, LocationsListErrors, LocationsListResponses, LocationsUpdateData, LocationsUpdateResponses, OnboardingCreateHouseholdData, OnboardingCreateHouseholdErrors, OnboardingCreateHouseholdResponses, OnboardingJoinInviteData, OnboardingJoinInviteErrors, OnboardingJoinInviteResponses, OnboardingStatusData, OnboardingStatusResponses, PantrySuggestionGetData, PantrySuggestionGetErrors, PantrySuggestionGetResponses, PantrySuggestionsCreateData, PantrySuggestionsCreateResponses, PantrySuggestionsListData, PantrySuggestionsListResponses, PantrySuggestionStateUpdateData, PantrySuggestionStateUpdateErrors, PantrySuggestionStateUpdateResponses, ProductByBarcodeData, ProductByBarcodeErrors, ProductByBarcodeResponses, ProductCreateData, ProductCreateErrors, ProductCreateResponses, ProductDeleteData, ProductDeleteErrors, ProductDeleteResponses, ProductGetData, ProductGetErrors, ProductGetResponses, ProductListData, ProductListErrors, ProductListResponses, ProductOffContributionData, ProductOffContributionErrors, ProductOffContributionPreviewData, ProductOffContributionPreviewErrors, ProductOffContributionPreviewResponses, ProductOffContributionResponses, ProductRecipeMetadataGetData, ProductRecipeMetadataGetErrors, ProductRecipeMetadataGetResponses, ProductRecipeMetadataPutData, ProductRecipeMetadataPutErrors, ProductRecipeMetadataPutResponses, ProductRefreshData, ProductRefreshErrors, ProductRefreshResponses, ProductRestoreData, ProductRestoreErrors, ProductRestoreResponses, ProductSearchData, ProductSearchErrors, ProductSearchResponses, ProductUpdateData, ProductUpdateErrors, ProductUpdateResponses, RecipeCreateData, RecipeCreateResponses, RecipeDeleteData, RecipeDeleteErrors, RecipeDeleteResponses, RecipeExecutionExecuteData, RecipeExecutionExecuteErrors, RecipeExecutionExecuteResponses, RecipeExecutionPreflightData, RecipeExecutionPreflightErrors, RecipeExecutionPreflightResponses, RecipeGetData, RecipeGetErrors, RecipeGetResponses, RecipeImportTextData, RecipeImportTextResponses, RecipeListData, RecipeListResponses, RecipeScaleData, RecipeScaleErrors, RecipeScaleResponses, RecipeUpdateData, RecipeUpdateErrors, RecipeUpdateResponses, RecipeValidateData, RecipeValidateErrors, RecipeValidateResponses, RemindersAckData, RemindersAckErrors, RemindersAckResponses, RemindersListData, RemindersListErrors, RemindersListResponses, RemindersOpenData, RemindersOpenErrors, RemindersOpenResponses, RemindersPresentData, RemindersPresentErrors, RemindersPresentResponses, StockConsumeData, StockConsumeErrors, StockConsumeResponses, StockCreateData, StockCreateErrors, StockCreateResponses, StockDeleteData, StockDeleteErrors, StockDeleteResponses, StockGetData, StockGetErrors, StockGetResponses, StockLabelPrintData, StockLabelPrintErrors, StockLabelPrintResponses, StockLabelRenderData, StockLabelRenderErrors, StockLabelRenderResponses, StockListBatchEventsData, StockListBatchEventsErrors, StockListBatchEventsResponses, StockListData, StockListErrors, StockListEventsData, StockListEventsErrors, StockListEventsResponses, StockListResponses, StockRestoreData, StockRestoreErrors, StockRestoreManyData, StockRestoreManyErrors, StockRestoreManyResponses, StockRestoreResponses, StockSplitData, StockSplitErrors, StockSplitResponses, StockUpdateData, StockUpdateErrors, StockUpdateResponses, StorageVesselsCreateData, StorageVesselsCreateResponses, StorageVesselsDeleteData, StorageVesselsDeleteErrors, StorageVesselsDeleteResponses, StorageVesselsListData, StorageVesselsListErrors, StorageVesselsListResponses, StorageVesselsUpdateData, StorageVesselsUpdateResponses, UnitsListData, UnitsListResponses } from './types.gen';
+import type { AccountOpenfoodfactsDeleteData, AccountOpenfoodfactsDeleteErrors, AccountOpenfoodfactsDeleteResponses, AccountOpenfoodfactsPutData, AccountOpenfoodfactsPutErrors, AccountOpenfoodfactsPutResponses, AccountOpenfoodfactsStatusData, AccountOpenfoodfactsStatusErrors, AccountOpenfoodfactsStatusResponses, AiStatusData, AiStatusResponses, AiTaskGetData, AiTaskGetErrors, AiTaskGetResponses, AiTaskListData, AiTaskListResponses, AiTaskStateUpdateData, AiTaskStateUpdateErrors, AiTaskStateUpdateResponses, AuthEmailClearData, AuthEmailClearErrors, AuthEmailClearResponses, AuthEmailVerificationConfirmData, AuthEmailVerificationConfirmErrors, AuthEmailVerificationConfirmResponses, AuthEmailVerificationRequestData, AuthEmailVerificationRequestErrors, AuthEmailVerificationRequestResponses, AuthHandoffAcceptData, AuthHandoffAcceptErrors, AuthHandoffAcceptResponses, AuthHandoffCancelData, AuthHandoffCancelErrors, AuthHandoffCancelResponses, AuthHandoffCreateData, AuthHandoffCreateErrors, AuthHandoffCreateResponses, AuthHandoffPreviewData, AuthHandoffPreviewErrors, AuthHandoffPreviewResponses, AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthMeData, AuthMeErrors, AuthMeResponses, AuthPasskeyDeleteData, AuthPasskeyDeleteErrors, AuthPasskeyDeleteResponses, AuthPasskeyLoginFinishData, AuthPasskeyLoginFinishErrors, AuthPasskeyLoginFinishResponses, AuthPasskeyLoginStartData, AuthPasskeyLoginStartErrors, AuthPasskeyLoginStartResponses, AuthPasskeyRegistrationFinishData, AuthPasskeyRegistrationFinishErrors, AuthPasskeyRegistrationFinishResponses, AuthPasskeyRegistrationStartData, AuthPasskeyRegistrationStartErrors, AuthPasskeyRegistrationStartResponses, AuthPasskeysListData, AuthPasskeysListErrors, AuthPasskeysListResponses, AuthPasswordResetConfirmData, AuthPasswordResetConfirmErrors, AuthPasswordResetConfirmResponses, AuthPasswordResetRequestData, AuthPasswordResetRequestErrors, AuthPasswordResetRequestResponses, AuthRefreshData, AuthRefreshErrors, AuthRefreshResponses, AuthRegisterData, AuthRegisterErrors, AuthRegisterResponses, AuthSwitchHouseholdData, AuthSwitchHouseholdErrors, AuthSwitchHouseholdResponses, DeviceRegisterData, DeviceRegisterErrors, DeviceRegisterResponses, HealthzData, HealthzResponses, HouseholdCreateData, HouseholdCreateErrors, HouseholdCreateResponses, HouseholdCurrentDeletionRequestData, HouseholdCurrentDeletionRequestErrors, HouseholdCurrentDeletionRequestResponses, HouseholdCurrentExportData, HouseholdCurrentExportErrors, HouseholdCurrentExportResponses, HouseholdCurrentGetData, HouseholdCurrentGetErrors, HouseholdCurrentGetResponses, HouseholdCurrentUpdateData, HouseholdCurrentUpdateErrors, HouseholdCurrentUpdateResponses, HouseholdImportData, HouseholdImportErrors, HouseholdImportResponses, HouseholdInviteCreateData, HouseholdInviteCreateErrors, HouseholdInviteCreateResponses, HouseholdInvitesListData, HouseholdInvitesListResponses, HouseholdMemberRemoveData, HouseholdMemberRemoveErrors, HouseholdMemberRemoveResponses, HouseholdMembersListData, HouseholdMembersListResponses, IngredientAvailabilityData, IngredientAvailabilityErrors, IngredientAvailabilityResponses, IngredientCreateData, IngredientCreateResponses, IngredientDeleteData, IngredientDeleteErrors, IngredientDeleteResponses, IngredientGetData, IngredientGetErrors, IngredientGetResponses, IngredientListData, IngredientListResponses, IngredientProductMappingCreateData, IngredientProductMappingCreateErrors, IngredientProductMappingCreateResponses, IngredientProductMappingDeleteData, IngredientProductMappingDeleteErrors, IngredientProductMappingDeleteResponses, IngredientUpdateData, IngredientUpdateErrors, IngredientUpdateResponses, InviteRedeemData, InviteRedeemErrors, InviteRedeemResponses, InviteRevokeData, InviteRevokeErrors, InviteRevokeResponses, LabelPrintersCreateData, LabelPrintersCreateResponses, LabelPrintersDeleteData, LabelPrintersDeleteResponses, LabelPrintersListData, LabelPrintersListResponses, LabelPrintersTestData, LabelPrintersTestRenderData, LabelPrintersTestRenderResponses, LabelPrintersTestResponses, LabelPrintersUpdateData, LabelPrintersUpdateResponses, LocationsCreateData, LocationsCreateResponses, LocationsDeleteData, LocationsDeleteErrors, LocationsDeleteResponses, LocationsListData, LocationsListErrors, LocationsListResponses, LocationsUpdateData, LocationsUpdateResponses, OnboardingCreateHouseholdData, OnboardingCreateHouseholdErrors, OnboardingCreateHouseholdResponses, OnboardingJoinInviteData, OnboardingJoinInviteErrors, OnboardingJoinInviteResponses, OnboardingStatusData, OnboardingStatusResponses, PantrySuggestionGetData, PantrySuggestionGetErrors, PantrySuggestionGetResponses, PantrySuggestionsCreateData, PantrySuggestionsCreateResponses, PantrySuggestionsListData, PantrySuggestionsListResponses, PantrySuggestionStateUpdateData, PantrySuggestionStateUpdateErrors, PantrySuggestionStateUpdateResponses, ProductByBarcodeData, ProductByBarcodeErrors, ProductByBarcodeResponses, ProductCreateData, ProductCreateErrors, ProductCreateResponses, ProductDeleteData, ProductDeleteErrors, ProductDeleteResponses, ProductGetData, ProductGetErrors, ProductGetResponses, ProductListData, ProductListErrors, ProductListResponses, ProductOffContributionData, ProductOffContributionErrors, ProductOffContributionPreviewData, ProductOffContributionPreviewErrors, ProductOffContributionPreviewResponses, ProductOffContributionResponses, ProductRecipeMetadataGetData, ProductRecipeMetadataGetErrors, ProductRecipeMetadataGetResponses, ProductRecipeMetadataPutData, ProductRecipeMetadataPutErrors, ProductRecipeMetadataPutResponses, ProductRefreshData, ProductRefreshErrors, ProductRefreshResponses, ProductRestoreData, ProductRestoreErrors, ProductRestoreResponses, ProductSearchData, ProductSearchErrors, ProductSearchResponses, ProductUpdateData, ProductUpdateErrors, ProductUpdateResponses, RecipeCreateData, RecipeCreateResponses, RecipeDeleteData, RecipeDeleteErrors, RecipeDeleteResponses, RecipeExecutionExecuteData, RecipeExecutionExecuteErrors, RecipeExecutionExecuteResponses, RecipeExecutionPreflightData, RecipeExecutionPreflightErrors, RecipeExecutionPreflightResponses, RecipeGetData, RecipeGetErrors, RecipeGetResponses, RecipeImportTextData, RecipeImportTextResponses, RecipeListData, RecipeListResponses, RecipeScaleData, RecipeScaleErrors, RecipeScaleResponses, RecipeUpdateData, RecipeUpdateErrors, RecipeUpdateResponses, RecipeValidateData, RecipeValidateErrors, RecipeValidateResponses, RemindersAckData, RemindersAckErrors, RemindersAckResponses, RemindersListData, RemindersListErrors, RemindersListResponses, RemindersOpenData, RemindersOpenErrors, RemindersOpenResponses, RemindersPresentData, RemindersPresentErrors, RemindersPresentResponses, ReplenishmentCartDraftCreateData, ReplenishmentCartDraftCreateResponses, ReplenishmentCartRunGetData, ReplenishmentCartRunGetErrors, ReplenishmentCartRunGetResponses, ReplenishmentDemandSignalCreateData, ReplenishmentDemandSignalCreateResponses, ReplenishmentDemandSignalListData, ReplenishmentDemandSignalListResponses, ReplenishmentDemandSignalPatchData, ReplenishmentDemandSignalPatchErrors, ReplenishmentDemandSignalPatchResponses, ReplenishmentRuleCreateData, ReplenishmentRuleCreateResponses, ReplenishmentRuleDeleteData, ReplenishmentRuleDeleteErrors, ReplenishmentRuleDeleteResponses, ReplenishmentRuleGetData, ReplenishmentRuleGetErrors, ReplenishmentRuleGetResponses, ReplenishmentRuleListData, ReplenishmentRuleListResponses, ReplenishmentRulePauseData, ReplenishmentRulePauseErrors, ReplenishmentRulePauseResponses, ReplenishmentRuleResumeData, ReplenishmentRuleResumeErrors, ReplenishmentRuleResumeResponses, ReplenishmentRuleUpdateData, ReplenishmentRuleUpdateErrors, ReplenishmentRuleUpdateResponses, ReplenishmentSettingsGetData, ReplenishmentSettingsGetResponses, ReplenishmentSettingsPutData, ReplenishmentSettingsPutResponses, ReplenishmentSupplierPolicyGetData, ReplenishmentSupplierPolicyGetResponses, ReplenishmentSupplierPolicyPutData, ReplenishmentSupplierPolicyPutResponses, StockConsumeData, StockConsumeErrors, StockConsumeResponses, StockCreateData, StockCreateErrors, StockCreateResponses, StockDeleteData, StockDeleteErrors, StockDeleteResponses, StockGetData, StockGetErrors, StockGetResponses, StockLabelPrintData, StockLabelPrintErrors, StockLabelPrintResponses, StockLabelRenderData, StockLabelRenderErrors, StockLabelRenderResponses, StockListBatchEventsData, StockListBatchEventsErrors, StockListBatchEventsResponses, StockListData, StockListErrors, StockListEventsData, StockListEventsErrors, StockListEventsResponses, StockListResponses, StockRestoreData, StockRestoreErrors, StockRestoreManyData, StockRestoreManyErrors, StockRestoreManyResponses, StockRestoreResponses, StockSplitData, StockSplitErrors, StockSplitResponses, StockUpdateData, StockUpdateErrors, StockUpdateResponses, StorageVesselsCreateData, StorageVesselsCreateResponses, StorageVesselsDeleteData, StorageVesselsDeleteErrors, StorageVesselsDeleteResponses, StorageVesselsListData, StorageVesselsListErrors, StorageVesselsListResponses, StorageVesselsUpdateData, StorageVesselsUpdateResponses, UnitsListData, UnitsListResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -737,6 +737,134 @@ export const remindersPresent = <ThrowOnError extends boolean = false>(options: 
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/reminders/{id}/present',
     ...options
+});
+
+export const replenishmentCartDraftCreate = <ThrowOnError extends boolean = false>(options: Options<ReplenishmentCartDraftCreateData, ThrowOnError>) => (options.client ?? client).post<ReplenishmentCartDraftCreateResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/replenishment/cart-drafts',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const replenishmentCartRunGet = <ThrowOnError extends boolean = false>(options: Options<ReplenishmentCartRunGetData, ThrowOnError>) => (options.client ?? client).get<ReplenishmentCartRunGetResponses, ReplenishmentCartRunGetErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/replenishment/cart-runs/{id}',
+    ...options
+});
+
+export const replenishmentDemandSignalList = <ThrowOnError extends boolean = false>(options?: Options<ReplenishmentDemandSignalListData, ThrowOnError>) => (options?.client ?? client).get<ReplenishmentDemandSignalListResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/replenishment/demand-signals',
+    ...options
+});
+
+export const replenishmentDemandSignalCreate = <ThrowOnError extends boolean = false>(options: Options<ReplenishmentDemandSignalCreateData, ThrowOnError>) => (options.client ?? client).post<ReplenishmentDemandSignalCreateResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/replenishment/demand-signals',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const replenishmentDemandSignalPatch = <ThrowOnError extends boolean = false>(options: Options<ReplenishmentDemandSignalPatchData, ThrowOnError>) => (options.client ?? client).patch<ReplenishmentDemandSignalPatchResponses, ReplenishmentDemandSignalPatchErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/replenishment/demand-signals/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const replenishmentRuleList = <ThrowOnError extends boolean = false>(options?: Options<ReplenishmentRuleListData, ThrowOnError>) => (options?.client ?? client).get<ReplenishmentRuleListResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/replenishment/rules',
+    ...options
+});
+
+export const replenishmentRuleCreate = <ThrowOnError extends boolean = false>(options: Options<ReplenishmentRuleCreateData, ThrowOnError>) => (options.client ?? client).post<ReplenishmentRuleCreateResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/replenishment/rules',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const replenishmentRuleDelete = <ThrowOnError extends boolean = false>(options: Options<ReplenishmentRuleDeleteData, ThrowOnError>) => (options.client ?? client).delete<ReplenishmentRuleDeleteResponses, ReplenishmentRuleDeleteErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/replenishment/rules/{id}',
+    ...options
+});
+
+export const replenishmentRuleGet = <ThrowOnError extends boolean = false>(options: Options<ReplenishmentRuleGetData, ThrowOnError>) => (options.client ?? client).get<ReplenishmentRuleGetResponses, ReplenishmentRuleGetErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/replenishment/rules/{id}',
+    ...options
+});
+
+export const replenishmentRuleUpdate = <ThrowOnError extends boolean = false>(options: Options<ReplenishmentRuleUpdateData, ThrowOnError>) => (options.client ?? client).patch<ReplenishmentRuleUpdateResponses, ReplenishmentRuleUpdateErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/replenishment/rules/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const replenishmentRulePause = <ThrowOnError extends boolean = false>(options: Options<ReplenishmentRulePauseData, ThrowOnError>) => (options.client ?? client).post<ReplenishmentRulePauseResponses, ReplenishmentRulePauseErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/replenishment/rules/{id}/pause',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const replenishmentRuleResume = <ThrowOnError extends boolean = false>(options: Options<ReplenishmentRuleResumeData, ThrowOnError>) => (options.client ?? client).post<ReplenishmentRuleResumeResponses, ReplenishmentRuleResumeErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/replenishment/rules/{id}/resume',
+    ...options
+});
+
+export const replenishmentSettingsGet = <ThrowOnError extends boolean = false>(options?: Options<ReplenishmentSettingsGetData, ThrowOnError>) => (options?.client ?? client).get<ReplenishmentSettingsGetResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/replenishment/settings',
+    ...options
+});
+
+export const replenishmentSettingsPut = <ThrowOnError extends boolean = false>(options: Options<ReplenishmentSettingsPutData, ThrowOnError>) => (options.client ?? client).put<ReplenishmentSettingsPutResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/replenishment/settings',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const replenishmentSupplierPolicyGet = <ThrowOnError extends boolean = false>(options: Options<ReplenishmentSupplierPolicyGetData, ThrowOnError>) => (options.client ?? client).get<ReplenishmentSupplierPolicyGetResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/replenishment/suppliers/{supplier_id}/policy',
+    ...options
+});
+
+export const replenishmentSupplierPolicyPut = <ThrowOnError extends boolean = false>(options: Options<ReplenishmentSupplierPolicyPutData, ThrowOnError>) => (options.client ?? client).put<ReplenishmentSupplierPolicyPutResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/replenishment/suppliers/{supplier_id}/policy',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 export const stockList = <ThrowOnError extends boolean = false>(options?: Options<StockListData, ThrowOnError>) => (options?.client ?? client).get<StockListResponses, StockListErrors, ThrowOnError>({

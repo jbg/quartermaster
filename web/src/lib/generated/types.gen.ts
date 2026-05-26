@@ -1326,6 +1326,169 @@ export type RenderLabelResponse = {
     printer_id: string;
 };
 
+export type ReplenishmentAutomationLevelDto = 'off' | 'suggestions' | 'confirm_to_submit' | 'trusted_auto_submit';
+
+export type ReplenishmentCartRunDto = {
+    ai_explanation?: unknown;
+    created_at: string;
+    draft_id?: string | null;
+    guardrail_decision: ReplenishmentGuardrailDecisionDto;
+    guardrail_snapshot: unknown;
+    id: string;
+    order_id?: string | null;
+    recommendations: unknown;
+    source: string;
+    status: ReplenishmentCartRunStatusDto;
+    supplier_id?: string | null;
+    suppressions: unknown;
+    updated_at: string;
+};
+
+export type ReplenishmentCartRunStatusDto = 'draft_created' | 'blocked' | 'submitted';
+
+export type ReplenishmentCreateCartDraftRequest = {
+    include_ai_explanation?: boolean;
+    submit_trusted?: boolean;
+    supplier_id?: string | null;
+};
+
+export type ReplenishmentCreateCartDraftResponse = {
+    draft_id?: string | null;
+    run: ReplenishmentCartRunDto;
+};
+
+export type ReplenishmentDemandSignalDto = {
+    created_at: string;
+    desired_on?: string | null;
+    id: string;
+    location_id?: string | null;
+    metadata: unknown;
+    note?: string | null;
+    product_id: string;
+    quantity: string;
+    recipe_id?: string | null;
+    recipe_version_id?: string | null;
+    signal_type: ReplenishmentDemandSignalTypeDto;
+    status: ReplenishmentDemandSignalStatusDto;
+    supplier_id?: string | null;
+    supplier_item_id?: string | null;
+    unit: string;
+    updated_at: string;
+};
+
+export type ReplenishmentDemandSignalListResponse = {
+    items: Array<ReplenishmentDemandSignalDto>;
+};
+
+export type ReplenishmentDemandSignalRequest = {
+    desired_on?: string | null;
+    location_id?: string | null;
+    metadata?: unknown;
+    note?: string | null;
+    product_id: string;
+    quantity: string;
+    recipe_id?: string | null;
+    recipe_version_id?: string | null;
+    signal_type: ReplenishmentDemandSignalTypeDto;
+    supplier_id?: string | null;
+    supplier_item_id?: string | null;
+    unit: string;
+};
+
+export type ReplenishmentDemandSignalStatusDto = 'active' | 'dismissed' | 'fulfilled';
+
+export type ReplenishmentDemandSignalTypeDto = 'manual_shopping' | 'upcoming_recipe';
+
+export type ReplenishmentGuardrailDecisionDto = 'allowed' | 'needs_approval' | 'blocked';
+
+export type ReplenishmentPatchDemandSignalRequest = {
+    status: ReplenishmentDemandSignalStatusDto;
+};
+
+export type ReplenishmentPauseRuleRequest = {
+    reason?: string | null;
+};
+
+export type ReplenishmentRuleDto = {
+    automation_level: ReplenishmentAutomationLevelDto;
+    created_at: string;
+    expiry_suppression_days?: number | null;
+    id: string;
+    location_id?: string | null;
+    minimum_quantity: string;
+    pause_reason?: string | null;
+    paused_at?: string | null;
+    preferred_package_quantity?: string | null;
+    preferred_package_unit?: string | null;
+    preferred_supplier_id?: string | null;
+    preferred_supplier_item_id?: string | null;
+    product_id: string;
+    spend_cap_amount?: string | null;
+    spend_cap_currency?: string | null;
+    target_quantity: string;
+    unit: string;
+    updated_at: string;
+};
+
+export type ReplenishmentRuleListResponse = {
+    items: Array<ReplenishmentRuleDto>;
+};
+
+export type ReplenishmentRuleRequest = {
+    automation_level: ReplenishmentAutomationLevelDto;
+    expiry_suppression_days?: number | null;
+    location_id?: string | null;
+    minimum_quantity: string;
+    preferred_package_quantity?: string | null;
+    preferred_package_unit?: string | null;
+    preferred_supplier_id?: string | null;
+    preferred_supplier_item_id?: string | null;
+    product_id: string;
+    spend_cap_amount?: string | null;
+    spend_cap_currency?: string | null;
+    target_quantity: string;
+    unit: string;
+};
+
+export type ReplenishmentSettingsDto = {
+    default_spend_cap_amount?: string | null;
+    default_spend_cap_currency?: string | null;
+    global_disabled: boolean;
+    notification_lead_minutes: number;
+    quiet_hours_end?: string | null;
+    quiet_hours_start?: string | null;
+    updated_at: string;
+};
+
+export type ReplenishmentSettingsRequest = {
+    default_spend_cap_amount?: string | null;
+    default_spend_cap_currency?: string | null;
+    global_disabled: boolean;
+    notification_lead_minutes: number;
+    quiet_hours_end?: string | null;
+    quiet_hours_start?: string | null;
+};
+
+export type ReplenishmentSupplierPolicyDto = {
+    disabled: boolean;
+    quiet_hours_end?: string | null;
+    quiet_hours_start?: string | null;
+    spend_cap_amount?: string | null;
+    spend_cap_currency?: string | null;
+    supplier_id: string;
+    updated_at: string;
+};
+
+export type ReplenishmentSupplierPolicyRequest = {
+    disabled: boolean;
+    quiet_hours_end?: string | null;
+    quiet_hours_start?: string | null;
+    spend_cap_amount?: string | null;
+    spend_cap_currency?: string | null;
+};
+
+export type ReplenishmentSuppressionReasonDto = 'automation_off' | 'rule_paused' | 'missing_supplier_mapping' | 'supplier_mismatch' | 'sufficient_stock' | 'expiring_stock_available' | 'pending_replenishment' | 'global_disabled' | 'supplier_disabled' | 'budget_exceeded' | 'unknown_price' | 'invalid_rule';
+
 export type RequestEmailVerificationRequest = {
     email: string;
 };
@@ -1504,6 +1667,211 @@ export type StructuredQuantityDto = {
     range?: null | QuantityRangeDto;
     to_taste?: boolean;
     unit?: string | null;
+};
+
+export type SupplierAccountDto = {
+    config: unknown;
+    consent_accepted_at?: string | null;
+    created_at: string;
+    display_name: string;
+    id: string;
+    region?: unknown;
+    secrets: Array<SupplierSecretDto>;
+    status: SupplierAccountStatusDto;
+    supplier_id: string;
+    updated_at: string;
+};
+
+export type SupplierAccountListResponse = {
+    items: Array<SupplierAccountDto>;
+};
+
+export type SupplierAccountStatusDto = 'active' | 'needs_configuration' | 'disabled';
+
+export type SupplierCapabilitiesResponse = {
+    suppliers: Array<SupplierDescriptorDto>;
+};
+
+export type SupplierCapabilityDto = 'catalog_search' | 'item_detail' | 'cart_draft' | 'order_submit' | 'order_status' | 'cancellation' | 'receiving_hints' | 'browser_automation' | 'manual_handoff';
+
+export type SupplierCartDraftDto = {
+    account_id?: string | null;
+    created_at: string;
+    id: string;
+    intervention_state: SupplierInterventionStateDto;
+    lines: Array<SupplierCartLineDto>;
+    review_notes?: string | null;
+    source: string;
+    status: SupplierCartStatusDto;
+    supplier_id: string;
+    updated_at: string;
+};
+
+export type SupplierCartLineDto = {
+    id: string;
+    note?: string | null;
+    product_id?: string | null;
+    quantity: string;
+    sort_order: number;
+    supplier_item_id: string;
+    unit?: string | null;
+};
+
+export type SupplierCartStatusDto = 'draft' | 'needs_review' | 'ready' | 'submitted' | 'cancelled';
+
+export type SupplierCatalogItemDto = {
+    availability: string;
+    brand?: string | null;
+    detail_url?: string | null;
+    image_url?: string | null;
+    lead_time_max_days?: number | null;
+    lead_time_min_days?: number | null;
+    metadata: unknown;
+    minimum_order_quantity?: string | null;
+    minimum_order_unit?: string | null;
+    name: string;
+    pack_quantity?: string | null;
+    pack_unit?: string | null;
+    price_amount?: string | null;
+    price_currency?: string | null;
+    supplier_id: string;
+    supplier_item_id: string;
+};
+
+export type SupplierCatalogSearchQuery = {
+    limit?: number | null;
+    q?: string | null;
+    supplier_id?: string | null;
+};
+
+export type SupplierCatalogSearchResponse = {
+    items: Array<SupplierCatalogItemDto>;
+};
+
+export type SupplierCreateAccountRequest = {
+    config?: unknown;
+    consent_accepted_at?: string | null;
+    display_name: string;
+    region?: unknown;
+    status?: null | SupplierAccountStatusDto;
+    supplier_id: string;
+};
+
+export type SupplierCreateCartDraftRequest = {
+    account_id?: string | null;
+    lines: Array<SupplierCreateCartLineRequest>;
+    review_notes?: string | null;
+    source?: string;
+    supplier_id: string;
+};
+
+export type SupplierCreateCartLineRequest = {
+    note?: string | null;
+    product_id?: string | null;
+    quantity: string;
+    supplier_item_id: string;
+    unit?: string | null;
+};
+
+export type SupplierDescriptorDto = {
+    capabilities: Array<SupplierCapabilityDto>;
+    display_name: string;
+    id: string;
+    needs_browser: boolean;
+    needs_network: boolean;
+    requirements: unknown;
+    supported_regions: unknown;
+    terms_url?: string | null;
+};
+
+export type SupplierInterventionStateDto = 'none' | 'consent_required' | 'login_required' | 'browser_handoff_required' | 'manual_handoff_required';
+
+export type SupplierMappingConfidenceDto = 'suggested' | 'confirmed' | 'rejected';
+
+export type SupplierMappingDto = {
+    confidence: SupplierMappingConfidenceDto;
+    confirmed_at?: string | null;
+    created_at: string;
+    id: string;
+    product_id: string;
+    substitute_policy: unknown;
+    supplier_id: string;
+    supplier_item_id: string;
+    updated_at: string;
+};
+
+export type SupplierMappingListResponse = {
+    items: Array<SupplierMappingDto>;
+};
+
+export type SupplierOrderDto = {
+    account_id?: string | null;
+    created_at: string;
+    delivered_at?: string | null;
+    draft_id?: string | null;
+    id: string;
+    redacted_summary: unknown;
+    review_url?: string | null;
+    status: SupplierOrderStatusDto;
+    submitted_at?: string | null;
+    supplier_id: string;
+    supplier_order_id?: string | null;
+    updated_at: string;
+};
+
+export type SupplierOrderListResponse = {
+    items: Array<SupplierOrderDto>;
+};
+
+export type SupplierOrderStatusDto = 'draft' | 'submitted' | 'confirmed' | 'in_progress' | 'delivered' | 'cancelled' | 'failed' | 'human_intervention_required';
+
+export type SupplierPatchCartDraftRequest = {
+    intervention_state: SupplierInterventionStateDto;
+    review_notes?: string | null;
+    status: SupplierCartStatusDto;
+};
+
+export type SupplierPutMappingRequest = {
+    confidence: SupplierMappingConfidenceDto;
+    confirmed_at?: string | null;
+    substitute_policy?: unknown;
+    supplier_id: string;
+    supplier_item_id: string;
+};
+
+export type SupplierPutSecretRequest = {
+    secret_kind: SupplierSecretKindDto;
+    value: string;
+};
+
+export type SupplierReceiveLineRequest = {
+    expires_on?: string | null;
+    location_id: string;
+    note?: string | null;
+    product_id: string;
+    quantity: string;
+    unit: string;
+};
+
+export type SupplierReceiveOrderRequest = {
+    lines: Array<SupplierReceiveLineRequest>;
+};
+
+export type SupplierSecretDto = {
+    redacted_hint?: string | null;
+    secret_kind: SupplierSecretKindDto;
+    secret_name: string;
+    updated_at: string;
+};
+
+export type SupplierSecretKindDto = 'password' | 'api_token' | 'cookie_jar' | 'other';
+
+export type SupplierUpdateAccountRequest = {
+    config?: unknown;
+    consent_accepted_at?: string | null;
+    display_name: string;
+    region?: unknown;
+    status: SupplierAccountStatusDto;
 };
 
 export type SwitchHouseholdRequest = {
@@ -3397,6 +3765,274 @@ export type RemindersPresentResponses = {
 };
 
 export type RemindersPresentResponse = RemindersPresentResponses[keyof RemindersPresentResponses];
+
+export type ReplenishmentCartDraftCreateData = {
+    body: ReplenishmentCreateCartDraftRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/replenishment/cart-drafts';
+};
+
+export type ReplenishmentCartDraftCreateResponses = {
+    201: ReplenishmentCreateCartDraftResponse;
+};
+
+export type ReplenishmentCartDraftCreateResponse = ReplenishmentCartDraftCreateResponses[keyof ReplenishmentCartDraftCreateResponses];
+
+export type ReplenishmentCartRunGetData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/replenishment/cart-runs/{id}';
+};
+
+export type ReplenishmentCartRunGetErrors = {
+    404: ApiErrorBody;
+};
+
+export type ReplenishmentCartRunGetError = ReplenishmentCartRunGetErrors[keyof ReplenishmentCartRunGetErrors];
+
+export type ReplenishmentCartRunGetResponses = {
+    200: ReplenishmentCartRunDto;
+};
+
+export type ReplenishmentCartRunGetResponse = ReplenishmentCartRunGetResponses[keyof ReplenishmentCartRunGetResponses];
+
+export type ReplenishmentDemandSignalListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/replenishment/demand-signals';
+};
+
+export type ReplenishmentDemandSignalListResponses = {
+    200: ReplenishmentDemandSignalListResponse;
+};
+
+export type ReplenishmentDemandSignalListResponse2 = ReplenishmentDemandSignalListResponses[keyof ReplenishmentDemandSignalListResponses];
+
+export type ReplenishmentDemandSignalCreateData = {
+    body: ReplenishmentDemandSignalRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/replenishment/demand-signals';
+};
+
+export type ReplenishmentDemandSignalCreateResponses = {
+    201: ReplenishmentDemandSignalDto;
+};
+
+export type ReplenishmentDemandSignalCreateResponse = ReplenishmentDemandSignalCreateResponses[keyof ReplenishmentDemandSignalCreateResponses];
+
+export type ReplenishmentDemandSignalPatchData = {
+    body: ReplenishmentPatchDemandSignalRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/replenishment/demand-signals/{id}';
+};
+
+export type ReplenishmentDemandSignalPatchErrors = {
+    404: ApiErrorBody;
+};
+
+export type ReplenishmentDemandSignalPatchError = ReplenishmentDemandSignalPatchErrors[keyof ReplenishmentDemandSignalPatchErrors];
+
+export type ReplenishmentDemandSignalPatchResponses = {
+    200: ReplenishmentDemandSignalDto;
+};
+
+export type ReplenishmentDemandSignalPatchResponse = ReplenishmentDemandSignalPatchResponses[keyof ReplenishmentDemandSignalPatchResponses];
+
+export type ReplenishmentRuleListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/replenishment/rules';
+};
+
+export type ReplenishmentRuleListResponses = {
+    200: ReplenishmentRuleListResponse;
+};
+
+export type ReplenishmentRuleListResponse2 = ReplenishmentRuleListResponses[keyof ReplenishmentRuleListResponses];
+
+export type ReplenishmentRuleCreateData = {
+    body: ReplenishmentRuleRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/replenishment/rules';
+};
+
+export type ReplenishmentRuleCreateResponses = {
+    201: ReplenishmentRuleDto;
+};
+
+export type ReplenishmentRuleCreateResponse = ReplenishmentRuleCreateResponses[keyof ReplenishmentRuleCreateResponses];
+
+export type ReplenishmentRuleDeleteData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/replenishment/rules/{id}';
+};
+
+export type ReplenishmentRuleDeleteErrors = {
+    404: ApiErrorBody;
+};
+
+export type ReplenishmentRuleDeleteError = ReplenishmentRuleDeleteErrors[keyof ReplenishmentRuleDeleteErrors];
+
+export type ReplenishmentRuleDeleteResponses = {
+    204: void;
+};
+
+export type ReplenishmentRuleDeleteResponse = ReplenishmentRuleDeleteResponses[keyof ReplenishmentRuleDeleteResponses];
+
+export type ReplenishmentRuleGetData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/replenishment/rules/{id}';
+};
+
+export type ReplenishmentRuleGetErrors = {
+    404: ApiErrorBody;
+};
+
+export type ReplenishmentRuleGetError = ReplenishmentRuleGetErrors[keyof ReplenishmentRuleGetErrors];
+
+export type ReplenishmentRuleGetResponses = {
+    200: ReplenishmentRuleDto;
+};
+
+export type ReplenishmentRuleGetResponse = ReplenishmentRuleGetResponses[keyof ReplenishmentRuleGetResponses];
+
+export type ReplenishmentRuleUpdateData = {
+    body: ReplenishmentRuleRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/replenishment/rules/{id}';
+};
+
+export type ReplenishmentRuleUpdateErrors = {
+    404: ApiErrorBody;
+};
+
+export type ReplenishmentRuleUpdateError = ReplenishmentRuleUpdateErrors[keyof ReplenishmentRuleUpdateErrors];
+
+export type ReplenishmentRuleUpdateResponses = {
+    200: ReplenishmentRuleDto;
+};
+
+export type ReplenishmentRuleUpdateResponse = ReplenishmentRuleUpdateResponses[keyof ReplenishmentRuleUpdateResponses];
+
+export type ReplenishmentRulePauseData = {
+    body: ReplenishmentPauseRuleRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/replenishment/rules/{id}/pause';
+};
+
+export type ReplenishmentRulePauseErrors = {
+    404: ApiErrorBody;
+};
+
+export type ReplenishmentRulePauseError = ReplenishmentRulePauseErrors[keyof ReplenishmentRulePauseErrors];
+
+export type ReplenishmentRulePauseResponses = {
+    200: ReplenishmentRuleDto;
+};
+
+export type ReplenishmentRulePauseResponse = ReplenishmentRulePauseResponses[keyof ReplenishmentRulePauseResponses];
+
+export type ReplenishmentRuleResumeData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/replenishment/rules/{id}/resume';
+};
+
+export type ReplenishmentRuleResumeErrors = {
+    404: ApiErrorBody;
+};
+
+export type ReplenishmentRuleResumeError = ReplenishmentRuleResumeErrors[keyof ReplenishmentRuleResumeErrors];
+
+export type ReplenishmentRuleResumeResponses = {
+    200: ReplenishmentRuleDto;
+};
+
+export type ReplenishmentRuleResumeResponse = ReplenishmentRuleResumeResponses[keyof ReplenishmentRuleResumeResponses];
+
+export type ReplenishmentSettingsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/replenishment/settings';
+};
+
+export type ReplenishmentSettingsGetResponses = {
+    200: ReplenishmentSettingsDto;
+};
+
+export type ReplenishmentSettingsGetResponse = ReplenishmentSettingsGetResponses[keyof ReplenishmentSettingsGetResponses];
+
+export type ReplenishmentSettingsPutData = {
+    body: ReplenishmentSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/replenishment/settings';
+};
+
+export type ReplenishmentSettingsPutResponses = {
+    200: ReplenishmentSettingsDto;
+};
+
+export type ReplenishmentSettingsPutResponse = ReplenishmentSettingsPutResponses[keyof ReplenishmentSettingsPutResponses];
+
+export type ReplenishmentSupplierPolicyGetData = {
+    body?: never;
+    path: {
+        supplier_id: string;
+    };
+    query?: never;
+    url: '/api/v1/replenishment/suppliers/{supplier_id}/policy';
+};
+
+export type ReplenishmentSupplierPolicyGetResponses = {
+    200: ReplenishmentSupplierPolicyDto;
+};
+
+export type ReplenishmentSupplierPolicyGetResponse = ReplenishmentSupplierPolicyGetResponses[keyof ReplenishmentSupplierPolicyGetResponses];
+
+export type ReplenishmentSupplierPolicyPutData = {
+    body: ReplenishmentSupplierPolicyRequest;
+    path: {
+        supplier_id: string;
+    };
+    query?: never;
+    url: '/api/v1/replenishment/suppliers/{supplier_id}/policy';
+};
+
+export type ReplenishmentSupplierPolicyPutResponses = {
+    200: ReplenishmentSupplierPolicyDto;
+};
+
+export type ReplenishmentSupplierPolicyPutResponse = ReplenishmentSupplierPolicyPutResponses[keyof ReplenishmentSupplierPolicyPutResponses];
 
 export type StockListData = {
     body?: never;
