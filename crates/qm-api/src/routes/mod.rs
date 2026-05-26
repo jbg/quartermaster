@@ -14,6 +14,7 @@ pub mod patch;
 pub mod products;
 pub mod recipes;
 pub mod reminders;
+pub mod replenishment;
 pub mod stock;
 pub mod storage_vessels;
 pub mod suppliers;
