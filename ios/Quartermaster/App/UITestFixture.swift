@@ -316,6 +316,42 @@ import UIKit
       pushAuthorization: PushAuthorizationStatus,
       appVersion: String?
     ) async throws {}
+    func recipes() async throws -> [RecipeSummary] {
+      let response: RecipeListResponse = try decodeFixture(
+        from: #"{"items":[\#(recipeSummaryJSON)]}"#
+      )
+      return response.items
+    }
+    func getRecipe(id: String) async throws -> Recipe {
+      try decodeFixture(from: recipeJSON)
+    }
+    func preflightRecipe(_ recipe: Recipe, allowPartial: Bool) async throws
+      -> RecipeExecutionPreflight
+    {
+      try decodeFixture(from: recipePreflightJSON)
+    }
+    func executeRecipe(_ recipe: Recipe, allowPartial: Bool) async throws -> RecipeExecutionResult {
+      try decodeFixture(from: recipeExecutionJSON)
+    }
+    func generateCartDraft() async throws -> ReplenishmentCreateCartDraftResponse {
+      try decodeFixture(
+        from:
+          #"{"run":\#(cartRunJSON),"draft_id":"99999999-9999-9999-9999-999999999991"}"#)
+    }
+    func getCartRun(id: String) async throws -> ReplenishmentCartRun {
+      try decodeFixture(from: cartRunJSON)
+    }
+    func getSupplierCartDraft(id: String) async throws -> SupplierCartDraft {
+      try decodeFixture(from: cartDraftJSON)
+    }
+    func submitSupplierCartDraft(id: String) async throws -> SupplierOrder {
+      try decodeFixture(from: supplierOrderJSON)
+    }
+    func receiveSupplierOrder(id: String, productID: String, locationID: String) async throws
+      -> SupplierOrder
+    {
+      try decodeFixture(from: deliveredSupplierOrderJSON)
+    }
 
     private var tokenPairJSON: String {
       """
@@ -450,6 +486,172 @@ import UIKit
         "deleted_at": null
       }
       """
+    }
+
+    private var recipeSummaryJSON: String {
+      """
+      {
+        "id": "99999999-9999-9999-9999-999999999901",
+        "name": "Smoke Recipe Rice Bowl",
+        "description": "Fixture recipe with enough stock to cook.",
+        "serving_count": "2",
+        "source": "manual",
+        "visibility": "household",
+        "tags": ["smoke", "cook"],
+        "latest_version_id": "99999999-9999-9999-9999-999999999902",
+        "created_by": null,
+        "updated_by": null,
+        "created_at": "2026-04-22T12:00:00Z",
+        "updated_at": "2026-04-22T12:00:00Z"
+      }
+      """
+    }
+
+    private var recipeJSON: String {
+      """
+      {
+        "id": "99999999-9999-9999-9999-999999999901",
+        "name": "Smoke Recipe Rice Bowl",
+        "description": "Fixture recipe with enough stock to cook.",
+        "serving_count": "2",
+        "source": "manual",
+        "visibility": "household",
+        "tags": ["smoke", "cook"],
+        "created_by": null,
+        "updated_by": null,
+        "created_at": "2026-04-22T12:00:00Z",
+        "updated_at": "2026-04-22T12:00:00Z",
+        "validation": {"valid": true, "errors": [], "warnings": []},
+        "version": {
+          "id": "99999999-9999-9999-9999-999999999902",
+          "recipe_id": "99999999-9999-9999-9999-999999999901",
+          "version_number": 1,
+          "serving_count": "2",
+          "source_text": "Cook rice until fluffy.",
+          "ingredients": [{
+            "id": "99999999-9999-9999-9999-999999999903",
+            "ingredient_id": null,
+            "product_id": "\(productID)",
+            "display_name": "Smoke Oats",
+            "quantity": {"amount": "50", "unit": "g", "family": "mass", "range": null, "to_taste": false, "preparation_note": null},
+            "preparation": null,
+            "optional": false,
+            "group_label": null,
+            "substitution_hints": []
+          }],
+          "steps": [{"id":"99999999-9999-9999-9999-999999999904","instruction":"Cook and serve.","timers":[],"equipment":["pot"],"ingredient_refs":["Smoke Oats"]}],
+          "outputs": [],
+          "provenance": [{"id":"99999999-9999-9999-9999-999999999905","source_type":"user_authored","imported_url":null,"imported_file_name":null,"imported_text":null,"prompt_version":null,"model":null,"user_edits":["fixture"],"parser_confidence":"1"}],
+          "created_by": null,
+          "created_at": "2026-04-22T12:00:00Z"
+        }
+      }
+      """
+    }
+
+    private var recipePreflightJSON: String {
+      """
+      {
+        "recipe_id": "99999999-9999-9999-9999-999999999901",
+        "recipe_version_id": "99999999-9999-9999-9999-999999999902",
+        "recipe_name": "Smoke Recipe Rice Bowl",
+        "serving_scale": "1",
+        "use_expiring_first": true,
+        "ingredients": [{
+          "line_id": "99999999-9999-9999-9999-999999999903",
+          "display_name": "Smoke Oats",
+          "ingredient_id": null,
+          "mapping_id": null,
+          "product": \(productJSON),
+          "requested_quantity": "50",
+          "requested_unit": "g",
+          "inventory_quantity": "50",
+          "inventory_unit": "g",
+          "optional": false,
+          "substitution_of": null,
+          "conversion_assumption": null,
+          "matched_batches": [{"batch_id":"\(activeBatchID)","location_id":"\(locationID)","quantity":"50","unit":"g","quantity_in_requested_unit":"50","requested_unit":"g","expires_on":"2026-05-01","depleted":false}],
+          "missing_quantity": null
+        }],
+        "missing_ingredients": [],
+        "outputs": [],
+        "warnings": [],
+        "can_execute": true
+      }
+      """
+    }
+
+    private var recipeExecutionJSON: String {
+      """
+      {
+        "execution_id": "99999999-9999-9999-9999-999999999906",
+        "consume_request_id": "99999999-9999-9999-9999-999999999907",
+        "idempotent_replay": false,
+        "plan": \(recipePreflightJSON),
+        "output_batches": []
+      }
+      """
+    }
+
+    private var cartRunJSON: String {
+      """
+      {
+        "id": "99999999-9999-9999-9999-999999999990",
+        "draft_id": "99999999-9999-9999-9999-999999999991",
+        "order_id": null,
+        "supplier_id": "mock",
+        "status": "draft_created",
+        "source": "smoke_fixture",
+        "guardrail_decision": "needs_approval",
+        "guardrail_snapshot": {"reason":"manual approval required"},
+        "recommendations": [{"supplier_item_id":"mock-beans-4pk","quantity":"1","unit":"piece"}],
+        "suppressions": [],
+        "ai_explanation": {"summary":"fixture"},
+        "created_at": "2026-04-22T12:00:00Z",
+        "updated_at": "2026-04-22T12:00:00Z"
+      }
+      """
+    }
+
+    private var cartDraftJSON: String {
+      """
+      {
+        "id": "99999999-9999-9999-9999-999999999991",
+        "account_id": null,
+        "supplier_id": "mock",
+        "status": "ready",
+        "source": "smoke_fixture",
+        "intervention_state": "none",
+        "review_notes": "Fixture cart requires approval.",
+        "lines": [{"id":"99999999-9999-9999-9999-999999999992","product_id":"\(productID)","supplier_item_id":"mock-beans-4pk","quantity":"1","unit":"piece","note":"Fixture cart line","sort_order":0}],
+        "created_at": "2026-04-22T12:00:00Z",
+        "updated_at": "2026-04-22T12:00:00Z"
+      }
+      """
+    }
+
+    private var supplierOrderJSON: String {
+      """
+      {
+        "id": "99999999-9999-9999-9999-999999999993",
+        "draft_id": "99999999-9999-9999-9999-999999999991",
+        "account_id": null,
+        "supplier_id": "mock",
+        "supplier_order_id": "mock-order",
+        "status": "submitted",
+        "review_url": null,
+        "redacted_summary": {"status":"submitted"},
+        "submitted_at": "2026-04-22T12:00:00Z",
+        "delivered_at": null,
+        "created_at": "2026-04-22T12:00:00Z",
+        "updated_at": "2026-04-22T12:00:00Z"
+      }
+      """
+    }
+
+    private var deliveredSupplierOrderJSON: String {
+      supplierOrderJSON.replacingOccurrences(
+        of: #""status": "submitted""#, with: #""status": "delivered""#)
     }
 
     private var activeBatchJSON: String {

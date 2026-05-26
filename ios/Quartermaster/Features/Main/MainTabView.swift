@@ -2,7 +2,7 @@ import SwiftUI
 
 struct MainTabView: View {
   @Environment(AppState.self) private var appState
-  enum Screen: Hashable { case inventory, reminders, scan, settings }
+  enum Screen: Hashable { case inventory, reminders, cook, scan, settings }
 
   @State private var selection: Screen = .inventory
 
@@ -17,6 +17,11 @@ struct MainTabView: View {
         NavigationStack { ReminderInboxView() }
       }
       .accessibilityIdentifier("tab.reminders")
+
+      Tab("Cook", systemImage: "fork.knife", value: Screen.cook) {
+        NavigationStack { CookView() }
+      }
+      .accessibilityIdentifier("tab.cook")
 
       Tab("Scan", systemImage: "barcode.viewfinder", value: Screen.scan) {
         NavigationStack { ScanScreen() }
