@@ -22,8 +22,9 @@ use qm_suppliers::{
     InterventionState, MockSupplierIntegration, OrderStatus, SupplierCapability,
     SupplierDescriptor, SupplierId, SupplierIntegration,
 };
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -33,6 +34,175 @@ use crate::{
     error::{ApiError, ApiResult},
     AppState,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SupplierSubmitMode {
+    ManualApproval,
+    TrustedAuto,
+}
+
+pub async fn submit_cart_draft_internal(
+    db: &qm_db::Database,
+    household_id: Uuid,
+    actor_id: Uuid,
+    id: Uuid,
+    mode: SupplierSubmitMode,
+) -> ApiResult<SupplierOrderRow> {
+    let (draft, lines) = suppliers::find_cart_draft(db, household_id, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    validate_replenishment_submission(db, household_id, &draft, mode).await?;
+    let submission = mock_supplier()
+        .submit_order(CartDraft {
+            id: draft.id,
+            supplier_id: SupplierId::new(draft.supplier_id.clone()),
+            lines: lines
+                .iter()
+                .map(|line| CartLine {
+                    supplier_item_id: line.supplier_item_id.clone(),
+                    product_id: line.product_id,
+                    quantity: line.quantity.clone(),
+                    unit: line.unit.clone(),
+                    note: line.note.clone(),
+                })
+                .collect(),
+            status: CartStatus::Ready,
+            intervention: intervention_state(&draft.intervention_state)?,
+        })
+        .await
+        .map_err(supplier_error)?;
+    let summary = json_string(&submission.raw_summary)?;
+    let order = suppliers::create_order(
+        db,
+        household_id,
+        actor_id,
+        &NewOrder {
+            draft_id: Some(draft.id),
+            account_id: draft.account_id,
+            supplier_id: &draft.supplier_id,
+            supplier_order_id: Some(&submission.supplier_order_id),
+            status: order_status_str(submission.status),
+            review_url: submission.review_url.as_deref(),
+            redacted_summary_json: &summary,
+            submitted_at: Some(&qm_db::now_utc_rfc3339()),
+        },
+    )
+    .await?;
+    if draft.source == qm_db::replenishment::CART_SOURCE_REPLENISHMENT {
+        let snapshot = json_string(&json!({
+            "decision": qm_db::replenishment::GUARDRAIL_ALLOWED,
+            "mode": match mode {
+                SupplierSubmitMode::ManualApproval => "manual_approval",
+                SupplierSubmitMode::TrustedAuto => "trusted_auto",
+            },
+            "submitted_at": qm_db::now_utc_rfc3339()
+        }))?;
+        let _ = qm_db::replenishment::mark_cart_run_submitted(
+            db,
+            household_id,
+            draft.id,
+            order.id,
+            &snapshot,
+        )
+        .await?;
+    }
+    Ok(order)
+}
+
+async fn validate_replenishment_submission(
+    db: &qm_db::Database,
+    household_id: Uuid,
+    draft: &SupplierCartDraftRow,
+    mode: SupplierSubmitMode,
+) -> ApiResult<()> {
+    if draft.source != qm_db::replenishment::CART_SOURCE_REPLENISHMENT {
+        if mode == SupplierSubmitMode::TrustedAuto {
+            return Err(ApiError::BadRequest(
+                "trusted auto-submit is only available for replenishment drafts".into(),
+            ));
+        }
+        return Ok(());
+    }
+
+    let run = qm_db::replenishment::find_cart_run_for_draft(db, household_id, draft.id)
+        .await?
+        .ok_or_else(|| {
+            ApiError::BadRequest("replenishment draft is missing its audit run".into())
+        })?;
+    let settings = qm_db::replenishment::get_or_create_settings(db, household_id).await?;
+    let policy =
+        qm_db::replenishment::find_supplier_policy(db, household_id, &draft.supplier_id).await?;
+    let recommendations = parse_json(&run.recommendations_json)?;
+    let mut reasons = Vec::new();
+    if settings.global_disabled {
+        reasons.push("global_disabled");
+    }
+    if policy.as_ref().is_some_and(|policy| policy.disabled) {
+        reasons.push("supplier_disabled");
+    }
+    if let Some(cap) = policy
+        .as_ref()
+        .and_then(|policy| policy.spend_cap_amount.as_deref())
+        .or(settings.default_spend_cap_amount.as_deref())
+    {
+        if let Some(total) = recommendation_total(&recommendations)? {
+            if total > parse_decimal(cap, "spend cap")? {
+                reasons.push("budget_exceeded");
+            }
+        }
+    }
+    if mode == SupplierSubmitMode::TrustedAuto {
+        if draft.status != qm_db::suppliers::CART_STATUS_READY {
+            reasons.push("draft_not_ready");
+        }
+        if draft.intervention_state != "none" {
+            reasons.push("human_intervention_required");
+        }
+        if !recommendations_all_trusted(&recommendations) {
+            reasons.push("rules_not_trusted");
+        }
+        if recommendation_total(&recommendations)?.is_none() {
+            reasons.push("unknown_price");
+        }
+    }
+    if reasons.is_empty() {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest(format!(
+            "supplier order submission blocked by replenishment guardrails: {}",
+            reasons.join(", ")
+        )))
+    }
+}
+
+fn recommendation_total(value: &Value) -> ApiResult<Option<Decimal>> {
+    let Some(items) = value.as_array() else {
+        return Ok(Some(Decimal::ZERO));
+    };
+    let mut total = Decimal::ZERO;
+    for item in items {
+        let Some(amount) = item.get("estimated_price_amount").and_then(Value::as_str) else {
+            return Ok(None);
+        };
+        total += parse_decimal(amount, "estimated_price_amount")?;
+    }
+    Ok(Some(total))
+}
+
+fn recommendations_all_trusted(value: &Value) -> bool {
+    value.as_array().is_some_and(|items| {
+        !items.is_empty()
+            && items.iter().all(|item| {
+                item.get("automation_level").and_then(Value::as_str)
+                    == Some(qm_db::replenishment::AUTOMATION_TRUSTED_AUTO_SUBMIT)
+            })
+    })
+}
+
+fn parse_decimal(value: &str, field: &str) -> ApiResult<Decimal> {
+    Decimal::from_str(value.trim())
+        .map_err(|_| ApiError::BadRequest(format!("{field} must be a decimal number")))
+}
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -890,43 +1060,12 @@ async fn submit_cart_draft(
 ) -> ApiResult<(StatusCode, Json<SupplierOrderDto>)> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
     auth::require_read_write(&current)?;
-    let (draft, lines) = suppliers::find_cart_draft(&state.db, household_id, id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    let submission = mock_supplier()
-        .submit_order(CartDraft {
-            id: draft.id,
-            supplier_id: SupplierId::new(draft.supplier_id.clone()),
-            lines: lines
-                .iter()
-                .map(|line| CartLine {
-                    supplier_item_id: line.supplier_item_id.clone(),
-                    product_id: line.product_id,
-                    quantity: line.quantity.clone(),
-                    unit: line.unit.clone(),
-                    note: line.note.clone(),
-                })
-                .collect(),
-            status: CartStatus::Ready,
-            intervention: intervention_state(&draft.intervention_state)?,
-        })
-        .await
-        .map_err(supplier_error)?;
-    let summary = json_string(&submission.raw_summary)?;
-    let order = suppliers::create_order(
+    let order = submit_cart_draft_internal(
         &state.db,
         household_id,
         current.user_id,
-        &NewOrder {
-            draft_id: Some(draft.id),
-            account_id: draft.account_id,
-            supplier_id: &draft.supplier_id,
-            supplier_order_id: Some(&submission.supplier_order_id),
-            status: order_status_str(submission.status),
-            review_url: submission.review_url.as_deref(),
-            redacted_summary_json: &summary,
-            submitted_at: Some(&qm_db::now_utc_rfc3339()),
-        },
+        id,
+        SupplierSubmitMode::ManualApproval,
     )
     .await?;
     Ok((StatusCode::CREATED, Json(order_dto(order)?)))

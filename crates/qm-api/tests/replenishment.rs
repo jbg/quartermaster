@@ -236,3 +236,86 @@ async fn replenishment_global_disable_blocks_cart_drafts() {
         "{generated}"
     );
 }
+
+#[tokio::test]
+async fn replenishment_trusted_submit_is_queued_and_rechecked() {
+    let app = TestApp::start(ApiConfig::default()).await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let me = app.me(&alice).await;
+    let household_id = Uuid::parse_str(me_current_household_id(&me).unwrap()).unwrap();
+    let product = qm_db::products::create_manual(
+        &app.db,
+        household_id,
+        "Beans",
+        None,
+        "count",
+        Some("piece"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let (status, _) = app
+        .send(
+            Method::POST,
+            "/api/v1/replenishment/rules",
+            Some(json!({
+                "product_id": product.id,
+                "minimum_quantity": "1",
+                "target_quantity": "4",
+                "unit": "piece",
+                "preferred_supplier_id": "mock",
+                "preferred_supplier_item_id": "mock-beans-4pk",
+                "preferred_package_quantity": "4",
+                "preferred_package_unit": "piece",
+                "automation_level": "trusted_auto_submit"
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, generated) = app
+        .send(
+            Method::POST,
+            "/api/v1/replenishment/cart-drafts",
+            Some(json!({ "supplier_id": "mock", "submit_trusted": true })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(generated["run"]["guardrail_decision"], "allowed");
+    let draft_id = generated["draft_id"].as_str().unwrap();
+    assert!(qm_db::jobs::active_job_exists(
+        &app.db,
+        qm_db::jobs::KIND_SUPPLIER_CART_SUBMIT,
+        draft_id
+    )
+    .await
+    .unwrap());
+
+    let (status, _) = app
+        .send(
+            Method::PUT,
+            "/api/v1/replenishment/suppliers/mock/policy",
+            Some(json!({
+                "disabled": true
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = app
+        .send(
+            Method::POST,
+            &format!("/api/v1/suppliers/cart-drafts/{draft_id}/submit"),
+            None,
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "bad_request");
+}

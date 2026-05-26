@@ -1004,6 +1004,26 @@ async fn generate_cart(
         .await?;
         draft_id = Some(draft.id);
         run_status = replenishment::CART_RUN_STATUS_DRAFT_CREATED;
+        if req.submit_trusted && guardrail_decision == replenishment::GUARDRAIL_ALLOWED {
+            let dedupe_key = draft.id.to_string();
+            let run_at = qm_db::now_utc_rfc3339();
+            let payload_json = json_string(&json!({
+                "household_id": household_id,
+                "draft_id": draft.id,
+                "requested_by": actor_id
+            }))?;
+            let _ = qm_db::jobs::enqueue_unique(
+                &state.db,
+                &qm_db::jobs::NewJob {
+                    kind: qm_db::jobs::KIND_SUPPLIER_CART_SUBMIT,
+                    dedupe_key: &dedupe_key,
+                    payload_json: &payload_json,
+                    run_at: &run_at,
+                    max_attempts: 3,
+                },
+            )
+            .await?;
+        }
     }
 
     let run = replenishment::create_cart_run(

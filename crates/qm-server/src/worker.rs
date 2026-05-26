@@ -24,6 +24,13 @@ struct HouseholdJobPayload {
     household_id: Uuid,
 }
 
+#[derive(Debug, Deserialize)]
+struct SupplierCartSubmitPayload {
+    household_id: Uuid,
+    draft_id: Uuid,
+    requested_by: Uuid,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum JobOutcome {
     Done,
@@ -133,10 +140,7 @@ async fn run_job(
             Ok(JobOutcome::Done)
         }
         jobs::KIND_HOUSEHOLD_PURGE => run_household_purge(db, job).await,
-        jobs::KIND_SUPPLIER_CART_SUBMIT => {
-            debug!(job_id = %job.id, "reserved supplier cart submit job kind has no handler yet");
-            Ok(JobOutcome::Done)
-        }
+        jobs::KIND_SUPPLIER_CART_SUBMIT => run_supplier_cart_submit(db, job).await,
         jobs::KIND_SUPPLIER_ORDER_STATUS_SYNC => {
             debug!(job_id = %job.id, "reserved supplier order status sync job kind has no handler yet");
             Ok(JobOutcome::Done)
@@ -180,6 +184,21 @@ async fn run_household_purge(db: &Database, job: &jobs::JobRow) -> anyhow::Resul
         serde_json::from_str(&job.payload_json).context("parsing household purge job payload")?;
     qm_db::household_exports::purge_household(db, payload.household_id).await?;
     counter!("qm_household_purges_total").increment(1);
+    Ok(JobOutcome::Done)
+}
+
+async fn run_supplier_cart_submit(db: &Database, job: &jobs::JobRow) -> anyhow::Result<JobOutcome> {
+    let payload: SupplierCartSubmitPayload = serde_json::from_str(&job.payload_json)
+        .context("parsing supplier cart submit job payload")?;
+    qm_api::routes::suppliers::submit_cart_draft_internal(
+        db,
+        payload.household_id,
+        payload.requested_by,
+        payload.draft_id,
+        qm_api::routes::suppliers::SupplierSubmitMode::TrustedAuto,
+    )
+    .await?;
+    counter!("qm_supplier_cart_submits_total").increment(1);
     Ok(JobOutcome::Done)
 }
 
