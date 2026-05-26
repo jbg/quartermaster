@@ -60,6 +60,47 @@
     return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
   }
 
+  function labelFromValue(value: string): string {
+    return value.replaceAll('_', ' ');
+  }
+
+  function cartDecisionLabel(decision: ReplenishmentCartRunDto['guardrail_decision']): string {
+    switch (decision) {
+      case 'allowed':
+        return 'Ready to submit';
+      case 'needs_approval':
+        return 'Needs your approval';
+      case 'blocked':
+        return 'Blocked';
+    }
+  }
+
+  function cartRunStatusLabel(status: ReplenishmentCartRunDto['status']): string {
+    switch (status) {
+      case 'draft_created':
+        return 'Suggested cart created';
+      case 'blocked':
+        return 'No cart created';
+      case 'submitted':
+        return 'Order submitted';
+    }
+  }
+
+  function cartDraftStatusLabel(status: SupplierCartDraftDto['status']): string {
+    switch (status) {
+      case 'draft':
+        return 'Draft';
+      case 'needs_review':
+        return 'Needs review';
+      case 'ready':
+        return 'Ready for review';
+      case 'submitted':
+        return 'Submitted';
+      case 'cancelled':
+        return 'Cancelled';
+    }
+  }
+
   async function loadInitial() {
     if (!session) {
       return;
@@ -83,7 +124,7 @@
       }
     } catch (err) {
       authenticated = false;
-      error = err instanceof Error ? err.message : 'Cart review could not be loaded.';
+      error = err instanceof Error ? err.message : 'Shopping cart could not be loaded.';
     } finally {
       loading = false;
     }
@@ -156,7 +197,7 @@
                 quantity: '1000',
                 unit: 'g',
                 expires_on: receiveExpiresOn.trim() || null,
-                note: 'received from web cart review'
+                note: 'received from web shopping cart'
               }
             ]
           })
@@ -189,12 +230,12 @@
 </script>
 
 <svelte:head>
-  <title>Cart Review · Quartermaster</title>
+  <title>Shopping · Quartermaster</title>
 </svelte:head>
 
 <AppFrame
-  title="Automation"
-  eyebrow="Supplier review"
+  title="Shopping"
+  eyebrow="Ordering"
   {authenticated}
   active="automation"
   {activeHousehold}
@@ -203,7 +244,7 @@
   onlogout={logout}
 >
   {#if loading}
-    <section class="panel empty-state"><p class="muted">Loading cart review...</p></section>
+    <section class="panel empty-state"><p class="muted">Loading shopping cart...</p></section>
   {:else if !authenticated}
     <section class="panel empty-state">
       <h2>Sign in required</h2>
@@ -212,11 +253,11 @@
     </section>
   {:else}
     <section class="cart-grid" data-testid="cart-review-page">
-      <section class="panel">
+      <section class="panel cart-review-panel">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Guardrails</p>
-            <h2>Cart run</h2>
+            <p class="eyebrow">Suggestions</p>
+            <h2>Suggested cart</h2>
           </div>
           <div class="action-row">
             <a class="secondary-action small" href={recipesHref}>Recipes</a>
@@ -227,16 +268,16 @@
               disabled={busy}
               data-testid="cart-generate"
             >
-              {busy ? 'Generating...' : 'Generate mock cart'}
+              {busy ? 'Building...' : 'Build cart'}
             </button>
           </div>
         </div>
         {#if run}
           <div class="guardrail" data-testid="cart-guardrail-banner">
-            <strong>{run.guardrail_decision.replaceAll('_', ' ')}</strong>
-            <span>{run.status.replaceAll('_', ' ')}</span>
+            <strong>{cartDecisionLabel(run.guardrail_decision)}</strong>
+            <span>{cartRunStatusLabel(run.status)}</span>
           </div>
-          <h3>Recommendations</h3>
+          <h3>Suggested items</h3>
           <div class="review-list">
             {#each recommendations as recommendation, index}
               <article class="review-row" data-testid={`cart-recommendation-row-${index}`}>
@@ -249,7 +290,7 @@
               </article>
             {/each}
           </div>
-          <h3>Suppressions</h3>
+          <h3>Skipped items</h3>
           {#if suppressions.length === 0}
             <p class="muted">None</p>
           {:else}
@@ -260,19 +301,19 @@
             {/each}
           {/if}
           {#if run.ai_explanation}
-            <h3>AI explanation</h3>
+            <h3>Why these items</h3>
             <pre>{jsonPreview(run.ai_explanation)}</pre>
           {/if}
         {:else}
-          <p class="muted">Generate a draft or open one from a smoke fixture query parameter.</p>
+          <p class="muted">Build a suggested cart from current stock and replenishment rules.</p>
         {/if}
       </section>
 
-      <section class="panel">
+      <section class="panel cart-review-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Supplier</p>
-            <h2>Draft review</h2>
+            <h2>Cart to approve</h2>
           </div>
           <button
             class="primary-action small"
@@ -286,10 +327,10 @@
         </div>
         {#if draft}
           <p>
-            {draft.supplier_id} · {draft.status.replaceAll('_', ' ')} · {draft.intervention_state.replaceAll(
-              '_',
-              ' '
-            )}
+            {draft.supplier_id} · {cartDraftStatusLabel(draft.status)}
+            {#if draft.intervention_state !== 'none'}
+              · {labelFromValue(draft.intervention_state)}
+            {/if}
           </p>
           <div class="review-list">
             {#each draft.lines as line}
@@ -301,7 +342,7 @@
             {/each}
           </div>
         {:else}
-          <p class="muted">No draft is ready for review.</p>
+          <p class="muted">No cart is ready for review.</p>
         {/if}
 
         {#if order}
@@ -349,6 +390,11 @@
     display: grid;
     gap: 1rem;
     grid-template-columns: minmax(0, 1fr) minmax(320px, 0.85fr);
+    margin-top: 22px;
+  }
+
+  .cart-review-panel {
+    padding: var(--qm-space-5);
   }
 
   .action-row {

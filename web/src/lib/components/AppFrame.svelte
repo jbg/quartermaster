@@ -47,7 +47,7 @@
     { key: 'inventory', label: 'Inventory', href: appPath('/', page.url) },
     { key: 'products', label: 'Products', href: appPath('/products', page.url) },
     { key: 'recipes', label: 'Recipes', href: appPath('/recipes', page.url) },
-    { key: 'automation', label: 'Automation', href: appPath('/suppliers/review', page.url) },
+    { key: 'automation', label: 'Shopping', href: appPath('/suppliers/review', page.url) },
     { key: 'reminders', label: 'Reminders', href: appPath('/reminders', page.url) },
     { key: 'settings', label: 'Settings', href: appPath('/settings', page.url) }
   ]);
@@ -63,7 +63,7 @@
       </div>
     </div>
     {#if authenticated}
-      <div class="app-nav-region">
+      <div class="account-actions">
         {#if activeHousehold}
           <div class="household-switcher">
             <span class="eyebrow">Household</span>
@@ -85,19 +85,19 @@
         {#if onimportbackup}
           <button class="ghost-button" type="button" onclick={onimportbackup}>Import backup</button>
         {/if}
-        <nav class="app-nav" aria-label="Primary">
-          {#each navItems as item}
-            <a
-              href={item.href}
-              class:active={active === item.key}
-              aria-current={active === item.key ? 'page' : undefined}>{item.label}</a
-            >
-          {/each}
-        </nav>
         {#if onlogout}
           <button class="ghost-button" type="button" onclick={onlogout}>Log out</button>
         {/if}
       </div>
+      <nav class="app-nav" aria-label="Primary">
+        {#each navItems as item}
+          <a
+            href={item.href}
+            class:active={active === item.key}
+            aria-current={active === item.key ? 'page' : undefined}>{item.label}</a
+          >
+        {/each}
+      </nav>
     {/if}
   </header>
 

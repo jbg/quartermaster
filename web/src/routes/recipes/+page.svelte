@@ -148,14 +148,14 @@
           <h2>Recipe library</h2>
         </div>
         <div class="action-row">
-          <a class="secondary-action small" href={cartReviewHref}>Cart review</a>
-          <a class="secondary-action small" href={aiTasksHref}>AI tasks</a>
+          <a class="secondary-action small" href={cartReviewHref}>Review shopping cart</a>
+          <a class="secondary-action small" href={aiTasksHref}>AI activity</a>
           <button
             class="primary-action small"
             type="button"
             onclick={() => (importOpen = !importOpen)}
           >
-            Import text
+            Import recipe text
           </button>
         </div>
       </div>

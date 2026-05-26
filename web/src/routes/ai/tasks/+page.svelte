@@ -28,6 +28,10 @@
   const inventoryHref = $derived(appPath('/', page.url));
   const cartReviewHref = $derived(appPath('/suppliers/review', page.url));
 
+  function labelFromValue(value: string): string {
+    return value.replaceAll('_', ' ');
+  }
+
   onMount(() => {
     if (!browser) {
       return;
@@ -52,7 +56,7 @@
       tasks = unwrapGenerated(await aiTaskList({ query: { limit: 50 } })).items;
     } catch (err) {
       authenticated = false;
-      error = err instanceof Error ? err.message : 'AI tasks could not be loaded.';
+      error = err instanceof Error ? err.message : 'AI activity could not be loaded.';
     } finally {
       loading = false;
     }
@@ -89,12 +93,12 @@
 </script>
 
 <svelte:head>
-  <title>AI Tasks · Quartermaster</title>
+  <title>AI Activity · Quartermaster</title>
 </svelte:head>
 
 <AppFrame
-  title="AI Tasks"
-  eyebrow="Automation"
+  title="AI Activity"
+  eyebrow="Shopping"
   {authenticated}
   active="automation"
   {activeHousehold}
@@ -103,7 +107,7 @@
   onlogout={logout}
 >
   {#if loading}
-    <section class="panel empty-state"><p class="muted">Loading AI tasks...</p></section>
+    <section class="panel empty-state"><p class="muted">Loading AI activity...</p></section>
   {:else if !authenticated}
     <section class="panel empty-state">
       <h2>Sign in required</h2>
@@ -111,25 +115,27 @@
       {#if error}<p class="error-text">{error}</p>{/if}
     </section>
   {:else}
-    <section class="panel">
+    <section class="panel ai-activity-panel">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">Debugging</p>
-          <h2>Task audit</h2>
+          <p class="eyebrow">History</p>
+          <h2>Recent suggestions</h2>
         </div>
-        <a class="secondary-action small" href={cartReviewHref}>Cart review</a>
+        <a class="secondary-action small" href={cartReviewHref}>Review shopping cart</a>
       </div>
       {#if tasks.length === 0}
-        <p class="muted">No AI tasks recorded for this household.</p>
+        <p class="muted">No AI suggestions have been recorded for this household.</p>
       {:else}
         <div class="task-list">
           {#each tasks as task}
             <article class="task-row" data-testid={`ai-task-row-${task.id}`}>
               <div class="section-heading">
                 <div>
-                  <h3>{task.task_type.replaceAll('_', ' ')}</h3>
+                  <h3>{labelFromValue(task.task_type)}</h3>
                   <p class="muted">
-                    {task.provider} · {task.validation_status} · {task.user_state}
+                    {task.provider} · {labelFromValue(task.validation_status)} · {labelFromValue(
+                      task.user_state
+                    )}
                   </p>
                 </div>
                 <select
@@ -161,6 +167,11 @@
   .task-list {
     display: grid;
     gap: 0.75rem;
+  }
+
+  .ai-activity-panel {
+    margin-top: 22px;
+    padding: var(--qm-space-5);
   }
 
   .task-row {
