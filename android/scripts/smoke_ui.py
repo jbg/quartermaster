@@ -235,6 +235,14 @@ def find_clickables_with_tag_prefix(prefix: str) -> list[UiNode]:
     return list(deduped.values())
 
 
+def any_node_with_tag_prefix(prefix: str) -> bool:
+    for node in dump_nodes():
+        tag = node.resource_id.split("/")[-1]
+        if tag.startswith(prefix):
+            return True
+    return False
+
+
 def find_clickable_with_text(text: str, *, lowest: bool = False) -> UiNode:
     matches = find_clickables_with_text(text)
     if not matches:
@@ -654,6 +662,72 @@ def exercise_inventory(fixture: dict | None) -> None:
     wait_for_tag(f"smoke-batch-consume-{lifecycle_batch_id}", timeout=15.0)
 
 
+def open_cook_screen() -> None:
+    if find_clickables_with_tag("smoke-cook-screen"):
+        return
+    if not find_clickables_with_tag("smoke-cook-entry-inventory"):
+        wait_for_tag("smoke-inventory-screen")
+    tap_tag("smoke-cook-entry-inventory")
+    wait_for_tag("smoke-cook-screen", timeout=15.0)
+
+
+def exercise_recipes(fixture: dict | None) -> None:
+    if fixture is None:
+        raise RuntimeError("the recipes smoke flow requires --maintenance-token fixture data")
+
+    open_cook_screen()
+    executable = next(recipe for recipe in fixture["recipes"] if not recipe["missing_required"])
+    missing = next(recipe for recipe in fixture["recipes"] if recipe["missing_required"])
+
+    executable_tag = f"recipe.row.{executable['recipe_id']}"
+    wait_for_tag_with_scroll(executable_tag)
+    tap_tag(executable_tag)
+    wait_for_text(executable["name"], timeout=15.0)
+    tap_text("Review")
+    wait_for_condition(
+        "recipe preflight rows",
+        lambda: any_node_with_tag_prefix("recipe.preflight.row."),
+        timeout=15.0,
+    )
+    wait_for_tag_with_scroll("recipe.preflight.execute")
+    tap_tag("recipe.preflight.execute")
+    wait_for_text("Cooked", timeout=15.0)
+
+    missing_tag = f"recipe.row.{missing['recipe_id']}"
+    wait_for_tag_with_scroll(missing_tag)
+    tap_tag(missing_tag)
+    wait_for_text(missing["name"], timeout=15.0)
+    tap_text("Review")
+    wait_for_condition(
+        "missing ingredient rows",
+        lambda: any_node_with_tag_prefix("recipe.missing.row."),
+        timeout=15.0,
+    )
+    wait_for_text_with_scroll("Partial off")
+    tap_text("Partial off")
+    wait_for_text("Partial on")
+
+
+def exercise_carts(fixture: dict | None) -> None:
+    if fixture is None:
+        raise RuntimeError("the carts smoke flow requires --maintenance-token fixture data")
+
+    open_cook_screen()
+    tap_text("Carts")
+    wait_for_tag("cart.generate")
+    tap_tag("cart.generate")
+    wait_for_condition(
+        "cart rows",
+        lambda: any_node_with_tag_prefix("cart.row."),
+        timeout=20.0,
+    )
+    tap_tag("cart.submit")
+    wait_for_text("Order submitted", timeout=20.0)
+    wait_for_tag("cart.receive")
+    tap_tag("cart.receive")
+    wait_for_text("Order delivered", timeout=20.0)
+
+
 def exercise_invite_session(
     fixture: dict | None,
     device_server_url: str,
@@ -724,6 +798,8 @@ def main() -> int:
             "inventory",
             "products",
             "locations",
+            "recipes",
+            "carts",
             "invite-session",
         ),
         default="all",
@@ -750,6 +826,10 @@ def main() -> int:
         exercise_reminders(fixture)
     if args.flow == "inventory" or (args.flow == "all" and fixture is not None):
         exercise_inventory(fixture)
+    if args.flow in ("all", "recipes"):
+        exercise_recipes(fixture)
+    if args.flow in ("all", "carts"):
+        exercise_carts(fixture)
     if args.flow in ("all", "products"):
         exercise_products(fixture)
     if args.flow == "locations" or (args.flow == "all" and fixture is not None):
