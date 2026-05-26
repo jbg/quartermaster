@@ -32,6 +32,7 @@ pub mod products;
 pub mod quotas;
 pub mod recipes;
 pub mod reminders;
+pub mod replenishment;
 pub mod stock;
 pub mod stock_events;
 pub mod storage_vessels;
