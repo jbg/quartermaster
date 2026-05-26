@@ -14,6 +14,9 @@ let server: ChildProcessWithoutNullStreams | null = null;
 let tempDir = '';
 let fixture: SmokeFixture;
 
+test.describe.configure({ mode: 'serial' });
+test.setTimeout(150_000);
+
 interface SmokeFixture {
   username: string;
   email: string;
@@ -26,6 +29,18 @@ interface SmokeFixture {
     product_name: string;
     location_name: string;
   }>;
+  recipes: Array<{
+    recipe_id: string;
+    recipe_version_id: string;
+    name: string;
+    missing_required: boolean;
+  }>;
+  cart: {
+    cart_run_id: string;
+    draft_id: string;
+    supplier_id: string;
+    supplier_item_id: string;
+  };
 }
 
 test.beforeAll(async () => {
@@ -272,6 +287,49 @@ test('supports inventory review reminders and stock cleanup actions', async ({ p
   await expect(page.getByText('Active')).toBeVisible();
 });
 
+test('supports phase 8 recipe execution and supplier cart review', async ({ page }) => {
+  fixture = await seedSmokeData();
+  await login(page);
+
+  const executableRecipe = fixture.recipes.find((recipe) => !recipe.missing_required);
+  const missingRecipe = fixture.recipes.find((recipe) => recipe.missing_required);
+  if (!executableRecipe || !missingRecipe) {
+    throw new Error('phase 8 smoke fixture did not include both recipe states');
+  }
+
+  await page.getByRole('link', { name: 'Recipes', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Recipes' })).toBeVisible();
+  await expect(page.getByTestId(`recipe-row-${executableRecipe.recipe_id}`)).toBeVisible();
+  await page.getByTestId(`recipe-row-${executableRecipe.recipe_id}`).click();
+  await page.getByTestId('recipe-preflight-run').click();
+  await expect(page.locator('[data-testid^="recipe-preflight-row-"]').first()).toBeVisible();
+  await page.getByTestId('recipe-execute').click();
+  await expect(page.getByTestId('recipe-execution-result')).toBeVisible();
+
+  await page.goto('/recipes');
+  await page.getByTestId(`recipe-row-${missingRecipe.recipe_id}`).click();
+  await page.getByTestId('recipe-preflight-run').click();
+  await expect(page.locator('[data-testid^="recipe-missing-row-"]').first()).toBeVisible();
+  await expect(page.getByTestId('recipe-execute')).toBeDisabled();
+  await page.getByTestId('recipe-partial-confirm').check();
+  await expect(page.getByTestId('recipe-execute')).toBeEnabled();
+
+  await page.goto(
+    `/suppliers/review?run=${fixture.cart.cart_run_id}&draft=${fixture.cart.draft_id}`
+  );
+  await expect(page.getByTestId('cart-review-page')).toBeVisible();
+  await expect(page.getByTestId('cart-guardrail-banner')).toBeVisible();
+  await expect(page.getByTestId('cart-recommendation-row-0')).toContainText(
+    fixture.cart.supplier_item_id
+  );
+  await expect(page.locator('[data-testid^="cart-draft-line-"]').first()).toBeVisible();
+  await page.getByTestId('cart-submit').click();
+  await expect(page.getByTestId('cart-order-result')).toBeVisible();
+  await page.getByTestId('cart-receive-line-0').fill('2026-06-15');
+  await page.getByTestId('cart-receive-submit').click();
+  await expect(page.getByTestId('cart-order-result')).toContainText('delivered');
+});
+
 test('renders the join browser fallback from the served app', async ({ page }) => {
   await page.goto(`/join?invite=${fixture.invite_code}&server=${encodeURIComponent(serverUrl)}`);
   await expect(page.getByRole('heading', { name: 'Join Quartermaster' })).toBeVisible();
@@ -286,7 +344,7 @@ async function login(page: Page) {
 }
 
 async function waitForHealth() {
-  const deadline = Date.now() + 60_000;
+  const deadline = Date.now() + 180_000;
   while (Date.now() < deadline) {
     try {
       const response = await fetch(`${serverUrl}/healthz`);
