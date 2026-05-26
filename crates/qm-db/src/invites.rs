@@ -3,7 +3,7 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{memberships::InsertOutcome, Backend};
-use crate::{now_utc_rfc3339, Database};
+use crate::{now_utc_rfc3339, sql_for_backend, Database};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct InviteRow {
@@ -76,11 +76,15 @@ pub async fn create(
 ) -> Result<InviteRow, sqlx::Error> {
     let id = Uuid::now_v7();
     let created_at = now_utc_rfc3339();
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        db.backend(),
         "INSERT INTO invite \
          (id, household_id, code, created_by, expires_at, max_uses, use_count, role_granted, created_at, revoked_at) \
          VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)",
-    )
+        "INSERT INTO invite \
+         (id, household_id, code, created_by, expires_at, max_uses, use_count, role_granted, created_at, revoked_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, NULL)",
+    ))
     .bind(id.to_string())
     .bind(household_id.to_string())
     .bind(code)
@@ -110,12 +114,17 @@ pub async fn list_for_household(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<InviteRow>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, household_id, code, created_by, expires_at, max_uses, use_count, role_granted, created_at, revoked_at \
          FROM invite \
          WHERE household_id = ? AND revoked_at IS NULL \
          ORDER BY created_at DESC",
-    )
+        "SELECT id, household_id, code, created_by, expires_at, max_uses, use_count, role_granted, created_at, revoked_at \
+         FROM invite \
+         WHERE household_id = $1 AND revoked_at IS NULL \
+         ORDER BY created_at DESC",
+    ))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -123,10 +132,13 @@ pub async fn list_for_household(
 }
 
 pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<InviteRow>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, household_id, code, created_by, expires_at, max_uses, use_count, role_granted, created_at, revoked_at \
          FROM invite WHERE id = ?",
-    )
+        "SELECT id, household_id, code, created_by, expires_at, max_uses, use_count, role_granted, created_at, revoked_at \
+         FROM invite WHERE id = $1",
+    ))
     .bind(id.to_string())
     .fetch_optional(&db.pool)
     .await?;
@@ -134,10 +146,13 @@ pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<InviteRow>, sq
 }
 
 pub async fn find_by_code(db: &Database, code: &str) -> Result<Option<InviteRow>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, household_id, code, created_by, expires_at, max_uses, use_count, role_granted, created_at, revoked_at \
          FROM invite WHERE code = ?",
-    )
+        "SELECT id, household_id, code, created_by, expires_at, max_uses, use_count, role_granted, created_at, revoked_at \
+         FROM invite WHERE code = $1",
+    ))
     .bind(code)
     .fetch_optional(&db.pool)
     .await?;
@@ -145,10 +160,13 @@ pub async fn find_by_code(db: &Database, code: &str) -> Result<Option<InviteRow>
 }
 
 pub async fn revoke(db: &Database, id: Uuid, household_id: Uuid) -> Result<bool, sqlx::Error> {
-    let res = sqlx::query(
+    let res = sqlx::query(sql_for_backend(
+        db.backend(),
         "UPDATE invite SET revoked_at = ? \
          WHERE id = ? AND household_id = ? AND revoked_at IS NULL",
-    )
+        "UPDATE invite SET revoked_at = $1 \
+         WHERE id = $2 AND household_id = $3 AND revoked_at IS NULL",
+    ))
     .bind(now_utc_rfc3339())
     .bind(id.to_string())
     .bind(household_id.to_string())
@@ -166,20 +184,24 @@ pub async fn status_for_code(db: &Database, code: &str) -> Result<InviteStatus, 
 
 pub async fn consume(db: &Database, id: Uuid) -> Result<bool, sqlx::Error> {
     let mut tx = begin_invite_tx(db).await?;
-    let consumed = consume_in_tx(&mut tx, id).await?;
+    let consumed = consume_in_tx(&mut tx, db.backend(), id).await?;
     tx.commit().await?;
     Ok(consumed)
 }
 
 pub async fn consume_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     id: Uuid,
 ) -> Result<bool, sqlx::Error> {
     let now = now_utc_rfc3339();
-    let res = sqlx::query(
+    let res = sqlx::query(sql_for_backend(
+        backend,
         "UPDATE invite SET use_count = use_count + 1 \
          WHERE id = ? AND revoked_at IS NULL AND expires_at > ? AND use_count < max_uses",
-    )
+        "UPDATE invite SET use_count = use_count + 1 \
+         WHERE id = $1 AND revoked_at IS NULL AND expires_at > $2 AND use_count < max_uses",
+    ))
     .bind(id.to_string())
     .bind(now)
     .execute(&mut **tx)
@@ -219,12 +241,19 @@ pub async fn register_user_with_invite_in_tx(
     password_hash: &str,
     verification: Option<(&str, &str)>,
 ) -> Result<RegisteredInviteUser, RegisterWithInviteError> {
-    let invite = find_active_by_code_in_tx(&mut *tx, code)
+    let invite = find_active_by_code_in_tx(&mut *tx, db.backend(), code)
         .await?
         .ok_or(RegisterWithInviteError::InvalidInvite)?;
     maybe_synchronize_invite_race(db, invite.id).await;
 
-    let user = match crate::users::create_in_tx(&mut *tx, email, display_name, password_hash).await
+    let user = match crate::users::create_in_tx(
+        &mut *tx,
+        db.backend(),
+        email,
+        display_name,
+        password_hash,
+    )
+    .await
     {
         Ok(user) => user,
         Err(err) if crate::memberships::is_unique_violation(&err) => {
@@ -235,14 +264,25 @@ pub async fn register_user_with_invite_in_tx(
 
     if let Some((code_hash, expires_at)) = verification {
         crate::users::create_email_verification_in_tx(
-            &mut *tx, user.id, email, code_hash, expires_at,
+            &mut *tx,
+            db.backend(),
+            user.id,
+            email,
+            code_hash,
+            expires_at,
         )
         .await?;
     }
 
-    crate::memberships::insert_in_tx(&mut *tx, invite.household_id, user.id, &invite.role_granted)
-        .await?;
-    if !consume_in_tx(&mut *tx, invite.id).await? {
+    crate::memberships::insert_in_tx(
+        &mut *tx,
+        db.backend(),
+        invite.household_id,
+        user.id,
+        &invite.role_granted,
+    )
+    .await?;
+    if !consume_in_tx(&mut *tx, db.backend(), invite.id).await? {
         return Err(RegisterWithInviteError::InvalidInvite);
     }
 
@@ -258,13 +298,14 @@ pub async fn redeem_for_user(
     user_id: Uuid,
 ) -> Result<RedeemOutcome, RedeemInviteError> {
     let mut tx = begin_invite_tx(db).await?;
-    let invite = find_active_by_code_in_tx(&mut tx, code)
+    let invite = find_active_by_code_in_tx(&mut tx, db.backend(), code)
         .await?
         .ok_or(RedeemInviteError::InvalidInvite)?;
     maybe_synchronize_invite_race(db, invite.id).await;
 
     let outcome = crate::memberships::insert_if_absent_in_tx(
         &mut tx,
+        db.backend(),
         invite.household_id,
         user_id,
         &invite.role_granted,
@@ -273,7 +314,7 @@ pub async fn redeem_for_user(
 
     match outcome {
         InsertOutcome::Inserted => {
-            if !consume_in_tx(&mut tx, invite.id).await? {
+            if !consume_in_tx(&mut tx, db.backend(), invite.id).await? {
                 return Err(RedeemInviteError::InvalidInvite);
             }
             tx.commit().await?;
@@ -346,13 +387,18 @@ fn row_to_invite(row: sqlx::any::AnyRow) -> Result<InviteRow, sqlx::Error> {
 
 async fn find_active_by_code_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     code: &str,
 ) -> Result<Option<InviteRow>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        backend,
         "SELECT id, household_id, code, created_by, expires_at, max_uses, use_count, role_granted, created_at, revoked_at \
          FROM invite \
          WHERE code = ? AND revoked_at IS NULL AND expires_at > ? AND use_count < max_uses",
-    )
+        "SELECT id, household_id, code, created_by, expires_at, max_uses, use_count, role_granted, created_at, revoked_at \
+         FROM invite \
+         WHERE code = $1 AND revoked_at IS NULL AND expires_at > $2 AND use_count < max_uses",
+    ))
     .bind(code)
     .bind(now_utc_rfc3339())
     .fetch_optional(&mut **tx)

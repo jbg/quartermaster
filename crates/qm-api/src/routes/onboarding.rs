@@ -300,7 +300,15 @@ async fn create_user_household(
     verification: &accounts::SignupVerification,
 ) -> ApiResult<(Uuid, Uuid)> {
     let mut tx = state.db.pool.begin().await?;
-    let user = match qm_db::users::create_in_tx(&mut tx, email, display_name, password_hash).await {
+    let user = match qm_db::users::create_in_tx(
+        &mut tx,
+        state.db.backend(),
+        email,
+        display_name,
+        password_hash,
+    )
+    .await
+    {
         Ok(user) => user,
         Err(err) if qm_db::memberships::is_unique_violation(&err) => {
             return Err(ApiError::Conflict("email already registered".into()));
@@ -309,18 +317,38 @@ async fn create_user_household(
     };
     qm_db::users::create_email_verification_in_tx(
         &mut tx,
+        state.db.backend(),
         user.id,
         email,
         &verification.code_hash,
         &verification.expires_at,
     )
     .await?;
-    let household = qm_db::households::create_in_tx(&mut tx, household_name, timezone).await?;
-    let billing_account =
-        qm_db::billing::create_in_tx(&mut tx, qm_db::billing::DEFAULT_PLAN_KEY).await?;
-    qm_db::billing::attach_household_in_tx(&mut tx, household.id, billing_account.id).await?;
-    qm_db::locations::seed_defaults_in_tx(&mut tx, household.id).await?;
-    qm_db::memberships::insert_in_tx(&mut tx, household.id, user.id, ROLE_ADMIN).await?;
+    let household =
+        qm_db::households::create_in_tx(&mut tx, state.db.backend(), household_name, timezone)
+            .await?;
+    let billing_account = qm_db::billing::create_in_tx(
+        &mut tx,
+        state.db.backend(),
+        qm_db::billing::DEFAULT_PLAN_KEY,
+    )
+    .await?;
+    qm_db::billing::attach_household_in_tx(
+        &mut tx,
+        state.db.backend(),
+        household.id,
+        billing_account.id,
+    )
+    .await?;
+    qm_db::locations::seed_defaults_in_tx(&mut tx, state.db.backend(), household.id).await?;
+    qm_db::memberships::insert_in_tx(
+        &mut tx,
+        state.db.backend(),
+        household.id,
+        user.id,
+        ROLE_ADMIN,
+    )
+    .await?;
     accounts::send_signup_verification(state, email, &verification.code, &verification.expires_at)
         .await?;
     tx.commit().await?;

@@ -2,7 +2,7 @@ use jiff::Timestamp;
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{now_utc_rfc3339, Database};
+use crate::{now_utc_rfc3339, sql_for_backend, Database};
 
 pub const KIND_ACCESS: &str = "access";
 pub const KIND_REFRESH: &str = "refresh";
@@ -30,11 +30,15 @@ pub async fn create(
 ) -> Result<Uuid, sqlx::Error> {
     let id = Uuid::now_v7();
     let now = now_utc_rfc3339();
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        db.backend(),
         "INSERT INTO auth_token \
          (id, user_id, session_id, token_hash, kind, device_label, last_used_at, expires_at, revoked_at, created_at) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)",
-    )
+        "INSERT INTO auth_token \
+         (id, user_id, session_id, token_hash, kind, device_label, last_used_at, expires_at, revoked_at, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, $9)",
+    ))
     .bind(id.to_string())
     .bind(user_id.to_string())
     .bind(session_id.to_string())
@@ -53,11 +57,15 @@ pub async fn find_active_by_hash(
     db: &Database,
     token_hash: &str,
 ) -> Result<Option<TokenRow>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, user_id, session_id, kind, device_label, last_used_at, expires_at, revoked_at \
          FROM auth_token \
          WHERE token_hash = ? AND revoked_at IS NULL",
-    )
+        "SELECT id, user_id, session_id, kind, device_label, last_used_at, expires_at, revoked_at \
+         FROM auth_token \
+         WHERE token_hash = $1 AND revoked_at IS NULL",
+    ))
     .bind(token_hash)
     .fetch_optional(&db.pool)
     .await?;
@@ -82,46 +90,66 @@ pub async fn find_active_by_hash(
 }
 
 pub async fn touch_last_used(db: &Database, id: Uuid) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE auth_token SET last_used_at = ? WHERE id = ?")
-        .bind(now_utc_rfc3339())
-        .bind(id.to_string())
-        .execute(&db.pool)
-        .await?;
+    sqlx::query(sql_for_backend(
+        db.backend(),
+        "UPDATE auth_token SET last_used_at = ? WHERE id = ?",
+        "UPDATE auth_token SET last_used_at = $1 WHERE id = $2",
+    ))
+    .bind(now_utc_rfc3339())
+    .bind(id.to_string())
+    .execute(&db.pool)
+    .await?;
     Ok(())
 }
 
 pub async fn revoke(db: &Database, id: Uuid) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE auth_token SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
-        .bind(now_utc_rfc3339())
-        .bind(id.to_string())
-        .execute(&db.pool)
-        .await?;
+    sqlx::query(sql_for_backend(
+        db.backend(),
+        "UPDATE auth_token SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+        "UPDATE auth_token SET revoked_at = $1 WHERE id = $2 AND revoked_at IS NULL",
+    ))
+    .bind(now_utc_rfc3339())
+    .bind(id.to_string())
+    .execute(&db.pool)
+    .await?;
     Ok(())
 }
 
 pub async fn revoke_by_hash(db: &Database, token_hash: &str) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE auth_token SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL")
-        .bind(now_utc_rfc3339())
-        .bind(token_hash)
-        .execute(&db.pool)
-        .await?;
+    sqlx::query(sql_for_backend(
+        db.backend(),
+        "UPDATE auth_token SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL",
+        "UPDATE auth_token SET revoked_at = $1 WHERE token_hash = $2 AND revoked_at IS NULL",
+    ))
+    .bind(now_utc_rfc3339())
+    .bind(token_hash)
+    .execute(&db.pool)
+    .await?;
     Ok(())
 }
 
 pub async fn revoke_session(db: &Database, session_id: Uuid) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE auth_token SET revoked_at = ? WHERE session_id = ? AND revoked_at IS NULL")
-        .bind(now_utc_rfc3339())
-        .bind(session_id.to_string())
-        .execute(&db.pool)
-        .await?;
+    sqlx::query(sql_for_backend(
+        db.backend(),
+        "UPDATE auth_token SET revoked_at = ? WHERE session_id = ? AND revoked_at IS NULL",
+        "UPDATE auth_token SET revoked_at = $1 WHERE session_id = $2 AND revoked_at IS NULL",
+    ))
+    .bind(now_utc_rfc3339())
+    .bind(session_id.to_string())
+    .execute(&db.pool)
+    .await?;
     Ok(())
 }
 
 pub async fn revoke_user(db: &Database, user_id: Uuid) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE auth_token SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
-        .bind(now_utc_rfc3339())
-        .bind(user_id.to_string())
-        .execute(&db.pool)
-        .await?;
+    sqlx::query(sql_for_backend(
+        db.backend(),
+        "UPDATE auth_token SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+        "UPDATE auth_token SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL",
+    ))
+    .bind(now_utc_rfc3339())
+    .bind(user_id.to_string())
+    .execute(&db.pool)
+    .await?;
     Ok(())
 }

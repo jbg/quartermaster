@@ -1,7 +1,7 @@
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::Database;
+use crate::{sql_for_backend, Database};
 
 pub async fn count_household_members(
     db: &Database,
@@ -10,6 +10,7 @@ pub async fn count_household_members(
     scalar_count(
         db,
         "SELECT COUNT(*) AS n FROM membership WHERE household_id = ?",
+        "SELECT COUNT(*) AS n FROM membership WHERE household_id = $1",
         household_id,
     )
     .await
@@ -24,6 +25,9 @@ pub async fn count_household_products(
         "SELECT COUNT(*) AS n \
          FROM product \
          WHERE created_by_household_id = ? AND deleted_at IS NULL",
+        "SELECT COUNT(*) AS n \
+         FROM product \
+         WHERE created_by_household_id = $1 AND deleted_at IS NULL",
         household_id,
     )
     .await
@@ -38,6 +42,9 @@ pub async fn count_household_stock_batches(
         "SELECT COUNT(*) AS n \
          FROM stock_batch \
          WHERE household_id = ? AND depleted_at IS NULL",
+        "SELECT COUNT(*) AS n \
+         FROM stock_batch \
+         WHERE household_id = $1 AND depleted_at IS NULL",
         household_id,
     )
     .await
@@ -52,6 +59,9 @@ pub async fn count_household_reminders(
         "SELECT COUNT(*) AS n \
          FROM stock_reminder \
          WHERE household_id = ? AND acked_at IS NULL",
+        "SELECT COUNT(*) AS n \
+         FROM stock_reminder \
+         WHERE household_id = $1 AND acked_at IS NULL",
         household_id,
     )
     .await
@@ -62,11 +72,15 @@ pub async fn count_household_invites(
     household_id: Uuid,
 ) -> Result<i64, sqlx::Error> {
     let now = crate::now_utc_rfc3339();
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT COUNT(*) AS n \
          FROM invite \
          WHERE household_id = ? AND revoked_at IS NULL AND expires_at > ? AND use_count < max_uses",
-    )
+        "SELECT COUNT(*) AS n \
+         FROM invite \
+         WHERE household_id = $1 AND revoked_at IS NULL AND expires_at > $2 AND use_count < max_uses",
+    ))
     .bind(household_id.to_string())
     .bind(now)
     .fetch_one(&db.pool)
@@ -75,11 +89,15 @@ pub async fn count_household_invites(
 }
 
 pub async fn count_user_push_devices(db: &Database, user_id: Uuid) -> Result<i64, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT COUNT(*) AS n \
          FROM notification_device \
          WHERE user_id = ?",
-    )
+        "SELECT COUNT(*) AS n \
+         FROM notification_device \
+         WHERE user_id = $1",
+    ))
     .bind(user_id.to_string())
     .fetch_one(&db.pool)
     .await?;
@@ -88,10 +106,11 @@ pub async fn count_user_push_devices(db: &Database, user_id: Uuid) -> Result<i64
 
 async fn scalar_count(
     db: &Database,
-    sql: &'static str,
+    sqlite_sql: &'static str,
+    postgres_sql: &'static str,
     household_id: Uuid,
 ) -> Result<i64, sqlx::Error> {
-    let row = sqlx::query(sql)
+    let row = sqlx::query(sql_for_backend(db.backend(), sqlite_sql, postgres_sql))
         .bind(household_id.to_string())
         .fetch_one(&db.pool)
         .await?;

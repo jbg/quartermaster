@@ -2,7 +2,7 @@ use jiff::{SignedDuration, Timestamp};
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{now_utc_rfc3339, Database};
+use crate::{now_utc_rfc3339, sql_for_backend, Database};
 
 #[derive(Debug, Clone)]
 pub struct CacheEntry {
@@ -32,10 +32,13 @@ pub async fn get(
     household_id: Uuid,
     barcode: &str,
 ) -> Result<Option<CacheEntry>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT household_id, barcode, product_id, fetched_at, miss \
          FROM barcode_cache WHERE household_id = ? AND barcode = ?",
-    )
+        "SELECT household_id, barcode, product_id, fetched_at, miss \
+         FROM barcode_cache WHERE household_id = $1 AND barcode = $2",
+    ))
     .bind(household_id.to_string())
     .bind(barcode)
     .fetch_optional(&db.pool)
@@ -50,15 +53,22 @@ pub async fn put_hit(
     product_id: Uuid,
 ) -> Result<(), sqlx::Error> {
     let mut tx = db.pool.begin().await?;
-    sqlx::query("DELETE FROM barcode_cache WHERE household_id = ? AND barcode = ?")
-        .bind(household_id.to_string())
-        .bind(barcode)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        db.backend(),
+        "DELETE FROM barcode_cache WHERE household_id = ? AND barcode = ?",
+        "DELETE FROM barcode_cache WHERE household_id = $1 AND barcode = $2",
+    ))
+    .bind(household_id.to_string())
+    .bind(barcode)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        db.backend(),
         "INSERT INTO barcode_cache (household_id, barcode, product_id, raw_off_json, fetched_at, miss) \
          VALUES (?, ?, ?, NULL, ?, 0)",
-    )
+        "INSERT INTO barcode_cache (household_id, barcode, product_id, raw_off_json, fetched_at, miss) \
+         VALUES ($1, $2, $3, NULL, $4, 0)",
+    ))
     .bind(household_id.to_string())
     .bind(barcode)
     .bind(product_id.to_string())
@@ -71,15 +81,22 @@ pub async fn put_hit(
 
 pub async fn put_miss(db: &Database, household_id: Uuid, barcode: &str) -> Result<(), sqlx::Error> {
     let mut tx = db.pool.begin().await?;
-    sqlx::query("DELETE FROM barcode_cache WHERE household_id = ? AND barcode = ?")
-        .bind(household_id.to_string())
-        .bind(barcode)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        db.backend(),
+        "DELETE FROM barcode_cache WHERE household_id = ? AND barcode = ?",
+        "DELETE FROM barcode_cache WHERE household_id = $1 AND barcode = $2",
+    ))
+    .bind(household_id.to_string())
+    .bind(barcode)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        db.backend(),
         "INSERT INTO barcode_cache (household_id, barcode, product_id, raw_off_json, fetched_at, miss) \
          VALUES (?, ?, NULL, NULL, ?, 1)",
-    )
+        "INSERT INTO barcode_cache (household_id, barcode, product_id, raw_off_json, fetched_at, miss) \
+         VALUES ($1, $2, NULL, NULL, $3, 1)",
+    ))
     .bind(household_id.to_string())
     .bind(barcode)
     .bind(now_utc_rfc3339())

@@ -2,7 +2,7 @@ use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{now_utc_rfc3339, Database};
+use crate::{now_utc_rfc3339, sql_for_backend, Backend, Database};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LocationRow {
@@ -19,11 +19,15 @@ pub async fn find(
     household_id: Uuid,
     id: Uuid,
 ) -> Result<Option<LocationRow>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, household_id, name, kind, sort_order, created_at \
          FROM location \
          WHERE id = ? AND household_id = ?",
-    )
+        "SELECT id, household_id, name, kind, sort_order, created_at \
+         FROM location \
+         WHERE id = $1 AND household_id = $2",
+    ))
     .bind(id.to_string())
     .bind(household_id.to_string())
     .fetch_optional(&db.pool)
@@ -35,12 +39,17 @@ pub async fn list_for_household(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<LocationRow>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, household_id, name, kind, sort_order, created_at \
          FROM location \
          WHERE household_id = ? \
          ORDER BY sort_order ASC, name ASC",
-    )
+        "SELECT id, household_id, name, kind, sort_order, created_at \
+         FROM location \
+         WHERE household_id = $1 \
+         ORDER BY sort_order ASC, name ASC",
+    ))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -56,13 +65,15 @@ pub async fn create(
     sort_order: i64,
 ) -> Result<LocationRow, sqlx::Error> {
     let mut tx = db.pool.begin().await?;
-    let location = create_in_tx(&mut tx, household_id, name, kind, sort_order).await?;
+    let location =
+        create_in_tx(&mut tx, db.backend(), household_id, name, kind, sort_order).await?;
     tx.commit().await?;
     Ok(location)
 }
 
 pub async fn create_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     household_id: Uuid,
     name: &str,
     kind: &str,
@@ -70,10 +81,13 @@ pub async fn create_in_tx(
 ) -> Result<LocationRow, sqlx::Error> {
     let id = Uuid::now_v7();
     let created_at = now_utc_rfc3339();
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        backend,
         "INSERT INTO location (id, household_id, name, kind, sort_order, created_at) \
          VALUES (?, ?, ?, ?, ?, ?)",
-    )
+        "INSERT INTO location (id, household_id, name, kind, sort_order, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6)",
+    ))
     .bind(id.to_string())
     .bind(household_id.to_string())
     .bind(name)
@@ -94,9 +108,11 @@ pub async fn create_in_tx(
 }
 
 pub async fn next_sort_order(db: &Database, household_id: Uuid) -> Result<i64, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT COALESCE(MAX(sort_order), -1) AS n FROM location WHERE household_id = ?",
-    )
+        "SELECT COALESCE(MAX(sort_order), -1) AS n FROM location WHERE household_id = $1",
+    ))
     .bind(household_id.to_string())
     .fetch_one(&db.pool)
     .await?;
@@ -112,10 +128,13 @@ pub async fn update(
     kind: &str,
     sort_order: i64,
 ) -> Result<Option<LocationRow>, sqlx::Error> {
-    let res = sqlx::query(
+    let res = sqlx::query(sql_for_backend(
+        db.backend(),
         "UPDATE location SET name = ?, kind = ?, sort_order = ? \
          WHERE id = ? AND household_id = ?",
-    )
+        "UPDATE location SET name = $1, kind = $2, sort_order = $3 \
+         WHERE id = $4 AND household_id = $5",
+    ))
     .bind(name)
     .bind(kind)
     .bind(sort_order)
@@ -134,10 +153,13 @@ pub async fn has_active_stock(
     household_id: Uuid,
     id: Uuid,
 ) -> Result<bool, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT 1 AS x FROM stock_batch \
          WHERE household_id = ? AND location_id = ? AND depleted_at IS NULL LIMIT 1",
-    )
+        "SELECT 1 AS x FROM stock_batch \
+         WHERE household_id = $1 AND location_id = $2 AND depleted_at IS NULL LIMIT 1",
+    ))
     .bind(household_id.to_string())
     .bind(id.to_string())
     .fetch_optional(&db.pool)
@@ -146,29 +168,34 @@ pub async fn has_active_stock(
 }
 
 pub async fn delete(db: &Database, household_id: Uuid, id: Uuid) -> Result<bool, sqlx::Error> {
-    let res = sqlx::query("DELETE FROM location WHERE id = ? AND household_id = ?")
-        .bind(id.to_string())
-        .bind(household_id.to_string())
-        .execute(&db.pool)
-        .await?;
+    let res = sqlx::query(sql_for_backend(
+        db.backend(),
+        "DELETE FROM location WHERE id = ? AND household_id = ?",
+        "DELETE FROM location WHERE id = $1 AND household_id = $2",
+    ))
+    .bind(id.to_string())
+    .bind(household_id.to_string())
+    .execute(&db.pool)
+    .await?;
     Ok(res.rows_affected() > 0)
 }
 
 /// Creates pantry/fridge/freezer on a new household.
 pub async fn seed_defaults(db: &Database, household_id: Uuid) -> Result<(), sqlx::Error> {
     let mut tx = db.pool.begin().await?;
-    seed_defaults_in_tx(&mut tx, household_id).await?;
+    seed_defaults_in_tx(&mut tx, db.backend(), household_id).await?;
     tx.commit().await?;
     Ok(())
 }
 
 pub async fn seed_defaults_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     household_id: Uuid,
 ) -> Result<(), sqlx::Error> {
-    create_in_tx(tx, household_id, "Pantry", "pantry", 0).await?;
-    create_in_tx(tx, household_id, "Fridge", "fridge", 1).await?;
-    create_in_tx(tx, household_id, "Freezer", "freezer", 2).await?;
+    create_in_tx(tx, backend, household_id, "Pantry", "pantry", 0).await?;
+    create_in_tx(tx, backend, household_id, "Fridge", "fridge", 1).await?;
+    create_in_tx(tx, backend, household_id, "Freezer", "freezer", 2).await?;
     Ok(())
 }
 

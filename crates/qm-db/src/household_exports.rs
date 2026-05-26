@@ -8,7 +8,7 @@ use thiserror::Error;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{jobs, now_utc_rfc3339, Database};
+use crate::{jobs, now_utc_rfc3339, sql_for_backend, Backend, Database};
 
 pub const SCHEMA_VERSION: i64 = 2;
 
@@ -481,10 +481,11 @@ pub async fn import_household(
 
     let household_id = Uuid::now_v7();
     let mut tx = db.pool.begin().await?;
-    sqlx::query(
+    sqlx::query(crate::audited_sql(format!(
         "INSERT INTO household (id, name, timezone, created_at, measurement_system) \
-         VALUES (?, ?, ?, ?, ?)",
-    )
+         VALUES ({})",
+        bind_slots(db.backend(), 5)
+    )))
     .bind(household_id.to_string())
     .bind(&document.household.name)
     .bind(&document.household.timezone)
@@ -493,9 +494,10 @@ pub async fn import_household(
     .execute(&mut *tx)
     .await?;
 
-    sqlx::query(
-        "INSERT INTO membership (household_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
-    )
+    sqlx::query(crate::audited_sql(format!(
+        "INSERT INTO membership (household_id, user_id, role, joined_at) VALUES ({})",
+        bind_slots(db.backend(), 4)
+    )))
     .bind(household_id.to_string())
     .bind(actor_user_id.to_string())
     .bind("admin")
@@ -504,10 +506,11 @@ pub async fn import_household(
     .await?;
 
     for row in &document.locations {
-        sqlx::query(
+        sqlx::query(crate::audited_sql(format!(
             "INSERT INTO location (id, household_id, name, kind, sort_order, created_at) \
-             VALUES (?, ?, ?, ?, ?, ?)",
-        )
+             VALUES ({})",
+            bind_slots(db.backend(), 6)
+        )))
         .bind(location_ids.get(row.id).to_string())
         .bind(household_id.to_string())
         .bind(&row.name)
@@ -519,11 +522,12 @@ pub async fn import_household(
     }
 
     for row in &document.storage_vessels {
-        sqlx::query(
+        sqlx::query(crate::audited_sql(format!(
             "INSERT INTO storage_vessel \
              (id, household_id, name, tare_weight, tare_unit, sort_order, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+             VALUES ({})",
+            bind_slots(db.backend(), 8)
+        )))
         .bind(vessel_ids.get(row.id).to_string())
         .bind(household_id.to_string())
         .bind(&row.name)
@@ -537,11 +541,12 @@ pub async fn import_household(
     }
 
     for row in &document.label_printers {
-        sqlx::query(
+        sqlx::query(crate::audited_sql(format!(
             "INSERT INTO label_printer \
              (id, household_id, name, driver, address, port, media, delivery, enabled, is_default, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+             VALUES ({})",
+            bind_slots(db.backend(), 12)
+        )))
         .bind(printer_ids.get(row.id).to_string())
         .bind(household_id.to_string())
         .bind(&row.name)
@@ -559,15 +564,16 @@ pub async fn import_household(
     }
 
     for row in &document.products {
-        sqlx::query(
+        sqlx::query(crate::audited_sql(format!(
             "INSERT INTO product \
              (id, source, off_barcode, name, brand, family, default_unit, image_url, \
               package_quantity, package_unit, fetched_at, created_by_household_id, created_at, \
               deleted_at, max_open_days, package_size_local_override, off_name, off_brand, \
               off_package_quantity, off_package_unit, name_local_override, brand_local_override, \
               family_local_override) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+             VALUES ({})",
+            bind_slots(db.backend(), 23)
+        )))
         .bind(product_ids.get(row.id).to_string())
         .bind(&row.source)
         .bind(&row.off_barcode)
@@ -596,12 +602,13 @@ pub async fn import_household(
     }
 
     for row in &document.ingredients {
-        sqlx::query(
+        sqlx::query(crate::audited_sql(format!(
             "INSERT INTO ingredient \
              (id, household_id, display_name, category, default_family, aliases_json, \
               dietary_tags_json, allergen_tags_json, notes, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+             VALUES ({})",
+            bind_slots(db.backend(), 11)
+        )))
         .bind(ingredient_ids.get(row.id).to_string())
         .bind(household_id.to_string())
         .bind(&row.display_name)
@@ -618,15 +625,16 @@ pub async fn import_household(
     }
 
     for row in &document.ingredient_product_mappings {
-        sqlx::query(
+        sqlx::query(crate::audited_sql(format!(
             "INSERT INTO ingredient_product_mapping \
              (id, household_id, ingredient_id, product_id, rank, match_kind, match_metadata_json, \
               recipe_amount, recipe_unit, recipe_family, recipe_range_min, recipe_range_max, \
               recipe_to_taste, recipe_preparation_note, inventory_amount, inventory_unit, \
               inventory_family, inventory_range_min, inventory_range_max, inventory_to_taste, \
               inventory_preparation_note, conversion_provenance, conversion_notes, created_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+             VALUES ({})",
+            bind_slots(db.backend(), 24)
+        )))
         .bind(mapping_ids.get(row.id).to_string())
         .bind(household_id.to_string())
         .bind(ingredient_ids.get(row.ingredient_id).to_string())
@@ -656,14 +664,15 @@ pub async fn import_household(
     }
 
     for row in &document.product_recipe_metadata {
-        sqlx::query(
+        sqlx::query(crate::audited_sql(format!(
             "INSERT INTO product_recipe_metadata \
              (household_id, product_id, edible_yield_percent, drained_quantity, drained_unit, \
               density_recipe_quantity, density_recipe_unit, density_inventory_quantity, \
               density_inventory_unit, density_provenance, preparation_state, \
               counts_as_aliases_json, notes, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+             VALUES ({})",
+            bind_slots(db.backend(), 14)
+        )))
         .bind(household_id.to_string())
         .bind(product_ids.get(row.product_id).to_string())
         .bind(&row.edible_yield_percent)
@@ -683,12 +692,13 @@ pub async fn import_household(
     }
 
     for row in &document.recipes {
-        sqlx::query(
+        sqlx::query(crate::audited_sql(format!(
             "INSERT INTO recipe \
              (id, household_id, name, description, serving_count, source, visibility, tags_json, \
               latest_version_id, created_by, updated_by, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+             VALUES ({})",
+            bind_slots(db.backend(), 13)
+        )))
         .bind(recipe_ids.get(row.id).to_string())
         .bind(household_id.to_string())
         .bind(&row.name)
@@ -707,12 +717,13 @@ pub async fn import_household(
     }
 
     for row in &document.recipe_versions {
-        sqlx::query(
+        sqlx::query(crate::audited_sql(format!(
             "INSERT INTO recipe_version \
              (id, household_id, recipe_id, version_number, serving_count, source_text, payload_json, \
               created_by, created_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+             VALUES ({})",
+            bind_slots(db.backend(), 9)
+        )))
         .bind(recipe_version_ids.get(row.id).to_string())
         .bind(household_id.to_string())
         .bind(recipe_ids.get(row.recipe_id).to_string())
@@ -727,13 +738,14 @@ pub async fn import_household(
     }
 
     for row in &document.recipe_ingredients {
-        sqlx::query(
+        sqlx::query(crate::audited_sql(format!(
             "INSERT INTO recipe_ingredient \
              (id, household_id, recipe_id, recipe_version_id, sort_order, ingredient_id, \
               product_id, display_name, amount, unit, family, range_min, range_max, to_taste, \
               preparation, optional, group_label, substitution_hints_json, created_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+             VALUES ({})",
+            bind_slots(db.backend(), 19)
+        )))
         .bind(recipe_ingredient_ids.get(row.id).to_string())
         .bind(household_id.to_string())
         .bind(recipe_ids.get(row.recipe_id).to_string())
@@ -761,12 +773,13 @@ pub async fn import_household(
     }
 
     for row in &document.recipe_steps {
-        sqlx::query(
+        sqlx::query(crate::audited_sql(format!(
             "INSERT INTO recipe_step \
              (id, household_id, recipe_id, recipe_version_id, sort_order, instruction, \
               timers_json, equipment_json, ingredient_refs_json, created_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+             VALUES ({})",
+            bind_slots(db.backend(), 10)
+        )))
         .bind(recipe_step_ids.get(row.id).to_string())
         .bind(household_id.to_string())
         .bind(recipe_ids.get(row.recipe_id).to_string())
@@ -782,13 +795,14 @@ pub async fn import_household(
     }
 
     for row in &document.recipe_outputs {
-        sqlx::query(
+        sqlx::query(crate::audited_sql(format!(
             "INSERT INTO recipe_output \
              (id, household_id, recipe_id, recipe_version_id, sort_order, product_id, name, \
               amount, unit, family, range_min, range_max, to_taste, preparation_note, \
               expires_after_days, storage_notes, created_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+             VALUES ({})",
+            bind_slots(db.backend(), 17)
+        )))
         .bind(recipe_output_ids.get(row.id).to_string())
         .bind(household_id.to_string())
         .bind(recipe_ids.get(row.recipe_id).to_string())
@@ -811,13 +825,14 @@ pub async fn import_household(
     }
 
     for row in &document.recipe_provenance {
-        sqlx::query(
+        sqlx::query(crate::audited_sql(format!(
             "INSERT INTO recipe_provenance \
              (id, household_id, recipe_id, recipe_version_id, source_type, imported_url, \
               imported_file_name, imported_text, prompt_version, model, user_edits_json, \
               parser_confidence, created_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+             VALUES ({})",
+            bind_slots(db.backend(), 13)
+        )))
         .bind(recipe_provenance_ids.get(row.id).to_string())
         .bind(household_id.to_string())
         .bind(recipe_ids.get(row.recipe_id).to_string())
@@ -836,13 +851,14 @@ pub async fn import_household(
     }
 
     for row in &document.stock_batches {
-        sqlx::query(
+        sqlx::query(crate::audited_sql(format!(
             "INSERT INTO stock_batch \
              (id, household_id, product_id, location_id, storage_vessel_id, source_batch_id, \
               source_operation_id, initial_quantity, quantity, unit, package_quantity, package_unit, \
               produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+             VALUES ({})",
+            bind_slots(db.backend(), 19)
+        )))
         .bind(batch_ids.get(row.id).to_string())
         .bind(household_id.to_string())
         .bind(product_ids.get(row.product_id).to_string())
@@ -873,12 +889,13 @@ pub async fn import_household(
     }
 
     for row in &document.stock_events {
-        sqlx::query(
+        sqlx::query(crate::audited_sql(format!(
             "INSERT INTO stock_event \
              (id, household_id, batch_id, event_type, quantity_delta, package_quantity, \
               package_unit, note, created_at, created_by, consume_request_id, operation_id) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+             VALUES ({})",
+            bind_slots(db.backend(), 12)
+        )))
         .bind(event_ids.get(row.id).to_string())
         .bind(household_id.to_string())
         .bind(batch_ids.get(row.batch_id).to_string())
@@ -899,10 +916,11 @@ pub async fn import_household(
     }
 
     for row in &document.barcode_cache {
-        sqlx::query(
+        sqlx::query(crate::audited_sql(format!(
             "INSERT INTO barcode_cache (household_id, barcode, product_id, raw_off_json, fetched_at, miss) \
-             VALUES (?, ?, ?, ?, ?, ?)",
-        )
+             VALUES ({})",
+            bind_slots(db.backend(), 6)
+        )))
         .bind(household_id.to_string())
         .bind(&row.barcode)
         .bind(row.product_id.map(|id| product_ids.get(id).to_string()))
@@ -914,12 +932,13 @@ pub async fn import_household(
     }
 
     for row in &document.stock_reminders {
-        sqlx::query(
+        sqlx::query(crate::audited_sql(format!(
             "INSERT INTO stock_reminder \
              (id, household_id, batch_id, product_id, location_id, kind, fire_at, title, body, \
               created_at, household_timezone, expires_on, household_fire_local_at, acked_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+             VALUES ({})",
+            bind_slots(db.backend(), 14)
+        )))
         .bind(reminder_ids.get(row.id).to_string())
         .bind(household_id.to_string())
         .bind(batch_ids.get(row.batch_id).to_string())
@@ -949,11 +968,14 @@ pub async fn request_household_deletion(
     confirmation_name: &str,
 ) -> Result<DeleteRequestOutcome, DeleteRequestError> {
     let mut tx = db.pool.begin().await?;
-    let row =
-        sqlx::query("SELECT name FROM household WHERE id = ? AND deletion_requested_at IS NULL")
-            .bind(household_id.to_string())
-            .fetch_optional(&mut *tx)
-            .await?;
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
+        "SELECT name FROM household WHERE id = ? AND deletion_requested_at IS NULL",
+        "SELECT name FROM household WHERE id = $1 AND deletion_requested_at IS NULL",
+    ))
+    .bind(household_id.to_string())
+    .fetch_optional(&mut *tx)
+    .await?;
     let Some(row) = row else {
         return Err(DeleteRequestError::NotFound);
     };
@@ -963,157 +985,268 @@ pub async fn request_household_deletion(
     }
 
     let now = now_utc_rfc3339();
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        db.backend(),
         "UPDATE household SET deletion_requested_at = ?, deletion_requested_by = ? WHERE id = ?",
-    )
+        "UPDATE household SET deletion_requested_at = $1, deletion_requested_by = $2 WHERE id = $3",
+    ))
     .bind(&now)
     .bind(actor_user_id.to_string())
     .bind(household_id.to_string())
     .execute(&mut *tx)
     .await?;
-    sqlx::query("DELETE FROM invite WHERE household_id = ?")
-        .bind(household_id.to_string())
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("DELETE FROM membership WHERE household_id = ?")
-        .bind(household_id.to_string())
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("UPDATE auth_session SET active_household_id = NULL, updated_at = ? WHERE active_household_id = ?")
+    sqlx::query(sql_for_backend(
+        db.backend(),
+        "DELETE FROM invite WHERE household_id = ?",
+        "DELETE FROM invite WHERE household_id = $1",
+    ))
+    .bind(household_id.to_string())
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        db.backend(),
+        "DELETE FROM membership WHERE household_id = ?",
+        "DELETE FROM membership WHERE household_id = $1",
+    ))
+    .bind(household_id.to_string())
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        db.backend(),
+        "UPDATE auth_session SET active_household_id = NULL, updated_at = ? WHERE active_household_id = ?",
+        "UPDATE auth_session SET active_household_id = NULL, updated_at = $1 WHERE active_household_id = $2",
+    ))
         .bind(&now)
         .bind(household_id.to_string())
         .execute(&mut *tx)
         .await?;
 
     let payload_json = format!(r#"{{"household_id":"{household_id}"}}"#);
-    let purge_job_id = enqueue_purge_job_tx(&mut tx, household_id, &payload_json, &now).await?;
+    let purge_job_id =
+        enqueue_purge_job_tx(&mut tx, db.backend(), household_id, &payload_json, &now).await?;
     tx.commit().await?;
     Ok(DeleteRequestOutcome { purge_job_id })
 }
 
 pub async fn purge_household(db: &Database, household_id: Uuid) -> Result<(), sqlx::Error> {
     let mut tx = db.pool.begin().await?;
-    purge_household_tx(&mut tx, household_id).await?;
+    purge_household_tx(&mut tx, db.backend(), household_id).await?;
     tx.commit().await
 }
 
 async fn purge_household_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     household_id: Uuid,
 ) -> Result<(), sqlx::Error> {
     let household = household_id.to_string();
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        backend,
         "DELETE FROM reminder_device_state \
          WHERE reminder_id IN (SELECT id FROM stock_reminder WHERE household_id = ?)",
-    )
+        "DELETE FROM reminder_device_state \
+         WHERE reminder_id IN (SELECT id FROM stock_reminder WHERE household_id = $1)",
+    ))
     .bind(&household)
     .execute(&mut **tx)
     .await?;
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        backend,
         "DELETE FROM reminder_delivery \
          WHERE reminder_id IN (SELECT id FROM stock_reminder WHERE household_id = ?)",
-    )
+        "DELETE FROM reminder_delivery \
+         WHERE reminder_id IN (SELECT id FROM stock_reminder WHERE household_id = $1)",
+    ))
     .bind(&household)
     .execute(&mut **tx)
     .await?;
-    sqlx::query("DELETE FROM stock_reminder WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM stock_event WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM stock_batch WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM barcode_cache WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM recipe_provenance WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM recipe_output WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM recipe_step WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM recipe_ingredient WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM recipe_version WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM recipe WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM ingredient_product_mapping WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM product_recipe_metadata WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM ingredient WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM storage_vessel WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM label_printer WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM location WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM invite WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM product WHERE created_by_household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM membership WHERE household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("UPDATE auth_session SET active_household_id = NULL WHERE active_household_id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM household WHERE id = ?")
-        .bind(&household)
-        .execute(&mut **tx)
-        .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM stock_reminder WHERE household_id = ?",
+        "DELETE FROM stock_reminder WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM stock_event WHERE household_id = ?",
+        "DELETE FROM stock_event WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM stock_batch WHERE household_id = ?",
+        "DELETE FROM stock_batch WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM barcode_cache WHERE household_id = ?",
+        "DELETE FROM barcode_cache WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM recipe_provenance WHERE household_id = ?",
+        "DELETE FROM recipe_provenance WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM recipe_output WHERE household_id = ?",
+        "DELETE FROM recipe_output WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM recipe_step WHERE household_id = ?",
+        "DELETE FROM recipe_step WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM recipe_ingredient WHERE household_id = ?",
+        "DELETE FROM recipe_ingredient WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM recipe_version WHERE household_id = ?",
+        "DELETE FROM recipe_version WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM recipe WHERE household_id = ?",
+        "DELETE FROM recipe WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM ingredient_product_mapping WHERE household_id = ?",
+        "DELETE FROM ingredient_product_mapping WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM product_recipe_metadata WHERE household_id = ?",
+        "DELETE FROM product_recipe_metadata WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM ingredient WHERE household_id = ?",
+        "DELETE FROM ingredient WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM storage_vessel WHERE household_id = ?",
+        "DELETE FROM storage_vessel WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM label_printer WHERE household_id = ?",
+        "DELETE FROM label_printer WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM location WHERE household_id = ?",
+        "DELETE FROM location WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM invite WHERE household_id = ?",
+        "DELETE FROM invite WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM product WHERE created_by_household_id = ?",
+        "DELETE FROM product WHERE created_by_household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM membership WHERE household_id = ?",
+        "DELETE FROM membership WHERE household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "UPDATE auth_session SET active_household_id = NULL WHERE active_household_id = ?",
+        "UPDATE auth_session SET active_household_id = NULL WHERE active_household_id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM household WHERE id = ?",
+        "DELETE FROM household WHERE id = $1",
+    ))
+    .bind(&household)
+    .execute(&mut **tx)
+    .await?;
     Ok(())
 }
 
 async fn enqueue_purge_job_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     household_id: Uuid,
     payload_json: &str,
     now: &str,
 ) -> Result<Uuid, sqlx::Error> {
-    let existing = sqlx::query(
+    let existing = sqlx::query(sql_for_backend(
+        backend,
         "SELECT id FROM background_job \
          WHERE kind = ? AND dedupe_key = ? AND status IN (?, ?, ?) \
          LIMIT 1",
-    )
+        "SELECT id FROM background_job \
+         WHERE kind = $1 AND dedupe_key = $2 AND status IN ($3, $4, $5) \
+         LIMIT 1",
+    ))
     .bind(jobs::KIND_HOUSEHOLD_PURGE)
     .bind(household_id.to_string())
     .bind(jobs::STATUS_PENDING)
@@ -1126,12 +1259,17 @@ async fn enqueue_purge_job_tx(
     }
 
     let id = Uuid::now_v7();
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        backend,
         "INSERT INTO background_job \
          (id, kind, dedupe_key, payload_json, status, run_at, lease_owner, lease_until, \
           attempt_count, max_attempts, last_error, created_at, updated_at, finished_at) \
          VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, 0, ?, NULL, ?, ?, NULL)",
-    )
+        "INSERT INTO background_job \
+         (id, kind, dedupe_key, payload_json, status, run_at, lease_owner, lease_until, \
+          attempt_count, max_attempts, last_error, created_at, updated_at, finished_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, 0, $7, NULL, $8, $9, NULL)",
+    ))
     .bind(id.to_string())
     .bind(jobs::KIND_HOUSEHOLD_PURGE)
     .bind(household_id.to_string())
@@ -1400,10 +1538,13 @@ async fn export_household_row(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Option<ExportHousehold>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, name, timezone, measurement_system, created_at \
          FROM household WHERE id = ? AND deletion_requested_at IS NULL",
-    )
+        "SELECT id, name, timezone, measurement_system, created_at \
+         FROM household WHERE id = $1 AND deletion_requested_at IS NULL",
+    ))
     .bind(household_id.to_string())
     .fetch_optional(&db.pool)
     .await?;
@@ -1423,10 +1564,11 @@ async fn export_locations(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<ExportLocation>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(crate::audited_sql(format!(
         "SELECT id, name, kind, sort_order, created_at \
-         FROM location WHERE household_id = ? ORDER BY sort_order ASC, name ASC",
-    )
+         FROM location WHERE household_id = {} ORDER BY sort_order ASC, name ASC",
+        bind_slots(db.backend(), 1)
+    )))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -1447,10 +1589,11 @@ async fn export_storage_vessels(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<ExportStorageVessel>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(crate::audited_sql(format!(
         "SELECT id, name, tare_weight, tare_unit, sort_order, created_at, updated_at \
-         FROM storage_vessel WHERE household_id = ? ORDER BY sort_order ASC, name ASC",
-    )
+         FROM storage_vessel WHERE household_id = {} ORDER BY sort_order ASC, name ASC",
+        bind_slots(db.backend(), 1)
+    )))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -1473,10 +1616,11 @@ async fn export_label_printers(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<ExportLabelPrinter>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(crate::audited_sql(format!(
         "SELECT id, name, driver, address, port, media, delivery, enabled, is_default, created_at, updated_at \
-         FROM label_printer WHERE household_id = ? ORDER BY is_default DESC, name ASC, created_at ASC",
-    )
+         FROM label_printer WHERE household_id = {} ORDER BY is_default DESC, name ASC, created_at ASC",
+        bind_slots(db.backend(), 1)
+    )))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -1503,13 +1647,14 @@ async fn export_products(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<ExportProduct>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(crate::audited_sql(format!(
         "SELECT id, source, off_barcode, name, brand, family, default_unit, image_url, \
                 package_quantity, package_unit, fetched_at, created_at, deleted_at, max_open_days, \
                 package_size_local_override, off_name, off_brand, off_package_quantity, \
                 off_package_unit, name_local_override, brand_local_override, family_local_override \
-         FROM product WHERE created_by_household_id = ? ORDER BY created_at ASC, id ASC",
-    )
+         FROM product WHERE created_by_household_id = {} ORDER BY created_at ASC, id ASC",
+        bind_slots(db.backend(), 1)
+    )))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -1549,11 +1694,12 @@ async fn export_ingredients(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<ExportIngredient>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(crate::audited_sql(format!(
         "SELECT id, display_name, category, default_family, aliases_json, dietary_tags_json, \
                 allergen_tags_json, notes, created_at, updated_at \
-         FROM ingredient WHERE household_id = ? ORDER BY display_name ASC, id ASC",
-    )
+         FROM ingredient WHERE household_id = {} ORDER BY display_name ASC, id ASC",
+        bind_slots(db.backend(), 1)
+    )))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -1579,14 +1725,15 @@ async fn export_ingredient_product_mappings(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<ExportIngredientProductMapping>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(crate::audited_sql(format!(
         "SELECT id, ingredient_id, product_id, rank, match_kind, match_metadata_json, \
                 recipe_amount, recipe_unit, recipe_family, recipe_range_min, recipe_range_max, \
                 recipe_to_taste, recipe_preparation_note, inventory_amount, inventory_unit, \
                 inventory_family, inventory_range_min, inventory_range_max, inventory_to_taste, \
                 inventory_preparation_note, conversion_provenance, conversion_notes, created_at \
-         FROM ingredient_product_mapping WHERE household_id = ? ORDER BY ingredient_id ASC, rank ASC",
-    )
+         FROM ingredient_product_mapping WHERE household_id = {} ORDER BY ingredient_id ASC, rank ASC",
+        bind_slots(db.backend(), 1)
+    )))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -1625,13 +1772,14 @@ async fn export_product_recipe_metadata(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<ExportProductRecipeMetadata>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(crate::audited_sql(format!(
         "SELECT product_id, edible_yield_percent, drained_quantity, drained_unit, \
                 density_recipe_quantity, density_recipe_unit, density_inventory_quantity, \
                 density_inventory_unit, density_provenance, preparation_state, \
                 counts_as_aliases_json, notes, updated_at \
-         FROM product_recipe_metadata WHERE household_id = ? ORDER BY product_id ASC",
-    )
+         FROM product_recipe_metadata WHERE household_id = {} ORDER BY product_id ASC",
+        bind_slots(db.backend(), 1)
+    )))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -1660,11 +1808,12 @@ async fn export_recipes(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<ExportRecipe>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(crate::audited_sql(format!(
         "SELECT id, name, description, serving_count, source, visibility, tags_json, \
                 latest_version_id, created_at, updated_at \
-         FROM recipe WHERE household_id = ? ORDER BY updated_at ASC, id ASC",
-    )
+         FROM recipe WHERE household_id = {} ORDER BY updated_at ASC, id ASC",
+        bind_slots(db.backend(), 1)
+    )))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -1690,10 +1839,11 @@ async fn export_recipe_versions(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<ExportRecipeVersion>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(crate::audited_sql(format!(
         "SELECT id, recipe_id, version_number, serving_count, source_text, payload_json, created_at \
-         FROM recipe_version WHERE household_id = ? ORDER BY recipe_id ASC, version_number ASC",
-    )
+         FROM recipe_version WHERE household_id = {} ORDER BY recipe_id ASC, version_number ASC",
+        bind_slots(db.backend(), 1)
+    )))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -1716,12 +1866,13 @@ async fn export_recipe_ingredients(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<ExportRecipeIngredient>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(crate::audited_sql(format!(
         "SELECT id, recipe_id, recipe_version_id, sort_order, ingredient_id, product_id, \
                 display_name, amount, unit, family, range_min, range_max, to_taste, \
                 preparation, optional, group_label, substitution_hints_json, created_at \
-         FROM recipe_ingredient WHERE household_id = ? ORDER BY recipe_version_id ASC, sort_order ASC",
-    )
+         FROM recipe_ingredient WHERE household_id = {} ORDER BY recipe_version_id ASC, sort_order ASC",
+        bind_slots(db.backend(), 1)
+    )))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -1755,11 +1906,12 @@ async fn export_recipe_steps(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<ExportRecipeStep>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(crate::audited_sql(format!(
         "SELECT id, recipe_id, recipe_version_id, sort_order, instruction, timers_json, \
                 equipment_json, ingredient_refs_json, created_at \
-         FROM recipe_step WHERE household_id = ? ORDER BY recipe_version_id ASC, sort_order ASC",
-    )
+         FROM recipe_step WHERE household_id = {} ORDER BY recipe_version_id ASC, sort_order ASC",
+        bind_slots(db.backend(), 1)
+    )))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -1784,12 +1936,13 @@ async fn export_recipe_outputs(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<ExportRecipeOutput>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(crate::audited_sql(format!(
         "SELECT id, recipe_id, recipe_version_id, sort_order, product_id, name, amount, unit, \
                 family, range_min, range_max, to_taste, preparation_note, expires_after_days, \
                 storage_notes, created_at \
-         FROM recipe_output WHERE household_id = ? ORDER BY recipe_version_id ASC, sort_order ASC",
-    )
+         FROM recipe_output WHERE household_id = {} ORDER BY recipe_version_id ASC, sort_order ASC",
+        bind_slots(db.backend(), 1)
+    )))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -1821,11 +1974,12 @@ async fn export_recipe_provenance(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<ExportRecipeProvenance>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(crate::audited_sql(format!(
         "SELECT id, recipe_id, recipe_version_id, source_type, imported_url, imported_file_name, \
                 imported_text, prompt_version, model, user_edits_json, parser_confidence, created_at \
-         FROM recipe_provenance WHERE household_id = ? ORDER BY recipe_version_id ASC, created_at ASC",
-    )
+         FROM recipe_provenance WHERE household_id = {} ORDER BY recipe_version_id ASC, created_at ASC",
+        bind_slots(db.backend(), 1)
+    )))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -1853,10 +2007,11 @@ async fn export_barcode_cache(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<ExportBarcodeCacheEntry>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(crate::audited_sql(format!(
         "SELECT barcode, product_id, raw_off_json, fetched_at, miss \
-         FROM barcode_cache WHERE household_id = ? ORDER BY barcode ASC",
-    )
+         FROM barcode_cache WHERE household_id = {} ORDER BY barcode ASC",
+        bind_slots(db.backend(), 1)
+    )))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -1877,13 +2032,14 @@ async fn export_stock_batches(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<ExportStockBatch>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(crate::audited_sql(format!(
         "SELECT id, product_id, location_id, storage_vessel_id, source_batch_id, \
                 source_operation_id, initial_quantity, quantity, unit, \
                 package_quantity, package_unit, produced_on, expires_on, opened_on, note, \
                 created_at, depleted_at \
-         FROM stock_batch WHERE household_id = ? ORDER BY created_at ASC, id ASC",
-    )
+         FROM stock_batch WHERE household_id = {} ORDER BY created_at ASC, id ASC",
+        bind_slots(db.backend(), 1)
+    )))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -1916,11 +2072,12 @@ async fn export_stock_events(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<ExportStockEvent>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(crate::audited_sql(format!(
         "SELECT id, batch_id, event_type, quantity_delta, package_quantity, package_unit, \
                 note, created_at, consume_request_id, operation_id \
-         FROM stock_event WHERE household_id = ? ORDER BY created_at ASC, id ASC",
-    )
+         FROM stock_event WHERE household_id = {} ORDER BY created_at ASC, id ASC",
+        bind_slots(db.backend(), 1)
+    )))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -1946,11 +2103,12 @@ async fn export_stock_reminders(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<ExportStockReminder>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(crate::audited_sql(format!(
         "SELECT id, batch_id, product_id, location_id, kind, fire_at, title, body, household_timezone, \
                 household_fire_local_at, expires_on, acked_at, created_at \
-         FROM stock_reminder WHERE household_id = ? ORDER BY fire_at ASC, id ASC",
-    )
+         FROM stock_reminder WHERE household_id = {} ORDER BY fire_at ASC, id ASC",
+        bind_slots(db.backend(), 1)
+    )))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -1992,6 +2150,18 @@ fn bool_int(value: bool) -> i64 {
         1
     } else {
         0
+    }
+}
+
+fn bind_slots(backend: Backend, count: usize) -> String {
+    match backend {
+        Backend::Postgres => (1..=count)
+            .map(|index| format!("${index}"))
+            .collect::<Vec<_>>()
+            .join(", "),
+        Backend::Sqlite | Backend::Other => std::iter::repeat_n("?", count)
+            .collect::<Vec<_>>()
+            .join(", "),
     }
 }
 

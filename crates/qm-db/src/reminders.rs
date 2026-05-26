@@ -3,7 +3,7 @@ use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{devices, now_utc_rfc3339, time, Database};
+use crate::{devices, now_utc_rfc3339, sql_for_backend, time, Backend, Database};
 
 pub const KIND_EXPIRY: &str = "expiry";
 pub const CHANNEL_APNS: &str = "apns";
@@ -144,11 +144,12 @@ pub struct PushDeliveryMetricsSummary {
 
 pub async fn sync_expiry_for_batch_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     batch_id: Uuid,
     policy: &ExpiryReminderPolicy,
 ) -> Result<(), sqlx::Error> {
-    delete_pending_for_batch_kind_tx(tx, batch_id, KIND_EXPIRY).await?;
-    let Some(draft) = load_batch_context_tx(tx, batch_id)
+    delete_pending_for_batch_kind_tx(tx, backend, batch_id, KIND_EXPIRY).await?;
+    let Some(draft) = load_batch_context_tx(tx, backend, batch_id)
         .await?
         .and_then(|ctx| expiry_draft_for_context(&ctx, policy).transpose())
         .transpose()?
@@ -156,7 +157,7 @@ pub async fn sync_expiry_for_batch_tx(
         return Ok(());
     };
 
-    insert_draft_tx(tx, &draft).await
+    insert_draft_tx(tx, backend, &draft).await
 }
 
 pub async fn list_due(
@@ -347,17 +348,21 @@ pub async fn force_due_for_batch(
     batch_id: Uuid,
     fire_at: &str,
 ) -> Result<Option<ReminderRow>, sqlx::Error> {
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        db.backend(),
         "UPDATE stock_reminder SET fire_at = ?, acked_at = NULL \
          WHERE batch_id = ? AND kind = ?",
-    )
+        "UPDATE stock_reminder SET fire_at = $1, acked_at = NULL \
+         WHERE batch_id = $2 AND kind = $3",
+    ))
     .bind(fire_at)
     .bind(batch_id.to_string())
     .bind(KIND_EXPIRY)
     .execute(&db.pool)
     .await?;
 
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, household_id, batch_id, product_id, location_id, kind, fire_at, \
                 household_timezone, household_fire_local_at, expires_on, quantity, unit, \
                 product_name, location_name, \
@@ -374,7 +379,23 @@ pub async fn force_due_for_batch(
              WHERE r.batch_id = ? AND r.kind = ? AND r.acked_at IS NULL \
              ORDER BY r.created_at DESC LIMIT 1 \
          )",
-    )
+        "SELECT id, household_id, batch_id, product_id, location_id, kind, fire_at, \
+                household_timezone, household_fire_local_at, expires_on, quantity, unit, \
+                product_name, location_name, \
+                created_at, NULL AS presented_on_device_at, NULL AS opened_on_device_at \
+         FROM ( \
+             SELECT r.id, r.household_id, r.batch_id, r.product_id, r.location_id, r.kind, \
+                    r.fire_at, r.household_timezone, r.household_fire_local_at, r.expires_on, \
+                    b.quantity, b.unit, p.name AS product_name, l.name AS location_name, \
+                    r.created_at \
+             FROM stock_reminder r \
+             INNER JOIN stock_batch b ON b.id = r.batch_id \
+             INNER JOIN product p ON p.id = r.product_id \
+             INNER JOIN location l ON l.id = r.location_id \
+             WHERE r.batch_id = $1 AND r.kind = $2 AND r.acked_at IS NULL \
+             ORDER BY r.created_at DESC LIMIT 1 \
+         )",
+    ))
     .bind(batch_id.to_string())
     .bind(KIND_EXPIRY)
     .fetch_optional(&db.pool)
@@ -441,42 +462,77 @@ pub async fn claim_due_push_work(
     lease_owner: &str,
     claim_until_rfc3339: &str,
 ) -> Result<PushClaimResult, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT r.id AS reminder_id, r.household_id, r.batch_id, r.product_id, r.location_id, \
-                r.kind, r.expires_on, b.quantity, b.unit, p.name AS product_name, l.name AS location_name, \
-                d.id AS device_row_id, d.push_token, d.platform \
-         FROM stock_reminder r \
-         INNER JOIN stock_batch b ON b.id = r.batch_id \
-         INNER JOIN product p ON p.id = r.product_id \
-         INNER JOIN location l ON l.id = r.location_id \
-         INNER JOIN membership m ON m.household_id = r.household_id \
-         INNER JOIN notification_device d ON d.user_id = m.user_id \
-         LEFT JOIN reminder_device_state s \
-           ON s.reminder_id = r.id AND s.device_id = d.id \
-         WHERE r.acked_at IS NULL \
-           AND r.fire_at <= ? \
-           AND d.push_token IS NOT NULL \
-           AND d.push_token <> '' \
-           AND d.push_authorization IN ('authorized', 'provisional') \
-           AND (s.last_push_status IS NULL OR s.last_push_status <> ? OR s.last_push_channel <> CASE d.platform WHEN 'ios' THEN ? WHEN 'android' THEN ? ELSE '' END) \
-           AND NOT ( \
-               s.last_push_status = ? \
-               AND s.last_push_channel = CASE d.platform WHEN 'ios' THEN ? WHEN 'android' THEN ? ELSE '' END \
-               AND s.last_push_token IS NOT NULL \
-               AND s.last_push_token = d.push_token \
-           ) \
-           AND (s.next_retry_at IS NULL OR s.next_retry_at <= ?) \
-           AND NOT EXISTS ( \
-               SELECT 1 FROM reminder_delivery rd \
-               WHERE rd.reminder_id = r.id \
-                 AND rd.device_id = d.id \
-                 AND rd.channel = CASE d.platform WHEN 'ios' THEN ? WHEN 'android' THEN ? ELSE '' END \
-                 AND rd.status = ? \
-                 AND (rd.claim_until IS NULL OR rd.claim_until > ?) \
-           ) \
-         ORDER BY r.fire_at ASC, r.id ASC, d.updated_at DESC, d.id ASC \
-         LIMIT ?",
-    )
+                 r.kind, r.expires_on, b.quantity, b.unit, p.name AS product_name, l.name AS location_name, \
+                 d.id AS device_row_id, d.push_token, d.platform \
+          FROM stock_reminder r \
+          INNER JOIN stock_batch b ON b.id = r.batch_id \
+          INNER JOIN product p ON p.id = r.product_id \
+          INNER JOIN location l ON l.id = r.location_id \
+          INNER JOIN membership m ON m.household_id = r.household_id \
+          INNER JOIN notification_device d ON d.user_id = m.user_id \
+          LEFT JOIN reminder_device_state s \
+            ON s.reminder_id = r.id AND s.device_id = d.id \
+          WHERE r.acked_at IS NULL \
+            AND r.fire_at <= ? \
+            AND d.push_token IS NOT NULL \
+            AND d.push_token <> '' \
+            AND d.push_authorization IN ('authorized', 'provisional') \
+            AND (s.last_push_status IS NULL OR s.last_push_status <> ? OR s.last_push_channel <> CASE d.platform WHEN 'ios' THEN ? WHEN 'android' THEN ? ELSE '' END) \
+            AND NOT ( \
+                s.last_push_status = ? \
+                AND s.last_push_channel = CASE d.platform WHEN 'ios' THEN ? WHEN 'android' THEN ? ELSE '' END \
+                AND s.last_push_token IS NOT NULL \
+                AND s.last_push_token = d.push_token \
+            ) \
+            AND (s.next_retry_at IS NULL OR s.next_retry_at <= ?) \
+            AND NOT EXISTS ( \
+                SELECT 1 FROM reminder_delivery rd \
+                WHERE rd.reminder_id = r.id \
+                  AND rd.device_id = d.id \
+                  AND rd.channel = CASE d.platform WHEN 'ios' THEN ? WHEN 'android' THEN ? ELSE '' END \
+                  AND rd.status = ? \
+                  AND (rd.claim_until IS NULL OR rd.claim_until > ?) \
+            ) \
+          ORDER BY r.fire_at ASC, r.id ASC, d.updated_at DESC, d.id ASC \
+          LIMIT ?",
+        "SELECT r.id AS reminder_id, r.household_id, r.batch_id, r.product_id, r.location_id, \
+                 r.kind, r.expires_on, b.quantity, b.unit, p.name AS product_name, l.name AS location_name, \
+                 d.id AS device_row_id, d.push_token, d.platform \
+          FROM stock_reminder r \
+          INNER JOIN stock_batch b ON b.id = r.batch_id \
+          INNER JOIN product p ON p.id = r.product_id \
+          INNER JOIN location l ON l.id = r.location_id \
+          INNER JOIN membership m ON m.household_id = r.household_id \
+          INNER JOIN notification_device d ON d.user_id = m.user_id \
+          LEFT JOIN reminder_device_state s \
+            ON s.reminder_id = r.id AND s.device_id = d.id \
+          WHERE r.acked_at IS NULL \
+            AND r.fire_at <= $1 \
+            AND d.push_token IS NOT NULL \
+            AND d.push_token <> '' \
+            AND d.push_authorization IN ('authorized', 'provisional') \
+            AND (s.last_push_status IS NULL OR s.last_push_status <> $2 OR s.last_push_channel <> CASE d.platform WHEN 'ios' THEN $3 WHEN 'android' THEN $4 ELSE '' END) \
+            AND NOT ( \
+                s.last_push_status = $5 \
+                AND s.last_push_channel = CASE d.platform WHEN 'ios' THEN $6 WHEN 'android' THEN $7 ELSE '' END \
+                AND s.last_push_token IS NOT NULL \
+                AND s.last_push_token = d.push_token \
+            ) \
+            AND (s.next_retry_at IS NULL OR s.next_retry_at <= $8) \
+            AND NOT EXISTS ( \
+                SELECT 1 FROM reminder_delivery rd \
+                WHERE rd.reminder_id = r.id \
+                  AND rd.device_id = d.id \
+                  AND rd.channel = CASE d.platform WHEN 'ios' THEN $9 WHEN 'android' THEN $10 ELSE '' END \
+                  AND rd.status = $11 \
+                  AND (rd.claim_until IS NULL OR rd.claim_until > $12) \
+            ) \
+          ORDER BY r.fire_at ASC, r.id ASC, d.updated_at DESC, d.id ASC \
+          LIMIT $13",
+    ))
     .bind(now_rfc3339)
     .bind(DELIVERY_STATUS_SUCCEEDED)
     .bind(CHANNEL_APNS)
@@ -510,11 +566,15 @@ pub async fn claim_due_push_work(
         };
         maybe_synchronize_reminder_delivery_race(db, reminder_id).await;
         let attempt_id = Uuid::now_v7();
-        let inserted = sqlx::query(
+        let inserted = sqlx::query(sql_for_backend(
+            db.backend(),
             "INSERT INTO reminder_delivery \
              (id, reminder_id, device_id, channel, status, created_at, attempted_at, claim_until, lease_owner) \
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+            "INSERT INTO reminder_delivery \
+             (id, reminder_id, device_id, channel, status, created_at, attempted_at, claim_until, lease_owner) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        ))
         .bind(attempt_id.to_string())
         .bind(reminder_id.to_string())
         .bind(device_row_id.to_string())
@@ -618,11 +678,13 @@ pub async fn reconcile_household(
     policy: &ExpiryReminderPolicy,
 ) -> Result<ReconcileStats, sqlx::Error> {
     let mut tx = db.pool.begin().await?;
-    let desired = load_household_drafts(&mut tx, household_id, policy).await?;
-    let deleted = delete_pending_for_household_kind_tx(&mut tx, household_id, KIND_EXPIRY).await?;
+    let desired = load_household_drafts(&mut tx, db.backend(), household_id, policy).await?;
+    let deleted =
+        delete_pending_for_household_kind_tx(&mut tx, db.backend(), household_id, KIND_EXPIRY)
+            .await?;
     let mut inserted = 0;
     for draft in &desired {
-        insert_draft_tx(&mut tx, draft).await?;
+        insert_draft_tx(&mut tx, db.backend(), draft).await?;
         inserted += 1;
     }
     tx.commit().await?;
@@ -749,9 +811,11 @@ pub fn build_expiry_reminder(
 
 async fn load_batch_context_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     batch_id: Uuid,
 ) -> Result<Option<BatchReminderContext>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        backend,
         "SELECT \
             b.household_id AS household_id, h.timezone AS household_timezone, \
             b.id AS batch_id, b.product_id AS product_id, \
@@ -763,7 +827,18 @@ async fn load_batch_context_tx(
          INNER JOIN product p ON p.id = b.product_id \
          INNER JOIN location l ON l.id = b.location_id \
          WHERE b.id = ?",
-    )
+        "SELECT \
+            b.household_id AS household_id, h.timezone AS household_timezone, \
+            b.id AS batch_id, b.product_id AS product_id, \
+            b.location_id AS location_id, b.expires_on AS expires_on, b.depleted_at AS depleted_at, \
+            b.quantity AS quantity, b.unit AS unit, \
+            p.name AS product_name, l.name AS location_name \
+         FROM stock_batch b \
+         INNER JOIN household h ON h.id = b.household_id \
+         INNER JOIN product p ON p.id = b.product_id \
+         INNER JOIN location l ON l.id = b.location_id \
+         WHERE b.id = $1",
+    ))
     .bind(batch_id.to_string())
     .fetch_optional(&mut **tx)
     .await?;
@@ -773,6 +848,7 @@ async fn load_batch_context_tx(
 
 async fn load_household_drafts(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     household_id: Uuid,
     policy: &ExpiryReminderPolicy,
 ) -> Result<Vec<ReminderDraft>, sqlx::Error> {
@@ -780,7 +856,8 @@ async fn load_household_drafts(
         return Ok(Vec::new());
     }
 
-    let rows = sqlx::query(
+    let rows = sqlx::query(sql_for_backend(
+        backend,
         "SELECT \
             b.household_id AS household_id, h.timezone AS household_timezone, \
             b.id AS batch_id, b.product_id AS product_id, \
@@ -792,7 +869,18 @@ async fn load_household_drafts(
          INNER JOIN product p ON p.id = b.product_id \
          INNER JOIN location l ON l.id = b.location_id \
          WHERE b.household_id = ? AND b.depleted_at IS NULL",
-    )
+        "SELECT \
+            b.household_id AS household_id, h.timezone AS household_timezone, \
+            b.id AS batch_id, b.product_id AS product_id, \
+            b.location_id AS location_id, b.expires_on AS expires_on, b.depleted_at AS depleted_at, \
+            b.quantity AS quantity, b.unit AS unit, \
+            p.name AS product_name, l.name AS location_name \
+         FROM stock_batch b \
+         INNER JOIN household h ON h.id = b.household_id \
+         INNER JOIN product p ON p.id = b.product_id \
+         INNER JOIN location l ON l.id = b.location_id \
+         WHERE b.household_id = $1 AND b.depleted_at IS NULL",
+    ))
     .bind(household_id.to_string())
     .fetch_all(&mut **tx)
     .await?;
@@ -847,25 +935,33 @@ fn expiry_draft_for_context(
 
 async fn delete_pending_for_batch_kind_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     batch_id: Uuid,
     kind: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM stock_reminder WHERE batch_id = ? AND kind = ? AND acked_at IS NULL")
-        .bind(batch_id.to_string())
-        .bind(kind)
-        .execute(&mut **tx)
-        .await?;
+    sqlx::query(sql_for_backend(
+        backend,
+        "DELETE FROM stock_reminder WHERE batch_id = ? AND kind = ? AND acked_at IS NULL",
+        "DELETE FROM stock_reminder WHERE batch_id = $1 AND kind = $2 AND acked_at IS NULL",
+    ))
+    .bind(batch_id.to_string())
+    .bind(kind)
+    .execute(&mut **tx)
+    .await?;
     Ok(())
 }
 
 async fn delete_pending_for_household_kind_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     household_id: Uuid,
     kind: &str,
 ) -> Result<u64, sqlx::Error> {
-    let deleted = sqlx::query(
+    let deleted = sqlx::query(sql_for_backend(
+        backend,
         "DELETE FROM stock_reminder WHERE household_id = ? AND kind = ? AND acked_at IS NULL",
-    )
+        "DELETE FROM stock_reminder WHERE household_id = $1 AND kind = $2 AND acked_at IS NULL",
+    ))
     .bind(household_id.to_string())
     .bind(kind)
     .execute(&mut **tx)
@@ -876,14 +972,20 @@ async fn delete_pending_for_household_kind_tx(
 
 async fn insert_draft_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     draft: &ReminderDraft,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        backend,
         "INSERT INTO stock_reminder \
          (id, household_id, batch_id, product_id, location_id, kind, fire_at, household_timezone, \
           household_fire_local_at, expires_on, title, body, created_at, acked_at) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
-    )
+        "INSERT INTO stock_reminder \
+         (id, household_id, batch_id, product_id, location_id, kind, fire_at, household_timezone, \
+          household_fire_local_at, expires_on, title, body, created_at, acked_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NULL)",
+    ))
     .bind(Uuid::now_v7().to_string())
     .bind(draft.household_id.to_string())
     .bind(draft.batch_id.to_string())
@@ -903,9 +1005,11 @@ async fn insert_draft_tx(
 }
 
 async fn pending_exists(db: &Database, household_id: Uuid, id: Uuid) -> Result<bool, sqlx::Error> {
-    let exists = sqlx::query(
+    let exists = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT 1 AS x FROM stock_reminder WHERE id = ? AND household_id = ? AND acked_at IS NULL",
-    )
+        "SELECT 1 AS x FROM stock_reminder WHERE id = $1 AND household_id = $2 AND acked_at IS NULL",
+    ))
     .bind(id.to_string())
     .bind(household_id.to_string())
     .fetch_optional(&db.pool)
@@ -1054,7 +1158,8 @@ async fn upsert_device_state_delivery(
     } else {
         Some(next_retry_at)
     };
-    let updated = sqlx::query(
+    let updated = sqlx::query(sql_for_backend(
+        db.backend(),
         "UPDATE reminder_device_state \
          SET first_push_attempted_at = COALESCE(first_push_attempted_at, ?), \
              last_push_attempted_at = ?, \
@@ -1066,7 +1171,18 @@ async fn upsert_device_state_delivery(
              last_error_message = ?, \
              updated_at = ? \
          WHERE reminder_id = ? AND device_id = ?",
-    )
+        "UPDATE reminder_device_state \
+         SET first_push_attempted_at = COALESCE(first_push_attempted_at, $1), \
+             last_push_attempted_at = $2, \
+             last_push_channel = $3, \
+             last_push_status = $4, \
+             last_push_token = $5, \
+             next_retry_at = $6, \
+             last_error_code = $7, \
+             last_error_message = $8, \
+             updated_at = $9 \
+         WHERE reminder_id = $10 AND device_id = $11",
+    ))
     .bind(attempted_at)
     .bind(attempted_at)
     .bind(channel)
@@ -1085,13 +1201,19 @@ async fn upsert_device_state_delivery(
         return Ok(());
     }
 
-    let inserted = sqlx::query(
+    let inserted = sqlx::query(sql_for_backend(
+        db.backend(),
         "INSERT INTO reminder_device_state \
          (reminder_id, device_id, first_push_attempted_at, last_push_attempted_at, last_push_channel, last_push_status, \
           last_push_token, next_retry_at, last_error_code, last_error_message, first_presented_at, \
           opened_at, created_at, updated_at) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
-    )
+        "INSERT INTO reminder_device_state \
+         (reminder_id, device_id, first_push_attempted_at, last_push_attempted_at, last_push_channel, last_push_status, \
+          last_push_token, next_retry_at, last_error_code, last_error_message, first_presented_at, \
+          opened_at, created_at, updated_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, NULL, $11, $12)",
+    ))
     .bind(reminder_id.to_string())
     .bind(device_id.to_string())
     .bind(attempted_at)
@@ -1109,7 +1231,8 @@ async fn upsert_device_state_delivery(
     match inserted {
         Ok(_) => Ok(()),
         Err(err) if is_unique_constraint_error(&err) => {
-            sqlx::query(
+            sqlx::query(sql_for_backend(
+                db.backend(),
                 "UPDATE reminder_device_state \
                  SET first_push_attempted_at = COALESCE(first_push_attempted_at, ?), \
                      last_push_attempted_at = ?, \
@@ -1121,7 +1244,18 @@ async fn upsert_device_state_delivery(
                      last_error_message = ?, \
                      updated_at = ? \
                  WHERE reminder_id = ? AND device_id = ?",
-            )
+                "UPDATE reminder_device_state \
+                 SET first_push_attempted_at = COALESCE(first_push_attempted_at, $1), \
+                     last_push_attempted_at = $2, \
+                     last_push_channel = $3, \
+                     last_push_status = $4, \
+                     last_push_token = $5, \
+                     next_retry_at = $6, \
+                     last_error_code = $7, \
+                     last_error_message = $8, \
+                     updated_at = $9 \
+                 WHERE reminder_id = $10 AND device_id = $11",
+            ))
             .bind(attempted_at)
             .bind(attempted_at)
             .bind(channel)
@@ -1571,17 +1705,25 @@ mod tests {
         )
         .await
         .unwrap();
-        sqlx::query("UPDATE stock_reminder SET fire_at = ? WHERE batch_id = ?")
-            .bind("2000-01-01T00:00:00.000Z")
-            .bind(batch.id.to_string())
-            .execute(&db.pool)
-            .await
-            .unwrap();
-        let row = sqlx::query("SELECT id FROM stock_reminder WHERE batch_id = ?")
-            .bind(batch.id.to_string())
-            .fetch_one(&db.pool)
-            .await
-            .unwrap();
+        sqlx::query(sql_for_backend(
+            db.backend(),
+            "UPDATE stock_reminder SET fire_at = ? WHERE batch_id = ?",
+            "UPDATE stock_reminder SET fire_at = $1 WHERE batch_id = $2",
+        ))
+        .bind("2000-01-01T00:00:00.000Z")
+        .bind(batch.id.to_string())
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        let row = sqlx::query(sql_for_backend(
+            db.backend(),
+            "SELECT id FROM stock_reminder WHERE batch_id = ?",
+            "SELECT id FROM stock_reminder WHERE batch_id = $1",
+        ))
+        .bind(batch.id.to_string())
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
         let reminder_id = uuid_from(&row, "id").unwrap();
 
         let session_id = Uuid::now_v7();
@@ -1661,11 +1803,15 @@ mod tests {
         assert_eq!(r1.items.len() + r2.items.len(), 1);
         assert_eq!(r1.claim_conflicts + r2.claim_conflicts, 1);
 
-        let row = sqlx::query(
+        let row = sqlx::query(sql_for_backend(
+            db.backend(),
             "SELECT COUNT(*) AS active_count \
              FROM reminder_delivery \
              WHERE reminder_id = ? AND device_id = ? AND channel = ? AND status = ?",
-        )
+            "SELECT COUNT(*) AS active_count \
+             FROM reminder_delivery \
+             WHERE reminder_id = $1 AND device_id = $2 AND channel = $3 AND status = $4",
+        ))
         .bind(reminder_id.to_string())
         .bind(device_id.to_string())
         .bind(CHANNEL_APNS)

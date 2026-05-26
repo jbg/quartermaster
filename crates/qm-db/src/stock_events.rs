@@ -9,7 +9,7 @@
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::Database;
+use crate::{sql_for_backend, Backend, Database};
 
 pub const EVENT_ADD: &str = "add";
 pub const EVENT_CONSUME: &str = "consume";
@@ -59,14 +59,21 @@ pub async fn list_for_batch(
     db: &Database,
     batch_id: Uuid,
 ) -> Result<Vec<StockEventRow>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, household_id, batch_id, event_type, quantity_delta, package_quantity, \
                 package_unit, note, created_at, created_by, consume_request_id, operation_id, \
                 recipe_execution_id \
          FROM stock_event \
          WHERE batch_id = ? \
          ORDER BY created_at ASC, id ASC",
-    )
+        "SELECT id, household_id, batch_id, event_type, quantity_delta, package_quantity, \
+                package_unit, note, created_at, created_by, consume_request_id, operation_id, \
+                recipe_execution_id \
+         FROM stock_event \
+         WHERE batch_id = $1 \
+         ORDER BY created_at ASC, id ASC",
+    ))
     .bind(batch_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -78,7 +85,8 @@ pub async fn list_for_household(
     household_id: Uuid,
     limit: i64,
 ) -> Result<Vec<StockEventRow>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, household_id, batch_id, event_type, quantity_delta, package_quantity, \
                 package_unit, note, created_at, created_by, consume_request_id, operation_id, \
                 recipe_execution_id \
@@ -86,7 +94,14 @@ pub async fn list_for_household(
          WHERE household_id = ? \
          ORDER BY created_at DESC, id DESC \
          LIMIT ?",
-    )
+        "SELECT id, household_id, batch_id, event_type, quantity_delta, package_quantity, \
+                package_unit, note, created_at, created_by, consume_request_id, operation_id, \
+                recipe_execution_id \
+         FROM stock_event \
+         WHERE household_id = $1 \
+         ORDER BY created_at DESC, id DESC \
+         LIMIT $2",
+    ))
     .bind(household_id.to_string())
     .bind(limit)
     .fetch_all(&db.pool)
@@ -169,9 +184,11 @@ pub async fn list_timeline(
 /// `restore` path to decide whether the last action was a discard.
 pub async fn latest_for_batch_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     batch_id: Uuid,
 ) -> Result<Option<StockEventRow>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        backend,
         "SELECT id, household_id, batch_id, event_type, quantity_delta, package_quantity, \
                 package_unit, note, created_at, created_by, consume_request_id, operation_id, \
                 recipe_execution_id \
@@ -179,7 +196,14 @@ pub async fn latest_for_batch_tx(
          WHERE batch_id = ? \
          ORDER BY created_at DESC, id DESC \
          LIMIT 1",
-    )
+        "SELECT id, household_id, batch_id, event_type, quantity_delta, package_quantity, \
+                package_unit, note, created_at, created_by, consume_request_id, operation_id, \
+                recipe_execution_id \
+         FROM stock_event \
+         WHERE batch_id = $1 \
+         ORDER BY created_at DESC, id DESC \
+         LIMIT 1",
+    ))
     .bind(batch_id.to_string())
     .fetch_optional(&mut **tx)
     .await?;

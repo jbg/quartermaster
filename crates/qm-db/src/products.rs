@@ -2,7 +2,7 @@ use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{now_utc_rfc3339, Database};
+use crate::{now_utc_rfc3339, sql_for_backend, Backend, Database};
 
 pub const SOURCE_OFF: &str = "openfoodfacts";
 pub const SOURCE_MANUAL: &str = "manual";
@@ -95,11 +95,15 @@ pub async fn create_manual_with_max_open_days(
     let created_at = now_utc_rfc3339();
     let unit = preferred_unit.unwrap_or(base_unit_for_family(family));
 
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        db.backend(),
         "INSERT INTO product \
          (id, source, off_barcode, name, brand, default_unit, family, image_url, package_quantity, package_unit, fetched_at, created_by_household_id, created_at, max_open_days) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
-    )
+        "INSERT INTO product \
+         (id, source, off_barcode, name, brand, default_unit, family, image_url, package_quantity, package_unit, fetched_at, created_by_household_id, created_at, max_open_days) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, $11, $12, $13)",
+    ))
     .bind(id.to_string())
     .bind(SOURCE_MANUAL)
     .bind(barcode)
@@ -225,7 +229,14 @@ pub async fn upsert_from_off(
 }
 
 pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<ProductRow>, sqlx::Error> {
-    let sql = format!("SELECT {COLS} FROM product WHERE id = ? AND deleted_at IS NULL");
+    let sql = match db.backend() {
+        Backend::Postgres => {
+            format!("SELECT {COLS} FROM product WHERE id = $1 AND deleted_at IS NULL")
+        }
+        Backend::Sqlite | Backend::Other => {
+            format!("SELECT {COLS} FROM product WHERE id = ? AND deleted_at IS NULL")
+        }
+    };
     let row = sqlx::query(crate::audited_sql(sql))
         .bind(id.to_string())
         .fetch_optional(&db.pool)

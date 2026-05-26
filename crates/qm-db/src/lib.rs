@@ -219,6 +219,17 @@ pub fn now_utc_rfc3339() -> String {
     time::now_utc_rfc3339()
 }
 
+pub(crate) fn sql_for_backend(
+    backend: Backend,
+    sqlite_sql: &'static str,
+    postgres_sql: &'static str,
+) -> &'static str {
+    match backend {
+        Backend::Postgres => postgres_sql,
+        Backend::Sqlite | Backend::Other => sqlite_sql,
+    }
+}
+
 pub(crate) fn audited_sql(sql: String) -> sqlx::AssertSqlSafe<String> {
     sqlx::AssertSqlSafe(sql)
 }

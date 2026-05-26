@@ -2,7 +2,7 @@ use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{now_utc_rfc3339, Database};
+use crate::{now_utc_rfc3339, sql_for_backend, Backend, Database};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct MembershipRow {
@@ -41,20 +41,23 @@ pub async fn insert(
     role: &str,
 ) -> Result<(), sqlx::Error> {
     let mut tx = db.pool.begin().await?;
-    insert_in_tx(&mut tx, household_id, user_id, role).await?;
+    insert_in_tx(&mut tx, db.backend(), household_id, user_id, role).await?;
     tx.commit().await?;
     Ok(())
 }
 
 pub async fn insert_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     household_id: Uuid,
     user_id: Uuid,
     role: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        backend,
         "INSERT INTO membership (household_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
-    )
+        "INSERT INTO membership (household_id, user_id, role, joined_at) VALUES ($1, $2, $3, $4)",
+    ))
     .bind(household_id.to_string())
     .bind(user_id.to_string())
     .bind(role)
@@ -66,11 +69,12 @@ pub async fn insert_in_tx(
 
 pub async fn insert_if_absent_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     household_id: Uuid,
     user_id: Uuid,
     role: &str,
 ) -> Result<InsertOutcome, sqlx::Error> {
-    match insert_in_tx(tx, household_id, user_id, role).await {
+    match insert_in_tx(tx, backend, household_id, user_id, role).await {
         Ok(()) => Ok(InsertOutcome::Inserted),
         Err(err) if is_unique_violation(&err) => Ok(InsertOutcome::AlreadyExists),
         Err(err) => Err(err),
@@ -82,10 +86,13 @@ pub async fn find(
     household_id: Uuid,
     user_id: Uuid,
 ) -> Result<Option<MembershipRow>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT household_id, user_id, role, joined_at \
          FROM membership WHERE household_id = ? AND user_id = ?",
-    )
+        "SELECT household_id, user_id, role, joined_at \
+         FROM membership WHERE household_id = $1 AND user_id = $2",
+    ))
     .bind(household_id.to_string())
     .bind(user_id.to_string())
     .fetch_optional(&db.pool)
@@ -97,14 +104,21 @@ pub async fn list_members(
     db: &Database,
     household_id: Uuid,
 ) -> Result<Vec<MembershipWithUserRow>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT m.household_id, m.user_id, m.role, m.joined_at, \
                 u.email, u.display_name, u.email_verified_at \
          FROM membership m \
          INNER JOIN users u ON u.id = m.user_id \
          WHERE m.household_id = ? \
          ORDER BY m.joined_at ASC",
-    )
+        "SELECT m.household_id, m.user_id, m.role, m.joined_at, \
+                u.email, u.display_name, u.email_verified_at \
+         FROM membership m \
+         INNER JOIN users u ON u.id = m.user_id \
+         WHERE m.household_id = $1 \
+         ORDER BY m.joined_at ASC",
+    ))
     .bind(household_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -124,7 +138,8 @@ pub async fn list_for_user(
     db: &Database,
     user_id: Uuid,
 ) -> Result<Vec<MembershipWithHouseholdRow>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT m.household_id, m.user_id, m.role, m.joined_at, \
                 h.name AS household_name, h.timezone AS household_timezone, \
                 h.measurement_system AS household_measurement_system \
@@ -132,7 +147,14 @@ pub async fn list_for_user(
          INNER JOIN household h ON h.id = m.household_id \
          WHERE m.user_id = ? \
          ORDER BY m.joined_at DESC, h.id DESC",
-    )
+        "SELECT m.household_id, m.user_id, m.role, m.joined_at, \
+                h.name AS household_name, h.timezone AS household_timezone, \
+                h.measurement_system AS household_measurement_system \
+         FROM membership m \
+         INNER JOIN household h ON h.id = m.household_id \
+         WHERE m.user_id = $1 \
+         ORDER BY m.joined_at DESC, h.id DESC",
+    ))
     .bind(user_id.to_string())
     .fetch_all(&db.pool)
     .await?;
@@ -149,9 +171,11 @@ pub async fn list_for_user(
 }
 
 pub async fn count_admins(db: &Database, household_id: Uuid) -> Result<i64, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT COUNT(*) AS n FROM membership WHERE household_id = ? AND role = 'admin'",
-    )
+        "SELECT COUNT(*) AS n FROM membership WHERE household_id = $1 AND role = 'admin'",
+    ))
     .bind(household_id.to_string())
     .fetch_one(&db.pool)
     .await?;
@@ -159,11 +183,15 @@ pub async fn count_admins(db: &Database, household_id: Uuid) -> Result<i64, sqlx
 }
 
 pub async fn remove(db: &Database, household_id: Uuid, user_id: Uuid) -> Result<bool, sqlx::Error> {
-    let res = sqlx::query("DELETE FROM membership WHERE household_id = ? AND user_id = ?")
-        .bind(household_id.to_string())
-        .bind(user_id.to_string())
-        .execute(&db.pool)
-        .await?;
+    let res = sqlx::query(sql_for_backend(
+        db.backend(),
+        "DELETE FROM membership WHERE household_id = ? AND user_id = ?",
+        "DELETE FROM membership WHERE household_id = $1 AND user_id = $2",
+    ))
+    .bind(household_id.to_string())
+    .bind(user_id.to_string())
+    .execute(&db.pool)
+    .await?;
     Ok(res.rows_affected() > 0)
 }
 
