@@ -4,6 +4,7 @@ members = [
     "crates/qm-ai",
     "crates/qm-core",
     "crates/qm-db",
+    "crates/qm-suppliers",
     "crates/qm-api",
     "crates/qm-server",
     "xtask",
