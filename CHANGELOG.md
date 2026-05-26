@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.0](https://github.com/jbg/quartermaster/compare/1.31.2...1.32.0) (2026-05-26)
+
+
+### Features
+
+* improve native cook experience ([19c3604](https://github.com/jbg/quartermaster/commit/19c36047c3e31b87dad4e0e52dc7da97236f06c4))
+
 ## [1.31.2](https://github.com/jbg/quartermaster/compare/1.31.1...1.31.2) (2026-05-26)
 
 
