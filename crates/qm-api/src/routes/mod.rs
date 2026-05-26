@@ -16,4 +16,5 @@ pub mod recipes;
 pub mod reminders;
 pub mod stock;
 pub mod storage_vessels;
+pub mod suppliers;
 pub mod units;

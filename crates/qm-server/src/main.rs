@@ -39,6 +39,7 @@ struct RawConfig {
     off_api_base_url: String,
     off_write_url: String,
     off_credential_encryption_key: Option<String>,
+    supplier_credential_encryption_key: Option<String>,
     ai_provider: String,
     ai_model: Option<String>,
     ai_retain_raw_responses: bool,
@@ -142,6 +143,7 @@ impl Default for RawConfig {
             off_api_base_url: "https://world.openfoodfacts.org/api/v2/product".into(),
             off_write_url: "https://world.openfoodfacts.org/cgi/product_jqm2.pl".into(),
             off_credential_encryption_key: None,
+            supplier_credential_encryption_key: None,
             ai_provider: "disabled".into(),
             ai_model: None,
             ai_retain_raw_responses: false,
@@ -485,6 +487,10 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         off_credential_encryption_key: normalize_optional_secret(
             raw.off_credential_encryption_key,
             "QM_OFF_CREDENTIAL_ENCRYPTION_KEY",
+        )?,
+        supplier_credential_encryption_key: normalize_optional_secret(
+            raw.supplier_credential_encryption_key,
+            "QM_SUPPLIER_CREDENTIAL_ENCRYPTION_KEY",
         )?,
         public_base_url,
         passkeys,

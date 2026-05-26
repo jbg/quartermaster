@@ -11274,6 +11274,828 @@
           }
         }
       },
+      "SupplierAccountDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "supplier_id",
+          "display_name",
+          "status",
+          "config",
+          "secrets",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "config": {},
+          "consent_accepted_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "region": {},
+          "secrets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupplierSecretDto"
+            }
+          },
+          "status": {
+            "$ref": "#/components/schemas/SupplierAccountStatusDto"
+          },
+          "supplier_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "SupplierAccountListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupplierAccountDto"
+            }
+          }
+        }
+      },
+      "SupplierAccountStatusDto": {
+        "type": "string",
+        "enum": [
+          "active",
+          "needs_configuration",
+          "disabled"
+        ]
+      },
+      "SupplierCapabilitiesResponse": {
+        "type": "object",
+        "required": [
+          "suppliers"
+        ],
+        "properties": {
+          "suppliers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupplierDescriptorDto"
+            }
+          }
+        }
+      },
+      "SupplierCapabilityDto": {
+        "type": "string",
+        "enum": [
+          "catalog_search",
+          "item_detail",
+          "cart_draft",
+          "order_submit",
+          "order_status",
+          "cancellation",
+          "receiving_hints",
+          "browser_automation",
+          "manual_handoff"
+        ]
+      },
+      "SupplierCartDraftDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "supplier_id",
+          "status",
+          "source",
+          "intervention_state",
+          "lines",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "account_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "intervention_state": {
+            "$ref": "#/components/schemas/SupplierInterventionStateDto"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupplierCartLineDto"
+            }
+          },
+          "review_notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SupplierCartStatusDto"
+          },
+          "supplier_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "SupplierCartLineDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "supplier_item_id",
+          "quantity",
+          "sort_order"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "supplier_item_id": {
+            "type": "string"
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SupplierCartStatusDto": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "needs_review",
+          "ready",
+          "submitted",
+          "cancelled"
+        ]
+      },
+      "SupplierCatalogItemDto": {
+        "type": "object",
+        "required": [
+          "supplier_id",
+          "supplier_item_id",
+          "name",
+          "availability",
+          "metadata"
+        ],
+        "properties": {
+          "availability": {
+            "type": "string"
+          },
+          "brand": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "detail_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "image_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lead_time_max_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "lead_time_min_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "metadata": {},
+          "minimum_order_quantity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "minimum_order_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "pack_quantity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pack_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "price_amount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "price_currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "supplier_id": {
+            "type": "string"
+          },
+          "supplier_item_id": {
+            "type": "string"
+          }
+        }
+      },
+      "SupplierCatalogSearchQuery": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "q": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "supplier_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SupplierCatalogSearchResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupplierCatalogItemDto"
+            }
+          }
+        }
+      },
+      "SupplierCreateAccountRequest": {
+        "type": "object",
+        "required": [
+          "supplier_id",
+          "display_name"
+        ],
+        "properties": {
+          "config": {},
+          "consent_accepted_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "region": {},
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SupplierAccountStatusDto"
+              }
+            ]
+          },
+          "supplier_id": {
+            "type": "string"
+          }
+        }
+      },
+      "SupplierCreateCartDraftRequest": {
+        "type": "object",
+        "required": [
+          "supplier_id",
+          "lines"
+        ],
+        "properties": {
+          "account_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupplierCreateCartLineRequest"
+            }
+          },
+          "review_notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "supplier_id": {
+            "type": "string"
+          }
+        }
+      },
+      "SupplierCreateCartLineRequest": {
+        "type": "object",
+        "required": [
+          "supplier_item_id",
+          "quantity"
+        ],
+        "properties": {
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "supplier_item_id": {
+            "type": "string"
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SupplierDescriptorDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "display_name",
+          "capabilities",
+          "requirements",
+          "supported_regions",
+          "needs_network",
+          "needs_browser"
+        ],
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupplierCapabilityDto"
+            }
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "needs_browser": {
+            "type": "boolean"
+          },
+          "needs_network": {
+            "type": "boolean"
+          },
+          "requirements": {},
+          "supported_regions": {},
+          "terms_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SupplierInterventionStateDto": {
+        "type": "string",
+        "enum": [
+          "none",
+          "consent_required",
+          "login_required",
+          "browser_handoff_required",
+          "manual_handoff_required"
+        ]
+      },
+      "SupplierMappingConfidenceDto": {
+        "type": "string",
+        "enum": [
+          "suggested",
+          "confirmed",
+          "rejected"
+        ]
+      },
+      "SupplierMappingDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "product_id",
+          "supplier_id",
+          "supplier_item_id",
+          "confidence",
+          "substitute_policy",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "confidence": {
+            "$ref": "#/components/schemas/SupplierMappingConfidenceDto"
+          },
+          "confirmed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "substitute_policy": {},
+          "supplier_id": {
+            "type": "string"
+          },
+          "supplier_item_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "SupplierMappingListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupplierMappingDto"
+            }
+          }
+        }
+      },
+      "SupplierOrderDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "supplier_id",
+          "status",
+          "redacted_summary",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "account_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "delivered_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "draft_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "redacted_summary": {},
+          "review_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/SupplierOrderStatusDto"
+          },
+          "submitted_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "supplier_id": {
+            "type": "string"
+          },
+          "supplier_order_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "SupplierOrderListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupplierOrderDto"
+            }
+          }
+        }
+      },
+      "SupplierOrderStatusDto": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "submitted",
+          "confirmed",
+          "in_progress",
+          "delivered",
+          "cancelled",
+          "failed",
+          "human_intervention_required"
+        ]
+      },
+      "SupplierPatchCartDraftRequest": {
+        "type": "object",
+        "required": [
+          "status",
+          "intervention_state"
+        ],
+        "properties": {
+          "intervention_state": {
+            "$ref": "#/components/schemas/SupplierInterventionStateDto"
+          },
+          "review_notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/SupplierCartStatusDto"
+          }
+        }
+      },
+      "SupplierPutMappingRequest": {
+        "type": "object",
+        "required": [
+          "supplier_id",
+          "supplier_item_id",
+          "confidence"
+        ],
+        "properties": {
+          "confidence": {
+            "$ref": "#/components/schemas/SupplierMappingConfidenceDto"
+          },
+          "confirmed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "substitute_policy": {},
+          "supplier_id": {
+            "type": "string"
+          },
+          "supplier_item_id": {
+            "type": "string"
+          }
+        }
+      },
+      "SupplierPutSecretRequest": {
+        "type": "object",
+        "required": [
+          "secret_kind",
+          "value"
+        ],
+        "properties": {
+          "secret_kind": {
+            "$ref": "#/components/schemas/SupplierSecretKindDto"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "SupplierReceiveLineRequest": {
+        "type": "object",
+        "required": [
+          "product_id",
+          "location_id",
+          "quantity",
+          "unit"
+        ],
+        "properties": {
+          "expires_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
+      "SupplierReceiveOrderRequest": {
+        "type": "object",
+        "required": [
+          "lines"
+        ],
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupplierReceiveLineRequest"
+            }
+          }
+        }
+      },
+      "SupplierSecretDto": {
+        "type": "object",
+        "required": [
+          "secret_name",
+          "secret_kind",
+          "updated_at"
+        ],
+        "properties": {
+          "redacted_hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "secret_kind": {
+            "$ref": "#/components/schemas/SupplierSecretKindDto"
+          },
+          "secret_name": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "SupplierSecretKindDto": {
+        "type": "string",
+        "enum": [
+          "password",
+          "api_token",
+          "cookie_jar",
+          "other"
+        ]
+      },
+      "SupplierUpdateAccountRequest": {
+        "type": "object",
+        "required": [
+          "display_name",
+          "status"
+        ],
+        "properties": {
+          "config": {},
+          "consent_accepted_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "region": {},
+          "status": {
+            "$ref": "#/components/schemas/SupplierAccountStatusDto"
+          }
+        }
+      },
       "SwitchHouseholdRequest": {
         "type": "object",
         "required": [
@@ -11591,6 +12413,10 @@
     {
       "name": "stock",
       "description": "Batches of stock and FIFO consumption"
+    },
+    {
+      "name": "suppliers",
+      "description": "Supplier setup, catalog mapping, cart drafts, and order lifecycle foundations"
     }
   ]
 }
