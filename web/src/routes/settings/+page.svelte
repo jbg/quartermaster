@@ -851,7 +851,6 @@
   {activeHousehold}
   {households}
   onhouseholdchange={switchHousehold}
-  onimportbackup={beginImportBackup}
   onlogout={logout}
 >
   <input
