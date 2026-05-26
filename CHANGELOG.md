@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.31.1](https://github.com/jbg/quartermaster/compare/1.31.0...1.31.1) (2026-05-26)
+
+
+### Bug Fixes
+
+* **web:** improve shopping and AI navigation UX ([c08152c](https://github.com/jbg/quartermaster/commit/c08152cd869b3fa94ec6805794d0d8e7b8309725))
+
 ## [1.31.0](https://github.com/jbg/quartermaster/compare/1.30.0...1.31.0) (2026-05-26)
 
 
