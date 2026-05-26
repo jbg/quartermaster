@@ -1,6 +1,8 @@
 package dev.quartermaster.android
 
 import dev.quartermaster.android.generated.infrastructure.Serializer
+import dev.quartermaster.android.generated.models.AiTaskDto
+import dev.quartermaster.android.generated.models.AiTaskUserState
 import dev.quartermaster.android.generated.models.BarcodeLookupResponse
 import dev.quartermaster.android.generated.models.ConsumeRequest
 import dev.quartermaster.android.generated.models.ConsumeResponse
@@ -24,7 +26,13 @@ import dev.quartermaster.android.generated.models.PrintStockLabelRequest
 import dev.quartermaster.android.generated.models.PrintStockLabelResponse
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
+import dev.quartermaster.android.generated.models.RecipeDto
+import dev.quartermaster.android.generated.models.RecipeExecutionPreflightResponse
+import dev.quartermaster.android.generated.models.RecipeExecutionResponse
+import dev.quartermaster.android.generated.models.RecipeSummaryDto
 import dev.quartermaster.android.generated.models.ReminderDto
+import dev.quartermaster.android.generated.models.ReplenishmentCartRunDto
+import dev.quartermaster.android.generated.models.ReplenishmentCreateCartDraftResponse
 import dev.quartermaster.android.generated.models.RequestEmailVerificationResponse
 import dev.quartermaster.android.generated.models.SaveOpenFoodFactsCredentialsRequest
 import dev.quartermaster.android.generated.models.SplitStockRequest
@@ -33,6 +41,8 @@ import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventType
 import dev.quartermaster.android.generated.models.StorageVesselDto
+import dev.quartermaster.android.generated.models.SupplierCartDraftDto
+import dev.quartermaster.android.generated.models.SupplierOrderDto
 import dev.quartermaster.android.generated.models.UnitDto
 import dev.quartermaster.android.generated.models.UnitFamily
 import dev.quartermaster.android.generated.models.UpdateHouseholdRequest
@@ -2207,6 +2217,43 @@ class QuartermasterAppStateTest {
             authorization: PushAuthorizationStatus,
             appVersion: String,
         ) = Unit
+
+        override suspend fun listRecipes(): List<RecipeSummaryDto> = emptyList()
+
+        override suspend fun getRecipe(id: String): RecipeDto = error("Unused in test")
+
+        override suspend fun preflightRecipe(
+            id: String,
+            allowPartial: Boolean,
+        ): RecipeExecutionPreflightResponse = error("Unused in test")
+
+        override suspend fun executeRecipe(
+            id: String,
+            allowPartial: Boolean,
+        ): RecipeExecutionResponse = error("Unused in test")
+
+        override suspend fun generateReplenishmentCartDraft(): ReplenishmentCreateCartDraftResponse = error("Unused in test")
+
+        override suspend fun getReplenishmentCartRun(id: String): ReplenishmentCartRunDto = error("Unused in test")
+
+        override suspend fun getSupplierCartDraft(id: String): SupplierCartDraftDto = error("Unused in test")
+
+        override suspend fun submitSupplierCartDraft(id: String): SupplierOrderDto = error("Unused in test")
+
+        override suspend fun receiveSupplierOrder(
+            orderId: String,
+            productId: String,
+            locationId: String,
+            quantity: String,
+            unit: String,
+        ): SupplierOrderDto = error("Unused in test")
+
+        override suspend fun listAiTasks(): List<AiTaskDto> = emptyList()
+
+        override suspend fun updateAiTaskState(
+            id: String,
+            userState: AiTaskUserState,
+        ): AiTaskDto = error("Unused in test")
 
         override suspend fun searchProducts(query: String): List<ProductDto> = searchResults
 

@@ -10,6 +10,7 @@ internal object AppRoute {
     const val Reminders = "reminders"
     const val Scan = "scan"
     const val Settings = "settings"
+    const val Cook = "cook"
     const val BatchDetail = "inventory/batch/{batchId}"
     const val StockEdit = "inventory/batch/{batchId}/edit"
     const val ProductNew = "products/new"

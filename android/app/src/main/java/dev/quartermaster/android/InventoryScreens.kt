@@ -54,6 +54,7 @@ internal fun InventoryScreen(
     appState: QuartermasterAppState,
     modifier: Modifier = Modifier,
     onOpenBatch: (String) -> Unit = {},
+    onOpenCook: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(appState.currentHouseholdId) {
@@ -71,6 +72,14 @@ internal fun InventoryScreen(
             RouteHeader(
                 title = appState.meOrNull?.currentHousehold?.name ?: "Inventory",
                 subtitle = "Stock grouped by location, with depleted batches kept for history and restore.",
+                action = {
+                    Button(
+                        onClick = onOpenCook,
+                        modifier = Modifier.testTag(SmokeTag.CookEntryInventory),
+                    ) {
+                        Text("Cook & carts")
+                    }
+                },
             )
         }
         if (appState.isInventoryRefreshing) {

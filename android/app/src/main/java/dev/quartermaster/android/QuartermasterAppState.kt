@@ -7,6 +7,8 @@ import android.os.Build
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import dev.quartermaster.android.generated.models.AiTaskDto
+import dev.quartermaster.android.generated.models.AiTaskUserState
 import dev.quartermaster.android.generated.models.BarcodeLookupResponse
 import dev.quartermaster.android.generated.models.ConsumeRequest
 import dev.quartermaster.android.generated.models.ConsumeResponse
@@ -30,7 +32,13 @@ import dev.quartermaster.android.generated.models.PrintStockLabelResponse
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.ProductSource
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
+import dev.quartermaster.android.generated.models.RecipeDto
+import dev.quartermaster.android.generated.models.RecipeExecutionPreflightResponse
+import dev.quartermaster.android.generated.models.RecipeExecutionResponse
+import dev.quartermaster.android.generated.models.RecipeSummaryDto
 import dev.quartermaster.android.generated.models.ReminderDto
+import dev.quartermaster.android.generated.models.ReplenishmentCartRunDto
+import dev.quartermaster.android.generated.models.ReplenishmentCreateCartDraftResponse
 import dev.quartermaster.android.generated.models.RequestEmailVerificationResponse
 import dev.quartermaster.android.generated.models.SaveOpenFoodFactsCredentialsRequest
 import dev.quartermaster.android.generated.models.SplitStockRemainderRequest
@@ -40,6 +48,8 @@ import dev.quartermaster.android.generated.models.StockBatchDto
 import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventType
 import dev.quartermaster.android.generated.models.StorageVesselDto
+import dev.quartermaster.android.generated.models.SupplierCartDraftDto
+import dev.quartermaster.android.generated.models.SupplierOrderDto
 import dev.quartermaster.android.generated.models.UnitDto
 import dev.quartermaster.android.generated.models.UnitFamily
 import dev.quartermaster.android.generated.models.UpdateHouseholdRequest
@@ -265,6 +275,24 @@ interface QuartermasterBackend {
         appVersion: String,
     )
 
+    suspend fun listRecipes(): List<RecipeSummaryDto>
+    suspend fun getRecipe(id: String): RecipeDto
+    suspend fun preflightRecipe(id: String, allowPartial: Boolean = false): RecipeExecutionPreflightResponse
+    suspend fun executeRecipe(id: String, allowPartial: Boolean = false): RecipeExecutionResponse
+    suspend fun generateReplenishmentCartDraft(): ReplenishmentCreateCartDraftResponse
+    suspend fun getReplenishmentCartRun(id: String): ReplenishmentCartRunDto
+    suspend fun getSupplierCartDraft(id: String): SupplierCartDraftDto
+    suspend fun submitSupplierCartDraft(id: String): SupplierOrderDto
+    suspend fun receiveSupplierOrder(
+        orderId: String,
+        productId: String,
+        locationId: String,
+        quantity: String,
+        unit: String,
+    ): SupplierOrderDto
+    suspend fun listAiTasks(): List<AiTaskDto>
+    suspend fun updateAiTaskState(id: String, userState: AiTaskUserState): AiTaskDto
+
     suspend fun searchProducts(query: String): List<ProductDto>
     suspend fun listProducts(query: String?, limit: Int = 100, includeDeleted: Boolean = false): List<ProductDto>
     suspend fun getProduct(id: String): ProductDto
@@ -435,6 +463,30 @@ class QuartermasterApiBackend(
         )
     }
 
+    override suspend fun listRecipes(): List<RecipeSummaryDto> = api.listRecipes()
+    override suspend fun getRecipe(id: String): RecipeDto = api.getRecipe(id)
+    override suspend fun preflightRecipe(id: String, allowPartial: Boolean): RecipeExecutionPreflightResponse = api.preflightRecipe(id, allowPartial)
+    override suspend fun executeRecipe(id: String, allowPartial: Boolean): RecipeExecutionResponse = api.executeRecipe(id, allowPartial)
+    override suspend fun generateReplenishmentCartDraft(): ReplenishmentCreateCartDraftResponse = api.generateReplenishmentCartDraft()
+    override suspend fun getReplenishmentCartRun(id: String): ReplenishmentCartRunDto = api.getReplenishmentCartRun(id)
+    override suspend fun getSupplierCartDraft(id: String): SupplierCartDraftDto = api.getSupplierCartDraft(id)
+    override suspend fun submitSupplierCartDraft(id: String): SupplierOrderDto = api.submitSupplierCartDraft(id)
+    override suspend fun receiveSupplierOrder(
+        orderId: String,
+        productId: String,
+        locationId: String,
+        quantity: String,
+        unit: String,
+    ): SupplierOrderDto = api.receiveSupplierOrder(
+        orderId = orderId,
+        productId = productId,
+        locationId = locationId,
+        quantity = quantity,
+        unit = unit,
+    )
+    override suspend fun listAiTasks(): List<AiTaskDto> = api.listAiTasks()
+    override suspend fun updateAiTaskState(id: String, userState: AiTaskUserState): AiTaskDto = api.updateAiTaskState(id, userState)
+
     override suspend fun searchProducts(query: String): List<ProductDto> = api.searchProducts(query)
     override suspend fun listProducts(query: String?, limit: Int, includeDeleted: Boolean): List<ProductDto> = api.listProducts(query = query, limit = limit, includeDeleted = includeDeleted)
     override suspend fun getProduct(id: String): ProductDto = api.getProduct(id)
@@ -573,6 +625,8 @@ class QuartermasterAppState(
     var scanActionInFlight by mutableStateOf<ScanAction?>(null)
         private set
     var returnToScanAfterProductCreate by mutableStateOf(false)
+        private set
+    var cookActionInFlight by mutableStateOf(false)
         private set
 
     init {
@@ -1085,6 +1139,50 @@ class QuartermasterAppState(
         offCredentialStatus = backend.openFoodFactsCredentialStatus()
         passkeys = backend.listPasskeys()
         hasLoadedSettingsOnce = true
+    }
+
+    suspend fun loadCookRecipes(): List<RecipeSummaryDto> = runCookRequest { backend.listRecipes() }
+
+    suspend fun loadCookRecipe(id: String): RecipeDto = runCookRequest { backend.getRecipe(id) }
+
+    suspend fun preflightCookRecipe(
+        id: String,
+        allowPartial: Boolean,
+    ): RecipeExecutionPreflightResponse = runCookRequest { backend.preflightRecipe(id, allowPartial) }
+
+    suspend fun executeCookRecipe(
+        id: String,
+        allowPartial: Boolean,
+    ): RecipeExecutionResponse = runCookRequest {
+        backend.executeRecipe(id, allowPartial).also { refreshInventory(force = true) }
+    }
+
+    suspend fun generateCookCartDraft(): ReplenishmentCreateCartDraftResponse = runCookRequest {
+        backend.generateReplenishmentCartDraft()
+    }
+
+    suspend fun loadCookCartDraft(id: String): SupplierCartDraftDto = runCookRequest {
+        backend.getSupplierCartDraft(id)
+    }
+
+    suspend fun submitCookCartDraft(id: String): SupplierOrderDto = runCookRequest {
+        backend.submitSupplierCartDraft(id)
+    }
+
+    suspend fun receiveCookSupplierOrder(
+        orderId: String,
+        productId: String,
+        locationId: String,
+        quantity: String,
+        unit: String,
+    ): SupplierOrderDto = runCookRequest {
+        backend.receiveSupplierOrder(
+            orderId = orderId,
+            productId = productId,
+            locationId = locationId,
+            quantity = quantity,
+            unit = unit,
+        ).also { refreshInventory(force = true) }
     }
 
     suspend fun refreshProducts(force: Boolean = false) = guardHouseholdScope(
@@ -2091,6 +2189,23 @@ class QuartermasterAppState(
             }
         } finally {
             scanActionInFlight = null
+        }
+    }
+
+    private suspend fun <T> runCookRequest(block: suspend () -> T): T {
+        cookActionInFlight = true
+        lastError = null
+        try {
+            return block()
+        } catch (failure: Throwable) {
+            if (failure is ApiFailure && failure.status == 401) {
+                clearSession()
+                phase = AppPhase.Unauthenticated
+            }
+            lastError = failure.userFacingMessage()
+            throw failure
+        } finally {
+            cookActionInFlight = false
         }
     }
 
