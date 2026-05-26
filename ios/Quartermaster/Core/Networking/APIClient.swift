@@ -1133,6 +1133,82 @@ actor APIClient: AppStateAPI {
     }
   }
 
+  // MARK: - Recipes and automation
+
+  func recipes() async throws -> [RecipeSummary] {
+    let response: RecipeListResponse = try await rawJSON(
+      "GET", "recipes", body: Optional<Int>.none, auth: true)
+    return response.items
+  }
+
+  func getRecipe(id: String) async throws -> Recipe {
+    try await rawJSON("GET", "recipes/\(id)", body: Optional<Int>.none, auth: true)
+  }
+
+  func preflightRecipe(_ recipe: Recipe, allowPartial: Bool) async throws
+    -> RecipeExecutionPreflight
+  {
+    try await rawJSON(
+      "POST",
+      "recipes/executions/preflight",
+      body: Self.executionRequest(recipe: recipe, allowPartial: allowPartial),
+      auth: true)
+  }
+
+  func executeRecipe(_ recipe: Recipe, allowPartial: Bool) async throws -> RecipeExecutionResult {
+    var request = Self.executionRequest(recipe: recipe, allowPartial: allowPartial)
+    request.idempotencyKey = UUID().uuidString
+    return try await rawJSON("POST", "recipes/executions", body: request, auth: true)
+  }
+
+  func generateCartDraft() async throws -> ReplenishmentCreateCartDraftResponse {
+    try await rawJSON(
+      "POST",
+      "replenishment/cart-drafts",
+      body: ReplenishmentCartDraftWireRequest(
+        supplierId: "mock",
+        includeAiExplanation: true,
+        submitTrusted: false),
+      auth: true,
+      successStatus: 201)
+  }
+
+  func getCartRun(id: String) async throws -> ReplenishmentCartRun {
+    try await rawJSON("GET", "replenishment/cart-runs/\(id)", body: Optional<Int>.none, auth: true)
+  }
+
+  func getSupplierCartDraft(id: String) async throws -> SupplierCartDraft {
+    try await rawJSON("GET", "suppliers/cart-drafts/\(id)", body: Optional<Int>.none, auth: true)
+  }
+
+  func submitSupplierCartDraft(id: String) async throws -> SupplierOrder {
+    try await rawJSON(
+      "POST",
+      "suppliers/cart-drafts/\(id)/submit",
+      body: Optional<Int>.none,
+      auth: true,
+      successStatus: 201)
+  }
+
+  func receiveSupplierOrder(id: String, productID: String, locationID: String) async throws
+    -> SupplierOrder
+  {
+    try await rawJSON(
+      "POST",
+      "suppliers/orders/\(id)/receive",
+      body: SupplierReceiveOrderWireRequest(
+        lines: [
+          SupplierReceiveLineWireRequest(
+            productId: productID,
+            locationId: locationID,
+            quantity: "1000",
+            unit: "g",
+            expiresOn: nil,
+            note: "received from iOS cart review")
+        ]),
+      auth: true)
+  }
+
   private func rawJSON<RequestBody: Encodable, ResponseBody: Decodable>(
     _ method: String,
     _ path: String,
@@ -1189,6 +1265,80 @@ actor APIClient: AppStateAPI {
       return nil
     #endif
   }()
+
+  private static func executionRequest(recipe: Recipe, allowPartial: Bool)
+    -> RecipeExecutionWireRequest
+  {
+    RecipeExecutionWireRequest(
+      recipeId: recipe.id,
+      recipeVersionId: recipe.version.id,
+      recipeName: recipe.name,
+      servingScale: "1",
+      ingredients: recipe.version.ingredients.compactMap { ingredient in
+        guard let amount = ingredient.quantity.amount, let unit = ingredient.quantity.unit else {
+          return nil
+        }
+        return RecipeExecutionIngredientWireRequest(
+          lineId: ingredient.id ?? ingredient.displayName,
+          displayName: ingredient.displayName,
+          ingredientId: ingredient.ingredientId,
+          productId: ingredient.productId,
+          locationId: nil,
+          quantity: amount,
+          unit: unit,
+          optional: ingredient.optional ?? false,
+          substitutionOf: nil,
+          preparation: ingredient.preparation)
+      },
+      outputs: [],
+      useExpiringFirst: true,
+      allowPartial: allowPartial,
+      idempotencyKey: nil)
+  }
+}
+
+private struct RecipeExecutionWireRequest: Encodable {
+  let recipeId: String?
+  let recipeVersionId: String?
+  let recipeName: String?
+  let servingScale: String?
+  let ingredients: [RecipeExecutionIngredientWireRequest]
+  let outputs: [String]
+  let useExpiringFirst: Bool?
+  let allowPartial: Bool?
+  var idempotencyKey: String?
+}
+
+private struct RecipeExecutionIngredientWireRequest: Encodable {
+  let lineId: String?
+  let displayName: String?
+  let ingredientId: String?
+  let productId: String?
+  let locationId: String?
+  let quantity: String
+  let unit: String
+  let optional: Bool
+  let substitutionOf: String?
+  let preparation: String?
+}
+
+private struct ReplenishmentCartDraftWireRequest: Encodable {
+  let supplierId: String?
+  let includeAiExplanation: Bool
+  let submitTrusted: Bool
+}
+
+private struct SupplierReceiveOrderWireRequest: Encodable {
+  let lines: [SupplierReceiveLineWireRequest]
+}
+
+private struct SupplierReceiveLineWireRequest: Encodable {
+  let productId: String
+  let locationId: String
+  let quantity: String
+  let unit: String
+  let expiresOn: String?
+  let note: String?
 }
 
 // MARK: - Auth middleware

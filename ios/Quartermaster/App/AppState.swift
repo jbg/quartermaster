@@ -121,6 +121,17 @@ protocol AppStateAPI: Actor {
     pushAuthorization: PushAuthorizationStatus,
     appVersion: String?
   ) async throws
+  func recipes() async throws -> [RecipeSummary]
+  func getRecipe(id: String) async throws -> Recipe
+  func preflightRecipe(_ recipe: Recipe, allowPartial: Bool) async throws
+    -> RecipeExecutionPreflight
+  func executeRecipe(_ recipe: Recipe, allowPartial: Bool) async throws -> RecipeExecutionResult
+  func generateCartDraft() async throws -> ReplenishmentCreateCartDraftResponse
+  func getCartRun(id: String) async throws -> ReplenishmentCartRun
+  func getSupplierCartDraft(id: String) async throws -> SupplierCartDraft
+  func submitSupplierCartDraft(id: String) async throws -> SupplierOrder
+  func receiveSupplierOrder(id: String, productID: String, locationID: String) async throws
+    -> SupplierOrder
 }
 
 extension AppStateAPI {

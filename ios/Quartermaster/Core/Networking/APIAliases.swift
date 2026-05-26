@@ -389,6 +389,40 @@ extension StockEventListResponse {
   var nextBeforeID: String? { nextBeforeId }
 }
 
+// MARK: - Recipes and automation
+
+typealias Recipe = Components.Schemas.RecipeDto
+typealias RecipeSummary = Components.Schemas.RecipeSummaryDto
+typealias RecipeVersion = Components.Schemas.RecipeVersionDto
+typealias RecipeIngredient = Components.Schemas.RecipeIngredientDto
+typealias RecipeExecutionPreflight = Components.Schemas.RecipeExecutionPreflightResponse
+typealias RecipeExecutionResult = Components.Schemas.RecipeExecutionResponse
+typealias RecipeIngredientPlan = Components.Schemas.RecipeIngredientPlanDto
+typealias RecipeMissingIngredient = Components.Schemas.RecipeMissingIngredientDto
+typealias RecipeListResponse = Components.Schemas.RecipeListResponse
+
+typealias ReplenishmentCartRun = Components.Schemas.ReplenishmentCartRunDto
+typealias ReplenishmentCreateCartDraftResponse = Components.Schemas
+  .ReplenishmentCreateCartDraftResponse
+typealias SupplierCartDraft = Components.Schemas.SupplierCartDraftDto
+typealias SupplierCartLine = Components.Schemas.SupplierCartLineDto
+typealias SupplierOrder = Components.Schemas.SupplierOrderDto
+
+extension RecipeSummary: Identifiable {}
+extension Recipe: Identifiable {}
+extension RecipeIngredient: Identifiable {}
+extension SupplierCartDraft: Identifiable {}
+extension SupplierCartLine: Identifiable {}
+extension SupplierOrder: Identifiable {}
+
+extension RecipeIngredient {
+  var displayQuantity: String {
+    let amount = quantity.amount ?? "to taste"
+    let unit = quantity.unit ?? ""
+    return "\(amount) \(unit)".trimmingCharacters(in: .whitespaces)
+  }
+}
+
 // MARK: - Errors
 
 typealias APIErrorBody = Components.Schemas.ApiErrorBody
