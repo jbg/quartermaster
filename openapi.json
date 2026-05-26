@@ -4424,6 +4424,634 @@
         ]
       }
     },
+    "/api/v1/replenishment/cart-drafts": {
+      "post": {
+        "tags": [
+          "replenishment"
+        ],
+        "operationId": "replenishment_cart_draft_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplenishmentCreateCartDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplenishmentCreateCartDraftResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/replenishment/cart-runs/{id}": {
+      "get": {
+        "tags": [
+          "replenishment"
+        ],
+        "operationId": "replenishment_cart_run_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplenishmentCartRunDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/replenishment/demand-signals": {
+      "get": {
+        "tags": [
+          "replenishment"
+        ],
+        "operationId": "replenishment_demand_signal_list",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplenishmentDemandSignalListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "replenishment"
+        ],
+        "operationId": "replenishment_demand_signal_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplenishmentDemandSignalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplenishmentDemandSignalDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/replenishment/demand-signals/{id}": {
+      "patch": {
+        "tags": [
+          "replenishment"
+        ],
+        "operationId": "replenishment_demand_signal_patch",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplenishmentPatchDemandSignalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplenishmentDemandSignalDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/replenishment/rules": {
+      "get": {
+        "tags": [
+          "replenishment"
+        ],
+        "operationId": "replenishment_rule_list",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplenishmentRuleListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "replenishment"
+        ],
+        "operationId": "replenishment_rule_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplenishmentRuleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplenishmentRuleDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/replenishment/rules/{id}": {
+      "get": {
+        "tags": [
+          "replenishment"
+        ],
+        "operationId": "replenishment_rule_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplenishmentRuleDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "replenishment"
+        ],
+        "operationId": "replenishment_rule_delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "replenishment"
+        ],
+        "operationId": "replenishment_rule_update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplenishmentRuleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplenishmentRuleDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/replenishment/rules/{id}/pause": {
+      "post": {
+        "tags": [
+          "replenishment"
+        ],
+        "operationId": "replenishment_rule_pause",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplenishmentPauseRuleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplenishmentRuleDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/replenishment/rules/{id}/resume": {
+      "post": {
+        "tags": [
+          "replenishment"
+        ],
+        "operationId": "replenishment_rule_resume",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplenishmentRuleDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/replenishment/settings": {
+      "get": {
+        "tags": [
+          "replenishment"
+        ],
+        "operationId": "replenishment_settings_get",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplenishmentSettingsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "replenishment"
+        ],
+        "operationId": "replenishment_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplenishmentSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplenishmentSettingsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/replenishment/suppliers/{supplier_id}/policy": {
+      "get": {
+        "tags": [
+          "replenishment"
+        ],
+        "operationId": "replenishment_supplier_policy_get",
+        "parameters": [
+          {
+            "name": "supplier_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplenishmentSupplierPolicyDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "replenishment"
+        ],
+        "operationId": "replenishment_supplier_policy_put",
+        "parameters": [
+          {
+            "name": "supplier_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplenishmentSupplierPolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplenishmentSupplierPolicyDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/stock": {
       "get": {
         "tags": [
@@ -10697,6 +11325,708 @@
           }
         }
       },
+      "ReplenishmentAutomationLevelDto": {
+        "type": "string",
+        "enum": [
+          "off",
+          "suggestions",
+          "confirm_to_submit",
+          "trusted_auto_submit"
+        ]
+      },
+      "ReplenishmentCartRunDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "source",
+          "guardrail_decision",
+          "guardrail_snapshot",
+          "recommendations",
+          "suppressions",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "ai_explanation": {},
+          "created_at": {
+            "type": "string"
+          },
+          "draft_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "guardrail_decision": {
+            "$ref": "#/components/schemas/ReplenishmentGuardrailDecisionDto"
+          },
+          "guardrail_snapshot": {},
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "order_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "recommendations": {},
+          "source": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReplenishmentCartRunStatusDto"
+          },
+          "supplier_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "suppressions": {},
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "ReplenishmentCartRunStatusDto": {
+        "type": "string",
+        "enum": [
+          "draft_created",
+          "blocked",
+          "submitted"
+        ]
+      },
+      "ReplenishmentCreateCartDraftRequest": {
+        "type": "object",
+        "properties": {
+          "include_ai_explanation": {
+            "type": "boolean"
+          },
+          "submit_trusted": {
+            "type": "boolean"
+          },
+          "supplier_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ReplenishmentCreateCartDraftResponse": {
+        "type": "object",
+        "required": [
+          "run"
+        ],
+        "properties": {
+          "draft_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "run": {
+            "$ref": "#/components/schemas/ReplenishmentCartRunDto"
+          }
+        }
+      },
+      "ReplenishmentDemandSignalDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "product_id",
+          "signal_type",
+          "status",
+          "quantity",
+          "unit",
+          "metadata",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "desired_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "location_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "metadata": {},
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "recipe_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "recipe_version_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "signal_type": {
+            "$ref": "#/components/schemas/ReplenishmentDemandSignalTypeDto"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReplenishmentDemandSignalStatusDto"
+          },
+          "supplier_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "supplier_item_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unit": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "ReplenishmentDemandSignalListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReplenishmentDemandSignalDto"
+            }
+          }
+        }
+      },
+      "ReplenishmentDemandSignalRequest": {
+        "type": "object",
+        "required": [
+          "product_id",
+          "signal_type",
+          "quantity",
+          "unit"
+        ],
+        "properties": {
+          "desired_on": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "metadata": {},
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "recipe_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "recipe_version_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "signal_type": {
+            "$ref": "#/components/schemas/ReplenishmentDemandSignalTypeDto"
+          },
+          "supplier_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "supplier_item_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
+      "ReplenishmentDemandSignalStatusDto": {
+        "type": "string",
+        "enum": [
+          "active",
+          "dismissed",
+          "fulfilled"
+        ]
+      },
+      "ReplenishmentDemandSignalTypeDto": {
+        "type": "string",
+        "enum": [
+          "manual_shopping",
+          "upcoming_recipe"
+        ]
+      },
+      "ReplenishmentGuardrailDecisionDto": {
+        "type": "string",
+        "enum": [
+          "allowed",
+          "needs_approval",
+          "blocked"
+        ]
+      },
+      "ReplenishmentPatchDemandSignalRequest": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ReplenishmentDemandSignalStatusDto"
+          }
+        }
+      },
+      "ReplenishmentPauseRuleRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ReplenishmentRuleDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "product_id",
+          "minimum_quantity",
+          "target_quantity",
+          "unit",
+          "automation_level",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "automation_level": {
+            "$ref": "#/components/schemas/ReplenishmentAutomationLevelDto"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "expiry_suppression_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "location_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "minimum_quantity": {
+            "type": "string"
+          },
+          "pause_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paused_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preferred_package_quantity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preferred_package_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preferred_supplier_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preferred_supplier_item_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "spend_cap_amount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spend_cap_currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_quantity": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "ReplenishmentRuleListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReplenishmentRuleDto"
+            }
+          }
+        }
+      },
+      "ReplenishmentRuleRequest": {
+        "type": "object",
+        "required": [
+          "product_id",
+          "minimum_quantity",
+          "target_quantity",
+          "unit",
+          "automation_level"
+        ],
+        "properties": {
+          "automation_level": {
+            "$ref": "#/components/schemas/ReplenishmentAutomationLevelDto"
+          },
+          "expiry_suppression_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "location_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "minimum_quantity": {
+            "type": "string"
+          },
+          "preferred_package_quantity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preferred_package_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preferred_supplier_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preferred_supplier_item_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "spend_cap_amount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spend_cap_currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_quantity": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      },
+      "ReplenishmentSettingsDto": {
+        "type": "object",
+        "required": [
+          "global_disabled",
+          "notification_lead_minutes",
+          "updated_at"
+        ],
+        "properties": {
+          "default_spend_cap_amount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default_spend_cap_currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "global_disabled": {
+            "type": "boolean"
+          },
+          "notification_lead_minutes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quiet_hours_end": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quiet_hours_start": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "ReplenishmentSettingsRequest": {
+        "type": "object",
+        "required": [
+          "global_disabled",
+          "notification_lead_minutes"
+        ],
+        "properties": {
+          "default_spend_cap_amount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default_spend_cap_currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "global_disabled": {
+            "type": "boolean"
+          },
+          "notification_lead_minutes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quiet_hours_end": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quiet_hours_start": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ReplenishmentSupplierPolicyDto": {
+        "type": "object",
+        "required": [
+          "supplier_id",
+          "disabled",
+          "updated_at"
+        ],
+        "properties": {
+          "disabled": {
+            "type": "boolean"
+          },
+          "quiet_hours_end": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quiet_hours_start": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spend_cap_amount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spend_cap_currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "supplier_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "ReplenishmentSupplierPolicyRequest": {
+        "type": "object",
+        "required": [
+          "disabled"
+        ],
+        "properties": {
+          "disabled": {
+            "type": "boolean"
+          },
+          "quiet_hours_end": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quiet_hours_start": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spend_cap_amount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spend_cap_currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ReplenishmentSuppressionReasonDto": {
+        "type": "string",
+        "enum": [
+          "automation_off",
+          "rule_paused",
+          "missing_supplier_mapping",
+          "supplier_mismatch",
+          "sufficient_stock",
+          "expiring_stock_available",
+          "pending_replenishment",
+          "global_disabled",
+          "supplier_disabled",
+          "budget_exceeded",
+          "unknown_price",
+          "invalid_rule"
+        ]
+      },
       "RequestEmailVerificationRequest": {
         "type": "object",
         "required": [
@@ -12405,6 +13735,10 @@
     {
       "name": "recipes",
       "description": "Household-scoped reusable recipes, versions, validation, and scaling"
+    },
+    {
+      "name": "replenishment",
+      "description": "Replenishment rules, demand signals, cart generation, and automation guardrails"
     },
     {
       "name": "reminders",
