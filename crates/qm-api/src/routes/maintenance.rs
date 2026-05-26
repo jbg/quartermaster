@@ -7,6 +7,7 @@ use axum::{
 use jiff::Timestamp;
 use metrics::counter;
 use serde::Serialize;
+use serde_json::json;
 use uuid::Uuid;
 
 use crate::{ApiError, ApiResult, AppState};
@@ -22,6 +23,8 @@ const SMOKE_REMINDER_FIRE_AT: &str = "2000-01-01T00:00:00.000Z";
 const SMOKE_SERVER_URL: &str = "http://127.0.0.1:8080";
 const SMOKE_PRODUCT_PREFIX: &str = "Smoke Product %";
 const SMOKE_LOCATION_PREFIX: &str = "Smoke Shelf %";
+const SMOKE_RECIPE_PREFIX: &str = "Smoke Recipe %";
+const SMOKE_CART_SOURCE: &str = "smoke_fixture";
 const SMOKE_BARCODE: &str = "1111111111111";
 const SMOKE_PRODUCTS: [(&str, &str); 2] = [
     ("Smoke Rice", "Smoke fixture seed 1"),
@@ -53,6 +56,23 @@ pub struct SmokeReminderSeed {
 }
 
 #[derive(Debug, Serialize)]
+pub struct SmokeRecipeSeed {
+    pub recipe_id: Uuid,
+    pub recipe_version_id: Uuid,
+    pub name: String,
+    pub missing_required: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SmokeCartSeed {
+    pub draft_id: Uuid,
+    pub cart_run_id: Uuid,
+    pub supplier_id: String,
+    pub product_id: Uuid,
+    pub supplier_item_id: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct SeedSmokeResponse {
     pub username: String,
     pub email: String,
@@ -63,6 +83,8 @@ pub struct SeedSmokeResponse {
     pub location_id: Uuid,
     pub barcode: String,
     pub reminders: Vec<SmokeReminderSeed>,
+    pub recipes: Vec<SmokeRecipeSeed>,
+    pub cart: SmokeCartSeed,
 }
 
 pub fn router() -> Router<AppState> {
@@ -201,6 +223,10 @@ async fn build_smoke_fixture(state: &AppState) -> Result<SeedSmokeResponse, ApiE
         });
     }
 
+    let rice = find_or_create_smoke_product(&state.db, household_id, "Smoke Rice").await?;
+    let beans = find_or_create_smoke_product(&state.db, household_id, "Smoke Beans").await?;
+    let recipes = seed_smoke_recipes(&state.db, household_id, user.id, rice.id).await?;
+    let cart = seed_smoke_cart(&state.db, household_id, user.id, beans.id).await?;
     let invite = find_or_create_smoke_invite(&state.db, household_id, user.id).await?;
 
     Ok(SeedSmokeResponse {
@@ -217,6 +243,8 @@ async fn build_smoke_fixture(state: &AppState) -> Result<SeedSmokeResponse, ApiE
         location_id: pantry.id,
         barcode: SMOKE_BARCODE.into(),
         reminders,
+        recipes,
+        cart,
     })
 }
 
@@ -258,6 +286,65 @@ async fn reset_smoke_fixture_artifacts(
 ) -> Result<(), ApiError> {
     let mut tx = db.pool.begin().await?;
     let household_id = household_id.to_string();
+
+    sqlx::query(
+        "DELETE FROM replenishment_cart_run \
+         WHERE household_id = ? AND source = ?",
+    )
+    .bind(&household_id)
+    .bind(SMOKE_CART_SOURCE)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "DELETE FROM supplier_order_event \
+         WHERE order_id IN ( \
+           SELECT id FROM supplier_order WHERE household_id = ? AND draft_id IN ( \
+             SELECT id FROM supplier_cart_draft WHERE household_id = ? AND source = ? \
+           ) \
+         )",
+    )
+    .bind(&household_id)
+    .bind(&household_id)
+    .bind(SMOKE_CART_SOURCE)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "DELETE FROM supplier_order \
+         WHERE household_id = ? AND draft_id IN ( \
+           SELECT id FROM supplier_cart_draft WHERE household_id = ? AND source = ? \
+         )",
+    )
+    .bind(&household_id)
+    .bind(&household_id)
+    .bind(SMOKE_CART_SOURCE)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query("DELETE FROM supplier_cart_draft WHERE household_id = ? AND source = ?")
+        .bind(&household_id)
+        .bind(SMOKE_CART_SOURCE)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query(
+        "DELETE FROM replenishment_rule \
+         WHERE household_id = ? AND product_id IN ( \
+           SELECT id FROM product WHERE created_by_household_id = ? AND name LIKE ? \
+         )",
+    )
+    .bind(&household_id)
+    .bind(&household_id)
+    .bind(SMOKE_PRODUCT_PREFIX)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query("DELETE FROM recipe WHERE household_id = ? AND name LIKE ?")
+        .bind(&household_id)
+        .bind(SMOKE_RECIPE_PREFIX)
+        .execute(&mut *tx)
+        .await?;
 
     sqlx::query(
         "DELETE FROM reminder_delivery \
@@ -394,6 +481,260 @@ async fn ensure_pantry_location(
     qm_db::locations::create(db, household_id, "Pantry", "pantry", 0)
         .await
         .map_err(Into::into)
+}
+
+async fn seed_smoke_recipes(
+    db: &qm_db::Database,
+    household_id: Uuid,
+    user_id: Uuid,
+    rice_product_id: Uuid,
+) -> Result<Vec<SmokeRecipeSeed>, ApiError> {
+    let executable = qm_db::recipes::create(
+        db,
+        household_id,
+        user_id,
+        &qm_db::recipes::NewRecipe {
+            name: "Smoke Recipe Rice Bowl",
+            description: Some("Fixture recipe with enough stock to cook."),
+            serving_count: "2",
+            source: "manual",
+            visibility: "household",
+            tags_json: r#"["smoke","cook"]"#,
+            source_text: Some("Cook rice until fluffy, then serve."),
+            payload_json: "{}",
+            ingredients: vec![qm_db::recipes::NewRecipeIngredient {
+                ingredient_id: None,
+                product_id: Some(rice_product_id),
+                display_name: "Smoke Rice",
+                amount: Some("50"),
+                unit: Some("g"),
+                family: Some("mass"),
+                range_min: None,
+                range_max: None,
+                to_taste: false,
+                preparation: None,
+                optional: false,
+                group_label: None,
+                substitution_hints_json: "[]",
+            }],
+            steps: vec![qm_db::recipes::NewRecipeStep {
+                instruction: "Cook the rice and serve.",
+                timers_json: "[]",
+                equipment_json: r#"["pot"]"#,
+                ingredient_refs_json: r#"["Smoke Rice"]"#,
+            }],
+            outputs: Vec::new(),
+            provenance: vec![qm_db::recipes::NewRecipeProvenance {
+                source_type: "user_authored",
+                imported_url: None,
+                imported_file_name: None,
+                imported_text: None,
+                prompt_version: None,
+                model: None,
+                user_edits_json: r#"["smoke fixture"]"#,
+                parser_confidence: Some("1"),
+            }],
+        },
+    )
+    .await?;
+    let missing = qm_db::recipes::create(
+        db,
+        household_id,
+        user_id,
+        &qm_db::recipes::NewRecipe {
+            name: "Smoke Recipe Missing Spice",
+            description: Some("Fixture recipe that requires a missing ingredient."),
+            serving_count: "1",
+            source: "manual",
+            visibility: "household",
+            tags_json: r#"["smoke","missing"]"#,
+            source_text: Some("A deliberately incomplete recipe for review states."),
+            payload_json: "{}",
+            ingredients: vec![qm_db::recipes::NewRecipeIngredient {
+                ingredient_id: None,
+                product_id: None,
+                display_name: "Smoke Missing Spice",
+                amount: Some("1"),
+                unit: Some("piece"),
+                family: Some("count"),
+                range_min: None,
+                range_max: None,
+                to_taste: false,
+                preparation: None,
+                optional: false,
+                group_label: None,
+                substitution_hints_json: r#"["choose a substitute before cooking"]"#,
+            }],
+            steps: vec![qm_db::recipes::NewRecipeStep {
+                instruction: "Notice the missing ingredient before cooking.",
+                timers_json: "[]",
+                equipment_json: "[]",
+                ingredient_refs_json: r#"["Smoke Missing Spice"]"#,
+            }],
+            outputs: Vec::new(),
+            provenance: vec![qm_db::recipes::NewRecipeProvenance {
+                source_type: "user_authored",
+                imported_url: None,
+                imported_file_name: None,
+                imported_text: None,
+                prompt_version: None,
+                model: None,
+                user_edits_json: r#"["smoke fixture"]"#,
+                parser_confidence: Some("1"),
+            }],
+        },
+    )
+    .await?;
+    Ok(vec![
+        SmokeRecipeSeed {
+            recipe_id: executable.recipe.id,
+            recipe_version_id: executable.version.id,
+            name: executable.recipe.name,
+            missing_required: false,
+        },
+        SmokeRecipeSeed {
+            recipe_id: missing.recipe.id,
+            recipe_version_id: missing.version.id,
+            name: missing.recipe.name,
+            missing_required: true,
+        },
+    ])
+}
+
+async fn seed_smoke_cart(
+    db: &qm_db::Database,
+    household_id: Uuid,
+    user_id: Uuid,
+    beans_product_id: Uuid,
+) -> Result<SmokeCartSeed, ApiError> {
+    qm_db::suppliers::upsert_supplier(
+        db,
+        &qm_db::suppliers::NewSupplier {
+            id: "mock",
+            display_name: "Mock Supplier",
+            capabilities_json: r#"["catalog_search","cart_draft","order_submit","order_status","receiving_hints"]"#,
+            requirements_json: "{}",
+            supported_regions_json: r#"["test"]"#,
+            terms_url: None,
+            needs_network: false,
+            needs_browser: false,
+        },
+    )
+    .await?;
+    qm_db::suppliers::upsert_catalog_item(
+        db,
+        &qm_db::suppliers::NewCatalogItem {
+            supplier_id: "mock",
+            supplier_item_id: "mock-beans-4pk",
+            name: "Mock Beans 4 pack",
+            brand: Some("Quartermaster"),
+            image_url: None,
+            detail_url: None,
+            availability: "in_stock",
+            price_amount: Some("4.99"),
+            price_currency: Some("USD"),
+            pack_quantity: Some("4"),
+            pack_unit: Some("piece"),
+            lead_time_min_days: Some(1),
+            lead_time_max_days: Some(2),
+            minimum_order_quantity: Some("1"),
+            minimum_order_unit: Some("piece"),
+            metadata_json: "{}",
+        },
+    )
+    .await?;
+    qm_db::suppliers::upsert_mapping(
+        db,
+        household_id,
+        user_id,
+        &qm_db::suppliers::NewMapping {
+            product_id: beans_product_id,
+            supplier_id: "mock",
+            supplier_item_id: "mock-beans-4pk",
+            confidence: "confirmed",
+            confirmed_at: Some(&qm_db::now_utc_rfc3339()),
+            substitute_policy_json: r#"{"allow_substitutes":false}"#,
+        },
+    )
+    .await?;
+    qm_db::replenishment::create_rule(
+        db,
+        household_id,
+        user_id,
+        &qm_db::replenishment::NewReplenishmentRule {
+            product_id: beans_product_id,
+            location_id: None,
+            minimum_quantity: "250",
+            target_quantity: "1000",
+            unit: "g",
+            preferred_supplier_id: Some("mock"),
+            preferred_supplier_item_id: Some("mock-beans-4pk"),
+            preferred_package_quantity: Some("4"),
+            preferred_package_unit: Some("piece"),
+            automation_level: "confirm_to_submit",
+            expiry_suppression_days: Some(3),
+            spend_cap_amount: Some("10.00"),
+            spend_cap_currency: Some("USD"),
+        },
+    )
+    .await?;
+    let (draft, _) = qm_db::suppliers::create_cart_draft(
+        db,
+        household_id,
+        user_id,
+        &qm_db::suppliers::NewCartDraft {
+            account_id: None,
+            supplier_id: "mock",
+            status: "ready",
+            source: SMOKE_CART_SOURCE,
+            intervention_state: "none",
+            review_notes: Some("Smoke fixture cart requires approval before submit."),
+            lines: vec![qm_db::suppliers::NewCartLine {
+                product_id: Some(beans_product_id),
+                supplier_item_id: "mock-beans-4pk",
+                quantity: "1",
+                unit: Some("piece"),
+                note: Some("Fixture cart line"),
+            }],
+        },
+    )
+    .await?;
+    let recommendations = json!([{
+        "rule_id": null,
+        "product_id": beans_product_id,
+        "supplier_id": "mock",
+        "supplier_item_id": "mock-beans-4pk",
+        "quantity": "1",
+        "unit": "piece",
+        "estimated_price_amount": "4.99",
+        "estimated_price_currency": "USD",
+        "automation_level": "confirm_to_submit"
+    }])
+    .to_string();
+    let run = qm_db::replenishment::create_cart_run(
+        db,
+        household_id,
+        user_id,
+        &qm_db::replenishment::NewCartRun {
+            draft_id: Some(draft.id),
+            supplier_id: Some("mock"),
+            status: "draft_created",
+            source: SMOKE_CART_SOURCE,
+            guardrail_decision: "needs_approval",
+            guardrail_snapshot_json: r#"{"reason":"manual approval required"}"#,
+            recommendations_json: &recommendations,
+            suppressions_json: "[]",
+            ai_explanation_json: Some(r#"{"summary":"Smoke fixture recommendation."}"#),
+        },
+    )
+    .await?;
+    Ok(SmokeCartSeed {
+        draft_id: draft.id,
+        cart_run_id: run.id,
+        supplier_id: "mock".into(),
+        product_id: beans_product_id,
+        supplier_item_id: "mock-beans-4pk".into(),
+    })
 }
 
 async fn find_or_create_smoke_product(

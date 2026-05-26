@@ -253,6 +253,17 @@ async fn seed_smoke_returns_deterministic_fixture() {
     assert_eq!(body["username"], "quartermaster_smoke_18423");
     assert_eq!(body["password"], "quartermaster-smoke-18423");
     assert_eq!(body["reminders"].as_array().unwrap().len(), 2);
+    assert_eq!(body["recipes"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        body["recipes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|recipe| recipe["missing_required"].as_bool() == Some(true))
+            .count(),
+        1
+    );
+    assert_eq!(body["cart"]["supplier_id"], "mock");
     assert_eq!(
         smoke_batch_count(&app, body["household_id"].as_str().unwrap()).await,
         2
@@ -260,6 +271,14 @@ async fn seed_smoke_returns_deterministic_fixture() {
     assert_eq!(
         smoke_reminder_count(&app, body["household_id"].as_str().unwrap()).await,
         2
+    );
+    assert_eq!(
+        smoke_recipe_count(&app, body["household_id"].as_str().unwrap()).await,
+        2
+    );
+    assert_eq!(
+        smoke_cart_count(&app, body["household_id"].as_str().unwrap()).await,
+        1
     );
 
     let household_id = Uuid::parse_str(body["household_id"].as_str().unwrap()).unwrap();
@@ -330,6 +349,8 @@ async fn seed_smoke_returns_deterministic_fixture() {
     assert_eq!(body_again["username"], body["username"]);
     assert_eq!(body_again["invite_code"], body["invite_code"]);
     assert_eq!(body_again["reminders"].as_array().unwrap().len(), 2);
+    assert_eq!(body_again["recipes"].as_array().unwrap().len(), 2);
+    assert_eq!(body_again["cart"]["supplier_id"], "mock");
     assert_eq!(
         smoke_batch_count(&app, body_again["household_id"].as_str().unwrap()).await,
         2
@@ -337,6 +358,14 @@ async fn seed_smoke_returns_deterministic_fixture() {
     assert_eq!(
         smoke_reminder_count(&app, body_again["household_id"].as_str().unwrap()).await,
         2
+    );
+    assert_eq!(
+        smoke_recipe_count(&app, body_again["household_id"].as_str().unwrap()).await,
+        2
+    );
+    assert_eq!(
+        smoke_cart_count(&app, body_again["household_id"].as_str().unwrap()).await,
+        1
     );
     assert_eq!(
         leftover_product_count(&app, body_again["household_id"].as_str().unwrap()).await,
@@ -510,6 +539,34 @@ async fn smoke_reminder_count(app: &TestApp, household_id: &str) -> i64 {
          FROM stock_reminder r \
          INNER JOIN product p ON p.id = r.product_id \
          WHERE r.household_id = ? AND (p.name = 'Smoke Rice' OR p.name = 'Smoke Beans')",
+    )
+    .bind(household_id)
+    .fetch_one(&app.db.pool)
+    .await
+    .unwrap()
+    .try_get("n")
+    .unwrap()
+}
+
+async fn smoke_recipe_count(app: &TestApp, household_id: &str) -> i64 {
+    sqlx::query(
+        "SELECT COUNT(*) AS n \
+         FROM recipe \
+         WHERE household_id = ? AND name LIKE 'Smoke Recipe %'",
+    )
+    .bind(household_id)
+    .fetch_one(&app.db.pool)
+    .await
+    .unwrap()
+    .try_get("n")
+    .unwrap()
+}
+
+async fn smoke_cart_count(app: &TestApp, household_id: &str) -> i64 {
+    sqlx::query(
+        "SELECT COUNT(*) AS n \
+         FROM supplier_cart_draft \
+         WHERE household_id = ? AND source = 'smoke_fixture'",
     )
     .bind(household_id)
     .fetch_one(&app.db.pool)
