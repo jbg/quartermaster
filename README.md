@@ -163,6 +163,18 @@ Barcode lookup tuning:
 | `QM_OFF_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `5`                                                   | Consecutive transient failures before fail-fast mode  |
 | `QM_OFF_CIRCUIT_BREAKER_OPEN_SECONDS`      | `60`                                                  | Fail-fast duration                                    |
 
+Supplier integration foundations:
+
+| Variable                                | Default | Meaning                                                  |
+| --------------------------------------- | ------- | -------------------------------------------------------- |
+| `QM_SUPPLIER_CREDENTIAL_ENCRYPTION_KEY` | unset   | Secret used to encrypt household supplier credentials    |
+
+Supplier APIs currently expose the in-tree mock supplier, account setup,
+catalog mapping, cart draft, order, and receiving lifecycle. Real external
+supplier integrations are intentionally deferred until a supplier, region,
+credential model, and terms are chosen. See
+[docs/supplier-integration-foundations.md](docs/supplier-integration-foundations.md).
+
 Reminder settings:
 
 | Variable                                    | Default | Meaning                                                      |
