@@ -10,6 +10,7 @@ publish.workspace = true
 qm-ai = { path = "../qm-ai", default-features = false, features = [] }
 qm-core = { path = "../qm-core", default-features = false, features = [] }
 qm-db = { path = "../qm-db", default-features = false, features = [] }
+qm-suppliers = { path = "../qm-suppliers", default-features = false, features = [] }
 
 anyhow = { workspace = true, default-features = false, features = ["std"] }
 aes-gcm = { workspace = true, default-features = false, features = ["aes", "alloc"] }

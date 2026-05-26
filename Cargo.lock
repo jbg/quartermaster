@@ -3101,6 +3101,7 @@ dependencies = [
  "qm-ai",
  "qm-core",
  "qm-db",
+ "qm-suppliers",
  "qrcode",
  "reqwest",
  "rust_decimal",
@@ -3179,6 +3180,17 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "qm-suppliers"
+version = "1.30.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
  "uuid",
 ]
 
