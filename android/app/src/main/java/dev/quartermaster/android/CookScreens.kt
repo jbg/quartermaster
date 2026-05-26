@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import dev.quartermaster.android.generated.models.PantrySuggestionDto
 import dev.quartermaster.android.generated.models.RecipeDto
 import dev.quartermaster.android.generated.models.RecipeExecutionPreflightResponse
 import dev.quartermaster.android.generated.models.RecipeExecutionResponse
@@ -35,11 +36,18 @@ import kotlinx.coroutines.launch
 private enum class CookSection {
     Recipes,
     Suggestions,
-    Carts,
+    Shopping,
 }
 
+private val CookSection.label: String
+    get() = when (this) {
+        CookSection.Recipes -> "Recipes"
+        CookSection.Suggestions -> "Suggestions"
+        CookSection.Shopping -> "Shopping"
+    }
+
 @Composable
-internal fun CookAndCartsScreen(
+internal fun CookScreen(
     appState: QuartermasterAppState,
     modifier: Modifier = Modifier,
     onBack: () -> Unit = {},
@@ -47,6 +55,8 @@ internal fun CookAndCartsScreen(
     val scope = rememberCoroutineScope()
     var section by remember { mutableStateOf(CookSection.Recipes) }
     var recipes by remember { mutableStateOf<List<RecipeSummaryDto>>(emptyList()) }
+    var suggestions by remember { mutableStateOf<List<PantrySuggestionDto>>(emptyList()) }
+    var suggestionWarnings by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedRecipe by remember { mutableStateOf<RecipeDto?>(null) }
     var preflight by remember { mutableStateOf<RecipeExecutionPreflightResponse?>(null) }
     var execution by remember { mutableStateOf<RecipeExecutionResponse?>(null) }
@@ -65,6 +75,7 @@ internal fun CookAndCartsScreen(
 
     LaunchedEffect(appState.currentHouseholdId) {
         recipes = runCatching { appState.loadCookRecipes() }.getOrDefault(emptyList())
+        suggestions = runCatching { appState.loadPantrySuggestions() }.getOrDefault(emptyList())
     }
 
     LazyColumn(
@@ -76,8 +87,8 @@ internal fun CookAndCartsScreen(
     ) {
         item {
             RouteHeader(
-                title = "Cook & carts",
-                subtitle = "Recipe execution and supplier review for this household.",
+                title = "Cook",
+                subtitle = "Review recipes, pantry ideas, and shopping drafts before anything changes.",
                 backLabel = "Back",
                 onBack = onBack,
             )
@@ -92,7 +103,7 @@ internal fun CookAndCartsScreen(
                         onClick = { section = choice },
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text(if (section == choice) "${choice.name}*" else choice.name)
+                        Text(if (section == choice) "${choice.label}*" else choice.label)
                     }
                 }
             }
@@ -107,7 +118,12 @@ internal fun CookAndCartsScreen(
         when (section) {
             CookSection.Recipes -> {
                 if (recipes.isEmpty()) {
-                    item { StatusCard("No recipes", "Import a recipe on the web client, then return here to cook it.") }
+                    item {
+                        StatusCard(
+                            "No recipes yet",
+                            "Use Suggestions to find saved recipes that match your pantry, or import recipes on the web client.",
+                        )
+                    }
                 }
                 items(recipes, key = { it.id.toString() }) { recipe ->
                     RecipeRow(
@@ -148,13 +164,57 @@ internal fun CookAndCartsScreen(
             }
             CookSection.Suggestions -> {
                 item {
-                    StatusCard(
-                        title = "Suggestions",
-                        message = "Pantry suggestions are available through the API facade; Android keeps this entry point focused on execution for Phase 8.",
+                    Button(
+                        onClick = {
+                            launchCook {
+                                val response = appState.createPantrySuggestions(generateRecipeIdeas = true)
+                                suggestions = response.suggestions
+                                suggestionWarnings = response.warnings
+                            }
+                        },
+                        modifier = Modifier.testTag("pantry.suggestions.generate"),
+                    ) {
+                        Text("Find ideas from pantry")
+                    }
+                }
+                if (suggestions.isEmpty()) {
+                    item {
+                        StatusCard(
+                            title = "No suggestions yet",
+                            message = "Generate suggestions after adding stock and recipes. Cookable saved recipes can be reviewed before inventory changes.",
+                        )
+                    }
+                }
+                items(suggestions, key = { it.id.toString() }) { suggestion ->
+                    PantrySuggestionCard(
+                        suggestion = suggestion,
+                        onReviewRecipe = { recipeId ->
+                            launchCook {
+                                selectedRecipe = appState.loadCookRecipe(recipeId)
+                                preflight = null
+                                execution = null
+                                section = CookSection.Recipes
+                            }
+                        },
                     )
                 }
+                suggestionWarnings.forEachIndexed { index, warning ->
+                    item {
+                        Text(
+                            warning,
+                            modifier = Modifier.testTag("pantry.suggestion.warning.$index"),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
             }
-            CookSection.Carts -> {
+            CookSection.Shopping -> {
+                item {
+                    StatusCard(
+                        title = "Shopping review",
+                        message = "Build a draft cart from replenishment rules and review it before anything is submitted to a supplier.",
+                    )
+                }
                 item {
                     Button(
                         onClick = {
@@ -166,7 +226,7 @@ internal fun CookAndCartsScreen(
                         },
                         modifier = Modifier.testTag(SmokeTag.CartGenerate),
                     ) {
-                        Text("Generate mock cart")
+                        Text("Build suggested cart")
                     }
                 }
                 cartDraft?.let { draft ->
@@ -282,6 +342,57 @@ private fun RecipeDetailCard(
 }
 
 @Composable
+private fun PantrySuggestionCard(
+    suggestion: PantrySuggestionDto,
+    onReviewRecipe: (String) -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("pantry.suggestion.row.${suggestion.id}"),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(suggestion.title, style = MaterialTheme.typography.titleMedium)
+                Text("${suggestion.score}", color = MaterialTheme.colorScheme.primary)
+            }
+            suggestion.summary?.let { Text(it) }
+            Text(
+                if (suggestion.scoreBreakdown.cookable) "Ready to cook" else "Needs ingredients",
+                color = if (suggestion.scoreBreakdown.cookable) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
+            )
+            suggestion.scoreBreakdown.notes.forEach { note ->
+                Text(note, style = MaterialTheme.typography.bodySmall)
+            }
+            suggestion.missing.forEach { missing ->
+                Text(
+                    "Missing: ${missing.displayName} ${missing.quantity.orEmpty()} ${missing.unit.orEmpty()}".trim(),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            suggestion.recipeId?.let { recipeId ->
+                OutlinedButton(
+                    onClick = { onReviewRecipe(recipeId.toString()) },
+                    modifier = Modifier.testTag("pantry.suggestion.review.${suggestion.id}"),
+                ) {
+                    Text("Review recipe")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun CartDraftCard(
     appState: QuartermasterAppState,
     draft: SupplierCartDraftDto,
@@ -294,7 +405,7 @@ private fun CartDraftCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("Mock supplier cart", style = MaterialTheme.typography.titleLarge)
+            Text("Supplier cart", style = MaterialTheme.typography.titleLarge)
             Text("Status ${draft.status.value} - intervention ${draft.interventionState.value}")
             draft.reviewNotes?.let { Text(it) }
             draft.lines.forEach { line ->

@@ -77,7 +77,7 @@ internal fun InventoryScreen(
                         onClick = onOpenCook,
                         modifier = Modifier.testTag(SmokeTag.CookEntryInventory),
                     ) {
-                        Text("Cook & carts")
+                        Text("Cook")
                     }
                 },
             )

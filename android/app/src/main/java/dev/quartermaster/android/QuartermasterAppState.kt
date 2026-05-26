@@ -27,6 +27,8 @@ import dev.quartermaster.android.generated.models.OffContributionPreviewResponse
 import dev.quartermaster.android.generated.models.OffContributionResponse
 import dev.quartermaster.android.generated.models.OnboardingStatusResponse
 import dev.quartermaster.android.generated.models.OpenFoodFactsCredentialStatusResponse
+import dev.quartermaster.android.generated.models.PantrySuggestionDto
+import dev.quartermaster.android.generated.models.PantrySuggestionsResponse
 import dev.quartermaster.android.generated.models.PrintStockLabelRequest
 import dev.quartermaster.android.generated.models.PrintStockLabelResponse
 import dev.quartermaster.android.generated.models.ProductDto
@@ -279,6 +281,8 @@ interface QuartermasterBackend {
     suspend fun getRecipe(id: String): RecipeDto
     suspend fun preflightRecipe(id: String, allowPartial: Boolean = false): RecipeExecutionPreflightResponse
     suspend fun executeRecipe(id: String, allowPartial: Boolean = false): RecipeExecutionResponse
+    suspend fun listPantrySuggestions(): List<PantrySuggestionDto>
+    suspend fun createPantrySuggestions(generateRecipeIdeas: Boolean): PantrySuggestionsResponse
     suspend fun generateReplenishmentCartDraft(): ReplenishmentCreateCartDraftResponse
     suspend fun getReplenishmentCartRun(id: String): ReplenishmentCartRunDto
     suspend fun getSupplierCartDraft(id: String): SupplierCartDraftDto
@@ -467,6 +471,8 @@ class QuartermasterApiBackend(
     override suspend fun getRecipe(id: String): RecipeDto = api.getRecipe(id)
     override suspend fun preflightRecipe(id: String, allowPartial: Boolean): RecipeExecutionPreflightResponse = api.preflightRecipe(id, allowPartial)
     override suspend fun executeRecipe(id: String, allowPartial: Boolean): RecipeExecutionResponse = api.executeRecipe(id, allowPartial)
+    override suspend fun listPantrySuggestions(): List<PantrySuggestionDto> = api.listPantrySuggestions()
+    override suspend fun createPantrySuggestions(generateRecipeIdeas: Boolean): PantrySuggestionsResponse = api.createPantrySuggestions(generateRecipeIdeas)
     override suspend fun generateReplenishmentCartDraft(): ReplenishmentCreateCartDraftResponse = api.generateReplenishmentCartDraft()
     override suspend fun getReplenishmentCartRun(id: String): ReplenishmentCartRunDto = api.getReplenishmentCartRun(id)
     override suspend fun getSupplierCartDraft(id: String): SupplierCartDraftDto = api.getSupplierCartDraft(id)
@@ -1155,6 +1161,14 @@ class QuartermasterAppState(
         allowPartial: Boolean,
     ): RecipeExecutionResponse = runCookRequest {
         backend.executeRecipe(id, allowPartial).also { refreshInventory(force = true) }
+    }
+
+    suspend fun loadPantrySuggestions(): List<PantrySuggestionDto> = runCookRequest {
+        backend.listPantrySuggestions()
+    }
+
+    suspend fun createPantrySuggestions(generateRecipeIdeas: Boolean): PantrySuggestionsResponse = runCookRequest {
+        backend.createPantrySuggestions(generateRecipeIdeas)
     }
 
     suspend fun generateCookCartDraft(): ReplenishmentCreateCartDraftResponse = runCookRequest {

@@ -400,6 +400,9 @@ typealias RecipeExecutionResult = Components.Schemas.RecipeExecutionResponse
 typealias RecipeIngredientPlan = Components.Schemas.RecipeIngredientPlanDto
 typealias RecipeMissingIngredient = Components.Schemas.RecipeMissingIngredientDto
 typealias RecipeListResponse = Components.Schemas.RecipeListResponse
+typealias PantrySuggestion = Components.Schemas.PantrySuggestionDto
+typealias PantrySuggestionListResponse = Components.Schemas.PantrySuggestionListResponse
+typealias PantrySuggestionsResponse = Components.Schemas.PantrySuggestionsResponse
 
 typealias ReplenishmentCartRun = Components.Schemas.ReplenishmentCartRunDto
 typealias ReplenishmentCreateCartDraftResponse = Components.Schemas
@@ -411,6 +414,7 @@ typealias SupplierOrder = Components.Schemas.SupplierOrderDto
 extension RecipeSummary: Identifiable {}
 extension Recipe: Identifiable {}
 extension RecipeIngredient: Identifiable {}
+extension PantrySuggestion: Identifiable {}
 extension SupplierCartDraft: Identifiable {}
 extension SupplierCartLine: Identifiable {}
 extension SupplierOrder: Identifiable {}

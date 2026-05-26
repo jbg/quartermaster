@@ -1161,6 +1161,21 @@ actor APIClient: AppStateAPI {
     return try await rawJSON("POST", "recipes/executions", body: request, auth: true)
   }
 
+  func pantrySuggestions() async throws -> [PantrySuggestion] {
+    let response: PantrySuggestionListResponse = try await rawJSON(
+      "GET", "pantry/suggestions", body: Optional<Int>.none, auth: true)
+    return response.items
+  }
+
+  func createPantrySuggestions(generateRecipeIdeas: Bool) async throws -> PantrySuggestionsResponse
+  {
+    try await rawJSON(
+      "POST",
+      "pantry/suggestions",
+      body: PantrySuggestionWireRequest(generateRecipeIdeas: generateRecipeIdeas),
+      auth: true)
+  }
+
   func generateCartDraft() async throws -> ReplenishmentCreateCartDraftResponse {
     try await rawJSON(
       "POST",
@@ -1320,6 +1335,12 @@ private struct RecipeExecutionIngredientWireRequest: Encodable {
   let optional: Bool
   let substitutionOf: String?
   let preparation: String?
+}
+
+private struct PantrySuggestionWireRequest: Encodable {
+  let generateRecipeIdeas: Bool
+  let maxMissingRequired = 2
+  let maxAiSuggestions = 3
 }
 
 private struct ReplenishmentCartDraftWireRequest: Encodable {

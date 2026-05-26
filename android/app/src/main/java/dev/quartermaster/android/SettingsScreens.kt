@@ -104,7 +104,7 @@ internal fun SettingsScreen(
                         onClick = onOpenCook,
                         modifier = Modifier.testTag(SmokeTag.CookEntrySettings),
                     ) {
-                        Text("Cook & carts")
+                        Text("Cook")
                     }
                 },
             )

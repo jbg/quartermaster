@@ -333,6 +333,20 @@ import UIKit
     func executeRecipe(_ recipe: Recipe, allowPartial: Bool) async throws -> RecipeExecutionResult {
       try decodeFixture(from: recipeExecutionJSON)
     }
+    func pantrySuggestions() async throws -> [PantrySuggestion] {
+      let response: PantrySuggestionListResponse = try decodeFixture(
+        from: #"{"items":[\#(pantrySuggestionJSON)]}"#
+      )
+      return response.items
+    }
+    func createPantrySuggestions(generateRecipeIdeas: Bool) async throws
+      -> PantrySuggestionsResponse
+    {
+      try decodeFixture(
+        from:
+          #"{"context":{"inventory":[],"excluded_product_ids":[],"excluded_location_ids":[],"dietary_constraints":[],"equipment":[]},"suggestions":[\#(pantrySuggestionJSON)],"generation_task":null,"warnings":[]}"#
+      )
+    }
     func generateCartDraft() async throws -> ReplenishmentCreateCartDraftResponse {
       try decodeFixture(
         from:
@@ -589,6 +603,36 @@ import UIKit
         "idempotent_replay": false,
         "plan": \(recipePreflightJSON),
         "output_batches": []
+      }
+      """
+    }
+
+    private var pantrySuggestionJSON: String {
+      """
+      {
+        "id": "99999999-9999-9999-9999-999999999960",
+        "source": "saved_recipe",
+        "status": "suggested",
+        "recipe_id": "99999999-9999-9999-9999-999999999901",
+        "recipe_version_id": "99999999-9999-9999-9999-999999999902",
+        "ai_task_id": null,
+        "created_by": "11111111-1111-1111-1111-111111111111",
+        "title": "Smoke Recipe Rice Bowl",
+        "summary": "Uses stock already in the pantry.",
+        "score": 94,
+        "score_breakdown": {
+          "cookable": true,
+          "required_missing_count": 0,
+          "optional_missing_count": 0,
+          "unresolved_count": 0,
+          "expiring_match_count": 1,
+          "notes": ["Uses expiring pantry stock."]
+        },
+        "missing": [],
+        "pantry_items": ["11111111-1111-1111-1111-111111111111"],
+        "generated_recipe": null,
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z"
       }
       """
     }

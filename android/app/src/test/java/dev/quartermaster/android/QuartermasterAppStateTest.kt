@@ -22,6 +22,8 @@ import dev.quartermaster.android.generated.models.OffContributionPreviewResponse
 import dev.quartermaster.android.generated.models.OffContributionResponse
 import dev.quartermaster.android.generated.models.OnboardingStatusResponse
 import dev.quartermaster.android.generated.models.OpenFoodFactsCredentialStatusResponse
+import dev.quartermaster.android.generated.models.PantrySuggestionDto
+import dev.quartermaster.android.generated.models.PantrySuggestionsResponse
 import dev.quartermaster.android.generated.models.PrintStockLabelRequest
 import dev.quartermaster.android.generated.models.PrintStockLabelResponse
 import dev.quartermaster.android.generated.models.ProductDto
@@ -2231,6 +2233,10 @@ class QuartermasterAppStateTest {
             id: String,
             allowPartial: Boolean,
         ): RecipeExecutionResponse = error("Unused in test")
+
+        override suspend fun listPantrySuggestions(): List<PantrySuggestionDto> = emptyList()
+
+        override suspend fun createPantrySuggestions(generateRecipeIdeas: Boolean): PantrySuggestionsResponse = error("Unused in test")
 
         override suspend fun generateReplenishmentCartDraft(): ReplenishmentCreateCartDraftResponse = error("Unused in test")
 

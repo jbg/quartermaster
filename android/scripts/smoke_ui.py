@@ -713,7 +713,7 @@ def exercise_carts(fixture: dict | None) -> None:
         raise RuntimeError("the carts smoke flow requires --maintenance-token fixture data")
 
     open_cook_screen()
-    tap_text("Carts")
+    tap_text("Shopping")
     wait_for_tag("cart.generate")
     tap_tag("cart.generate")
     wait_for_condition(
