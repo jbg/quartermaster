@@ -60,6 +60,7 @@ fun QuartermasterApp(appState: QuartermasterAppState) {
         if (
             appState.currentHouseholdId != null &&
             currentRoute != null &&
+            routeTab(currentRoute) != null &&
             routeTab(currentRoute) != appState.selectedTab
         ) {
             navController.navigate(route) {
@@ -187,6 +188,7 @@ private fun AuthenticatedNavHost(
             InventoryScreen(
                 appState = appState,
                 onOpenBatch = { batchId -> navController.navigate(AppRoute.batchDetail(batchId)) },
+                onOpenCook = { navController.navigate(AppRoute.Cook) },
             )
         }
         composable(
@@ -302,6 +304,13 @@ private fun AuthenticatedNavHost(
                 onCreateLocation = { navController.navigate(AppRoute.LocationNew) },
                 onEditLocation = { locationId -> navController.navigate(AppRoute.locationEdit(locationId)) },
                 onDeleteLocation = { locationId -> navController.navigate(AppRoute.locationDelete(locationId)) },
+                onOpenCook = { navController.navigate(AppRoute.Cook) },
+            )
+        }
+        composable(AppRoute.Cook) {
+            CookAndCartsScreen(
+                appState = appState,
+                onBack = { navController.popBackStack() },
             )
         }
         composable(AppRoute.LocationNew) {

@@ -2,6 +2,9 @@ package dev.quartermaster.android
 
 import android.util.Base64
 import dev.quartermaster.android.generated.infrastructure.Serializer
+import dev.quartermaster.android.generated.models.AiTaskDto
+import dev.quartermaster.android.generated.models.AiTaskListResponse
+import dev.quartermaster.android.generated.models.AiTaskUserState
 import dev.quartermaster.android.generated.models.BarcodeLookupResponse
 import dev.quartermaster.android.generated.models.ConfirmEmailVerificationRequest
 import dev.quartermaster.android.generated.models.ConsumeRequest
@@ -33,6 +36,12 @@ import dev.quartermaster.android.generated.models.PrintStockLabelResponse
 import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.ProductSearchResponse
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
+import dev.quartermaster.android.generated.models.RecipeDto
+import dev.quartermaster.android.generated.models.RecipeExecutionPreflightResponse
+import dev.quartermaster.android.generated.models.RecipeExecutionRequest
+import dev.quartermaster.android.generated.models.RecipeExecutionResponse
+import dev.quartermaster.android.generated.models.RecipeListResponse
+import dev.quartermaster.android.generated.models.RecipeSummaryDto
 import dev.quartermaster.android.generated.models.RedeemInviteRequest
 import dev.quartermaster.android.generated.models.RefreshRequest
 import dev.quartermaster.android.generated.models.RegisterDeviceRequest
@@ -40,6 +49,9 @@ import dev.quartermaster.android.generated.models.RegisterRequest
 import dev.quartermaster.android.generated.models.ReminderDto
 import dev.quartermaster.android.generated.models.ReminderListResponse
 import dev.quartermaster.android.generated.models.RenderLabelResponse
+import dev.quartermaster.android.generated.models.ReplenishmentCartRunDto
+import dev.quartermaster.android.generated.models.ReplenishmentCreateCartDraftRequest
+import dev.quartermaster.android.generated.models.ReplenishmentCreateCartDraftResponse
 import dev.quartermaster.android.generated.models.RequestEmailVerificationRequest
 import dev.quartermaster.android.generated.models.RequestEmailVerificationResponse
 import dev.quartermaster.android.generated.models.SaveOpenFoodFactsCredentialsRequest
@@ -50,9 +62,14 @@ import dev.quartermaster.android.generated.models.StockEventDto
 import dev.quartermaster.android.generated.models.StockEventListResponse
 import dev.quartermaster.android.generated.models.StockListResponse
 import dev.quartermaster.android.generated.models.StorageVesselDto
+import dev.quartermaster.android.generated.models.SupplierCartDraftDto
+import dev.quartermaster.android.generated.models.SupplierOrderDto
+import dev.quartermaster.android.generated.models.SupplierReceiveLineRequest
+import dev.quartermaster.android.generated.models.SupplierReceiveOrderRequest
 import dev.quartermaster.android.generated.models.SwitchHouseholdRequest
 import dev.quartermaster.android.generated.models.TokenPair
 import dev.quartermaster.android.generated.models.UnitDto
+import dev.quartermaster.android.generated.models.UpdateAiTaskStateRequest
 import dev.quartermaster.android.generated.models.UpdateHouseholdRequest
 import dev.quartermaster.android.generated.models.UpdateLocationRequest
 import dev.quartermaster.android.generated.models.UpdateStorageVesselRequest
@@ -587,6 +604,96 @@ class QuartermasterApi(
         )
     }
 
+    suspend fun listRecipes(): List<RecipeSummaryDto> = authedJson<RecipeListResponse>("GET", "/recipes").items
+
+    suspend fun getRecipe(id: String): RecipeDto = authedJson(
+        method = "GET",
+        path = "/recipes/${id.urlEncode()}",
+    )
+
+    suspend fun preflightRecipe(
+        recipeId: String,
+        allowPartial: Boolean = false,
+    ): RecipeExecutionPreflightResponse = authedJson(
+        method = "POST",
+        path = "/recipes/executions/preflight",
+        body = recipeExecutionRequest(recipeId = recipeId, allowPartial = allowPartial),
+    )
+
+    suspend fun executeRecipe(
+        recipeId: String,
+        allowPartial: Boolean = false,
+    ): RecipeExecutionResponse = authedJson(
+        method = "POST",
+        path = "/recipes/executions",
+        body = recipeExecutionRequest(recipeId = recipeId, allowPartial = allowPartial),
+    )
+
+    suspend fun generateReplenishmentCartDraft(): ReplenishmentCreateCartDraftResponse = authedJson(
+        method = "POST",
+        path = "/replenishment/cart-drafts",
+        body = ReplenishmentCreateCartDraftRequest(
+            includeAiExplanation = true,
+            submitTrusted = false,
+            supplierId = "mock",
+        ),
+    )
+
+    suspend fun getReplenishmentCartRun(id: String): ReplenishmentCartRunDto = authedJson(
+        method = "GET",
+        path = "/replenishment/cart-runs/${id.urlEncode()}",
+    )
+
+    suspend fun getSupplierCartDraft(id: String): SupplierCartDraftDto = authedJson(
+        method = "GET",
+        path = "/suppliers/cart-drafts/${id.urlEncode()}",
+    )
+
+    suspend fun submitSupplierCartDraft(id: String): SupplierOrderDto = authedJson(
+        method = "POST",
+        path = "/suppliers/cart-drafts/${id.urlEncode()}/submit",
+    )
+
+    suspend fun receiveSupplierOrder(
+        orderId: String,
+        productId: String,
+        locationId: String,
+        quantity: String,
+        unit: String,
+    ): SupplierOrderDto = authedJson(
+        method = "POST",
+        path = "/suppliers/orders/${orderId.urlEncode()}/receive",
+        body = SupplierReceiveOrderRequest(
+            lines = listOf(
+                SupplierReceiveLineRequest(
+                    productId = UUID.fromString(productId),
+                    locationId = UUID.fromString(locationId),
+                    quantity = quantity,
+                    unit = unit,
+                ),
+            ),
+        ),
+    )
+
+    suspend fun listPantrySuggestions(): List<dev.quartermaster.android.generated.models.PantrySuggestionDto> = authedJson<dev.quartermaster.android.generated.models.PantrySuggestionListResponse>(
+        method = "GET",
+        path = "/pantry/suggestions",
+    ).items
+
+    suspend fun listAiTasks(): List<AiTaskDto> = authedJson<AiTaskListResponse>(
+        method = "GET",
+        path = "/ai/tasks",
+    ).items
+
+    suspend fun updateAiTaskState(
+        id: String,
+        userState: AiTaskUserState,
+    ): AiTaskDto = authedJson(
+        method = "PATCH",
+        path = "/ai/tasks/${id.urlEncode()}/state",
+        body = UpdateAiTaskStateRequest(userState = userState),
+    )
+
     suspend fun searchProducts(query: String): List<ProductDto> = authedJson<ProductSearchResponse>(
         "GET",
         "/products/search?query=${query.urlEncode()}&limit=20",
@@ -749,6 +856,18 @@ class QuartermasterApi(
     suspend fun restoreStock(batchId: String): StockBatchDto = authedJson(
         method = "POST",
         path = "/stock/${batchId.urlEncode()}/restore",
+    )
+
+    private fun recipeExecutionRequest(
+        recipeId: String,
+        allowPartial: Boolean,
+    ) = RecipeExecutionRequest(
+        recipeId = UUID.fromString(recipeId),
+        allowPartial = allowPartial,
+        servingScale = "1",
+        useExpiringFirst = true,
+        ingredients = emptyList(),
+        outputs = emptyList(),
     )
 
     private suspend inline fun <reified T> authedJson(

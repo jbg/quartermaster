@@ -45,6 +45,7 @@ internal fun SettingsScreen(
     onCreateLocation: () -> Unit = {},
     onEditLocation: (String) -> Unit = {},
     onDeleteLocation: (String) -> Unit = {},
+    onOpenCook: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -98,6 +99,14 @@ internal fun SettingsScreen(
             RouteHeader(
                 title = "Settings",
                 subtitle = "Household, invite, location, and session controls for this device.",
+                action = {
+                    Button(
+                        onClick = onOpenCook,
+                        modifier = Modifier.testTag(SmokeTag.CookEntrySettings),
+                    ) {
+                        Text("Cook & carts")
+                    }
+                },
             )
         }
         if (appState.isSettingsRefreshing) {
