@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.31.0](https://github.com/jbg/quartermaster/compare/1.30.0...1.31.0) (2026-05-26)
+
+
+### Features
+
+* add AI provider substrate ([038533c](https://github.com/jbg/quartermaster/commit/038533c2ca6e812ac26cd4b864d5182cf5831333))
+* add ingredient foundations ([28f8693](https://github.com/jbg/quartermaster/commit/28f8693c4b5dc758cbc6227d26e810bb8c15dbd3))
+* add pantry recipe suggestions ([815f2ad](https://github.com/jbg/quartermaster/commit/815f2adc92ccde1a48007af74083c44bc2a70b1f))
+* add recipe domain model ([07cba5f](https://github.com/jbg/quartermaster/commit/07cba5f8755be58e35cfe51441ed5346953adb64))
+* add recipe execution preflight API ([68b8c50](https://github.com/jbg/quartermaster/commit/68b8c5082983d531f79d435c0f6d0a7f70e03aa6))
+* add supplier job runner hooks ([3ea22fe](https://github.com/jbg/quartermaster/commit/3ea22fe0fa747de1720bb07997dcdd4c7a745580))
+* add supplier persistence foundations ([b1e2972](https://github.com/jbg/quartermaster/commit/b1e29728a092c06d7a7b424aa0b4a9f6fba8b7bd))
+* **android:** add cooking and cart review flows ([f092c6c](https://github.com/jbg/quartermaster/commit/f092c6ca8b3dbac480239ec860690df868e2fa88))
+* expose supplier foundation APIs ([1a75bd3](https://github.com/jbg/quartermaster/commit/1a75bd359ab202f0178f7a88dcd3ad52adaed67b))
+* **ios:** add cooking and cart review flows ([b098c05](https://github.com/jbg/quartermaster/commit/b098c058317bdb869aecce94eafffb2c56113711))
+* **replenishment:** add rule and policy persistence ([c2859ca](https://github.com/jbg/quartermaster/commit/c2859ca2cc9ddce5fb59570f734dede6cb6486b3))
+* **replenishment:** generate supplier cart drafts ([12dcf9e](https://github.com/jbg/quartermaster/commit/12dcf9e207d915570b2ded7dcf18fdebce270841))
+* **suppliers:** enforce replenishment submission guardrails ([1c7bdcf](https://github.com/jbg/quartermaster/commit/1c7bdcf5d5d059bae333a901ffb3371dbcd8e9c0))
+* **web:** add recipe and supplier review flows ([e4bc20e](https://github.com/jbg/quartermaster/commit/e4bc20ecd500791fd1a876e2350b2fbc350b1781))
+
+
+### Bug Fixes
+
+* **db:** cover postgres parity query paths ([60a8b06](https://github.com/jbg/quartermaster/commit/60a8b06006a8705b6f1195d83e823e5a15cd0930))
+* support sqlx 0.9 dependency update ([be7f01c](https://github.com/jbg/quartermaster/commit/be7f01c9d716f4ec524b99570be1f4d0a7fb4659))
+
 ## [1.30.0](https://github.com/jbg/quartermaster/compare/1.29.1...1.30.0) (2026-05-20)
 
 
