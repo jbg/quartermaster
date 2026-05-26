@@ -319,3 +319,149 @@ async fn replenishment_trusted_submit_is_queued_and_rechecked() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["code"], "bad_request");
 }
+
+#[tokio::test]
+async fn replenishment_budget_and_expiry_suppress_cart_lines() {
+    let app = TestApp::start(ApiConfig::default()).await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let me = app.me(&alice).await;
+    let household_id = Uuid::parse_str(me_current_household_id(&me).unwrap()).unwrap();
+    let user = qm_db::users::find_by_email(&app.db, "alice@example.com")
+        .await
+        .unwrap()
+        .unwrap();
+    let pantry_id = qm_db::locations::list_for_household(&app.db, household_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|location| location.kind == "pantry")
+        .unwrap()
+        .id;
+    let rice = qm_db::products::create_manual(
+        &app.db,
+        household_id,
+        "Rice",
+        None,
+        "mass",
+        Some("g"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    qm_db::stock::create(
+        &app.db,
+        household_id,
+        rice.id,
+        pantry_id,
+        "100",
+        "g",
+        None,
+        Some("2099-01-01"),
+        None,
+        None,
+        user.id,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let (status, _) = app
+        .send(
+            Method::POST,
+            "/api/v1/replenishment/rules",
+            Some(json!({
+                "product_id": rice.id,
+                "minimum_quantity": "500",
+                "target_quantity": "1000",
+                "unit": "g",
+                "preferred_supplier_id": "mock",
+                "preferred_supplier_item_id": "mock-rice-1kg",
+                "preferred_package_quantity": "1000",
+                "preferred_package_unit": "g",
+                "automation_level": "confirm_to_submit",
+                "expiry_suppression_days": 50000
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, generated) = app
+        .send(
+            Method::POST,
+            "/api/v1/replenishment/cart-drafts",
+            Some(json!({ "supplier_id": "mock" })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(generated["draft_id"].is_null());
+    assert_eq!(
+        generated["run"]["suppressions"][0]["reason"], "expiring_stock_available",
+        "{generated}"
+    );
+
+    let beans = qm_db::products::create_manual(
+        &app.db,
+        household_id,
+        "Beans",
+        None,
+        "count",
+        Some("piece"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let (status, _) = app
+        .send(
+            Method::POST,
+            "/api/v1/replenishment/rules",
+            Some(json!({
+                "product_id": beans.id,
+                "minimum_quantity": "1",
+                "target_quantity": "4",
+                "unit": "piece",
+                "preferred_supplier_id": "mock",
+                "preferred_supplier_item_id": "mock-beans-4pk",
+                "preferred_package_quantity": "4",
+                "preferred_package_unit": "piece",
+                "automation_level": "trusted_auto_submit"
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (status, _) = app
+        .send(
+            Method::PUT,
+            "/api/v1/replenishment/settings",
+            Some(json!({
+                "global_disabled": false,
+                "default_spend_cap_amount": "1.00",
+                "default_spend_cap_currency": "USD",
+                "notification_lead_minutes": 0
+            })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, generated) = app
+        .send(
+            Method::POST,
+            "/api/v1/replenishment/cart-drafts",
+            Some(json!({ "supplier_id": "mock", "submit_trusted": true })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(generated["run"]["guardrail_decision"], "blocked");
+    assert!(generated["draft_id"].is_null());
+    assert_eq!(
+        generated["run"]["guardrail_snapshot"]["reasons"][0],
+        "budget_exceeded"
+    );
+}
