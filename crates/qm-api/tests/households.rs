@@ -100,7 +100,13 @@ async fn login_initializes_active_household_from_latest_joined_and_me_lists_memb
     );
     assert_eq!(me["households"][0]["role"].as_str().unwrap(), "read_write");
 
-    sqlx::query("UPDATE membership SET joined_at = ? WHERE user_id = ?")
+    let joined_at_sql = match app.db.backend() {
+        qm_db::Backend::Postgres => "UPDATE membership SET joined_at = $1 WHERE user_id = $2",
+        qm_db::Backend::Sqlite | qm_db::Backend::Other => {
+            "UPDATE membership SET joined_at = ? WHERE user_id = ?"
+        }
+    };
+    sqlx::query(joined_at_sql)
         .bind("2026-01-01T00:00:00.000Z")
         .bind(me["user"]["id"].as_str().unwrap())
         .execute(&app.db.pool)
@@ -680,15 +686,21 @@ async fn household_deletion_hides_household_and_queues_purge() {
         StatusCode::FORBIDDEN
     );
 
-    let queued: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM background_job WHERE kind = ? AND dedupe_key = ? AND status = ?",
-    )
-    .bind(qm_db::jobs::KIND_HOUSEHOLD_PURGE)
-    .bind(household_id.to_string())
-    .bind(qm_db::jobs::STATUS_PENDING)
-    .fetch_one(&app.db.pool)
-    .await
-    .unwrap();
+    let queued_sql = match app.db.backend() {
+        qm_db::Backend::Postgres => {
+            "SELECT COUNT(*) FROM background_job WHERE kind = $1 AND dedupe_key = $2 AND status = $3"
+        }
+        qm_db::Backend::Sqlite | qm_db::Backend::Other => {
+            "SELECT COUNT(*) FROM background_job WHERE kind = ? AND dedupe_key = ? AND status = ?"
+        }
+    };
+    let queued: i64 = sqlx::query_scalar(queued_sql)
+        .bind(qm_db::jobs::KIND_HOUSEHOLD_PURGE)
+        .bind(household_id.to_string())
+        .bind(qm_db::jobs::STATUS_PENDING)
+        .fetch_one(&app.db.pool)
+        .await
+        .unwrap();
     assert_eq!(queued, 1);
 }
 

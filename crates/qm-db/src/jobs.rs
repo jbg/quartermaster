@@ -1,7 +1,7 @@
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{now_utc_rfc3339, reminders, Database};
+use crate::{now_utc_rfc3339, reminders, sql_for_backend, Database};
 
 pub const STATUS_PENDING: &str = "pending";
 pub const STATUS_LEASED: &str = "leased";
@@ -46,12 +46,17 @@ pub struct NewJob<'a> {
 pub async fn enqueue_unique(db: &Database, job: &NewJob<'_>) -> Result<Option<Uuid>, sqlx::Error> {
     let now = now_utc_rfc3339();
     let id = Uuid::now_v7();
-    let inserted = sqlx::query(
+    let inserted = sqlx::query(sql_for_backend(
+        db.backend(),
         "INSERT INTO background_job \
          (id, kind, dedupe_key, payload_json, status, run_at, lease_owner, lease_until, \
           attempt_count, max_attempts, last_error, created_at, updated_at, finished_at) \
          VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, 0, ?, NULL, ?, ?, NULL)",
-    )
+        "INSERT INTO background_job \
+         (id, kind, dedupe_key, payload_json, status, run_at, lease_owner, lease_until, \
+          attempt_count, max_attempts, last_error, created_at, updated_at, finished_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, 0, $7, NULL, $8, $9, NULL)",
+    ))
     .bind(id.to_string())
     .bind(job.kind)
     .bind(job.dedupe_key)
@@ -76,11 +81,15 @@ pub async fn active_job_exists(
     kind: &str,
     dedupe_key: &str,
 ) -> Result<bool, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT 1 AS x FROM background_job \
          WHERE kind = ? AND dedupe_key = ? AND status IN (?, ?, ?) \
          LIMIT 1",
-    )
+        "SELECT 1 AS x FROM background_job \
+         WHERE kind = $1 AND dedupe_key = $2 AND status IN ($3, $4, $5) \
+         LIMIT 1",
+    ))
     .bind(kind)
     .bind(dedupe_key)
     .bind(STATUS_PENDING)
@@ -96,14 +105,21 @@ pub async fn expire_leases(
     now_rfc3339: &str,
     retry_at_rfc3339: &str,
 ) -> Result<u64, sqlx::Error> {
-    let updated = sqlx::query(
+    let updated = sqlx::query(sql_for_backend(
+        db.backend(),
         "UPDATE background_job \
          SET status = CASE WHEN attempt_count >= max_attempts THEN ? ELSE ? END, \
              run_at = ?, lease_owner = NULL, lease_until = NULL, \
              last_error = ?, updated_at = ?, \
              finished_at = CASE WHEN attempt_count >= max_attempts THEN ? ELSE NULL END \
          WHERE status = ? AND lease_until IS NOT NULL AND lease_until <= ?",
-    )
+        "UPDATE background_job \
+         SET status = CASE WHEN attempt_count >= max_attempts THEN $1 ELSE $2 END, \
+             run_at = $3, lease_owner = NULL, lease_until = NULL, \
+             last_error = $4, updated_at = $5, \
+             finished_at = CASE WHEN attempt_count >= max_attempts THEN $6 ELSE NULL END \
+         WHERE status = $7 AND lease_until IS NOT NULL AND lease_until <= $8",
+    ))
     .bind(STATUS_FAILED)
     .bind(STATUS_RETRYABLE)
     .bind(retry_at_rfc3339)
@@ -124,13 +140,19 @@ pub async fn claim_due(
     lease_owner: &str,
     lease_until_rfc3339: &str,
 ) -> Result<Vec<JobRow>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id FROM background_job \
          WHERE (status IN (?, ?) AND run_at <= ?) \
             OR (status = ? AND lease_until IS NOT NULL AND lease_until <= ?) \
          ORDER BY run_at ASC, id ASC \
          LIMIT ?",
-    )
+        "SELECT id FROM background_job \
+         WHERE (status IN ($1, $2) AND run_at <= $3) \
+            OR (status = $4 AND lease_until IS NOT NULL AND lease_until <= $5) \
+         ORDER BY run_at ASC, id ASC \
+         LIMIT $6",
+    ))
     .bind(STATUS_PENDING)
     .bind(STATUS_RETRYABLE)
     .bind(now_rfc3339)
@@ -143,7 +165,8 @@ pub async fn claim_due(
     let mut claimed = Vec::new();
     for row in rows {
         let id = uuid_from(&row, "id")?;
-        let updated = sqlx::query(
+        let updated = sqlx::query(sql_for_backend(
+            db.backend(),
             "UPDATE background_job \
              SET status = ?, lease_owner = ?, lease_until = ?, attempt_count = attempt_count + 1, \
                  updated_at = ? \
@@ -153,7 +176,16 @@ pub async fn claim_due(
                     OR (status = ? AND lease_until IS NOT NULL AND lease_until <= ?) \
                ) \
                AND attempt_count < max_attempts",
-        )
+            "UPDATE background_job \
+             SET status = $1, lease_owner = $2, lease_until = $3, attempt_count = attempt_count + 1, \
+                 updated_at = $4 \
+             WHERE id = $5 \
+               AND ( \
+                    (status IN ($6, $7) AND run_at <= $8) \
+                    OR (status = $9 AND lease_until IS NOT NULL AND lease_until <= $10) \
+               ) \
+               AND attempt_count < max_attempts",
+        ))
         .bind(STATUS_LEASED)
         .bind(lease_owner)
         .bind(lease_until_rfc3339)
@@ -182,12 +214,17 @@ pub async fn complete(
     lease_owner: &str,
     finished_at: &str,
 ) -> Result<bool, sqlx::Error> {
-    let updated = sqlx::query(
+    let updated = sqlx::query(sql_for_backend(
+        db.backend(),
         "UPDATE background_job \
          SET status = ?, lease_owner = NULL, lease_until = NULL, last_error = NULL, \
              updated_at = ?, finished_at = ? \
          WHERE id = ? AND status = ? AND lease_owner = ?",
-    )
+        "UPDATE background_job \
+         SET status = $1, lease_owner = NULL, lease_until = NULL, last_error = NULL, \
+             updated_at = $2, finished_at = $3 \
+         WHERE id = $4 AND status = $5 AND lease_owner = $6",
+    ))
     .bind(STATUS_SUCCEEDED)
     .bind(finished_at)
     .bind(finished_at)
@@ -207,14 +244,21 @@ pub async fn retry(
     error: &str,
     updated_at: &str,
 ) -> Result<bool, sqlx::Error> {
-    let updated = sqlx::query(
+    let updated = sqlx::query(sql_for_backend(
+        db.backend(),
         "UPDATE background_job \
          SET status = CASE WHEN attempt_count >= max_attempts THEN ? ELSE ? END, \
              run_at = ?, lease_owner = NULL, lease_until = NULL, last_error = ?, \
              updated_at = ?, \
              finished_at = CASE WHEN attempt_count >= max_attempts THEN ? ELSE NULL END \
          WHERE id = ? AND status = ? AND lease_owner = ?",
-    )
+        "UPDATE background_job \
+         SET status = CASE WHEN attempt_count >= max_attempts THEN $1 ELSE $2 END, \
+             run_at = $3, lease_owner = NULL, lease_until = NULL, last_error = $4, \
+             updated_at = $5, \
+             finished_at = CASE WHEN attempt_count >= max_attempts THEN $6 ELSE NULL END \
+         WHERE id = $7 AND status = $8 AND lease_owner = $9",
+    ))
     .bind(STATUS_FAILED)
     .bind(STATUS_RETRYABLE)
     .bind(run_at)
@@ -230,11 +274,15 @@ pub async fn retry(
 }
 
 pub async fn find(db: &Database, id: Uuid) -> Result<Option<JobRow>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, kind, dedupe_key, payload_json, status, run_at, lease_owner, lease_until, \
                 attempt_count, max_attempts, last_error, created_at, updated_at, finished_at \
          FROM background_job WHERE id = ?",
-    )
+        "SELECT id, kind, dedupe_key, payload_json, status, run_at, lease_owner, lease_until, \
+                attempt_count, max_attempts, last_error, created_at, updated_at, finished_at \
+         FROM background_job WHERE id = $1",
+    ))
     .bind(id.to_string())
     .fetch_optional(&db.pool)
     .await?;

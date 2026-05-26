@@ -26,7 +26,7 @@ use crate::stock_events::{
     EVENT_REPACK_OUT, EVENT_RESTORE,
 };
 use crate::storage_vessels::StorageVesselRow;
-use crate::{now_utc_rfc3339, Backend, Database};
+use crate::{now_utc_rfc3339, sql_for_backend, Backend, Database};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct StockBatchRow {
@@ -181,22 +181,33 @@ pub async fn list(
          INNER JOIN product p ON p.id = s.product_id \
          INNER JOIN location l ON l.id = s.location_id \
          LEFT JOIN storage_vessel v ON v.id = s.storage_vessel_id \
-         WHERE s.household_id = ? ",
+         WHERE s.household_id = ",
     );
+    let mut bind_index = 1;
+    push_bind_slot(&mut sql, db.backend(), &mut bind_index);
+    sql.push(' ');
     if !filter.include_depleted {
         sql.push_str("AND s.depleted_at IS NULL ");
     }
     if filter.location_id.is_some() {
-        sql.push_str("AND s.location_id = ? ");
+        sql.push_str("AND s.location_id = ");
+        push_bind_slot(&mut sql, db.backend(), &mut bind_index);
+        sql.push(' ');
     }
     if filter.product_id.is_some() {
-        sql.push_str("AND s.product_id = ? ");
+        sql.push_str("AND s.product_id = ");
+        push_bind_slot(&mut sql, db.backend(), &mut bind_index);
+        sql.push(' ');
     }
     if filter.expiring_before.is_some() {
         if filter.include_undated_when_expiring_filter {
-            sql.push_str("AND (s.expires_on IS NULL OR s.expires_on < ?) ");
+            sql.push_str("AND (s.expires_on IS NULL OR s.expires_on < ");
+            push_bind_slot(&mut sql, db.backend(), &mut bind_index);
+            sql.push_str(") ");
         } else {
-            sql.push_str("AND s.expires_on IS NOT NULL AND s.expires_on < ? ");
+            sql.push_str("AND s.expires_on IS NOT NULL AND s.expires_on < ");
+            push_bind_slot(&mut sql, db.backend(), &mut bind_index);
+            sql.push(' ');
         }
     }
     sql.push_str(
@@ -265,7 +276,7 @@ async fn get_with_product_inner(
          INNER JOIN product p ON p.id = s.product_id \
          INNER JOIN location l ON l.id = s.location_id \
          LEFT JOIN storage_vessel v ON v.id = s.storage_vessel_id \
-         WHERE s.household_id = ? AND s.id = ?",
+         WHERE s.household_id = $1 AND s.id = $2",
     );
     if !include_deleted_product {
         sql.push_str(" AND p.deleted_at IS NULL");
@@ -283,12 +294,17 @@ pub async fn get(
     household_id: Uuid,
     id: Uuid,
 ) -> Result<Option<StockBatchRow>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, household_id, product_id, location_id, storage_vessel_id, source_batch_id, source_operation_id, initial_quantity, quantity, unit, \
                 package_quantity, package_unit, produced_on, expires_on, opened_on, note, \
                 created_at, created_by, depleted_at \
          FROM stock_batch WHERE id = ? AND household_id = ?",
-    )
+        "SELECT id, household_id, product_id, location_id, storage_vessel_id, source_batch_id, source_operation_id, initial_quantity, quantity, unit, \
+                package_quantity, package_unit, produced_on, expires_on, opened_on, note, \
+                created_at, created_by, depleted_at \
+         FROM stock_batch WHERE id = $1 AND household_id = $2",
+    ))
     .bind(id.to_string())
     .bind(household_id.to_string())
     .fetch_optional(&db.pool)
@@ -352,11 +368,15 @@ pub async fn create_with_storage_vessel(
     let created_at = now_utc_rfc3339();
     let mut tx = db.pool.begin().await?;
 
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        db.backend(),
         "INSERT INTO stock_batch \
          (id, household_id, product_id, location_id, storage_vessel_id, source_batch_id, source_operation_id, initial_quantity, quantity, unit, package_quantity, package_unit, produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at) \
          VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, (SELECT package_quantity FROM product WHERE id = ?), (SELECT package_unit FROM product WHERE id = ?), ?, ?, ?, ?, ?, ?, NULL)",
-    )
+        "INSERT INTO stock_batch \
+         (id, household_id, product_id, location_id, storage_vessel_id, source_batch_id, source_operation_id, initial_quantity, quantity, unit, package_quantity, package_unit, produced_on, expires_on, opened_on, note, created_at, created_by, depleted_at) \
+         VALUES ($1, $2, $3, $4, $5, NULL, NULL, $6, $7, $8, (SELECT package_quantity FROM product WHERE id = $9), (SELECT package_unit FROM product WHERE id = $10), $11, $12, $13, $14, $15, $16, NULL)",
+    ))
     .bind(id.to_string())
     .bind(household_id.to_string())
     .bind(product_id.to_string())
@@ -389,7 +409,7 @@ pub async fn create_with_storage_vessel(
     .await?;
 
     if let Some(policy) = reminder_policy {
-        crate::reminders::sync_expiry_for_batch_tx(&mut tx, id, policy).await?;
+        crate::reminders::sync_expiry_for_batch_tx(&mut tx, db.backend(), id, policy).await?;
     }
 
     tx.commit().await?;
@@ -461,7 +481,7 @@ pub async fn update_metadata(
     .await?;
 
     if let Some(policy) = reminder_policy {
-        crate::reminders::sync_expiry_for_batch_tx(&mut tx, id, policy).await?;
+        crate::reminders::sync_expiry_for_batch_tx(&mut tx, db.backend(), id, policy).await?;
     }
 
     tx.commit().await?;
@@ -511,18 +531,22 @@ pub async fn adjust(
     }
 
     if depletes {
-        sqlx::query(
+        sqlx::query(sql_for_backend(
+            db.backend(),
             "UPDATE stock_batch SET quantity = '0', depleted_at = ? WHERE id = ? AND household_id = ?",
-        )
+            "UPDATE stock_batch SET quantity = '0', depleted_at = $1 WHERE id = $2 AND household_id = $3",
+        ))
         .bind(now_utc_rfc3339())
         .bind(id.to_string())
         .bind(household_id.to_string())
         .execute(&mut *tx)
         .await?;
     } else {
-        sqlx::query(
+        sqlx::query(sql_for_backend(
+            db.backend(),
             "UPDATE stock_batch SET quantity = ?, depleted_at = NULL WHERE id = ? AND household_id = ?",
-        )
+            "UPDATE stock_batch SET quantity = $1, depleted_at = NULL WHERE id = $2 AND household_id = $3",
+        ))
         .bind(new_quantity)
         .bind(id.to_string())
         .bind(household_id.to_string())
@@ -531,7 +555,7 @@ pub async fn adjust(
     }
 
     if let Some(policy) = reminder_policy {
-        crate::reminders::sync_expiry_for_batch_tx(&mut tx, id, policy).await?;
+        crate::reminders::sync_expiry_for_batch_tx(&mut tx, db.backend(), id, policy).await?;
     }
 
     tx.commit().await?;
@@ -593,9 +617,11 @@ pub async fn discard(
         .await?;
     }
 
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        db.backend(),
         "UPDATE stock_batch SET quantity = '0', depleted_at = ? WHERE id = ? AND household_id = ?",
-    )
+        "UPDATE stock_batch SET quantity = '0', depleted_at = $1 WHERE id = $2 AND household_id = $3",
+    ))
     .bind(now_utc_rfc3339())
     .bind(id.to_string())
     .bind(household_id.to_string())
@@ -603,7 +629,7 @@ pub async fn discard(
     .await?;
 
     if let Some(policy) = reminder_policy {
-        crate::reminders::sync_expiry_for_batch_tx(&mut tx, id, policy).await?;
+        crate::reminders::sync_expiry_for_batch_tx(&mut tx, db.backend(), id, policy).await?;
     }
 
     tx.commit().await?;
@@ -732,7 +758,7 @@ async fn restore_in_tx(
         return Err(RestoreError::NotFound);
     }
 
-    let latest = latest_for_batch_tx(tx, id).await?;
+    let latest = latest_for_batch_tx(tx, backend, id).await?;
     let Some(latest) = latest else {
         return Err(RestoreError::NotRestorable);
     };
@@ -759,10 +785,13 @@ async fn restore_in_tx(
     )
     .await?;
 
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        backend,
         "UPDATE stock_batch SET quantity = ?, depleted_at = NULL \
          WHERE id = ? AND household_id = ?",
-    )
+        "UPDATE stock_batch SET quantity = $1, depleted_at = NULL \
+         WHERE id = $2 AND household_id = $3",
+    ))
     .bind(new_quantity.to_string())
     .bind(id.to_string())
     .bind(household_id.to_string())
@@ -770,7 +799,7 @@ async fn restore_in_tx(
     .await?;
 
     if let Some(policy) = reminder_policy {
-        crate::reminders::sync_expiry_for_batch_tx(tx, id, policy).await?;
+        crate::reminders::sync_expiry_for_batch_tx(tx, backend, id, policy).await?;
     }
 
     Ok(())
@@ -847,19 +876,24 @@ pub async fn apply_consumption(
         .await?;
 
         if depletes {
-            sqlx::query(
+            sqlx::query(sql_for_backend(
+                db.backend(),
                 "UPDATE stock_batch SET quantity = '0', depleted_at = ? \
                  WHERE id = ? AND household_id = ?",
-            )
+                "UPDATE stock_batch SET quantity = '0', depleted_at = $1 \
+                 WHERE id = $2 AND household_id = $3",
+            ))
             .bind(&now)
             .bind(c.batch_id.to_string())
             .bind(household_id.to_string())
             .execute(&mut *tx)
             .await?;
         } else {
-            sqlx::query(
+            sqlx::query(sql_for_backend(
+                db.backend(),
                 "UPDATE stock_batch SET quantity = ?, depleted_at = NULL WHERE id = ? AND household_id = ?",
-            )
+                "UPDATE stock_batch SET quantity = $1, depleted_at = NULL WHERE id = $2 AND household_id = $3",
+            ))
             .bind(new_qty.to_string())
             .bind(c.batch_id.to_string())
             .bind(household_id.to_string())
@@ -868,7 +902,8 @@ pub async fn apply_consumption(
         }
 
         if let Some(policy) = reminder_policy {
-            crate::reminders::sync_expiry_for_batch_tx(&mut tx, c.batch_id, policy).await?;
+            crate::reminders::sync_expiry_for_batch_tx(&mut tx, db.backend(), c.batch_id, policy)
+                .await?;
         }
     }
     tx.commit().await?;
@@ -943,19 +978,24 @@ pub async fn apply_recipe_execution(
         .await?;
 
         if depletes {
-            sqlx::query(
+            sqlx::query(sql_for_backend(
+                db.backend(),
                 "UPDATE stock_batch SET quantity = '0', depleted_at = ? \
                  WHERE id = ? AND household_id = ?",
-            )
+                "UPDATE stock_batch SET quantity = '0', depleted_at = $1 \
+                 WHERE id = $2 AND household_id = $3",
+            ))
             .bind(&now)
             .bind(c.batch_id.to_string())
             .bind(household_id.to_string())
             .execute(&mut *tx)
             .await?;
         } else {
-            sqlx::query(
+            sqlx::query(sql_for_backend(
+                db.backend(),
                 "UPDATE stock_batch SET quantity = ?, depleted_at = NULL WHERE id = ? AND household_id = ?",
-            )
+                "UPDATE stock_batch SET quantity = $1, depleted_at = NULL WHERE id = $2 AND household_id = $3",
+            ))
             .bind(new_qty.to_string())
             .bind(c.batch_id.to_string())
             .bind(household_id.to_string())
@@ -964,7 +1004,8 @@ pub async fn apply_recipe_execution(
         }
 
         if let Some(policy) = reminder_policy {
-            crate::reminders::sync_expiry_for_batch_tx(&mut tx, c.batch_id, policy).await?;
+            crate::reminders::sync_expiry_for_batch_tx(&mut tx, db.backend(), c.batch_id, policy)
+                .await?;
         }
     }
 
@@ -1007,7 +1048,8 @@ pub async fn apply_recipe_execution(
         .await?;
 
         if let Some(policy) = reminder_policy {
-            crate::reminders::sync_expiry_for_batch_tx(&mut tx, batch_id, policy).await?;
+            crate::reminders::sync_expiry_for_batch_tx(&mut tx, db.backend(), batch_id, policy)
+                .await?;
         }
     }
 
@@ -1126,10 +1168,13 @@ pub async fn split_repack(
     .await?;
 
     if depletes {
-        sqlx::query(
+        sqlx::query(sql_for_backend(
+            db.backend(),
             "UPDATE stock_batch SET quantity = '0', opened_on = COALESCE(opened_on, ?), depleted_at = ? \
              WHERE id = ? AND household_id = ?",
-        )
+            "UPDATE stock_batch SET quantity = '0', opened_on = COALESCE(opened_on, $1), depleted_at = $2 \
+             WHERE id = $3 AND household_id = $4",
+        ))
         .bind(opened_on)
         .bind(&now)
         .bind(source_batch_id.to_string())
@@ -1137,10 +1182,13 @@ pub async fn split_repack(
         .execute(&mut *tx)
         .await?;
     } else {
-        sqlx::query(
+        sqlx::query(sql_for_backend(
+            db.backend(),
             "UPDATE stock_batch SET quantity = ?, opened_on = COALESCE(opened_on, ?), depleted_at = NULL \
              WHERE id = ? AND household_id = ?",
-        )
+            "UPDATE stock_batch SET quantity = $1, opened_on = COALESCE(opened_on, $2), depleted_at = NULL \
+             WHERE id = $3 AND household_id = $4",
+        ))
         .bind(remaining.to_string())
         .bind(opened_on)
         .bind(source_batch_id.to_string())
@@ -1195,12 +1243,14 @@ pub async fn split_repack(
         .await?;
 
         if let Some(policy) = reminder_policy {
-            crate::reminders::sync_expiry_for_batch_tx(&mut tx, remainder_id, policy).await?;
+            crate::reminders::sync_expiry_for_batch_tx(&mut tx, db.backend(), remainder_id, policy)
+                .await?;
         }
     }
 
     if let Some(policy) = reminder_policy {
-        crate::reminders::sync_expiry_for_batch_tx(&mut tx, source_batch_id, policy).await?;
+        crate::reminders::sync_expiry_for_batch_tx(&mut tx, db.backend(), source_batch_id, policy)
+            .await?;
     }
 
     tx.commit().await?;
@@ -1433,7 +1483,7 @@ async fn insert_event_with_metadata(
     let id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO stock_event (id, household_id, batch_id, event_type, quantity_delta, package_quantity, package_unit, note, created_at, created_by, consume_request_id, operation_id, recipe_execution_id) \
-         VALUES (?, ?, ?, ?, ?, (SELECT package_quantity FROM stock_batch WHERE id = ?), (SELECT package_unit FROM stock_batch WHERE id = ?), ?, ?, ?, ?, ?, ?)",
+         VALUES ($1, $2, $3, $4, $5, (SELECT package_quantity FROM stock_batch WHERE id = $6), (SELECT package_unit FROM stock_batch WHERE id = $7), $8, $9, $10, $11, $12, $13)",
     )
     .bind(id.to_string())
     .bind(household_id.to_string())
@@ -1460,7 +1510,14 @@ async fn fetch_locked_batch_row(
     id: Uuid,
     columns: &str,
 ) -> Result<Option<sqlx::any::AnyRow>, sqlx::Error> {
-    let mut sql = format!("SELECT {columns} FROM stock_batch WHERE id = ? AND household_id = ?");
+    let mut sql = match backend {
+        Backend::Postgres => {
+            format!("SELECT {columns} FROM stock_batch WHERE id = $1 AND household_id = $2")
+        }
+        Backend::Sqlite | Backend::Other => {
+            format!("SELECT {columns} FROM stock_batch WHERE id = ? AND household_id = ?")
+        }
+    };
     if backend == Backend::Postgres {
         sql.push_str(" FOR UPDATE");
     }
@@ -1601,6 +1658,17 @@ fn row_to_joined(row: sqlx::any::AnyRow) -> Result<StockBatchWithProduct, sqlx::
 fn uuid_from(row: &sqlx::any::AnyRow, col: &str) -> Result<Uuid, sqlx::Error> {
     let s: String = row.try_get(col)?;
     Uuid::parse_str(&s).map_err(|e| sqlx::Error::Decode(Box::new(e)))
+}
+
+fn push_bind_slot(sql: &mut String, backend: Backend, next_postgres_index: &mut usize) {
+    match backend {
+        Backend::Postgres => {
+            sql.push('$');
+            sql.push_str(&next_postgres_index.to_string());
+            *next_postgres_index += 1;
+        }
+        Backend::Sqlite | Backend::Other => sql.push('?'),
+    }
 }
 
 #[cfg(test)]
@@ -2468,7 +2536,11 @@ mod tests {
             } else {
                 None
             };
-            sqlx::query("UPDATE stock_batch SET quantity = ?, depleted_at = ? WHERE id = ? AND household_id = ?")
+            sqlx::query(sql_for_backend(
+                db1.backend(),
+                "UPDATE stock_batch SET quantity = ?, depleted_at = ? WHERE id = ? AND household_id = ?",
+                "UPDATE stock_batch SET quantity = $1, depleted_at = $2 WHERE id = $3 AND household_id = $4",
+            ))
                 .bind(new_qty.to_string())
                 .bind(depleted_at)
                 .bind(batch.id.to_string())

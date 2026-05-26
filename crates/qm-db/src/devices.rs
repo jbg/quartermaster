@@ -1,7 +1,7 @@
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{now_utc_rfc3339, Database};
+use crate::{now_utc_rfc3339, sql_for_backend, Database};
 
 #[derive(Debug, Clone)]
 pub struct DeviceUpsert {
@@ -31,12 +31,17 @@ pub struct DeviceRow {
 
 pub async fn upsert(db: &Database, input: &DeviceUpsert) -> Result<DeviceRow, sqlx::Error> {
     let now = now_utc_rfc3339();
-    let updated = sqlx::query(
+    let updated = sqlx::query(sql_for_backend(
+        db.backend(),
         "UPDATE notification_device \
          SET user_id = ?, platform = ?, push_token = ?, push_authorization = ?, \
              app_version = ?, last_seen_at = ?, updated_at = ? \
          WHERE session_id = ? AND device_id = ?",
-    )
+        "UPDATE notification_device \
+         SET user_id = $1, platform = $2, push_token = $3, push_authorization = $4, \
+             app_version = $5, last_seen_at = $6, updated_at = $7 \
+         WHERE session_id = $8 AND device_id = $9",
+    ))
     .bind(input.user_id.to_string())
     .bind(&input.platform)
     .bind(&input.push_token)
@@ -51,12 +56,17 @@ pub async fn upsert(db: &Database, input: &DeviceUpsert) -> Result<DeviceRow, sq
 
     if updated.rows_affected() == 0 {
         let id = Uuid::now_v7();
-        sqlx::query(
+        sqlx::query(sql_for_backend(
+            db.backend(),
             "INSERT INTO notification_device \
              (id, user_id, session_id, device_id, platform, push_token, push_authorization, \
               app_version, last_seen_at, created_at, updated_at) \
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+            "INSERT INTO notification_device \
+             (id, user_id, session_id, device_id, platform, push_token, push_authorization, \
+              app_version, last_seen_at, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+        ))
         .bind(id.to_string())
         .bind(input.user_id.to_string())
         .bind(input.session_id.to_string())
@@ -82,12 +92,17 @@ pub async fn find_by_session_device(
     session_id: Uuid,
     device_id: &str,
 ) -> Result<Option<DeviceRow>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, user_id, session_id, device_id, platform, push_token, push_authorization, \
                 app_version, last_seen_at, created_at, updated_at \
          FROM notification_device \
          WHERE session_id = ? AND device_id = ?",
-    )
+        "SELECT id, user_id, session_id, device_id, platform, push_token, push_authorization, \
+                app_version, last_seen_at, created_at, updated_at \
+         FROM notification_device \
+         WHERE session_id = $1 AND device_id = $2",
+    ))
     .bind(session_id.to_string())
     .bind(device_id)
     .fetch_optional(&db.pool)
@@ -99,13 +114,19 @@ pub async fn find_latest_for_session(
     db: &Database,
     session_id: Uuid,
 ) -> Result<Option<DeviceRow>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, user_id, session_id, device_id, platform, push_token, push_authorization, \
                 app_version, last_seen_at, created_at, updated_at \
          FROM notification_device \
          WHERE session_id = ? \
          ORDER BY updated_at DESC, id DESC",
-    )
+        "SELECT id, user_id, session_id, device_id, platform, push_token, push_authorization, \
+                app_version, last_seen_at, created_at, updated_at \
+         FROM notification_device \
+         WHERE session_id = $1 \
+         ORDER BY updated_at DESC, id DESC",
+    ))
     .bind(session_id.to_string())
     .fetch_optional(&db.pool)
     .await?;

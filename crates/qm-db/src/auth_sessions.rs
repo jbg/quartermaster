@@ -1,7 +1,7 @@
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{now_utc_rfc3339, Database};
+use crate::{now_utc_rfc3339, sql_for_backend, Database};
 
 pub const STALE_SESSION_SWEEP_BATCH_SIZE: u32 = 100;
 
@@ -15,10 +15,13 @@ pub struct AuthSessionRow {
 }
 
 pub async fn find(db: &Database, session_id: Uuid) -> Result<Option<AuthSessionRow>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT session_id, user_id, active_household_id, created_at, updated_at \
          FROM auth_session WHERE session_id = ?",
-    )
+        "SELECT session_id, user_id, active_household_id, created_at, updated_at \
+         FROM auth_session WHERE session_id = $1",
+    ))
     .bind(session_id.to_string())
     .fetch_optional(&db.pool)
     .await?;
@@ -32,11 +35,15 @@ pub async fn upsert(
     active_household_id: Option<Uuid>,
 ) -> Result<(), sqlx::Error> {
     let now = now_utc_rfc3339();
-    let updated = sqlx::query(
+    let updated = sqlx::query(sql_for_backend(
+        db.backend(),
         "UPDATE auth_session \
          SET user_id = ?, active_household_id = ?, updated_at = ? \
          WHERE session_id = ?",
-    )
+        "UPDATE auth_session \
+         SET user_id = $1, active_household_id = $2, updated_at = $3 \
+         WHERE session_id = $4",
+    ))
     .bind(user_id.to_string())
     .bind(active_household_id.map(|id| id.to_string()))
     .bind(&now)
@@ -48,10 +55,13 @@ pub async fn upsert(
         return Ok(());
     }
 
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        db.backend(),
         "INSERT INTO auth_session (session_id, user_id, active_household_id, created_at, updated_at) \
          VALUES (?, ?, ?, ?, ?)",
-    )
+        "INSERT INTO auth_session (session_id, user_id, active_household_id, created_at, updated_at) \
+         VALUES ($1, $2, $3, $4, $5)",
+    ))
     .bind(session_id.to_string())
     .bind(user_id.to_string())
     .bind(active_household_id.map(|id| id.to_string()))
@@ -63,10 +73,14 @@ pub async fn upsert(
 }
 
 pub async fn delete(db: &Database, session_id: Uuid) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM auth_session WHERE session_id = ?")
-        .bind(session_id.to_string())
-        .execute(&db.pool)
-        .await?;
+    sqlx::query(sql_for_backend(
+        db.backend(),
+        "DELETE FROM auth_session WHERE session_id = ?",
+        "DELETE FROM auth_session WHERE session_id = $1",
+    ))
+    .bind(session_id.to_string())
+    .execute(&db.pool)
+    .await?;
     Ok(())
 }
 
@@ -75,10 +89,13 @@ pub async fn has_live_tokens(
     session_id: Uuid,
     now_rfc3339: &str,
 ) -> Result<bool, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT COUNT(*) AS live_count FROM auth_token \
          WHERE session_id = ? AND revoked_at IS NULL AND expires_at > ?",
-    )
+        "SELECT COUNT(*) AS live_count FROM auth_token \
+         WHERE session_id = $1 AND revoked_at IS NULL AND expires_at > $2",
+    ))
     .bind(session_id.to_string())
     .bind(now_rfc3339)
     .fetch_one(&db.pool)
@@ -96,10 +113,14 @@ pub async fn delete_if_no_live_tokens(
         return Ok(false);
     }
 
-    let deleted = sqlx::query("DELETE FROM auth_session WHERE session_id = ?")
-        .bind(session_id.to_string())
-        .execute(&db.pool)
-        .await?;
+    let deleted = sqlx::query(sql_for_backend(
+        db.backend(),
+        "DELETE FROM auth_session WHERE session_id = ?",
+        "DELETE FROM auth_session WHERE session_id = $1",
+    ))
+    .bind(session_id.to_string())
+    .execute(&db.pool)
+    .await?;
     Ok(deleted.rows_affected() > 0)
 }
 
@@ -109,7 +130,8 @@ pub async fn delete_stale_session_batch(
     batch_size: u32,
 ) -> Result<u64, sqlx::Error> {
     let mut tx = db.pool.begin().await?;
-    let candidate_rows = sqlx::query(
+    let candidate_rows = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT s.session_id \
          FROM auth_session s \
          WHERE NOT EXISTS ( \
@@ -120,7 +142,17 @@ pub async fn delete_stale_session_batch(
          ) \
          ORDER BY s.updated_at ASC, s.session_id ASC \
          LIMIT ?",
-    )
+        "SELECT s.session_id \
+         FROM auth_session s \
+         WHERE NOT EXISTS ( \
+             SELECT 1 FROM auth_token t \
+             WHERE t.session_id = s.session_id \
+               AND t.revoked_at IS NULL \
+               AND t.expires_at > $1 \
+         ) \
+         ORDER BY s.updated_at ASC, s.session_id ASC \
+         LIMIT $2",
+    ))
     .bind(now_rfc3339)
     .bind(i64::from(batch_size))
     .fetch_all(&mut *tx)
@@ -129,7 +161,8 @@ pub async fn delete_stale_session_batch(
     let mut deleted = 0;
     for row in candidate_rows {
         let session_id: String = row.try_get("session_id")?;
-        deleted += sqlx::query(
+        deleted += sqlx::query(sql_for_backend(
+            db.backend(),
             "DELETE FROM auth_session \
              WHERE session_id = ? \
                AND NOT EXISTS ( \
@@ -138,7 +171,15 @@ pub async fn delete_stale_session_batch(
                      AND t.revoked_at IS NULL \
                      AND t.expires_at > ? \
                )",
-        )
+            "DELETE FROM auth_session \
+             WHERE session_id = $1 \
+               AND NOT EXISTS ( \
+                   SELECT 1 FROM auth_token t \
+                   WHERE t.session_id = $2 \
+                     AND t.revoked_at IS NULL \
+                     AND t.expires_at > $3 \
+               )",
+        ))
         .bind(&session_id)
         .bind(&session_id)
         .bind(now_rfc3339)
@@ -211,12 +252,16 @@ mod tests {
         .await
         .unwrap();
         if let Some(revoked_at) = revoked_at {
-            sqlx::query("UPDATE auth_token SET revoked_at = ? WHERE id = ?")
-                .bind(revoked_at)
-                .bind(token_id.to_string())
-                .execute(&db.pool)
-                .await
-                .unwrap();
+            sqlx::query(sql_for_backend(
+                db.backend(),
+                "UPDATE auth_token SET revoked_at = ? WHERE id = ?",
+                "UPDATE auth_token SET revoked_at = $1 WHERE id = $2",
+            ))
+            .bind(revoked_at)
+            .bind(token_id.to_string())
+            .execute(&db.pool)
+            .await
+            .unwrap();
         }
     }
 

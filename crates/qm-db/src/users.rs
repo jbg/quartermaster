@@ -2,7 +2,7 @@ use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{now_utc_rfc3339, Database};
+use crate::{now_utc_rfc3339, sql_for_backend, Backend, Database};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct UserRow {
@@ -39,13 +39,14 @@ pub async fn create(
     password_hash: &str,
 ) -> Result<UserRow, sqlx::Error> {
     let mut tx = db.pool.begin().await?;
-    let user = create_in_tx(&mut tx, email, display_name, password_hash).await?;
+    let user = create_in_tx(&mut tx, db.backend(), email, display_name, password_hash).await?;
     tx.commit().await?;
     Ok(user)
 }
 
 pub async fn create_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     email: &str,
     display_name: &str,
     password_hash: &str,
@@ -53,10 +54,13 @@ pub async fn create_in_tx(
     let id = Uuid::now_v7();
     let created_at = now_utc_rfc3339();
     let legacy_username = email;
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        backend,
         "INSERT INTO users (id, username, email, display_name, password_hash, created_at) \
          VALUES (?, ?, ?, ?, ?, ?)",
-    )
+        "INSERT INTO users (id, username, email, display_name, password_hash, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6)",
+    ))
     .bind(id.to_string())
     .bind(legacy_username)
     .bind(email)
@@ -81,9 +85,11 @@ pub async fn find_by_username(
     db: &Database,
     username: &str,
 ) -> Result<Option<UserRow>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, username, email, display_name, email_verified_at, password_hash, created_at FROM users WHERE username = ?",
-    )
+        "SELECT id, username, email, display_name, email_verified_at, password_hash, created_at FROM users WHERE username = $1",
+    ))
     .bind(username)
     .fetch_optional(&db.pool)
     .await?;
@@ -92,10 +98,13 @@ pub async fn find_by_username(
 }
 
 pub async fn find_by_email(db: &Database, email: &str) -> Result<Option<UserRow>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, username, email, display_name, email_verified_at, password_hash, created_at \
          FROM users WHERE email = ?",
-    )
+        "SELECT id, username, email, display_name, email_verified_at, password_hash, created_at \
+         FROM users WHERE email = $1",
+    ))
     .bind(email)
     .fetch_optional(&db.pool)
     .await?;
@@ -104,9 +113,11 @@ pub async fn find_by_email(db: &Database, email: &str) -> Result<Option<UserRow>
 }
 
 pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<UserRow>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, username, email, display_name, email_verified_at, password_hash, created_at FROM users WHERE id = ?",
-    )
+        "SELECT id, username, email, display_name, email_verified_at, password_hash, created_at FROM users WHERE id = $1",
+    ))
     .bind(id.to_string())
     .fetch_optional(&db.pool)
     .await?;
@@ -129,14 +140,22 @@ pub async fn create_email_verification(
     expires_at: &str,
 ) -> Result<PendingEmailVerificationRow, sqlx::Error> {
     let mut tx = db.pool.begin().await?;
-    let row =
-        create_email_verification_in_tx(&mut tx, user_id, email, code_hash, expires_at).await?;
+    let row = create_email_verification_in_tx(
+        &mut tx,
+        db.backend(),
+        user_id,
+        email,
+        code_hash,
+        expires_at,
+    )
+    .await?;
     tx.commit().await?;
     Ok(row)
 }
 
 pub async fn create_email_verification_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    backend: Backend,
     user_id: Uuid,
     email: &str,
     code_hash: &str,
@@ -144,11 +163,15 @@ pub async fn create_email_verification_in_tx(
 ) -> Result<PendingEmailVerificationRow, sqlx::Error> {
     let id = Uuid::now_v7();
     let created_at = now_utc_rfc3339();
-    sqlx::query(
+    sqlx::query(sql_for_backend(
+        backend,
         "INSERT INTO user_email_verification \
          (id, user_id, email, code_hash, expires_at, consumed_at, created_at) \
          VALUES (?, ?, ?, ?, ?, NULL, ?)",
-    )
+        "INSERT INTO user_email_verification \
+         (id, user_id, email, code_hash, expires_at, consumed_at, created_at) \
+         VALUES ($1, $2, $3, $4, $5, NULL, $6)",
+    ))
     .bind(id.to_string())
     .bind(user_id.to_string())
     .bind(email)
@@ -172,13 +195,19 @@ pub async fn latest_pending_email_verification(
     user_id: Uuid,
     now: &str,
 ) -> Result<Option<PendingEmailVerificationRow>, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query(sql_for_backend(
+        db.backend(),
         "SELECT id, user_id, email, expires_at, created_at \
          FROM user_email_verification \
          WHERE user_id = ? AND consumed_at IS NULL AND expires_at >= ? \
          ORDER BY created_at DESC, id DESC \
          LIMIT 1",
-    )
+        "SELECT id, user_id, email, expires_at, created_at \
+         FROM user_email_verification \
+         WHERE user_id = $1 AND consumed_at IS NULL AND expires_at >= $2 \
+         ORDER BY created_at DESC, id DESC \
+         LIMIT 1",
+    ))
     .bind(user_id.to_string())
     .bind(now)
     .fetch_optional(&db.pool)

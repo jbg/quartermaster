@@ -1527,7 +1527,15 @@ pub(crate) async fn create_user_with_pending_verification(
     verification: &SignupVerification,
 ) -> ApiResult<qm_db::users::UserRow> {
     let mut tx = state.db.pool.begin().await?;
-    let user = match qm_db::users::create_in_tx(&mut tx, email, display_name, password_hash).await {
+    let user = match qm_db::users::create_in_tx(
+        &mut tx,
+        state.db.backend(),
+        email,
+        display_name,
+        password_hash,
+    )
+    .await
+    {
         Ok(user) => user,
         Err(err) if qm_db::memberships::is_unique_violation(&err) => {
             return Err(ApiError::Conflict("email already registered".into()));
@@ -1536,6 +1544,7 @@ pub(crate) async fn create_user_with_pending_verification(
     };
     qm_db::users::create_email_verification_in_tx(
         &mut tx,
+        state.db.backend(),
         user.id,
         email,
         &verification.code_hash,
