@@ -3,7 +3,16 @@ export interface BrowserLocationLike {
   pathname?: string;
 }
 
-const WEB_ROUTE_ROOTS = new Set(['batches', 'join', 'products', 'reminders', 'settings']);
+const WEB_ROUTE_ROOTS = new Set([
+  'ai',
+  'batches',
+  'join',
+  'products',
+  'recipes',
+  'reminders',
+  'settings',
+  'suppliers'
+]);
 
 export function trimTrailingSlashes(value: string): string {
   return value.replace(/\/+$/, '');
