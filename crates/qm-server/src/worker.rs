@@ -133,6 +133,14 @@ async fn run_job(
             Ok(JobOutcome::Done)
         }
         jobs::KIND_HOUSEHOLD_PURGE => run_household_purge(db, job).await,
+        jobs::KIND_SUPPLIER_CART_SUBMIT => {
+            debug!(job_id = %job.id, "reserved supplier cart submit job kind has no handler yet");
+            Ok(JobOutcome::Done)
+        }
+        jobs::KIND_SUPPLIER_ORDER_STATUS_SYNC => {
+            debug!(job_id = %job.id, "reserved supplier order status sync job kind has no handler yet");
+            Ok(JobOutcome::Done)
+        }
         other => anyhow::bail!("unknown background job kind: {other}"),
     }
 }
