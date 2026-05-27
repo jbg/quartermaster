@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.1](https://github.com/jbg/quartermaster/compare/1.32.0...1.32.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* simplify cook suggestions flow ([2e941b9](https://github.com/jbg/quartermaster/commit/2e941b9c384a76cc07a2fd3e2cca35047266478f))
+
 ## [1.32.0](https://github.com/jbg/quartermaster/compare/1.31.2...1.32.0) (2026-05-26)
 
 
