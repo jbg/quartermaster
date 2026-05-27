@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.4](https://github.com/jbg/quartermaster/compare/1.32.3...1.32.4) (2026-05-27)
+
+
+### Bug Fixes
+
+* improve pantry AI suggestion generation ([4dcd130](https://github.com/jbg/quartermaster/commit/4dcd13077857384aab551c43789dc1686f10c055))
+
 ## [1.32.3](https://github.com/jbg/quartermaster/compare/1.32.2...1.32.3) (2026-05-27)
 
 
