@@ -283,10 +283,64 @@ async fn pantry_generation_records_ai_task_and_candidate_suggestion() {
             .pointer("/properties/ideas/items/properties/steps/items/additionalProperties"),
         Some(&Value::Bool(false))
     );
-    assert_eq!(request.max_output_tokens, Some(2_000));
+    assert_eq!(request.max_output_tokens, Some(12_000));
     assert!(request.user_prompt.contains("\"name\":\"Rice\""));
     assert!(!request.user_prompt.contains(&rice.to_string()));
     assert!(!request.user_prompt.contains("image_url"));
+}
+
+#[tokio::test]
+async fn pantry_generation_uses_configured_output_token_budget() {
+    let captured_request = Arc::new(Mutex::new(None));
+    let app = TestApp::start_with_ai_provider(
+        ApiConfig {
+            ai_pantry_suggestion_max_output_tokens: 12_345,
+            ..ApiConfig::default()
+        },
+        Arc::new(MockAiProvider {
+            output: json!({
+                "ideas": [generated_idea_json("Pantry rice bowl", "2")]
+            }),
+            captured_request: Some(Arc::clone(&captured_request)),
+        }),
+    )
+    .await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let (household_id, pantry_id) = household_and_pantry(&app, &alice).await;
+    let rice = create_product(&app, household_id, "Rice", "mass", "g").await;
+    qm_db::stock::create(
+        &app.db,
+        household_id,
+        rice,
+        pantry_id,
+        "500",
+        "g",
+        None,
+        None,
+        None,
+        None,
+        actor_id(&app, "alice").await,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let (status, body) = app
+        .send(
+            Method::POST,
+            "/api/v1/pantry/suggestions",
+            Some(json!({ "generate_recipe_ideas": true })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["warnings"].as_array().unwrap().is_empty());
+    assert_eq!(body["suggestions"].as_array().unwrap().len(), 1);
+    assert_eq!(body["suggestions"][0]["title"], "Pantry rice bowl");
+
+    let request = captured_request.lock().unwrap().clone().unwrap();
+    assert_eq!(request.max_output_tokens, Some(12_345));
 }
 
 #[tokio::test]

@@ -44,6 +44,7 @@ struct RawConfig {
     ai_model: Option<String>,
     ai_retain_raw_responses: bool,
     ai_timeout_seconds: u64,
+    ai_pantry_suggestion_max_output_tokens: u32,
     ai_openrouter_api_key: Option<String>,
     ai_openrouter_base_url: String,
     public_base_url: Option<String>,
@@ -149,6 +150,7 @@ impl Default for RawConfig {
             ai_model: None,
             ai_retain_raw_responses: false,
             ai_timeout_seconds: 60,
+            ai_pantry_suggestion_max_output_tokens: 12_000,
             ai_openrouter_api_key: None,
             ai_openrouter_base_url: "https://openrouter.ai/api/v1".into(),
             public_base_url: None,
@@ -384,6 +386,9 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
     if ai_openrouter_base_url.is_empty() {
         anyhow::bail!("QM_AI_OPENROUTER_BASE_URL must not be blank");
     }
+    if raw.ai_pantry_suggestion_max_output_tokens == 0 {
+        anyhow::bail!("QM_AI_PANTRY_SUGGESTION_MAX_OUTPUT_TOKENS must be >= 1");
+    }
 
     if raw.expiry_reminder_fire_hour > 23 {
         anyhow::bail!("QM_EXPIRY_REMINDER_FIRE_HOUR must be between 0 and 23");
@@ -553,6 +558,7 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         expiry_reminder_trigger_secret,
         smoke_seed_trigger_secret,
         ai_timeout: Duration::from_secs(raw.ai_timeout_seconds),
+        ai_pantry_suggestion_max_output_tokens: raw.ai_pantry_suggestion_max_output_tokens,
         ai: qm_ai::AiConfig {
             provider: ai_provider,
             model: ai_model,

@@ -738,14 +738,15 @@ async fn generate_recipe_ideas(
         "requesting AI pantry recipe ideas"
     );
     let provider_started = Instant::now();
+    let max_output_tokens = state.config.ai_pantry_suggestion_max_output_tokens;
     let response = match state
         .ai_provider
         .complete_structured(qm_ai::StructuredOutputRequest {
             task_type: "recipe_generation".into(),
             prompt_version: PROMPT_VERSION.into(),
             model: None,
-            max_output_tokens: Some(ai_output_token_budget(constraints.max_ai_suggestions)),
-            system_prompt: "You suggest practical, concise recipes from pantry inventory. Return strict JSON only. Use positive decimal strings for serving_count, never ranges. Prefer short candidate recipes with no more than 8 ingredients and 6 steps. Mark unresolved conversions and substitutions explicitly. Never claim the recipe is executable; Quartermaster will validate it.".into(),
+            max_output_tokens: Some(max_output_tokens),
+            system_prompt: "You suggest practical, concise recipes from pantry inventory. Return strict JSON only. Use positive decimal strings for serving_count, never ranges. Keep the JSON compact: short names, short steps, and no prose beyond schema fields. Prefer short candidate recipes with no more than 8 ingredients and 6 steps. Mark unresolved conversions and substitutions explicitly. Never claim the recipe is executable; Quartermaster will validate it.".into(),
             user_prompt: input_summary_json.clone(),
             json_schema_name: "pantry_recipe_ideas".into(),
             json_schema: schema,
@@ -756,6 +757,7 @@ async fn generate_recipe_ideas(
             tracing::info!(
                 provider = %response.provider,
                 model = %response.model,
+                max_output_tokens,
                 elapsed_ms = provider_started.elapsed().as_millis() as u64,
                 "received AI pantry recipe ideas"
             );
@@ -765,6 +767,7 @@ async fn generate_recipe_ideas(
             tracing::warn!(
                 provider = %status.provider,
                 model = status.model.as_deref().unwrap_or("unknown"),
+                max_output_tokens,
                 elapsed_ms = provider_started.elapsed().as_millis() as u64,
                 error = %err,
                 "AI pantry recipe idea request failed"
@@ -914,10 +917,6 @@ fn ai_pantry_input_summary<'a>(
         policy: "Generate candidates only; Quartermaster validates before saving or executing. No credentials are included.",
         output_guidance: "Keep every idea compact: no more than 8 ingredients, 6 steps, 3 timers, and 5 equipment or note entries.",
     })
-}
-
-fn ai_output_token_budget(max_suggestions: i64) -> u32 {
-    (1_000_u32 * max_suggestions as u32).clamp(1_000, 3_000)
 }
 
 fn pantry_recipe_ideas_schema(max_suggestions: i64) -> Value {
