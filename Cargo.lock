@@ -3130,7 +3130,7 @@ checksum = "e0c5ccf5294c6ccd63a74f1565028353830a9c2f5eb0c682c355c471726a6e3f"
 
 [[package]]
 name = "qm-ai"
-version = "1.32.2"
+version = "1.32.3"
 dependencies = [
  "reqwest",
  "serde",
@@ -3141,7 +3141,7 @@ dependencies = [
 
 [[package]]
 name = "qm-api"
-version = "1.32.2"
+version = "1.32.3"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -3181,7 +3181,7 @@ dependencies = [
 
 [[package]]
 name = "qm-core"
-version = "1.32.2"
+version = "1.32.3"
 dependencies = [
  "jiff",
  "rust_decimal",
@@ -3193,7 +3193,7 @@ dependencies = [
 
 [[package]]
 name = "qm-db"
-version = "1.32.2"
+version = "1.32.3"
 dependencies = [
  "anyhow",
  "jiff",
@@ -3212,7 +3212,7 @@ dependencies = [
 
 [[package]]
 name = "qm-server"
-version = "1.32.2"
+version = "1.32.3"
 dependencies = [
  "anyhow",
  "axum",
@@ -3244,7 +3244,7 @@ dependencies = [
 
 [[package]]
 name = "qm-suppliers"
-version = "1.32.2"
+version = "1.32.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -5811,7 +5811,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "1.32.2"
+version = "1.32.3"
 dependencies = [
  "anyhow",
  "qm-api",
