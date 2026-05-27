@@ -642,32 +642,7 @@ async fn generate_recipe_ideas(
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>()
     );
-    let schema = json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["ideas"],
-        "properties": {
-            "ideas": {
-                "type": "array",
-                "maxItems": constraints.max_ai_suggestions,
-                "items": {
-                    "type": "object",
-                    "additionalProperties": true,
-                    "required": ["name", "serving_count", "ingredients", "steps", "explanation"],
-                    "properties": {
-                        "name": {"type": "string"},
-                        "description": {"type": ["string", "null"]},
-                        "serving_count": {"type": "string"},
-                        "ingredients": {"type": "array"},
-                        "steps": {"type": "array"},
-                        "explanation": {"type": "string"},
-                        "unresolved_conversions": {"type": "array", "items": {"type": "string"}},
-                        "substitutions": {"type": "array", "items": {"type": "string"}}
-                    }
-                }
-            }
-        }
-    });
+    let schema = pantry_recipe_ideas_schema(constraints.max_ai_suggestions);
     let response = state
         .ai_provider
         .complete_structured(qm_ai::StructuredOutputRequest {
@@ -762,6 +737,113 @@ async fn generate_recipe_ideas(
     Ok(GeneratedSuggestions {
         task_id: task.id,
         suggestions,
+    })
+}
+
+fn pantry_recipe_ideas_schema(max_suggestions: i64) -> Value {
+    let quantity_range_schema = json!({
+        "type": ["object", "null"],
+        "additionalProperties": false,
+        "required": ["min", "max"],
+        "properties": {
+            "min": {"type": "string"},
+            "max": {"type": "string"}
+        }
+    });
+    let quantity_schema = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["amount", "unit", "family", "range", "to_taste", "preparation_note"],
+        "properties": {
+            "amount": {"type": ["string", "null"]},
+            "unit": {"type": ["string", "null"]},
+            "family": {"type": ["string", "null"], "enum": ["mass", "volume", "count", null]},
+            "range": quantity_range_schema,
+            "to_taste": {"type": "boolean"},
+            "preparation_note": {"type": ["string", "null"]}
+        }
+    });
+    let ingredient_schema = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+            "id",
+            "ingredient_id",
+            "product_id",
+            "display_name",
+            "quantity",
+            "preparation",
+            "optional",
+            "group_label",
+            "substitution_hints"
+        ],
+        "properties": {
+            "id": {"type": "null"},
+            "ingredient_id": {"type": "null"},
+            "product_id": {"type": "null"},
+            "display_name": {"type": "string"},
+            "quantity": quantity_schema,
+            "preparation": {"type": ["string", "null"]},
+            "optional": {"type": "boolean"},
+            "group_label": {"type": ["string", "null"]},
+            "substitution_hints": {"type": "array", "items": {"type": "string"}}
+        }
+    });
+    let timer_schema = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "duration_seconds"],
+        "properties": {
+            "label": {"type": ["string", "null"]},
+            "duration_seconds": {"type": "integer"}
+        }
+    });
+    let step_schema = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "instruction", "timers", "equipment", "ingredient_refs"],
+        "properties": {
+            "id": {"type": "null"},
+            "instruction": {"type": "string"},
+            "timers": {"type": "array", "items": timer_schema},
+            "equipment": {"type": "array", "items": {"type": "string"}},
+            "ingredient_refs": {"type": "array", "items": {"type": "string"}}
+        }
+    });
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ideas"],
+        "properties": {
+            "ideas": {
+                "type": "array",
+                "maxItems": max_suggestions,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "name",
+                        "description",
+                        "serving_count",
+                        "ingredients",
+                        "steps",
+                        "explanation",
+                        "unresolved_conversions",
+                        "substitutions"
+                    ],
+                    "properties": {
+                        "name": {"type": "string"},
+                        "description": {"type": ["string", "null"]},
+                        "serving_count": {"type": "string"},
+                        "ingredients": {"type": "array", "items": ingredient_schema},
+                        "steps": {"type": "array", "items": step_schema},
+                        "explanation": {"type": "string"},
+                        "unresolved_conversions": {"type": "array", "items": {"type": "string"}},
+                        "substitutions": {"type": "array", "items": {"type": "string"}}
+                    }
+                }
+            }
+        }
     })
 }
 
