@@ -4,12 +4,13 @@ use std::{
     future::Future,
     pin::Pin,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use axum::http::{Method, StatusCode};
 use qm_ai::{
-    AiError, AiProvider, AiProviderKind, AiProviderStatus, StructuredOutputRequest,
-    StructuredOutputResponse,
+    AiConfig, AiError, AiProvider, AiProviderKind, AiProviderStatus, OpenRouterConfig,
+    StructuredOutputRequest, StructuredOutputResponse,
 };
 use qm_api::{ApiConfig, RegistrationMode};
 use serde_json::{json, Value};
@@ -249,6 +250,16 @@ async fn pantry_generation_records_ai_task_and_candidate_suggestion() {
     let request = captured_request.lock().unwrap().clone().unwrap();
     assert_strict_schema_objects(&request.json_schema, "$");
     assert_eq!(
+        request.json_schema.pointer("/properties/ideas/minItems"),
+        Some(&Value::from(1))
+    );
+    assert_eq!(
+        request
+            .json_schema
+            .pointer("/properties/ideas/items/properties/steps/minItems"),
+        Some(&Value::from(1))
+    );
+    assert_eq!(
         request
             .json_schema
             .pointer("/properties/ideas/items/properties/ingredients/items/additionalProperties"),
@@ -260,6 +271,229 @@ async fn pantry_generation_records_ai_task_and_candidate_suggestion() {
             .pointer("/properties/ideas/items/properties/steps/items/additionalProperties"),
         Some(&Value::Bool(false))
     );
+}
+
+#[tokio::test]
+async fn pantry_generation_rejections_are_reported_as_warnings() {
+    let app = TestApp::start_with_ai_provider(
+        ApiConfig::default(),
+        Arc::new(MockAiProvider {
+            output: json!({ "ideas": [] }),
+            captured_request: None,
+        }),
+    )
+    .await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let (household_id, pantry_id) = household_and_pantry(&app, &alice).await;
+    let rice = create_product(&app, household_id, "Rice", "mass", "g").await;
+    qm_db::stock::create(
+        &app.db,
+        household_id,
+        rice,
+        pantry_id,
+        "500",
+        "g",
+        None,
+        None,
+        None,
+        None,
+        actor_id(&app, "alice").await,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let (status, body) = app
+        .send(
+            Method::POST,
+            "/api/v1/pantry/suggestions",
+            Some(json!({ "generate_recipe_ideas": true })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["generation_task"].as_str().is_some());
+    assert!(body["suggestions"].as_array().unwrap().is_empty());
+    assert_eq!(
+        body["warnings"][0].as_str(),
+        Some("AI recipe generation returned invalid candidates: ideas must include at least one recipe candidate")
+    );
+}
+
+#[tokio::test]
+async fn pantry_generation_keeps_valid_candidates_when_others_are_rejected() {
+    let app = TestApp::start_with_ai_provider(
+        ApiConfig::default(),
+        Arc::new(MockAiProvider {
+            output: json!({
+                "ideas": [
+                    generated_idea_json("Pantry rice bowl", "2"),
+                    generated_idea_json("Range serving bowl", "2-3")
+                ]
+            }),
+            captured_request: None,
+        }),
+    )
+    .await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let (household_id, pantry_id) = household_and_pantry(&app, &alice).await;
+    let rice = create_product(&app, household_id, "Rice", "mass", "g").await;
+    qm_db::stock::create(
+        &app.db,
+        household_id,
+        rice,
+        pantry_id,
+        "500",
+        "g",
+        None,
+        None,
+        None,
+        None,
+        actor_id(&app, "alice").await,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let (status, body) = app
+        .send(
+            Method::POST,
+            "/api/v1/pantry/suggestions",
+            Some(json!({ "generate_recipe_ideas": true })),
+            Some(&alice),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["suggestions"].as_array().unwrap().len(), 1);
+    assert_eq!(body["suggestions"][0]["title"], "Pantry rice bowl");
+    assert_eq!(
+        body["warnings"][0].as_str(),
+        Some("AI recipe generation returned invalid candidates: ideas[1].serving_count must be a positive decimal")
+    );
+
+    let (status, tasks) = app
+        .send(Method::GET, "/api/v1/ai/tasks", None, Some(&alice))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(tasks["items"][0]["validation_status"], "valid");
+    assert_eq!(
+        tasks["items"][0]["validation_errors"][0],
+        "ideas[1].serving_count must be a positive decimal"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires QM_AI_OPENROUTER_API_KEY and makes a live OpenRouter request"]
+async fn pantry_generation_live_openrouter_matches_route_usage() {
+    let api_key = std::env::var("QM_AI_OPENROUTER_API_KEY")
+        .expect("QM_AI_OPENROUTER_API_KEY must be set for the live OpenRouter pantry test");
+    let model = std::env::var("QM_AI_MODEL").unwrap_or_else(|_| "openai/gpt-4.1-mini".into());
+    let base_url = std::env::var("QM_AI_OPENROUTER_BASE_URL")
+        .unwrap_or_else(|_| "https://openrouter.ai/api/v1".into());
+    let timeout_seconds = std::env::var("QM_AI_TEST_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or_else(|| ApiConfig::default().ai_timeout.as_secs());
+    let ai_provider = qm_ai::build_provider(
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(timeout_seconds))
+            .build()
+            .expect("HTTP client should build"),
+        &AiConfig {
+            provider: AiProviderKind::OpenRouter,
+            model: Some(model),
+            retain_raw_responses: false,
+            openrouter: OpenRouterConfig {
+                api_key: Some(api_key),
+                base_url,
+            },
+        },
+    )
+    .expect("OpenRouter provider should build");
+    let app = TestApp::start_with_ai_provider(ApiConfig::default(), ai_provider).await;
+    assert_eq!(app.register("alice", None).await.0, StatusCode::CREATED);
+    let alice = app.login("alice").await;
+    let (household_id, pantry_id) = household_and_pantry(&app, &alice).await;
+    let actor = actor_id(&app, "alice").await;
+    let rice = create_product(&app, household_id, "Rice", "mass", "g").await;
+    let beans = create_product(&app, household_id, "Beans", "count", "piece").await;
+    let tomatoes = create_product(&app, household_id, "Tomatoes", "count", "piece").await;
+    qm_db::stock::create(
+        &app.db,
+        household_id,
+        rice,
+        pantry_id,
+        "500",
+        "g",
+        None,
+        None,
+        None,
+        None,
+        actor,
+        None,
+    )
+    .await
+    .unwrap();
+    qm_db::stock::create(
+        &app.db,
+        household_id,
+        beans,
+        pantry_id,
+        "2",
+        "piece",
+        None,
+        None,
+        None,
+        None,
+        actor,
+        None,
+    )
+    .await
+    .unwrap();
+    qm_db::stock::create(
+        &app.db,
+        household_id,
+        tomatoes,
+        pantry_id,
+        "3",
+        "piece",
+        None,
+        None,
+        None,
+        None,
+        actor,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let (status, body) = app
+        .send(
+            Method::POST,
+            "/api/v1/pantry/suggestions",
+            Some(json!({
+                "generate_recipe_ideas": true,
+                "max_ai_suggestions": 3,
+                "max_missing_required": 2
+            })),
+            Some(&alice),
+        )
+        .await;
+    eprintln!("{}", serde_json::to_string_pretty(&body).unwrap());
+    let (task_status, tasks) = app
+        .send(Method::GET, "/api/v1/ai/tasks", None, Some(&alice))
+        .await;
+    assert_eq!(task_status, StatusCode::OK);
+    eprintln!("{}", serde_json::to_string_pretty(&tasks).unwrap());
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["generation_task"].as_str().is_some());
+    assert!(body["suggestions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["source"] == "ai_recipe"));
 }
 
 #[derive(Debug)]
@@ -427,5 +661,23 @@ fn ingredient_json(
         "optional": optional,
         "group_label": null,
         "substitution_hints": []
+    })
+}
+
+fn generated_idea_json(name: &str, serving_count: &str) -> Value {
+    json!({
+        "name": name,
+        "description": "Simple bowl",
+        "serving_count": serving_count,
+        "ingredients": [],
+        "steps": [{
+            "instruction": "Warm and serve.",
+            "timers": [],
+            "equipment": [],
+            "ingredient_refs": []
+        }],
+        "explanation": "Uses the pantry context.",
+        "unresolved_conversions": [],
+        "substitutions": []
     })
 }

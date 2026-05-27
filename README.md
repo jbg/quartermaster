@@ -163,6 +163,17 @@ Barcode lookup tuning:
 | `QM_OFF_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `5`                                                   | Consecutive transient failures before fail-fast mode  |
 | `QM_OFF_CIRCUIT_BREAKER_OPEN_SECONDS`      | `60`                                                  | Fail-fast duration                                    |
 
+AI provider tuning:
+
+| Variable                         | Default                         | Meaning                                      |
+| -------------------------------- | ------------------------------- | -------------------------------------------- |
+| `QM_AI_PROVIDER`                 | `disabled`                      | AI provider (`disabled` or `openrouter`)     |
+| `QM_AI_MODEL`                    | unset                           | Provider model used for structured outputs   |
+| `QM_AI_TIMEOUT_SECONDS`          | `60`                            | Timeout for one AI provider request          |
+| `QM_AI_OPENROUTER_API_KEY`       | unset                           | OpenRouter API key                           |
+| `QM_AI_OPENROUTER_BASE_URL`      | `https://openrouter.ai/api/v1`  | OpenRouter-compatible API base URL           |
+| `QM_AI_RETAIN_RAW_RESPONSES`     | `false`                         | Store raw AI provider responses for auditing |
+
 Supplier integration foundations:
 
 | Variable                                | Default | Meaning                                                  |

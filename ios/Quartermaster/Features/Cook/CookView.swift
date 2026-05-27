@@ -16,6 +16,7 @@ struct CookView: View {
   @State private var locations: [Location] = []
   @State private var allowPartial = false
   @State private var isLoading = false
+  @State private var isGeneratingSuggestions = false
   @State private var errorMessage: String?
 
   enum CookSection: String, CaseIterable, Identifiable {
@@ -157,16 +158,30 @@ struct CookView: View {
         Button {
           Task { await generateSuggestions() }
         } label: {
-          Label("Find ideas from pantry", systemImage: "sparkles")
+          if isGeneratingSuggestions {
+            HStack {
+              ProgressView()
+              Text("Finding ideas from pantry...")
+            }
+          } else {
+            Label("Find ideas from pantry", systemImage: "sparkles")
+          }
         }
-        .disabled(isLoading)
+        .disabled(isLoading || isGeneratingSuggestions)
         .accessibilityIdentifier("pantry.suggestions.generate")
       } footer: {
         Text(suggestionFooter)
       }
 
       Section("Suggested to cook") {
-        if suggestions.isEmpty {
+        if isGeneratingSuggestions {
+          HStack {
+            ProgressView()
+            Text("Generating pantry ideas...")
+              .foregroundStyle(.secondary)
+          }
+          .accessibilityIdentifier("pantry.suggestions.generating")
+        } else if suggestions.isEmpty {
           VStack(alignment: .leading, spacing: 8) {
             Text("No suggestions yet")
               .font(.headline)
@@ -346,7 +361,11 @@ struct CookView: View {
 
   private func generateSuggestions() async {
     isLoading = true
-    defer { isLoading = false }
+    isGeneratingSuggestions = true
+    defer {
+      isGeneratingSuggestions = false
+      isLoading = false
+    }
     do {
       let response = try await appState.api.createPantrySuggestions(
         generateRecipeIdeas: canGenerateRecipeIdeas)
