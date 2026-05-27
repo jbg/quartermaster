@@ -6,6 +6,7 @@ on:
       - master
 
 permissions:
+  checks: write
   contents: write
   packages: write
   pull-requests: write
@@ -24,6 +25,124 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           target-branch: master
+
+  release-pr-merge-gate:
+    needs:
+      - release-please
+    if: needs.release-please.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Validate release PR and publish merge gate
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          pr_json="$(
+            gh pr list \
+              --repo "$GH_REPO" \
+              --state open \
+              --base master \
+              --json number,title,headRefName,headRefOid,baseRefName,author \
+              --jq '[.[] | select(
+                .author.login == "app/github-actions"
+                and (.headRefName | startswith("release-please--branches--master--components--"))
+                and (.title | test("^chore\\(master\\): release [0-9]+\\.[0-9]+\\.[0-9]+([-.+][0-9A-Za-z.-]+)?$"))
+              )] | first // empty'
+          )"
+
+          if [ -z "$pr_json" ]; then
+            echo "No open release-please PR found."
+            exit 0
+          fi
+
+          pr_number="$(jq -r '.number' <<<"$pr_json")"
+          title="$(jq -r '.title' <<<"$pr_json")"
+          base_ref="$(jq -r '.baseRefName' <<<"$pr_json")"
+          head_ref="$(jq -r '.headRefName' <<<"$pr_json")"
+          head_sha="$(jq -r '.headRefOid' <<<"$pr_json")"
+          author="$(jq -r '.author.login' <<<"$pr_json")"
+
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          check_id="$(
+            gh api "repos/$GH_REPO/check-runs" \
+              -f name="merge-gate" \
+              -f head_sha="$head_sha" \
+              -f status="in_progress" \
+              -f started_at="$now" \
+              --jq '.id'
+          )"
+
+          mapfile -t changed_files < <(
+            gh pr view "$pr_number" \
+              --repo "$GH_REPO" \
+              --json files \
+              --jq '.files[].path' \
+              | sort
+          )
+
+          mapfile -t allowed_files < <(
+            printf '%s\n' \
+              ".release-please-manifest.json" \
+              "CHANGELOG.md" \
+              "Cargo.lock" \
+              "Cargo.toml" \
+              "ios/project.yml" \
+              "package.json" \
+              "web/package.json" \
+              | sort
+          )
+
+          errors=()
+
+          if [ "$author" != "app/github-actions" ]; then
+            errors+=("unexpected PR author: $author")
+          fi
+          if [ "$base_ref" != "master" ]; then
+            errors+=("unexpected base branch: $base_ref")
+          fi
+          if [[ "$head_ref" != release-please--branches--master--components--* ]]; then
+            errors+=("unexpected head branch: $head_ref")
+          fi
+          if [[ ! "$title" =~ ^chore\(master\):\ release\ [0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.-]+)?$ ]]; then
+            errors+=("unexpected PR title: $title")
+          fi
+
+          unexpected_files="$(
+            comm -23 \
+              <(printf '%s\n' "${changed_files[@]}") \
+              <(printf '%s\n' "${allowed_files[@]}")
+          )"
+          if [ -n "$unexpected_files" ]; then
+            errors+=("unexpected changed files: ${unexpected_files//$'\n'/, }")
+          fi
+
+          if [ "${#errors[@]}" -eq 0 ]; then
+            conclusion="success"
+            summary="Release PR #$pr_number only changes approved release metadata files."
+          else
+            conclusion="failure"
+            summary="$(printf '%s\n' "${errors[@]}")"
+          fi
+
+          completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh api "repos/$GH_REPO/check-runs/$check_id" \
+            -X PATCH \
+            -f status="completed" \
+            -f conclusion="$conclusion" \
+            -f completed_at="$completed_at" \
+            -f output[title]="Release PR merge gate" \
+            -f output[summary]="$summary"
+
+          if [ "$conclusion" != "success" ]; then
+            printf '%s\n' "${errors[@]}"
+            exit 1
+          fi
 
   publish-release:
     needs:
