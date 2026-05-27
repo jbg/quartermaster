@@ -18,7 +18,7 @@
         {
           "type": "toml",
           "path": "Cargo.lock",
-          "jsonpath": "$.package[?(@.name.value==\"qm-api\" || @.name.value==\"qm-core\" || @.name.value==\"qm-db\" || @.name.value==\"qm-server\")].version"
+          "jsonpath": "$.package[?(@.name.value==\"qm-ai\" || @.name.value==\"qm-api\" || @.name.value==\"qm-core\" || @.name.value==\"qm-db\" || @.name.value==\"qm-server\" || @.name.value==\"qm-suppliers\" || @.name.value==\"xtask\")].version"
         },
         {
           "type": "json",
