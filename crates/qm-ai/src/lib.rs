@@ -6,6 +6,7 @@
 
 use std::{error::Error as _, future::Future, pin::Pin, sync::Arc, time::Instant};
 
+use metrics::counter;
 use reqwest::{header, StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -104,6 +105,9 @@ pub enum AiError {
 
     #[error("AI provider returned invalid structured output: {0}")]
     InvalidStructuredOutput(String),
+
+    #[error("AI provider truncated structured output before it was complete: {0}")]
+    OutputTruncated(String),
 
     #[error("AI provider HTTP error: {0}")]
     Http(#[from] reqwest::Error),
@@ -254,6 +258,10 @@ impl AiProvider for OpenRouterProvider {
                         "strict": true,
                         "schema": request.json_schema
                     }
+                },
+                "reasoning": {
+                    "effort": "minimal",
+                    "exclude": true
                 }
             });
             if let Some(max_output_tokens) = max_output_tokens {
@@ -320,7 +328,23 @@ impl AiProvider for OpenRouterProvider {
                     body_preview(&body)
                 ))
             })?;
-            let output_json = extract_structured_output(&raw)?;
+            let response_meta = StructuredResponseMeta::from_raw(&raw);
+            tracing::info!(
+                provider = %AiProviderKind::OpenRouter,
+                model = %model,
+                task_type = %task_type,
+                finish_reason = response_meta.finish_reason.unwrap_or("unknown"),
+                native_finish_reason = response_meta.native_finish_reason.unwrap_or("unknown"),
+                prompt_tokens = response_meta.prompt_tokens.unwrap_or_default(),
+                completion_tokens = response_meta.completion_tokens.unwrap_or_default(),
+                reasoning_tokens = response_meta.reasoning_tokens.unwrap_or_default(),
+                total_tokens = response_meta.total_tokens.unwrap_or_default(),
+                content_chars = response_meta.content_chars.unwrap_or_default(),
+                "parsed structured AI provider response metadata"
+            );
+            let output_json_result = extract_structured_output(&raw, &response_meta);
+            record_structured_response_metrics(&task_type, &response_meta, &output_json_result);
+            let output_json = output_json_result?;
             Ok(StructuredOutputResponse {
                 provider: AiProviderKind::OpenRouter,
                 model,
@@ -386,13 +410,133 @@ fn header_value(headers: &header::HeaderMap, name: header::HeaderName) -> Option
         .map(ToOwned::to_owned)
 }
 
-fn extract_structured_output(raw: &Value) -> Result<Value, AiError> {
+#[derive(Debug, Default)]
+struct StructuredResponseMeta<'a> {
+    finish_reason: Option<&'a str>,
+    native_finish_reason: Option<&'a str>,
+    prompt_tokens: Option<i64>,
+    completion_tokens: Option<i64>,
+    reasoning_tokens: Option<i64>,
+    total_tokens: Option<i64>,
+    content_chars: Option<usize>,
+}
+
+impl<'a> StructuredResponseMeta<'a> {
+    fn from_raw(raw: &'a Value) -> Self {
+        let content_chars = raw
+            .pointer("/choices/0/message/content")
+            .and_then(Value::as_str)
+            .map(|value| value.chars().count());
+        Self {
+            finish_reason: raw
+                .pointer("/choices/0/finish_reason")
+                .and_then(Value::as_str),
+            native_finish_reason: raw
+                .pointer("/choices/0/native_finish_reason")
+                .and_then(Value::as_str),
+            prompt_tokens: raw.pointer("/usage/prompt_tokens").and_then(Value::as_i64),
+            completion_tokens: raw
+                .pointer("/usage/completion_tokens")
+                .and_then(Value::as_i64),
+            reasoning_tokens: raw
+                .pointer("/usage/completion_tokens_details/reasoning_tokens")
+                .and_then(Value::as_i64),
+            total_tokens: raw.pointer("/usage/total_tokens").and_then(Value::as_i64),
+            content_chars,
+        }
+    }
+
+    fn truncation_detail(&self) -> String {
+        format!(
+            "finish_reason={}; native_finish_reason={}; completion_tokens={}; reasoning_tokens={}; content_chars={}",
+            self.finish_reason.unwrap_or("unknown"),
+            self.native_finish_reason.unwrap_or("unknown"),
+            self.completion_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unknown".into()),
+            self.reasoning_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unknown".into()),
+            self.content_chars
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unknown".into())
+        )
+    }
+}
+
+fn record_structured_response_metrics(
+    task_type: &str,
+    meta: &StructuredResponseMeta<'_>,
+    output_json_result: &Result<Value, AiError>,
+) {
+    let outcome = match output_json_result {
+        Ok(_) => "success",
+        Err(AiError::OutputTruncated(_)) => "truncated",
+        Err(AiError::InvalidStructuredOutput(_)) => "invalid_structured_output",
+        Err(_) => "error",
+    };
+    let finish_reason = meta.finish_reason.unwrap_or("unknown").to_owned();
+    counter!(
+        "qm_ai_structured_requests_total",
+        "provider" => AiProviderKind::OpenRouter.as_str(),
+        "task_type" => task_type.to_owned(),
+        "outcome" => outcome,
+        "finish_reason" => finish_reason.clone()
+    )
+    .increment(1);
+    record_token_counter(task_type, &finish_reason, "prompt", meta.prompt_tokens);
+    record_token_counter(
+        task_type,
+        &finish_reason,
+        "completion",
+        meta.completion_tokens,
+    );
+    record_token_counter(
+        task_type,
+        &finish_reason,
+        "reasoning",
+        meta.reasoning_tokens,
+    );
+    record_token_counter(task_type, &finish_reason, "total", meta.total_tokens);
+}
+
+fn record_token_counter(
+    task_type: &str,
+    finish_reason: &str,
+    token_type: &'static str,
+    tokens: Option<i64>,
+) {
+    let Some(tokens) = tokens.and_then(|value| u64::try_from(value).ok()) else {
+        return;
+    };
+    counter!(
+        "qm_ai_structured_tokens_total",
+        "provider" => AiProviderKind::OpenRouter.as_str(),
+        "task_type" => task_type.to_owned(),
+        "token_type" => token_type,
+        "finish_reason" => finish_reason.to_owned()
+    )
+    .increment(tokens);
+}
+
+fn extract_structured_output(
+    raw: &Value,
+    meta: &StructuredResponseMeta<'_>,
+) -> Result<Value, AiError> {
+    if meta.finish_reason == Some("length") {
+        return Err(AiError::OutputTruncated(meta.truncation_detail()));
+    }
     let content = raw.pointer("/choices/0/message/content").ok_or_else(|| {
         AiError::InvalidStructuredOutput("missing choices[0].message.content".into())
     })?;
     match content {
-        Value::String(content) => serde_json::from_str(content)
-            .map_err(|err| AiError::InvalidStructuredOutput(err.to_string())),
+        Value::String(content) => serde_json::from_str(content).map_err(|err| {
+            if err.is_eof() {
+                AiError::OutputTruncated(format!("{}; parse_error={err}", meta.truncation_detail()))
+            } else {
+                AiError::InvalidStructuredOutput(err.to_string())
+            }
+        }),
         Value::Object(_) | Value::Array(_) => Ok(content.clone()),
         _ => Err(AiError::InvalidStructuredOutput(
             "choices[0].message.content was not JSON text or an object".into(),
@@ -443,10 +587,51 @@ mod tests {
                 }
             }]
         });
+        let meta = StructuredResponseMeta::from_raw(&raw);
         assert_eq!(
-            extract_structured_output(&raw).unwrap(),
+            extract_structured_output(&raw, &meta).unwrap(),
             json!({"ideas": [{"name": "Soup"}]})
         );
+    }
+
+    #[test]
+    fn openrouter_reports_length_finish_as_truncation() {
+        let raw = json!({
+            "choices": [{
+                "finish_reason": "length",
+                "native_finish_reason": "length",
+                "message": {
+                    "content": "{\"ideas\":[{\"name\":\"Half"
+                }
+            }],
+            "usage": {
+                "completion_tokens": 2000,
+                "completion_tokens_details": {
+                    "reasoning_tokens": 123
+                }
+            }
+        });
+        let meta = StructuredResponseMeta::from_raw(&raw);
+        let err = extract_structured_output(&raw, &meta).unwrap_err();
+        assert!(matches!(err, AiError::OutputTruncated(_)));
+        assert!(err.to_string().contains("finish_reason=length"));
+        assert!(err.to_string().contains("reasoning_tokens=123"));
+    }
+
+    #[test]
+    fn openrouter_reports_eof_json_content_as_truncation() {
+        let raw = json!({
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {
+                    "content": "{\"ideas\":[{\"name\":\"Half"
+                }
+            }]
+        });
+        let meta = StructuredResponseMeta::from_raw(&raw);
+        let err = extract_structured_output(&raw, &meta).unwrap_err();
+        assert!(matches!(err, AiError::OutputTruncated(_)));
+        assert!(err.to_string().contains("EOF while parsing a string"));
     }
 
     #[test]

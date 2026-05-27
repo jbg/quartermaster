@@ -165,14 +165,19 @@ Barcode lookup tuning:
 
 AI provider tuning:
 
-| Variable                         | Default                         | Meaning                                      |
-| -------------------------------- | ------------------------------- | -------------------------------------------- |
-| `QM_AI_PROVIDER`                 | `disabled`                      | AI provider (`disabled` or `openrouter`)     |
-| `QM_AI_MODEL`                    | unset                           | Provider model used for structured outputs   |
-| `QM_AI_TIMEOUT_SECONDS`          | `60`                            | Timeout for one AI provider request          |
-| `QM_AI_OPENROUTER_API_KEY`       | unset                           | OpenRouter API key                           |
-| `QM_AI_OPENROUTER_BASE_URL`      | `https://openrouter.ai/api/v1`  | OpenRouter-compatible API base URL           |
-| `QM_AI_RETAIN_RAW_RESPONSES`     | `false`                         | Store raw AI provider responses for auditing |
+| Variable                                      | Default                         | Meaning                                                   |
+| --------------------------------------------- | ------------------------------- | --------------------------------------------------------- |
+| `QM_AI_PROVIDER`                              | `disabled`                      | AI provider (`disabled` or `openrouter`)                  |
+| `QM_AI_MODEL`                                 | unset                           | Provider model used for structured outputs                |
+| `QM_AI_TIMEOUT_SECONDS`                       | `60`                            | Timeout for one AI provider request                       |
+| `QM_AI_PANTRY_SUGGESTION_MAX_OUTPUT_TOKENS`   | `12000`                         | Output token cap for one pantry recipe suggestion request |
+| `QM_AI_OPENROUTER_API_KEY`                    | unset                           | OpenRouter API key                                        |
+| `QM_AI_OPENROUTER_BASE_URL`                   | `https://openrouter.ai/api/v1`  | OpenRouter-compatible API base URL                        |
+| `QM_AI_RETAIN_RAW_RESPONSES`                  | `false`                         | Store raw AI provider responses for auditing              |
+
+When metrics are enabled, structured AI calls emit `qm_ai_structured_requests_total` and
+`qm_ai_structured_tokens_total` counters labelled by provider, task type, finish reason, and token
+type.
 
 Supplier integration foundations:
 
