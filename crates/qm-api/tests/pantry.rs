@@ -1,6 +1,10 @@
 mod support;
 
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::{Arc, Mutex},
+};
 
 use axum::http::{Method, StatusCode};
 use qm_ai::{
@@ -170,6 +174,7 @@ async fn pantry_suggestions_are_household_scoped() {
 
 #[tokio::test]
 async fn pantry_generation_records_ai_task_and_candidate_suggestion() {
+    let captured_request = Arc::new(Mutex::new(None));
     let app = TestApp::start_with_ai_provider(
         ApiConfig::default(),
         Arc::new(MockAiProvider {
@@ -190,6 +195,7 @@ async fn pantry_generation_records_ai_task_and_candidate_suggestion() {
                     "substitutions": []
                 }]
             }),
+            captured_request: Some(Arc::clone(&captured_request)),
         }),
     )
     .await;
@@ -239,11 +245,27 @@ async fn pantry_generation_records_ai_task_and_candidate_suggestion() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(tasks["items"][0]["task_type"], "recipe_generation");
     assert_eq!(tasks["items"][0]["credentials_assertion"], true);
+
+    let request = captured_request.lock().unwrap().clone().unwrap();
+    assert_strict_schema_objects(&request.json_schema, "$");
+    assert_eq!(
+        request
+            .json_schema
+            .pointer("/properties/ideas/items/properties/ingredients/items/additionalProperties"),
+        Some(&Value::Bool(false))
+    );
+    assert_eq!(
+        request
+            .json_schema
+            .pointer("/properties/ideas/items/properties/steps/items/additionalProperties"),
+        Some(&Value::Bool(false))
+    );
 }
 
 #[derive(Debug)]
 struct MockAiProvider {
     output: Value,
+    captured_request: Option<Arc<Mutex<Option<StructuredOutputRequest>>>>,
 }
 
 impl AiProvider for MockAiProvider {
@@ -260,9 +282,12 @@ impl AiProvider for MockAiProvider {
 
     fn complete_structured<'a>(
         &'a self,
-        _request: StructuredOutputRequest,
+        request: StructuredOutputRequest,
     ) -> Pin<Box<dyn Future<Output = Result<StructuredOutputResponse, AiError>> + Send + 'a>> {
         Box::pin(async move {
+            if let Some(captured_request) = &self.captured_request {
+                *captured_request.lock().unwrap() = Some(request);
+            }
             Ok(StructuredOutputResponse {
                 provider: AiProviderKind::OpenRouter,
                 model: "mock/pantry".into(),
@@ -270,6 +295,40 @@ impl AiProvider for MockAiProvider {
                 raw_response_json: None,
             })
         })
+    }
+}
+
+fn assert_strict_schema_objects(schema: &Value, path: &str) {
+    if let Some(properties) = schema.get("properties").and_then(Value::as_object) {
+        assert_eq!(
+            schema.get("additionalProperties"),
+            Some(&Value::Bool(false)),
+            "{path} must reject extra properties"
+        );
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .unwrap_or_else(|| panic!("{path} must require all declared properties"));
+        for key in properties.keys() {
+            assert!(
+                required.iter().any(|value| value.as_str() == Some(key)),
+                "{path} must require {key}"
+            );
+        }
+    }
+
+    match schema {
+        Value::Array(items) => {
+            for (idx, item) in items.iter().enumerate() {
+                assert_strict_schema_objects(item, &format!("{path}[{idx}]"));
+            }
+        }
+        Value::Object(map) => {
+            for (key, value) in map {
+                assert_strict_schema_objects(value, &format!("{path}.{key}"));
+            }
+        }
+        _ => {}
     }
 }
 
