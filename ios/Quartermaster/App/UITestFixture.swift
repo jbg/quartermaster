@@ -333,6 +333,12 @@ import UIKit
     func executeRecipe(_ recipe: Recipe, allowPartial: Bool) async throws -> RecipeExecutionResult {
       try decodeFixture(from: recipeExecutionJSON)
     }
+    func aiStatus() async throws -> AiStatus {
+      try decodeFixture(
+        from:
+          #"{"provider":"disabled","enabled":false,"configured":false,"model":null,"structured_outputs":false,"raw_response_retention":false}"#
+      )
+    }
     func pantrySuggestions() async throws -> [PantrySuggestion] {
       let response: PantrySuggestionListResponse = try decodeFixture(
         from: #"{"items":[\#(pantrySuggestionJSON)]}"#
