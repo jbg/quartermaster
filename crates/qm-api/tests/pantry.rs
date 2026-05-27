@@ -468,6 +468,51 @@ async fn pantry_generation_live_openrouter_matches_route_usage() {
     )
     .await
     .unwrap();
+    let extra_products = std::env::var("QM_AI_TEST_EXTRA_PRODUCTS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0);
+    let extra_batches_per_product = std::env::var("QM_AI_TEST_EXTRA_BATCHES_PER_PRODUCT")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(1)
+        .max(1);
+    let extra_name_words = std::env::var("QM_AI_TEST_EXTRA_NAME_WORDS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0);
+    for idx in 0..extra_products {
+        let mut name = format!("Live test pantry item {idx:03}");
+        for word_idx in 0..extra_name_words {
+            name.push_str(&format!(" descriptive-word-{word_idx:02}"));
+        }
+        let product = create_product(&app, household_id, &name, "count", "piece").await;
+        for batch_idx in 0..extra_batches_per_product {
+            qm_db::stock::create(
+                &app.db,
+                household_id,
+                product,
+                pantry_id,
+                "1",
+                "piece",
+                None,
+                (batch_idx % 2 == 0).then_some("2026-06-15"),
+                None,
+                None,
+                actor,
+                None,
+            )
+            .await
+            .unwrap();
+        }
+    }
+    eprintln!(
+        "live pantry test using {} inventory products, {} extra batches/product, {} extra name words, timeout {}s",
+        3 + extra_products,
+        extra_batches_per_product,
+        extra_name_words,
+        timeout_seconds
+    );
 
     let (status, body) = app
         .send(

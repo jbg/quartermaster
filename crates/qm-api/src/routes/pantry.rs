@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
+    time::Instant,
 };
 
 use axum::{
@@ -201,6 +202,22 @@ pub async fn create_suggestions(
     let constraints = SanitizedSuggestionConstraints::from_request(req)?;
     let ctx = build_pantry_context(&state, household_id, &constraints).await?;
     let recipe_scores = score_saved_recipes(&state, household_id, &ctx, &constraints).await?;
+    let inventory_item_count = ctx.dto.inventory.len();
+    let inventory_batch_count = ctx
+        .dto
+        .inventory
+        .iter()
+        .map(|item| item.batches.len())
+        .sum::<usize>();
+    tracing::info!(
+        inventory_item_count,
+        inventory_batch_count,
+        saved_recipe_suggestion_count = recipe_scores.len(),
+        generate_recipe_ideas = constraints.generate_recipe_ideas,
+        max_missing_required = constraints.max_missing_required,
+        max_ai_suggestions = constraints.max_ai_suggestions,
+        "built pantry suggestion context"
+    );
     let mut suggestions = Vec::with_capacity(recipe_scores.len());
     for score in recipe_scores {
         let row = insert_suggestion(&state, household_id, current.user_id, &score, None).await?;
@@ -214,7 +231,13 @@ pub async fn create_suggestions(
         {
             Ok(generated) => {
                 generation_task = Some(generated.task_id);
+                let generated_suggestion_count = generated.suggestions.len();
                 if !generated.validation_errors.is_empty() {
+                    tracing::warn!(
+                        ai_task_id = %generated.task_id,
+                        validation_error_count = generated.validation_errors.len(),
+                        "AI pantry generation returned invalid candidates"
+                    );
                     warnings.push(format!(
                         "AI recipe generation returned invalid candidates: {}",
                         generated.validation_errors.join("; ")
@@ -231,8 +254,21 @@ pub async fn create_suggestions(
                     .await?;
                     suggestions.push(suggestion_into_dto(row)?);
                 }
+                tracing::info!(
+                    ai_task_id = %generated.task_id,
+                    generated_suggestion_count,
+                    "stored AI pantry suggestions"
+                );
             }
-            Err(err) => warnings.push(err),
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    inventory_item_count,
+                    inventory_batch_count,
+                    "AI pantry generation failed"
+                );
+                warnings.push(err);
+            }
         }
     }
 
@@ -650,7 +686,26 @@ async fn generate_recipe_ideas(
             .collect::<String>()
     );
     let schema = pantry_recipe_ideas_schema(constraints.max_ai_suggestions);
-    let response = state
+    let schema_bytes = serde_json::to_vec(&schema)
+        .map(|bytes| bytes.len())
+        .unwrap_or_default();
+    tracing::info!(
+        provider = %status.provider,
+        model = status.model.as_deref().unwrap_or("unknown"),
+        inventory_item_count = ctx.dto.inventory.len(),
+        inventory_batch_count = ctx
+            .dto
+            .inventory
+            .iter()
+            .map(|item| item.batches.len())
+            .sum::<usize>(),
+        input_summary_bytes = input_summary_json.len(),
+        schema_bytes,
+        max_ai_suggestions = constraints.max_ai_suggestions,
+        "requesting AI pantry recipe ideas"
+    );
+    let provider_started = Instant::now();
+    let response = match state
         .ai_provider
         .complete_structured(qm_ai::StructuredOutputRequest {
             task_type: "recipe_generation".into(),
@@ -662,7 +717,27 @@ async fn generate_recipe_ideas(
             json_schema: schema,
         })
         .await
-        .map_err(|err| err.to_string())?;
+    {
+        Ok(response) => {
+            tracing::info!(
+                provider = %response.provider,
+                model = %response.model,
+                elapsed_ms = provider_started.elapsed().as_millis() as u64,
+                "received AI pantry recipe ideas"
+            );
+            response
+        }
+        Err(err) => {
+            tracing::warn!(
+                provider = %status.provider,
+                model = status.model.as_deref().unwrap_or("unknown"),
+                elapsed_ms = provider_started.elapsed().as_millis() as u64,
+                error = %err,
+                "AI pantry recipe idea request failed"
+            );
+            return Err(err.to_string());
+        }
+    };
     let ideas: Vec<GeneratedRecipeIdeaDto> = serde_json::from_value(
         response
             .output_json
@@ -671,6 +746,7 @@ async fn generate_recipe_ideas(
             .unwrap_or_else(|| Value::Array(Vec::new())),
     )
     .map_err(|err| err.to_string())?;
+    let generated_idea_count = ideas.len();
     let validation_errors = validate_generated_ideas(&ideas);
     let valid_ideas = ideas
         .into_iter()
@@ -681,6 +757,12 @@ async fn generate_recipe_ideas(
                 .then_some(idea)
         })
         .collect::<Vec<_>>();
+    tracing::info!(
+        generated_idea_count,
+        valid_idea_count = valid_ideas.len(),
+        validation_error_count = validation_errors.len(),
+        "validated AI pantry recipe ideas"
+    );
     let output_json =
         serde_json::to_string(&response.output_json).map_err(|err| err.to_string())?;
     let raw_response_json = response
