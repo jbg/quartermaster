@@ -33,6 +33,7 @@ async fn openrouter_live_structured_output_smoke() {
             task_type: "live_smoke".into(),
             prompt_version: "openrouter-live-test.v1".into(),
             model: None,
+            max_output_tokens: Some(64),
             system_prompt: "Return only structured JSON that matches the supplied schema.".into(),
             user_prompt: "Set status to ok.".into(),
             json_schema_name: "openrouter_live_smoke".into(),
