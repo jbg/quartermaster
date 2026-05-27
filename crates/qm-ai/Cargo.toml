@@ -23,3 +23,6 @@ serde = { workspace = true, default-features = false, features = ["std", "derive
 serde_json = { workspace = true, default-features = false, features = ["std"] }
 thiserror = { workspace = true, default-features = false, features = ["std"] }
 tracing = { workspace = true, default-features = false, features = ["std", "attributes"] }
+
+[dev-dependencies]
+tokio = { workspace = true, default-features = false, features = ["macros", "rt-multi-thread"] }

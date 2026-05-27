@@ -250,13 +250,23 @@ impl AiProvider for OpenRouterProvider {
                 .http
                 .post(url)
                 .header(header::AUTHORIZATION, format!("Bearer {api_key}"))
+                .header(header::ACCEPT, "application/json")
                 .header("HTTP-Referer", "https://github.com/jbg/quartermaster")
                 .header("X-Title", "Quartermaster")
                 .json(&body)
                 .send()
                 .await?;
             let status = response.status();
-            let body = response.bytes().await?;
+            let content_type = header_value(response.headers(), header::CONTENT_TYPE);
+            let content_encoding = header_value(response.headers(), header::CONTENT_ENCODING);
+            let body = response.bytes().await.map_err(|err| {
+                provider_body_read_failed(
+                    status,
+                    content_type.as_deref(),
+                    content_encoding.as_deref(),
+                    err,
+                )
+            })?;
             if !status.is_success() {
                 return Err(provider_rejected(status, &body));
             }
@@ -296,6 +306,26 @@ fn provider_rejected(status: StatusCode, body: &[u8]) -> AiError {
         })
         .unwrap_or_else(|| body_preview(body));
     AiError::ProviderRejected(format!("{status}: {detail}"))
+}
+
+fn provider_body_read_failed(
+    status: StatusCode,
+    content_type: Option<&str>,
+    content_encoding: Option<&str>,
+    err: reqwest::Error,
+) -> AiError {
+    let content_type = content_type.unwrap_or("unknown");
+    let content_encoding = content_encoding.unwrap_or("identity");
+    AiError::InvalidStructuredOutput(format!(
+        "could not read provider response body: {err}; status: {status}; content-type: {content_type}; content-encoding: {content_encoding}"
+    ))
+}
+
+fn header_value(headers: &header::HeaderMap, name: header::HeaderName) -> Option<String> {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(ToOwned::to_owned)
 }
 
 fn extract_structured_output(raw: &Value) -> Result<Value, AiError> {

@@ -43,6 +43,7 @@ struct RawConfig {
     ai_provider: String,
     ai_model: Option<String>,
     ai_retain_raw_responses: bool,
+    ai_timeout_seconds: u64,
     ai_openrouter_api_key: Option<String>,
     ai_openrouter_base_url: String,
     public_base_url: Option<String>,
@@ -147,6 +148,7 @@ impl Default for RawConfig {
             ai_provider: "disabled".into(),
             ai_model: None,
             ai_retain_raw_responses: false,
+            ai_timeout_seconds: 60,
             ai_openrouter_api_key: None,
             ai_openrouter_base_url: "https://openrouter.ai/api/v1".into(),
             public_base_url: None,
@@ -550,6 +552,7 @@ fn build_config(raw: RawConfig) -> anyhow::Result<LoadedConfig> {
         },
         expiry_reminder_trigger_secret,
         smoke_seed_trigger_secret,
+        ai_timeout: Duration::from_secs(raw.ai_timeout_seconds),
         ai: qm_ai::AiConfig {
             provider: ai_provider,
             model: ai_model,
@@ -815,8 +818,13 @@ async fn main() -> anyhow::Result<()> {
         .timeout(loaded.api_config.off_timeout)
         .build()
         .context("building HTTP client")?;
-    let ai_provider = qm_ai::build_provider(http.clone(), &loaded.api_config.ai)
-        .context("building AI provider")?;
+    let ai_http = reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .timeout(loaded.api_config.ai_timeout)
+        .build()
+        .context("building AI HTTP client")?;
+    let ai_provider =
+        qm_ai::build_provider(ai_http, &loaded.api_config.ai).context("building AI provider")?;
 
     let state = AppState {
         db: db.clone(),

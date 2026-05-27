@@ -214,6 +214,12 @@ pub async fn create_suggestions(
         {
             Ok(generated) => {
                 generation_task = Some(generated.task_id);
+                if !generated.validation_errors.is_empty() {
+                    warnings.push(format!(
+                        "AI recipe generation returned invalid candidates: {}",
+                        generated.validation_errors.join("; ")
+                    ));
+                }
                 for score in generated.suggestions {
                     let row = insert_suggestion(
                         &state,
@@ -613,6 +619,7 @@ async fn resolve_recipe_product(
 struct GeneratedSuggestions {
     task_id: Uuid,
     suggestions: Vec<ScoredSuggestion>,
+    validation_errors: Vec<String>,
 }
 
 async fn generate_recipe_ideas(
@@ -649,7 +656,7 @@ async fn generate_recipe_ideas(
             task_type: "recipe_generation".into(),
             prompt_version: PROMPT_VERSION.into(),
             model: None,
-            system_prompt: "You suggest practical recipes from pantry inventory. Return strict JSON only. Mark unresolved conversions and substitutions explicitly. Never claim the recipe is executable; Quartermaster will validate it.".into(),
+            system_prompt: "You suggest practical recipes from pantry inventory. Return strict JSON only. Use positive decimal strings for serving_count, never ranges. Mark unresolved conversions and substitutions explicitly. Never claim the recipe is executable; Quartermaster will validate it.".into(),
             user_prompt: input_summary_json.clone(),
             json_schema_name: "pantry_recipe_ideas".into(),
             json_schema: schema,
@@ -665,6 +672,15 @@ async fn generate_recipe_ideas(
     )
     .map_err(|err| err.to_string())?;
     let validation_errors = validate_generated_ideas(&ideas);
+    let valid_ideas = ideas
+        .into_iter()
+        .enumerate()
+        .filter_map(|(idx, idea)| {
+            validate_generated_idea(idx, &idea)
+                .is_empty()
+                .then_some(idea)
+        })
+        .collect::<Vec<_>>();
     let output_json =
         serde_json::to_string(&response.output_json).map_err(|err| err.to_string())?;
     let raw_response_json = response
@@ -687,10 +703,10 @@ async fn generate_recipe_ideas(
             input_digest: &input_digest,
             input_summary_json: &input_summary_json,
             output_json: Some(&output_json),
-            validation_status: if validation_errors.is_empty() {
-                "valid"
-            } else {
+            validation_status: if valid_ideas.is_empty() && !validation_errors.is_empty() {
                 "rejected"
+            } else {
+                "valid"
             },
             validation_errors_json: &validation_errors_json,
             user_state: AiTaskUserState::Proposed.as_str(),
@@ -700,13 +716,14 @@ async fn generate_recipe_ideas(
     )
     .await
     .map_err(|err| err.to_string())?;
-    if !validation_errors.is_empty() {
+    if valid_ideas.is_empty() {
         return Ok(GeneratedSuggestions {
             task_id: task.id,
             suggestions: Vec::new(),
+            validation_errors,
         });
     }
-    let suggestions = ideas
+    let suggestions = valid_ideas
         .into_iter()
         .map(|idea| {
             let title = idea.name.clone();
@@ -737,6 +754,7 @@ async fn generate_recipe_ideas(
     Ok(GeneratedSuggestions {
         task_id: task.id,
         suggestions,
+        validation_errors,
     })
 }
 
@@ -817,6 +835,7 @@ fn pantry_recipe_ideas_schema(max_suggestions: i64) -> Value {
         "properties": {
             "ideas": {
                 "type": "array",
+                "minItems": 1,
                 "maxItems": max_suggestions,
                 "items": {
                     "type": "object",
@@ -836,7 +855,7 @@ fn pantry_recipe_ideas_schema(max_suggestions: i64) -> Value {
                         "description": {"type": ["string", "null"]},
                         "serving_count": {"type": "string"},
                         "ingredients": {"type": "array", "items": ingredient_schema},
-                        "steps": {"type": "array", "items": step_schema},
+                        "steps": {"type": "array", "minItems": 1, "items": step_schema},
                         "explanation": {"type": "string"},
                         "unresolved_conversions": {"type": "array", "items": {"type": "string"}},
                         "substitutions": {"type": "array", "items": {"type": "string"}}
@@ -853,18 +872,23 @@ fn validate_generated_ideas(ideas: &[GeneratedRecipeIdeaDto]) -> Vec<String> {
         errors.push("ideas must include at least one recipe candidate".into());
     }
     for (idx, idea) in ideas.iter().enumerate() {
-        if idea.name.trim().is_empty() {
-            errors.push(format!("ideas[{idx}].name is required"));
-        }
-        if Decimal::from_str(idea.serving_count.trim()).map_or(true, |value| value <= Decimal::ZERO)
-        {
-            errors.push(format!(
-                "ideas[{idx}].serving_count must be a positive decimal"
-            ));
-        }
-        if idea.steps.is_empty() {
-            errors.push(format!("ideas[{idx}].steps must not be empty"));
-        }
+        errors.extend(validate_generated_idea(idx, idea));
+    }
+    errors
+}
+
+fn validate_generated_idea(idx: usize, idea: &GeneratedRecipeIdeaDto) -> Vec<String> {
+    let mut errors = Vec::new();
+    if idea.name.trim().is_empty() {
+        errors.push(format!("ideas[{idx}].name is required"));
+    }
+    if Decimal::from_str(idea.serving_count.trim()).map_or(true, |value| value <= Decimal::ZERO) {
+        errors.push(format!(
+            "ideas[{idx}].serving_count must be a positive decimal"
+        ));
+    }
+    if idea.steps.is_empty() {
+        errors.push(format!("ideas[{idx}].steps must not be empty"));
     }
     errors
 }
