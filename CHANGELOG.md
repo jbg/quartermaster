@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.5](https://github.com/jbg/quartermaster/compare/1.32.4...1.32.5) (2026-05-27)
+
+
+### Bug Fixes
+
+* add pantry AI diagnostics ([49db40b](https://github.com/jbg/quartermaster/commit/49db40be9a3316b803743bb98ad82ddda218597e))
+
 ## [1.32.4](https://github.com/jbg/quartermaster/compare/1.32.3...1.32.4) (2026-05-27)
 
 
