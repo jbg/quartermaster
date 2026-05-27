@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.32.2](https://github.com/jbg/quartermaster/compare/1.32.1...1.32.2) (2026-05-27)
+
+
+### Bug Fixes
+
+* include all workspace crates in release bumps ([75549ed](https://github.com/jbg/quartermaster/commit/75549ed400e9a4716a72de94a8cc195615408631))
+* tighten pantry AI schema ([84184f8](https://github.com/jbg/quartermaster/commit/84184f8fb2fff50d6b6766c61c529bb85baadb21))
+
 ## [1.32.1](https://github.com/jbg/quartermaster/compare/1.32.0...1.32.1) (2026-05-27)
 
 
