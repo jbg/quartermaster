@@ -10,6 +10,7 @@ use axum::{
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use jiff::Timestamp;
+use rand::RngExt;
 use sha2::{Digest, Sha256};
 use tracing::Span;
 use uuid::Uuid;
@@ -49,18 +50,16 @@ pub fn verify_password(plaintext: &str, stored: &str) -> bool {
 
 /// Generates a 32-byte random value as a URL-safe base64 string.
 pub fn generate_token() -> String {
-    use argon2::password_hash::rand_core::RngCore;
     let mut bytes = [0u8; 32];
-    ArgonOsRng.fill_bytes(&mut bytes);
+    rand::rng().fill(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
 pub fn generate_human_code(len: usize) -> String {
-    use argon2::password_hash::rand_core::RngCore;
     const ALPHABET: &[u8] = b"23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
     let mut out = String::with_capacity(len);
     let mut bytes = vec![0u8; len];
-    ArgonOsRng.fill_bytes(&mut bytes);
+    rand::rng().fill(bytes.as_mut_slice());
     for byte in bytes {
         out.push(ALPHABET[usize::from(byte) % ALPHABET.len()] as char);
     }

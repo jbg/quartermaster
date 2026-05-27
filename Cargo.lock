@@ -3103,6 +3103,7 @@ dependencies = [
  "qm-db",
  "qm-suppliers",
  "qrcode",
+ "rand 0.10.1",
  "reqwest",
  "rust_decimal",
  "serde",
