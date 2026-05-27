@@ -114,6 +114,7 @@ pub struct StructuredOutputRequest {
     pub task_type: String,
     pub prompt_version: String,
     pub model: Option<String>,
+    pub max_output_tokens: Option<u32>,
     pub system_prompt: String,
     pub user_prompt: String,
     pub json_schema_name: String,
@@ -236,10 +237,11 @@ impl AiProvider for OpenRouterProvider {
             let schema_name = request.json_schema_name.clone();
             let system_prompt_bytes = request.system_prompt.len();
             let user_prompt_bytes = request.user_prompt.len();
+            let max_output_tokens = request.max_output_tokens;
             let schema_bytes = serde_json::to_vec(&request.json_schema)
                 .map(|bytes| bytes.len())
                 .unwrap_or_default();
-            let body = json!({
+            let mut body = json!({
                 "model": model,
                 "messages": [
                     {"role": "system", "content": request.system_prompt},
@@ -254,6 +256,9 @@ impl AiProvider for OpenRouterProvider {
                     }
                 }
             });
+            if let Some(max_output_tokens) = max_output_tokens {
+                body["max_completion_tokens"] = json!(max_output_tokens);
+            }
             let request_started = Instant::now();
             tracing::info!(
                 provider = %AiProviderKind::OpenRouter,
@@ -264,6 +269,7 @@ impl AiProvider for OpenRouterProvider {
                 system_prompt_bytes,
                 user_prompt_bytes,
                 schema_bytes,
+                max_output_tokens = max_output_tokens.unwrap_or_default(),
                 "sending structured AI provider request"
             );
             let response = self

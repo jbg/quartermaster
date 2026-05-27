@@ -35,7 +35,15 @@ use crate::{
     AppState,
 };
 
-const PROMPT_VERSION: &str = "pantry-suggestion.v1";
+const PROMPT_VERSION: &str = "pantry-suggestion.v2";
+const MAX_AI_INGREDIENTS: i64 = 8;
+const MAX_AI_STEPS: i64 = 6;
+const MAX_AI_TIMERS: i64 = 3;
+const MAX_AI_EQUIPMENT: i64 = 5;
+const MAX_AI_INGREDIENT_REFS: i64 = 8;
+const MAX_AI_LIST_ITEMS: i64 = 5;
+const MAX_AI_SUBSTITUTION_HINTS: i64 = 3;
+const MAX_PROMPT_EXPIRING_BATCHES: usize = 3;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -176,6 +184,37 @@ pub struct GeneratedRecipeIdeaDto {
     pub unresolved_conversions: Vec<String>,
     #[serde(default)]
     pub substitutions: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct AiPantryInputSummary<'a> {
+    inventory: Vec<AiPantryInventoryItem<'a>>,
+    dietary_constraints: &'a [String],
+    equipment: &'a [String],
+    max_suggestions: i64,
+    policy: &'static str,
+    output_guidance: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct AiPantryInventoryItem<'a> {
+    name: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    brand: Option<&'a str>,
+    family: &'static str,
+    quantity: &'a str,
+    unit: &'a str,
+    expiry_urgency: PantryExpiryUrgency,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    expiring_batches: Vec<AiPantryInventoryBatch<'a>>,
+}
+
+#[derive(Debug, Serialize)]
+struct AiPantryInventoryBatch<'a> {
+    quantity: &'a str,
+    unit: &'a str,
+    expires_on: Option<&'a str>,
+    expiry_urgency: PantryExpiryUrgency,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -376,7 +415,7 @@ impl SanitizedSuggestionConstraints {
             equipment: validate_text_list("equipment", req.equipment, 64, 64)?,
             max_missing_required: req.max_missing_required.unwrap_or(2).clamp(0, 25),
             generate_recipe_ideas: req.generate_recipe_ideas,
-            max_ai_suggestions: req.max_ai_suggestions.unwrap_or(3).clamp(1, 5),
+            max_ai_suggestions: req.max_ai_suggestions.unwrap_or(2).clamp(1, 5),
         })
     }
 }
@@ -669,13 +708,7 @@ async fn generate_recipe_ideas(
     if !status.enabled || !status.configured {
         return Err("AI recipe generation is not enabled or configured".into());
     }
-    let input_summary = json!({
-        "inventory": ctx.dto.inventory,
-        "dietary_constraints": constraints.dietary_constraints,
-        "equipment": constraints.equipment,
-        "max_suggestions": constraints.max_ai_suggestions,
-        "policy": "Generate candidates only; Quartermaster validates before saving or executing. No credentials are included.",
-    });
+    let input_summary = ai_pantry_input_summary(ctx, constraints);
     let input_summary_json =
         serde_json::to_string(&input_summary).map_err(|err| err.to_string())?;
     let input_digest = format!(
@@ -711,7 +744,8 @@ async fn generate_recipe_ideas(
             task_type: "recipe_generation".into(),
             prompt_version: PROMPT_VERSION.into(),
             model: None,
-            system_prompt: "You suggest practical recipes from pantry inventory. Return strict JSON only. Use positive decimal strings for serving_count, never ranges. Mark unresolved conversions and substitutions explicitly. Never claim the recipe is executable; Quartermaster will validate it.".into(),
+            max_output_tokens: Some(ai_output_token_budget(constraints.max_ai_suggestions)),
+            system_prompt: "You suggest practical, concise recipes from pantry inventory. Return strict JSON only. Use positive decimal strings for serving_count, never ranges. Prefer short candidate recipes with no more than 8 ingredients and 6 steps. Mark unresolved conversions and substitutions explicitly. Never claim the recipe is executable; Quartermaster will validate it.".into(),
             user_prompt: input_summary_json.clone(),
             json_schema_name: "pantry_recipe_ideas".into(),
             json_schema: schema,
@@ -840,14 +874,60 @@ async fn generate_recipe_ideas(
     })
 }
 
+fn ai_pantry_input_summary<'a>(
+    ctx: &'a PantryContext,
+    constraints: &'a SanitizedSuggestionConstraints,
+) -> Value {
+    let inventory = ctx
+        .dto
+        .inventory
+        .iter()
+        .map(|item| {
+            let expiring_batches = item
+                .batches
+                .iter()
+                .filter(|batch| batch.expiry_urgency >= PantryExpiryUrgency::Soon)
+                .take(MAX_PROMPT_EXPIRING_BATCHES)
+                .map(|batch| AiPantryInventoryBatch {
+                    quantity: &batch.quantity,
+                    unit: &batch.unit,
+                    expires_on: batch.expires_on.as_deref(),
+                    expiry_urgency: batch.expiry_urgency,
+                })
+                .collect();
+            AiPantryInventoryItem {
+                name: &item.product.name,
+                brand: item.product.brand.as_deref(),
+                family: item.product.family.as_str(),
+                quantity: &item.total_quantity,
+                unit: &item.unit,
+                expiry_urgency: item.expiry_urgency,
+                expiring_batches,
+            }
+        })
+        .collect();
+    json!(AiPantryInputSummary {
+        inventory,
+        dietary_constraints: &constraints.dietary_constraints,
+        equipment: &constraints.equipment,
+        max_suggestions: constraints.max_ai_suggestions,
+        policy: "Generate candidates only; Quartermaster validates before saving or executing. No credentials are included.",
+        output_guidance: "Keep every idea compact: no more than 8 ingredients, 6 steps, 3 timers, and 5 equipment or note entries.",
+    })
+}
+
+fn ai_output_token_budget(max_suggestions: i64) -> u32 {
+    (1_000_u32 * max_suggestions as u32).clamp(1_000, 3_000)
+}
+
 fn pantry_recipe_ideas_schema(max_suggestions: i64) -> Value {
     let quantity_range_schema = json!({
         "type": ["object", "null"],
         "additionalProperties": false,
         "required": ["min", "max"],
         "properties": {
-            "min": {"type": "string"},
-            "max": {"type": "string"}
+            "min": {"type": "string", "maxLength": 32},
+            "max": {"type": "string", "maxLength": 32}
         }
     });
     let quantity_schema = json!({
@@ -855,12 +935,12 @@ fn pantry_recipe_ideas_schema(max_suggestions: i64) -> Value {
         "additionalProperties": false,
         "required": ["amount", "unit", "family", "range", "to_taste", "preparation_note"],
         "properties": {
-            "amount": {"type": ["string", "null"]},
-            "unit": {"type": ["string", "null"]},
+            "amount": {"type": ["string", "null"], "maxLength": 32},
+            "unit": {"type": ["string", "null"], "maxLength": 32},
             "family": {"type": ["string", "null"], "enum": ["mass", "volume", "count", null]},
             "range": quantity_range_schema,
             "to_taste": {"type": "boolean"},
-            "preparation_note": {"type": ["string", "null"]}
+            "preparation_note": {"type": ["string", "null"], "maxLength": 96}
         }
     });
     let ingredient_schema = json!({
@@ -881,12 +961,16 @@ fn pantry_recipe_ideas_schema(max_suggestions: i64) -> Value {
             "id": {"type": "null"},
             "ingredient_id": {"type": "null"},
             "product_id": {"type": "null"},
-            "display_name": {"type": "string"},
+            "display_name": {"type": "string", "maxLength": 96},
             "quantity": quantity_schema,
-            "preparation": {"type": ["string", "null"]},
+            "preparation": {"type": ["string", "null"], "maxLength": 96},
             "optional": {"type": "boolean"},
-            "group_label": {"type": ["string", "null"]},
-            "substitution_hints": {"type": "array", "items": {"type": "string"}}
+            "group_label": {"type": ["string", "null"], "maxLength": 64},
+            "substitution_hints": {
+                "type": "array",
+                "maxItems": MAX_AI_SUBSTITUTION_HINTS,
+                "items": {"type": "string", "maxLength": 120}
+            }
         }
     });
     let timer_schema = json!({
@@ -894,7 +978,7 @@ fn pantry_recipe_ideas_schema(max_suggestions: i64) -> Value {
         "additionalProperties": false,
         "required": ["label", "duration_seconds"],
         "properties": {
-            "label": {"type": ["string", "null"]},
+            "label": {"type": ["string", "null"], "maxLength": 96},
             "duration_seconds": {"type": "integer"}
         }
     });
@@ -904,10 +988,18 @@ fn pantry_recipe_ideas_schema(max_suggestions: i64) -> Value {
         "required": ["id", "instruction", "timers", "equipment", "ingredient_refs"],
         "properties": {
             "id": {"type": "null"},
-            "instruction": {"type": "string"},
-            "timers": {"type": "array", "items": timer_schema},
-            "equipment": {"type": "array", "items": {"type": "string"}},
-            "ingredient_refs": {"type": "array", "items": {"type": "string"}}
+            "instruction": {"type": "string", "maxLength": 360},
+            "timers": {"type": "array", "maxItems": MAX_AI_TIMERS, "items": timer_schema},
+            "equipment": {
+                "type": "array",
+                "maxItems": MAX_AI_EQUIPMENT,
+                "items": {"type": "string", "maxLength": 80}
+            },
+            "ingredient_refs": {
+                "type": "array",
+                "maxItems": MAX_AI_INGREDIENT_REFS,
+                "items": {"type": "string", "maxLength": 96}
+            }
         }
     });
     json!({
@@ -933,14 +1025,31 @@ fn pantry_recipe_ideas_schema(max_suggestions: i64) -> Value {
                         "substitutions"
                     ],
                     "properties": {
-                        "name": {"type": "string"},
-                        "description": {"type": ["string", "null"]},
-                        "serving_count": {"type": "string"},
-                        "ingredients": {"type": "array", "items": ingredient_schema},
-                        "steps": {"type": "array", "minItems": 1, "items": step_schema},
-                        "explanation": {"type": "string"},
-                        "unresolved_conversions": {"type": "array", "items": {"type": "string"}},
-                        "substitutions": {"type": "array", "items": {"type": "string"}}
+                        "name": {"type": "string", "maxLength": 96},
+                        "description": {"type": ["string", "null"], "maxLength": 240},
+                        "serving_count": {"type": "string", "maxLength": 32},
+                        "ingredients": {
+                            "type": "array",
+                            "maxItems": MAX_AI_INGREDIENTS,
+                            "items": ingredient_schema
+                        },
+                        "steps": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": MAX_AI_STEPS,
+                            "items": step_schema
+                        },
+                        "explanation": {"type": "string", "maxLength": 280},
+                        "unresolved_conversions": {
+                            "type": "array",
+                            "maxItems": MAX_AI_LIST_ITEMS,
+                            "items": {"type": "string", "maxLength": 160}
+                        },
+                        "substitutions": {
+                            "type": "array",
+                            "maxItems": MAX_AI_LIST_ITEMS,
+                            "items": {"type": "string", "maxLength": 160}
+                        }
                     }
                 }
             }

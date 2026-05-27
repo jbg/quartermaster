@@ -262,6 +262,18 @@ async fn pantry_generation_records_ai_task_and_candidate_suggestion() {
     assert_eq!(
         request
             .json_schema
+            .pointer("/properties/ideas/items/properties/ingredients/maxItems"),
+        Some(&Value::from(8))
+    );
+    assert_eq!(
+        request
+            .json_schema
+            .pointer("/properties/ideas/items/properties/steps/maxItems"),
+        Some(&Value::from(6))
+    );
+    assert_eq!(
+        request
+            .json_schema
             .pointer("/properties/ideas/items/properties/ingredients/items/additionalProperties"),
         Some(&Value::Bool(false))
     );
@@ -271,6 +283,10 @@ async fn pantry_generation_records_ai_task_and_candidate_suggestion() {
             .pointer("/properties/ideas/items/properties/steps/items/additionalProperties"),
         Some(&Value::Bool(false))
     );
+    assert_eq!(request.max_output_tokens, Some(2_000));
+    assert!(request.user_prompt.contains("\"name\":\"Rice\""));
+    assert!(!request.user_prompt.contains(&rice.to_string()));
+    assert!(!request.user_prompt.contains("image_url"));
 }
 
 #[tokio::test]

@@ -1161,7 +1161,7 @@ actor APIClient: AppStateAPI {
       "pantry/suggestions",
       body: Components.Schemas.CreatePantrySuggestionsRequest(
         generateRecipeIdeas: generateRecipeIdeas,
-        maxAiSuggestions: 3,
+        maxAiSuggestions: 2,
         maxMissingRequired: 2),
       auth: true)
   }

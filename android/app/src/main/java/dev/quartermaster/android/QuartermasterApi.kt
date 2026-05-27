@@ -200,7 +200,7 @@ data class PantrySuggestionsRequest(
     @SerialName("max_missing_required")
     val maxMissingRequired: Long = 2,
     @SerialName("max_ai_suggestions")
-    val maxAiSuggestions: Long = 3,
+    val maxAiSuggestions: Long = 2,
 )
 
 @Serializable
