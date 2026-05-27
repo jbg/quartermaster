@@ -4,7 +4,7 @@
 //! metadata and asks for structured JSON without learning provider-specific
 //! request shapes or handling credentials directly.
 
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{error::Error as _, future::Future, pin::Pin, sync::Arc, time::Instant};
 
 use reqwest::{header, StatusCode, Url};
 use serde::{Deserialize, Serialize};
@@ -231,6 +231,14 @@ impl AiProvider for OpenRouterProvider {
                 .filter(|value| !value.is_empty())
                 .unwrap_or(&self.default_model)
                 .to_owned();
+            let task_type = request.task_type.clone();
+            let prompt_version = request.prompt_version.clone();
+            let schema_name = request.json_schema_name.clone();
+            let system_prompt_bytes = request.system_prompt.len();
+            let user_prompt_bytes = request.user_prompt.len();
+            let schema_bytes = serde_json::to_vec(&request.json_schema)
+                .map(|bytes| bytes.len())
+                .unwrap_or_default();
             let body = json!({
                 "model": model,
                 "messages": [
@@ -246,6 +254,18 @@ impl AiProvider for OpenRouterProvider {
                     }
                 }
             });
+            let request_started = Instant::now();
+            tracing::info!(
+                provider = %AiProviderKind::OpenRouter,
+                model = %model,
+                task_type = %task_type,
+                prompt_version = %prompt_version,
+                schema_name = %schema_name,
+                system_prompt_bytes,
+                user_prompt_bytes,
+                schema_bytes,
+                "sending structured AI provider request"
+            );
             let response = self
                 .http
                 .post(url)
@@ -259,6 +279,16 @@ impl AiProvider for OpenRouterProvider {
             let status = response.status();
             let content_type = header_value(response.headers(), header::CONTENT_TYPE);
             let content_encoding = header_value(response.headers(), header::CONTENT_ENCODING);
+            tracing::info!(
+                provider = %AiProviderKind::OpenRouter,
+                model = %model,
+                task_type = %task_type,
+                status = %status,
+                content_type = content_type.as_deref().unwrap_or("unknown"),
+                content_encoding = content_encoding.as_deref().unwrap_or("identity"),
+                elapsed_ms = request_started.elapsed().as_millis() as u64,
+                "received structured AI provider response headers"
+            );
             let body = response.bytes().await.map_err(|err| {
                 provider_body_read_failed(
                     status,
@@ -270,6 +300,14 @@ impl AiProvider for OpenRouterProvider {
             if !status.is_success() {
                 return Err(provider_rejected(status, &body));
             }
+            tracing::info!(
+                provider = %AiProviderKind::OpenRouter,
+                model = %model,
+                task_type = %task_type,
+                response_body_bytes = body.len(),
+                elapsed_ms = request_started.elapsed().as_millis() as u64,
+                "read structured AI provider response body"
+            );
             let raw: Value = serde_json::from_slice(&body).map_err(|err| {
                 AiError::InvalidStructuredOutput(format!(
                     "provider response was not JSON: {err}; body: {}",
@@ -316,8 +354,22 @@ fn provider_body_read_failed(
 ) -> AiError {
     let content_type = content_type.unwrap_or("unknown");
     let content_encoding = content_encoding.unwrap_or("identity");
+    let is_timeout = err.is_timeout();
+    let is_body = err.is_body();
+    let is_decode = err.is_decode();
+    let mut sources = Vec::new();
+    let mut source = err.source();
+    while let Some(err) = source {
+        sources.push(err.to_string());
+        source = err.source();
+    }
+    let source_detail = if sources.is_empty() {
+        "none".into()
+    } else {
+        sources.join(" <- ")
+    };
     AiError::InvalidStructuredOutput(format!(
-        "could not read provider response body: {err}; status: {status}; content-type: {content_type}; content-encoding: {content_encoding}"
+        "could not read provider response body: {err}; status: {status}; content-type: {content_type}; content-encoding: {content_encoding}; timeout: {is_timeout}; body: {is_body}; decode: {is_decode}; source: {source_detail}"
     ))
 }
 
