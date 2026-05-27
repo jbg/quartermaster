@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.6](https://github.com/jbg/quartermaster/compare/1.32.5...1.32.6) (2026-05-27)
+
+
+### Bug Fixes
+
+* speed up pantry AI suggestions ([1d1a37d](https://github.com/jbg/quartermaster/commit/1d1a37dd84a8e829e9f9c30fa721bb7238a4ef17))
+
 ## [1.32.5](https://github.com/jbg/quartermaster/compare/1.32.4...1.32.5) (2026-05-27)
 
 
