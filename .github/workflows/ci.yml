@@ -255,3 +255,38 @@ jobs:
           trap "docker logs qm-smoke; docker rm -f qm-smoke" EXIT
           sleep 5
           curl --fail http://127.0.0.1:18080/healthz
+
+  merge-gate:
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    needs:
+      - rust-sqlite
+      - openapi-and-ledger
+      - ios-build
+      - android-build
+      - web-build
+      - shell-format
+      - docker-build
+    steps:
+      - name: Verify required CI jobs
+        env:
+          NEEDS_JSON: ${{ toJson(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          failed = {
+              name: details["result"]
+              for name, details in needs.items()
+              if details["result"] != "success"
+          }
+          if failed:
+              for name, result in sorted(failed.items()):
+                  print(f"{name}: {result}")
+              sys.exit(1)
+
+          print("All required CI jobs passed.")
+          PY
