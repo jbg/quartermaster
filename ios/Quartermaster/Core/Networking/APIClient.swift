@@ -3,13 +3,12 @@ import HTTPTypes
 import OpenAPIRuntime
 import OpenAPIURLSession
 
-/// Facade over the generated `Client`. Every feature view still calls
-/// `appState.api.listStockEvents(...)` etc. — the signatures haven't moved;
-/// the wire layer did. All JSON serialisation, URL construction, Codable
-/// key mapping, and operation dispatch now live inside the generated
-/// `Operations.*` machinery. We keep the facade so call sites stay stable
-/// and our tailored error translation (`APIError.server(status:, body:)`)
-/// remains the uniform surface for the rest of the app.
+/// Facade over the generated `Client`. Feature views still call
+/// `appState.api.listStockEvents(...)` etc.; the facade keeps those call sites
+/// stable while the API boundary uses generated OpenAPI request/response
+/// shapes. A few endpoints still use explicit URLSession calls, but those
+/// calls encode and decode generated `Components.Schemas.*` types before
+/// adapting into app-facing models.
 actor APIClient: AppStateAPI {
   private let client: Client
   private let tokenStore: TokenStore
@@ -30,9 +29,7 @@ actor APIClient: AppStateAPI {
     self.session = session
     self.labelPrinterClient = labelPrinterClient
     self.jsonDecoder = JSONDecoder()
-    self.jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
     self.jsonEncoder = JSONEncoder()
-    self.jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
     let auth = AuthMiddleware(
       baseURL: baseURL,
       tokenStore: tokenStore,
@@ -157,80 +154,62 @@ actor APIClient: AppStateAPI {
   }
 
   func listPasskeys() async throws -> [PasskeyCredentialSummary] {
-    struct Response: Decodable { let credentials: [PasskeyCredentialSummary] }
-    let response: Response = try await rawJSON(
+    let response: Components.Schemas.PasskeyListResponse = try await rawJSON(
       "GET",
       "/auth/passkeys",
       body: Optional<Int>.none,
       auth: true
     )
-    return response.credentials
+    return response.credentials.map(Self.passkeySummary)
   }
 
   func startPasskeyRegistration(label: String?) async throws -> PasskeyRegistrationStart {
-    struct Request: Encodable { let label: String? }
-    struct Response: Decodable {
-      let ceremonyID: String
-      let publicKey: AnyJSON
-    }
-    let response: Response = try await rawJSON(
+    let response: Components.Schemas.PasskeyRegistrationStartResponse = try await rawJSON(
       "POST",
       "/auth/passkeys/register/start",
-      body: Request(label: label),
+      body: Components.Schemas.PasskeyRegistrationStartRequest(label: label),
       auth: true
     )
     return PasskeyRegistrationStart(
-      ceremonyID: response.ceremonyID, publicKey: response.publicKey.data)
+      ceremonyID: response.ceremonyId, publicKey: try Self.openAPIValueData(response.publicKey))
   }
 
   func finishPasskeyRegistration(ceremonyID: String, credentialJSON: Data, label: String?)
     async throws -> PasskeyCredentialSummary
   {
-    struct Request: Encodable {
-      let ceremonyID: String
-      let credential: AnyJSON
-      let label: String?
-    }
-    return try await rawJSON(
+    let response: Components.Schemas.PasskeyCredentialDto = try await rawJSON(
       "POST",
       "/auth/passkeys/register/finish",
-      body: Request(
-        ceremonyID: ceremonyID,
-        credential: try AnyJSON(data: credentialJSON),
+      body: Components.Schemas.PasskeyRegistrationFinishRequest(
+        ceremonyId: ceremonyID,
+        credential: try Self.openAPIValue(from: credentialJSON),
         label: label
       ),
       auth: true,
       successStatus: 201
     )
+    return Self.passkeySummary(response)
   }
 
   func startPasskeyLogin(email: String) async throws -> PasskeyLoginStart {
-    struct Request: Encodable { let email: String }
-    struct Response: Decodable {
-      let ceremonyID: String
-      let publicKey: AnyJSON
-    }
-    let response: Response = try await rawJSON(
+    let response: Components.Schemas.PasskeyLoginStartResponse = try await rawJSON(
       "POST",
       "/auth/passkeys/login/start",
-      body: Request(email: email),
+      body: Components.Schemas.PasskeyLoginStartRequest(email: email),
       auth: false
     )
-    return PasskeyLoginStart(ceremonyID: response.ceremonyID, publicKey: response.publicKey.data)
+    return PasskeyLoginStart(
+      ceremonyID: response.ceremonyId,
+      publicKey: try Self.openAPIValueData(response.publicKey))
   }
 
   func finishPasskeyLogin(ceremonyID: String, credentialJSON: Data) async throws -> TokenPair {
-    struct Request: Encodable {
-      let ceremonyID: String
-      let credential: AnyJSON
-      let deviceLabel: String?
-    }
     let pair: TokenPair = try await rawJSON(
       "POST",
       "/auth/passkeys/login/finish",
-      body: Request(
-        ceremonyID: ceremonyID,
-        credential: try AnyJSON(data: credentialJSON),
+      body: Components.Schemas.PasskeyLoginFinishRequest(
+        ceremonyId: ceremonyID,
+        credential: try Self.openAPIValue(from: credentialJSON),
         deviceLabel: Self.deviceLabel
       ),
       auth: false
@@ -246,17 +225,20 @@ actor APIClient: AppStateAPI {
   func createAuthHandoff(targetDeviceLabel: String?, serverURL: String?) async throws
     -> AuthHandoffCreate
   {
-    struct Request: Encodable {
-      let targetDeviceLabel: String?
-      let serverURL: String?
-    }
-    return try await rawJSON(
+    let response: Components.Schemas.AuthHandoffCreateResponse = try await rawJSON(
       "POST",
       "/auth/handoffs",
-      body: Request(targetDeviceLabel: targetDeviceLabel, serverURL: serverURL),
+      body: Components.Schemas.CreateAuthHandoffRequest(
+        serverUrl: serverURL,
+        targetDeviceLabel: targetDeviceLabel),
       auth: true,
       successStatus: 201
     )
+    return AuthHandoffCreate(
+      id: response.id,
+      handoffURL: response.handoffUrl,
+      expiresAt: response.expiresAt,
+      targetDeviceLabel: response.targetDeviceLabel)
   }
 
   func cancelAuthHandoff(id: String) async throws {
@@ -264,29 +246,30 @@ actor APIClient: AppStateAPI {
   }
 
   func previewAuthHandoff(id: String, token: String) async throws -> AuthHandoffPreview {
-    struct Request: Encodable {
-      let id: String
-      let token: String
-    }
-    return try await rawJSON(
+    let response: Components.Schemas.AuthHandoffPreviewResponse = try await rawJSON(
       "POST",
       "/auth/handoffs/preview",
-      body: Request(id: id, token: token),
+      body: Components.Schemas.AuthHandoffTokenRequest(id: id, token: token),
       auth: false
     )
+    return AuthHandoffPreview(
+      id: response.id,
+      sourceEmail: response.sourceEmail,
+      sourceDisplayName: response.sourceDisplayName,
+      householdID: response.householdId,
+      targetDeviceLabel: response.targetDeviceLabel,
+      expiresAt: response.expiresAt)
   }
 
   func acceptAuthHandoff(id: String, token: String, deviceLabel: String?) async throws -> TokenPair
   {
-    struct Request: Encodable {
-      let id: String
-      let token: String
-      let deviceLabel: String?
-    }
     let pair: TokenPair = try await rawJSON(
       "POST",
       "/auth/handoffs/accept",
-      body: Request(id: id, token: token, deviceLabel: deviceLabel ?? Self.deviceLabel),
+      body: Components.Schemas.AuthHandoffAcceptRequest(
+        deviceLabel: deviceLabel ?? Self.deviceLabel,
+        id: id,
+        token: token),
       auth: false
     )
     await tokenStore.store(pair)
@@ -1161,6 +1144,10 @@ actor APIClient: AppStateAPI {
     return try await rawJSON("POST", "recipes/executions", body: request, auth: true)
   }
 
+  func aiStatus() async throws -> AiStatus {
+    try await rawJSON("GET", "ai/status", body: Optional<Int>.none, auth: true)
+  }
+
   func pantrySuggestions() async throws -> [PantrySuggestion] {
     let response: PantrySuggestionListResponse = try await rawJSON(
       "GET", "pantry/suggestions", body: Optional<Int>.none, auth: true)
@@ -1172,7 +1159,10 @@ actor APIClient: AppStateAPI {
     try await rawJSON(
       "POST",
       "pantry/suggestions",
-      body: PantrySuggestionWireRequest(generateRecipeIdeas: generateRecipeIdeas),
+      body: Components.Schemas.CreatePantrySuggestionsRequest(
+        generateRecipeIdeas: generateRecipeIdeas,
+        maxAiSuggestions: 3,
+        maxMissingRequired: 2),
       auth: true)
   }
 
@@ -1180,10 +1170,10 @@ actor APIClient: AppStateAPI {
     try await rawJSON(
       "POST",
       "replenishment/cart-drafts",
-      body: ReplenishmentCartDraftWireRequest(
-        supplierId: "mock",
+      body: Components.Schemas.ReplenishmentCreateCartDraftRequest(
         includeAiExplanation: true,
-        submitTrusted: false),
+        submitTrusted: false,
+        supplierId: "mock"),
       auth: true,
       successStatus: 201)
   }
@@ -1211,15 +1201,15 @@ actor APIClient: AppStateAPI {
     try await rawJSON(
       "POST",
       "suppliers/orders/\(id)/receive",
-      body: SupplierReceiveOrderWireRequest(
+      body: Components.Schemas.SupplierReceiveOrderRequest(
         lines: [
-          SupplierReceiveLineWireRequest(
-            productId: productID,
-            locationId: locationID,
-            quantity: "1000",
-            unit: "g",
+          Components.Schemas.SupplierReceiveLineRequest(
             expiresOn: nil,
-            note: "received from iOS cart review")
+            locationId: locationID,
+            note: "received from iOS cart review",
+            productId: productID,
+            quantity: "1000",
+            unit: "g")
         ]),
       auth: true)
   }
@@ -1281,85 +1271,53 @@ actor APIClient: AppStateAPI {
     #endif
   }()
 
-  private static func executionRequest(recipe: Recipe, allowPartial: Bool)
-    -> RecipeExecutionWireRequest
+  private static func passkeySummary(_ credential: Components.Schemas.PasskeyCredentialDto)
+    -> PasskeyCredentialSummary
   {
-    RecipeExecutionWireRequest(
-      recipeId: recipe.id,
-      recipeVersionId: recipe.version.id,
-      recipeName: recipe.name,
-      servingScale: "1",
+    PasskeyCredentialSummary(
+      id: credential.id,
+      label: credential.label,
+      createdAt: credential.createdAt,
+      lastUsedAt: credential.lastUsedAt)
+  }
+
+  private static func openAPIValue(from data: Data) throws -> OpenAPIValueContainer {
+    try JSONDecoder().decode(OpenAPIValueContainer.self, from: data)
+  }
+
+  private static func openAPIValueData(_ value: OpenAPIValueContainer) throws -> Data {
+    try JSONEncoder().encode(value)
+  }
+
+  private static func executionRequest(recipe: Recipe, allowPartial: Bool)
+    -> Components.Schemas.RecipeExecutionRequest
+  {
+    Components.Schemas.RecipeExecutionRequest(
+      allowPartial: allowPartial,
+      idempotencyKey: nil,
       ingredients: recipe.version.ingredients.compactMap { ingredient in
         guard let amount = ingredient.quantity.amount, let unit = ingredient.quantity.unit else {
           return nil
         }
-        return RecipeExecutionIngredientWireRequest(
-          lineId: ingredient.id ?? ingredient.displayName,
+        return Components.Schemas.RecipeExecutionIngredientRequest(
           displayName: ingredient.displayName,
           ingredientId: ingredient.ingredientId,
-          productId: ingredient.productId,
+          lineId: ingredient.id ?? ingredient.displayName,
           locationId: nil,
-          quantity: amount,
-          unit: unit,
           optional: ingredient.optional ?? false,
+          preparation: ingredient.preparation,
+          productId: ingredient.productId,
+          quantity: amount,
           substitutionOf: nil,
-          preparation: ingredient.preparation)
+          unit: unit)
       },
       outputs: [],
-      useExpiringFirst: true,
-      allowPartial: allowPartial,
-      idempotencyKey: nil)
+      recipeId: recipe.id,
+      recipeName: recipe.name,
+      recipeVersionId: recipe.version.id,
+      servingScale: "1",
+      useExpiringFirst: true)
   }
-}
-
-private struct RecipeExecutionWireRequest: Encodable {
-  let recipeId: String?
-  let recipeVersionId: String?
-  let recipeName: String?
-  let servingScale: String?
-  let ingredients: [RecipeExecutionIngredientWireRequest]
-  let outputs: [String]
-  let useExpiringFirst: Bool?
-  let allowPartial: Bool?
-  var idempotencyKey: String?
-}
-
-private struct RecipeExecutionIngredientWireRequest: Encodable {
-  let lineId: String?
-  let displayName: String?
-  let ingredientId: String?
-  let productId: String?
-  let locationId: String?
-  let quantity: String
-  let unit: String
-  let optional: Bool
-  let substitutionOf: String?
-  let preparation: String?
-}
-
-private struct PantrySuggestionWireRequest: Encodable {
-  let generateRecipeIdeas: Bool
-  let maxMissingRequired = 2
-  let maxAiSuggestions = 3
-}
-
-private struct ReplenishmentCartDraftWireRequest: Encodable {
-  let supplierId: String?
-  let includeAiExplanation: Bool
-  let submitTrusted: Bool
-}
-
-private struct SupplierReceiveOrderWireRequest: Encodable {
-  let lines: [SupplierReceiveLineWireRequest]
-}
-
-private struct SupplierReceiveLineWireRequest: Encodable {
-  let productId: String
-  let locationId: String
-  let quantity: String
-  let unit: String
-  let expiresOn: String?
-  let note: String?
 }
 
 // MARK: - Auth middleware
@@ -1435,7 +1393,8 @@ private actor AuthMiddleware: ClientMiddleware {
       var req = URLRequest(url: refreshURL)
       req.httpMethod = "POST"
       req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-      req.httpBody = try JSONEncoder().encode(RefreshBody(refreshToken: refreshToken))
+      req.httpBody = try JSONEncoder().encode(
+        Components.Schemas.RefreshRequest(refreshToken: refreshToken))
       let (data, response) = try await session.data(for: req)
       guard
         let http = response as? HTTPURLResponse,
@@ -1443,14 +1402,8 @@ private actor AuthMiddleware: ClientMiddleware {
       else {
         throw APIError.unauthorized
       }
-      let pair = try JSONDecoder().decode(StoredPair.self, from: data)
-      await tokenStore.store(
-        TokenPair(
-          accessToken: pair.accessToken,
-          expiresIn: Int64(pair.expiresIn),
-          refreshToken: pair.refreshToken,
-          tokenType: pair.tokenType,
-        ))
+      let pair = try JSONDecoder().decode(TokenPair.self, from: data)
+      await tokenStore.store(pair)
     }
     inFlightRefresh = task
     defer { inFlightRefresh = nil }
@@ -1468,25 +1421,4 @@ private actor AuthMiddleware: ClientMiddleware {
     "onboarding_join_invite",
     "onboarding_status",
   ]
-}
-
-// Intermediate types used by the refresh plumbing — mirror the wire
-// contract without going through the generated `Client` (which would
-// itself route through this middleware and recurse).
-private struct RefreshBody: Encodable {
-  let refreshToken: String
-  enum CodingKeys: String, CodingKey { case refreshToken = "refresh_token" }
-}
-
-private struct StoredPair: Decodable {
-  let accessToken: String
-  let refreshToken: String
-  let tokenType: String
-  let expiresIn: Int
-  enum CodingKeys: String, CodingKey {
-    case accessToken = "access_token"
-    case refreshToken = "refresh_token"
-    case tokenType = "token_type"
-    case expiresIn = "expires_in"
-  }
 }
