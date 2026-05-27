@@ -400,6 +400,7 @@ typealias RecipeExecutionResult = Components.Schemas.RecipeExecutionResponse
 typealias RecipeIngredientPlan = Components.Schemas.RecipeIngredientPlanDto
 typealias RecipeMissingIngredient = Components.Schemas.RecipeMissingIngredientDto
 typealias RecipeListResponse = Components.Schemas.RecipeListResponse
+typealias AiStatus = Components.Schemas.AiStatusResponse
 typealias PantrySuggestion = Components.Schemas.PantrySuggestionDto
 typealias PantrySuggestionListResponse = Components.Schemas.PantrySuggestionListResponse
 typealias PantrySuggestionsResponse = Components.Schemas.PantrySuggestionsResponse
