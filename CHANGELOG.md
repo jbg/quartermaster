@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.8](https://github.com/jbg/quartermaster/compare/1.32.7...1.32.8) (2026-05-27)
+
+
+### Bug Fixes
+
+* make pantry suggestions reviewable on iOS ([735ff06](https://github.com/jbg/quartermaster/commit/735ff0672db85f8e61944658e400977baab59789))
+
 ## [1.32.7](https://github.com/jbg/quartermaster/compare/1.32.6...1.32.7) (2026-05-27)
 
 
