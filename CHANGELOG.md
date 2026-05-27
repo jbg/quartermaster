@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.3](https://github.com/jbg/quartermaster/compare/1.32.2...1.32.3) (2026-05-27)
+
+
+### Bug Fixes
+
+* handle compressed AI provider responses ([243dcc4](https://github.com/jbg/quartermaster/commit/243dcc48c77e1408bac006178f41a63fbb9d393c))
+
 ## [1.32.2](https://github.com/jbg/quartermaster/compare/1.32.1...1.32.2) (2026-05-27)
 
 
