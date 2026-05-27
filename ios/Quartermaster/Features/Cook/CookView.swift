@@ -2,13 +2,14 @@ import SwiftUI
 
 struct CookView: View {
   @Environment(AppState.self) private var appState
-  @State private var selectedSection = CookSection.recipes
+  @State private var selectedSection = CookSection.suggestions
   @State private var recipes: [RecipeSummary] = []
   @State private var selectedRecipe: Recipe?
   @State private var preflight: RecipeExecutionPreflight?
   @State private var execution: RecipeExecutionResult?
   @State private var suggestions: [PantrySuggestion] = []
   @State private var suggestionWarnings: [String] = []
+  @State private var canGenerateRecipeIdeas = false
   @State private var cartRun: ReplenishmentCartRun?
   @State private var cartDraft: SupplierCartDraft?
   @State private var supplierOrder: SupplierOrder?
@@ -18,8 +19,8 @@ struct CookView: View {
   @State private var errorMessage: String?
 
   enum CookSection: String, CaseIterable, Identifiable {
-    case recipes = "Recipes"
     case suggestions = "Suggestions"
+    case recipes = "Recipes"
     case shopping = "Shopping"
     var id: String { rawValue }
   }
@@ -67,14 +68,10 @@ struct CookView: View {
             Text("No recipes yet")
               .font(.headline)
             Text(
-              "Find pantry suggestions to see saved recipes that match your current stock, or import recipes on the web client."
+              "Saved recipes you create or import show up here for review before cooking."
             )
             .font(.subheadline)
             .foregroundStyle(.secondary)
-            Button("Find pantry suggestions") {
-              selectedSection = .suggestions
-              Task { await generateSuggestions() }
-            }
           }
         } else {
           ForEach(recipes) { recipe in
@@ -165,9 +162,7 @@ struct CookView: View {
         .disabled(isLoading)
         .accessibilityIdentifier("pantry.suggestions.generate")
       } footer: {
-        Text(
-          "Suggestions rank saved recipes against your current stock. If AI ideas are enabled on the server, this can also request generated candidates."
-        )
+        Text(suggestionFooter)
       }
 
       Section("Suggested to cook") {
@@ -229,6 +224,14 @@ struct CookView: View {
       }
     }
     .accessibilityIdentifier("pantry.suggestion.list")
+  }
+
+  private var suggestionFooter: String {
+    if canGenerateRecipeIdeas {
+      return
+        "Suggestions rank saved recipes against your current stock and can include new recipe ideas."
+    }
+    return "Suggestions rank saved recipes against your current stock."
   }
 
   private var shoppingReview: some View {
@@ -296,9 +299,15 @@ struct CookView: View {
       async let recipeTask = appState.api.recipes()
       async let locationTask = appState.api.locations()
       async let suggestionTask = appState.api.pantrySuggestions()
+      async let aiStatusTask = appState.api.aiStatus()
       recipes = try await recipeTask
       locations = try await locationTask
       suggestions = try await suggestionTask
+      if let aiStatus = try? await aiStatusTask {
+        canGenerateRecipeIdeas = aiStatus.enabled && aiStatus.configured
+      } else {
+        canGenerateRecipeIdeas = false
+      }
     } catch {
       errorMessage = userMessage(error)
     }
@@ -339,7 +348,8 @@ struct CookView: View {
     isLoading = true
     defer { isLoading = false }
     do {
-      let response = try await appState.api.createPantrySuggestions(generateRecipeIdeas: true)
+      let response = try await appState.api.createPantrySuggestions(
+        generateRecipeIdeas: canGenerateRecipeIdeas)
       suggestions = response.suggestions
       suggestionWarnings = response.warnings
     } catch {
