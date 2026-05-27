@@ -4,7 +4,6 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
-use argon2::password_hash::rand_core::{OsRng as ArgonOsRng, RngCore};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -22,6 +21,7 @@ use qm_suppliers::{
     InterventionState, MockSupplierIntegration, OrderStatus, SupplierCapability,
     SupplierDescriptor, SupplierId, SupplierIntegration,
 };
+use rand::RngExt;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -1603,7 +1603,7 @@ fn encrypt_supplier_secret(
     let cipher = Aes256Gcm::new_from_slice(&digest)
         .map_err(|err| ApiError::Internal(anyhow::anyhow!("supplier cipher init: {err}")))?;
     let mut nonce_bytes = [0u8; 12];
-    ArgonOsRng.fill_bytes(&mut nonce_bytes);
+    rand::rng().fill(&mut nonce_bytes);
     let aad = format!("{household_id}:{account_id}:{secret_name}");
     let ciphertext = cipher
         .encrypt(

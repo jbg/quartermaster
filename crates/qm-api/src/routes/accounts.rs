@@ -30,8 +30,8 @@ use webauthn_rs::prelude::{
     RegisterPublicKeyCredential, Url, Webauthn, WebauthnBuilder,
 };
 
-use argon2::password_hash::rand_core::{OsRng as ArgonOsRng, RngCore};
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+use rand::RngExt;
 
 use crate::{
     auth::{self, CurrentUser},
@@ -1956,7 +1956,7 @@ fn encrypt_off_password(state: &AppState, user_id: Uuid, password: &str) -> ApiR
     let cipher = Aes256Gcm::new_from_slice(&key)
         .map_err(|err| ApiError::Internal(anyhow::anyhow!("OFF cipher init: {err}")))?;
     let mut nonce_bytes = [0u8; 12];
-    ArgonOsRng.fill_bytes(&mut nonce_bytes);
+    rand::rng().fill(&mut nonce_bytes);
     let ciphertext = cipher
         .encrypt(
             Nonce::from_slice(&nonce_bytes),
