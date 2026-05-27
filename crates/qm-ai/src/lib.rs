@@ -6,7 +6,7 @@
 
 use std::{future::Future, pin::Pin, sync::Arc};
 
-use reqwest::{header, Url};
+use reqwest::{header, StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use thiserror::Error;
@@ -246,7 +246,7 @@ impl AiProvider for OpenRouterProvider {
                     }
                 }
             });
-            let raw: Value = self
+            let response = self
                 .http
                 .post(url)
                 .header(header::AUTHORIZATION, format!("Bearer {api_key}"))
@@ -254,19 +254,19 @@ impl AiProvider for OpenRouterProvider {
                 .header("X-Title", "Quartermaster")
                 .json(&body)
                 .send()
-                .await?
-                .error_for_status()
-                .map_err(provider_status_error)?
-                .json()
                 .await?;
-            let content = raw
-                .pointer("/choices/0/message/content")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    AiError::InvalidStructuredOutput("missing choices[0].message.content".into())
-                })?;
-            let output_json: Value = serde_json::from_str(content)
-                .map_err(|err| AiError::InvalidStructuredOutput(err.to_string()))?;
+            let status = response.status();
+            let body = response.bytes().await?;
+            if !status.is_success() {
+                return Err(provider_rejected(status, &body));
+            }
+            let raw: Value = serde_json::from_slice(&body).map_err(|err| {
+                AiError::InvalidStructuredOutput(format!(
+                    "provider response was not JSON: {err}; body: {}",
+                    body_preview(&body)
+                ))
+            })?;
+            let output_json = extract_structured_output(&raw)?;
             Ok(StructuredOutputResponse {
                 provider: AiProviderKind::OpenRouter,
                 model,
@@ -284,11 +284,42 @@ pub fn build_provider(http: reqwest::Client, config: &AiConfig) -> Result<AiProv
     }
 }
 
-fn provider_status_error(err: reqwest::Error) -> AiError {
-    if let Some(status) = err.status() {
-        return AiError::ProviderRejected(status.to_string());
+fn provider_rejected(status: StatusCode, body: &[u8]) -> AiError {
+    let detail = serde_json::from_slice::<Value>(body)
+        .ok()
+        .and_then(|value| {
+            value
+                .pointer("/error/message")
+                .or_else(|| value.get("message"))
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        })
+        .unwrap_or_else(|| body_preview(body));
+    AiError::ProviderRejected(format!("{status}: {detail}"))
+}
+
+fn extract_structured_output(raw: &Value) -> Result<Value, AiError> {
+    let content = raw.pointer("/choices/0/message/content").ok_or_else(|| {
+        AiError::InvalidStructuredOutput("missing choices[0].message.content".into())
+    })?;
+    match content {
+        Value::String(content) => serde_json::from_str(content)
+            .map_err(|err| AiError::InvalidStructuredOutput(err.to_string())),
+        Value::Object(_) | Value::Array(_) => Ok(content.clone()),
+        _ => Err(AiError::InvalidStructuredOutput(
+            "choices[0].message.content was not JSON text or an object".into(),
+        )),
     }
-    AiError::Http(err)
+}
+
+fn body_preview(body: &[u8]) -> String {
+    const MAX_PREVIEW_CHARS: usize = 500;
+    let text = String::from_utf8_lossy(body);
+    let mut preview = text.chars().take(MAX_PREVIEW_CHARS).collect::<String>();
+    if text.chars().count() > MAX_PREVIEW_CHARS {
+        preview.push_str("...");
+    }
+    preview
 }
 
 #[cfg(test)]
@@ -313,5 +344,46 @@ mod tests {
         };
         let err = OpenRouterProvider::new(reqwest::Client::new(), &config).unwrap_err();
         assert!(err.to_string().contains("model is required"));
+    }
+
+    #[test]
+    fn openrouter_extracts_structured_output_from_chat_content() {
+        let raw = json!({
+            "choices": [{
+                "message": {
+                    "content": "{\"ideas\":[{\"name\":\"Soup\"}]}"
+                }
+            }]
+        });
+        assert_eq!(
+            extract_structured_output(&raw).unwrap(),
+            json!({"ideas": [{"name": "Soup"}]})
+        );
+    }
+
+    #[test]
+    fn openrouter_provider_rejection_includes_error_body_message() {
+        let err = provider_rejected(
+            StatusCode::BAD_REQUEST,
+            br#"{"error":{"message":"response_format is not supported by this model"}}"#,
+        );
+        assert_eq!(
+            err.to_string(),
+            "AI provider rejected the request: 400 Bad Request: response_format is not supported by this model"
+        );
+    }
+
+    #[test]
+    fn openrouter_invalid_provider_json_includes_body_preview() {
+        let err = serde_json::from_slice::<Value>(b"<html>not json</html>").map_err(|err| {
+            AiError::InvalidStructuredOutput(format!(
+                "provider response was not JSON: {err}; body: {}",
+                body_preview(b"<html>not json</html>")
+            ))
+        });
+        assert!(err
+            .unwrap_err()
+            .to_string()
+            .contains("<html>not json</html>"));
     }
 }

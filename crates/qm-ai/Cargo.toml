@@ -9,11 +9,15 @@ publish.workspace = true
 [dependencies]
 reqwest = { workspace = true, default-features = false, features = [
     "default-tls",
+    "brotli",
     "charset",
+    "deflate",
+    "gzip",
     "http2",
     "system-proxy",
     "json",
     "rustls-tls",
+    "zstd",
 ] }
 serde = { workspace = true, default-features = false, features = ["std", "derive"] }
 serde_json = { workspace = true, default-features = false, features = ["std"] }
