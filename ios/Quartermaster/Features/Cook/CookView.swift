@@ -8,6 +8,7 @@ struct CookView: View {
   @State private var preflight: RecipeExecutionPreflight?
   @State private var execution: RecipeExecutionResult?
   @State private var suggestions: [PantrySuggestion] = []
+  @State private var selectedSuggestion: PantrySuggestion?
   @State private var suggestionWarnings: [String] = []
   @State private var canGenerateRecipeIdeas = false
   @State private var cartRun: ReplenishmentCartRun?
@@ -58,6 +59,9 @@ struct CookView: View {
       Button("OK", role: .cancel) { errorMessage = nil }
     } message: {
       Text(errorMessage ?? "")
+    }
+    .sheet(item: $selectedSuggestion) { suggestion in
+      PantrySuggestionDetailView(suggestion: suggestion)
     }
   }
 
@@ -193,38 +197,12 @@ struct CookView: View {
           }
         } else {
           ForEach(suggestions) { suggestion in
-            VStack(alignment: .leading, spacing: 8) {
-              HStack(alignment: .firstTextBaseline) {
-                Text(suggestion.title)
-                  .font(.headline)
-                Spacer()
-                Text("\(suggestion.score)")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-              }
-              if let summary = suggestion.summary {
-                Text(summary)
-                  .font(.subheadline)
-                  .foregroundStyle(.secondary)
-              }
-              Text(suggestion.scoreBreakdown.cookable ? "Ready to cook" : "Needs ingredients")
-                .font(.caption)
-                .foregroundStyle(suggestion.scoreBreakdown.cookable ? .green : .orange)
-              ForEach(Array(suggestion.missing.enumerated()), id: \.offset) { _, missing in
-                Text(
-                  "Missing: \(missing.displayName)\(missing.quantity.map { " \($0)" } ?? "")\(missing.unit.map { " \($0)" } ?? "")"
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              }
-              if let recipeID = suggestion.recipeId {
-                Button("Review recipe") {
-                  selectedSection = .recipes
-                  Task { await openRecipe(recipeID) }
-                }
-                .accessibilityIdentifier("pantry.suggestion.review.\(suggestion.id)")
-              }
+            Button {
+              openSuggestion(suggestion)
+            } label: {
+              PantrySuggestionRow(suggestion: suggestion)
             }
+            .buttonStyle(.plain)
             .accessibilityIdentifier("pantry.suggestion.row.\(suggestion.id)")
           }
         }
@@ -339,6 +317,15 @@ struct CookView: View {
     }
   }
 
+  private func openSuggestion(_ suggestion: PantrySuggestion) {
+    if let recipeID = suggestion.recipeId {
+      selectedSection = .recipes
+      Task { await openRecipe(recipeID) }
+    } else {
+      selectedSuggestion = suggestion
+    }
+  }
+
   private func runPreflight() async {
     guard let selectedRecipe else { return }
     do {
@@ -417,5 +404,177 @@ struct CookView: View {
 
   private func userMessage(_ error: Error) -> String {
     (error as? APIError)?.userFacingMessage ?? error.localizedDescription
+  }
+}
+
+private struct PantrySuggestionRow: View {
+  let suggestion: PantrySuggestion
+
+  var body: some View {
+    HStack(alignment: .center, spacing: 12) {
+      VStack(alignment: .leading, spacing: 8) {
+        Text(suggestion.title)
+          .font(.headline)
+        if let summary = suggestion.summary {
+          Text(summary)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        }
+        Label(statusText, systemImage: statusImage)
+          .font(.caption)
+          .foregroundStyle(statusColor)
+        ForEach(Array(suggestion.missing.enumerated()), id: \.offset) { _, missing in
+          Text("Missing: \(missing.displayText)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+      Spacer(minLength: 8)
+      Image(systemName: "chevron.right")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.tertiary)
+        .accessibilityHidden(true)
+    }
+    .contentShape(Rectangle())
+  }
+
+  private var statusText: String {
+    suggestion.scoreBreakdown.cookable ? "Ready to cook" : "Needs ingredients"
+  }
+
+  private var statusImage: String {
+    suggestion.scoreBreakdown.cookable ? "checkmark.circle.fill" : "exclamationmark.circle.fill"
+  }
+
+  private var statusColor: Color {
+    suggestion.scoreBreakdown.cookable ? .green : .orange
+  }
+}
+
+private struct PantrySuggestionDetailView: View {
+  @Environment(\.dismiss) private var dismiss
+  let suggestion: PantrySuggestion
+
+  var body: some View {
+    NavigationStack {
+      List {
+        Section {
+          if let summary = suggestion.summary {
+            Text(summary)
+          }
+          Label(statusText, systemImage: statusImage)
+            .foregroundStyle(statusColor)
+        }
+
+        if let idea = suggestion.generatedRecipe {
+          generatedRecipeSections(idea.value1)
+        } else {
+          Section {
+            Text("Open this saved recipe from the Recipes section to review the cooking plan.")
+              .foregroundStyle(.secondary)
+          }
+        }
+
+        if !suggestion.missing.isEmpty {
+          Section("Missing ingredients") {
+            ForEach(Array(suggestion.missing.enumerated()), id: \.offset) { _, missing in
+              Text(missing.displayText)
+            }
+          }
+        }
+
+        if !suggestion.scoreBreakdown.notes.isEmpty {
+          Section("Why suggested") {
+            ForEach(suggestion.scoreBreakdown.notes, id: \.self) { note in
+              Text(note)
+            }
+          }
+        }
+      }
+      .navigationTitle(suggestion.title)
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Done") { dismiss() }
+        }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func generatedRecipeSections(_ idea: GeneratedRecipeIdea) -> some View {
+    if let explanation = idea.explanation {
+      Section("Idea") {
+        Text(explanation)
+      }
+    }
+
+    Section("Servings") {
+      Text(idea.servingCount)
+    }
+
+    let ingredients = idea.ingredients ?? []
+    if !ingredients.isEmpty {
+      Section("Ingredients") {
+        ForEach(Array(ingredients.enumerated()), id: \.offset) { _, ingredient in
+          VStack(alignment: .leading, spacing: 4) {
+            Text(ingredient.displayName)
+            Text(ingredient.displayQuantity)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+      }
+    }
+
+    let steps = idea.steps ?? []
+    if !steps.isEmpty {
+      Section("Steps") {
+        ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+          VStack(alignment: .leading, spacing: 4) {
+            Text("Step \(index + 1)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text(step.instruction)
+          }
+        }
+      }
+    }
+
+    let substitutions = idea.substitutions ?? []
+    if !substitutions.isEmpty {
+      Section("Substitutions") {
+        ForEach(substitutions, id: \.self) { substitution in
+          Text(substitution)
+        }
+      }
+    }
+
+    let unresolvedConversions = idea.unresolvedConversions ?? []
+    if !unresolvedConversions.isEmpty {
+      Section("Conversion notes") {
+        ForEach(unresolvedConversions, id: \.self) { note in
+          Text(note)
+        }
+      }
+    }
+  }
+
+  private var statusText: String {
+    suggestion.scoreBreakdown.cookable ? "Ready to cook" : "Needs ingredients"
+  }
+
+  private var statusImage: String {
+    suggestion.scoreBreakdown.cookable ? "checkmark.circle.fill" : "exclamationmark.circle.fill"
+  }
+
+  private var statusColor: Color {
+    suggestion.scoreBreakdown.cookable ? .green : .orange
+  }
+}
+
+extension PantrySuggestionMissing {
+  fileprivate var displayText: String {
+    "\(displayName)\(quantity.map { " \($0)" } ?? "")\(unit.map { " \($0)" } ?? "")"
   }
 }

@@ -21,7 +21,16 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use utoipa::{IntoParams, ToSchema};
+use utoipa::{
+    openapi::{
+        schema::{
+            AllOfBuilder, ArrayBuilder, KnownFormat, ObjectBuilder, Schema, SchemaFormat,
+            SchemaType, Type,
+        },
+        Ref, RefOr,
+    },
+    IntoParams, PartialSchema, ToSchema,
+};
 use uuid::Uuid;
 
 use crate::{
@@ -130,7 +139,7 @@ pub enum PantryExpiryUrgency {
     Expired,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
 pub struct PantrySuggestionDto {
     pub id: Uuid,
     pub source: PantrySuggestionSource,
@@ -148,6 +157,109 @@ pub struct PantrySuggestionDto {
     pub created_by: Option<Uuid>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+impl PartialSchema for PantrySuggestionDto {
+    fn schema() -> RefOr<Schema> {
+        let nullable_generated_recipe = Schema::AllOf(
+            AllOfBuilder::new()
+                .item(Ref::from_schema_name(GeneratedRecipeIdeaDto::name()))
+                .schema_type(SchemaType::from_iter([Type::Object, Type::Null]))
+                .build(),
+        );
+
+        ObjectBuilder::new()
+            .property("id", uuid_schema())
+            .required("id")
+            .property(
+                "source",
+                Ref::from_schema_name(PantrySuggestionSource::name()),
+            )
+            .required("source")
+            .property(
+                "status",
+                Ref::from_schema_name(PantrySuggestionStatus::name()),
+            )
+            .required("status")
+            .property("recipe_id", nullable_uuid_schema())
+            .property("recipe_version_id", nullable_uuid_schema())
+            .property("ai_task_id", nullable_uuid_schema())
+            .property("title", String::schema())
+            .required("title")
+            .property("summary", nullable_string_schema())
+            .property("score", i64::schema())
+            .required("score")
+            .property(
+                "score_breakdown",
+                Ref::from_schema_name(PantrySuggestionScoreDto::name()),
+            )
+            .required("score_breakdown")
+            .property(
+                "missing",
+                ArrayBuilder::new()
+                    .items(Ref::from_schema_name(PantrySuggestionMissingDto::name()))
+                    .build(),
+            )
+            .required("missing")
+            .property(
+                "pantry_items",
+                ArrayBuilder::new().items(uuid_schema()).build(),
+            )
+            .required("pantry_items")
+            .property("generated_recipe", nullable_generated_recipe)
+            .property("created_by", nullable_uuid_schema())
+            .property("created_at", String::schema())
+            .required("created_at")
+            .property("updated_at", String::schema())
+            .required("updated_at")
+            .into()
+    }
+}
+
+fn uuid_schema() -> ObjectBuilder {
+    ObjectBuilder::new()
+        .schema_type(Type::String)
+        .format(Some(SchemaFormat::KnownFormat(KnownFormat::Uuid)))
+}
+
+fn nullable_uuid_schema() -> ObjectBuilder {
+    ObjectBuilder::new()
+        .schema_type(SchemaType::from_iter([Type::String, Type::Null]))
+        .format(Some(SchemaFormat::KnownFormat(KnownFormat::Uuid)))
+}
+
+fn nullable_string_schema() -> ObjectBuilder {
+    ObjectBuilder::new().schema_type(SchemaType::from_iter([Type::String, Type::Null]))
+}
+
+impl ToSchema for PantrySuggestionDto {
+    fn schemas(schemas: &mut Vec<(String, RefOr<Schema>)>) {
+        schemas.push((
+            GeneratedRecipeIdeaDto::name().into_owned(),
+            GeneratedRecipeIdeaDto::schema(),
+        ));
+        <GeneratedRecipeIdeaDto as ToSchema>::schemas(schemas);
+        schemas.push((
+            PantrySuggestionScoreDto::name().into_owned(),
+            PantrySuggestionScoreDto::schema(),
+        ));
+        <PantrySuggestionScoreDto as ToSchema>::schemas(schemas);
+        schemas.push((
+            PantrySuggestionMissingDto::name().into_owned(),
+            PantrySuggestionMissingDto::schema(),
+        ));
+        <PantrySuggestionMissingDto as ToSchema>::schemas(schemas);
+        schemas.push((
+            PantrySuggestionSource::name().into_owned(),
+            PantrySuggestionSource::schema(),
+        ));
+        <PantrySuggestionSource as ToSchema>::schemas(schemas);
+        schemas.push((
+            PantrySuggestionStatus::name().into_owned(),
+            PantrySuggestionStatus::schema(),
+        ));
+        <PantrySuggestionStatus as ToSchema>::schemas(schemas);
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

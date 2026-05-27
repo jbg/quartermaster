@@ -402,6 +402,8 @@ typealias RecipeMissingIngredient = Components.Schemas.RecipeMissingIngredientDt
 typealias RecipeListResponse = Components.Schemas.RecipeListResponse
 typealias AiStatus = Components.Schemas.AiStatusResponse
 typealias PantrySuggestion = Components.Schemas.PantrySuggestionDto
+typealias GeneratedRecipeIdea = Components.Schemas.GeneratedRecipeIdeaDto
+typealias PantrySuggestionMissing = Components.Schemas.PantrySuggestionMissingDto
 typealias PantrySuggestionListResponse = Components.Schemas.PantrySuggestionListResponse
 typealias PantrySuggestionsResponse = Components.Schemas.PantrySuggestionsResponse
 

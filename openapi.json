@@ -9370,13 +9370,14 @@
             "format": "uuid"
           },
           "generated_recipe": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
+            "allOf": [
               {
                 "$ref": "#/components/schemas/GeneratedRecipeIdeaDto"
               }
+            ],
+            "type": [
+              "object",
+              "null"
             ]
           },
           "id": {
