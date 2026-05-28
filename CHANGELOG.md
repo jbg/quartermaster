@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.32.9](https://github.com/jbg/quartermaster/compare/1.32.8...1.32.9) (2026-05-28)
+
+
+### Bug Fixes
+
+* **android:** support OFF package corrections ([2f836ed](https://github.com/jbg/quartermaster/commit/2f836ed85937712d1944a77209d40e7f4131991a))
+* **ios:** expose OFF product corrections from search ([93b0a95](https://github.com/jbg/quartermaster/commit/93b0a959ac7435965247d2f551aba3187a14c1c3))
+* **web:** allow OFF product unit corrections ([0cd3d28](https://github.com/jbg/quartermaster/commit/0cd3d288aecc16a83ba436df44da49fc9195b920))
+
 ## [1.32.8](https://github.com/jbg/quartermaster/compare/1.32.7...1.32.8) (2026-05-27)
 
 
