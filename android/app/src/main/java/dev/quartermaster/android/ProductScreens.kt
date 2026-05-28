@@ -346,6 +346,11 @@ internal fun ProductDetailScreen(
                     }
                     else -> {
                         Button(
+                            modifier = Modifier.testTag(SmokeTag.ProductEditButton),
+                            onClick = onEdit,
+                            enabled = appState.productActionInFlight == null,
+                        ) { Text("Edit") }
+                        Button(
                             modifier = Modifier.testTag(SmokeTag.ProductRefreshButton),
                             onClick = { scope.launch { appState.refreshSelectedProductFromOff() } },
                             enabled = appState.productActionInFlight == null,
@@ -435,6 +440,7 @@ internal fun ProductFormScreen(
         )
     }
     val unitChoices = appState.productUnitSymbolsFor(fields.family)
+    val supportsManualOnlyFields = product == null || product.let(appState::isManualProduct)
     val title = if (product == null) "New product" else "Edit product"
     LazyColumn(
         modifier = modifier
@@ -446,7 +452,11 @@ internal fun ProductFormScreen(
         item {
             RouteHeader(
                 title = title,
-                subtitle = "Manual products are scoped to the current household catalogue.",
+                subtitle = if (product?.let(appState::isManualProduct) == false) {
+                    "Save local corrections for this OpenFoodFacts catalogue product."
+                } else {
+                    "Manual products are scoped to the current household catalogue."
+                },
                 backLabel = "Cancel",
                 onBack = onCancel,
             )
@@ -493,23 +503,49 @@ internal fun ProductFormScreen(
             )
         }
         item {
-            OutlinedTextField(
-                value = fields.imageUrl,
-                onValueChange = { fields = fields.copy(imageUrl = it) },
-                label = { Text("Image URL") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(SmokeTag.ProductImageUrlField),
+            SectionHeader(
+                title = "Package size",
+                body = "Used by scan and add-stock flows to add one inventory batch per package.",
             )
         }
         item {
             OutlinedTextField(
-                value = fields.maxOpenDays,
-                onValueChange = { fields = fields.copy(maxOpenDays = it) },
-                label = { Text("Maximum open days") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                value = fields.packageQuantity,
+                onValueChange = { fields = fields.copy(packageQuantity = it) },
+                label = { Text("Amount per package") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+        item {
+            SelectionCard(
+                title = "Package unit",
+                options = unitChoices.map { it to it },
+                selected = fields.packageUnit,
+                emptyText = "No units are available for this product family.",
+                onSelect = { fields = fields.copy(packageUnit = it) },
+            )
+        }
+        if (supportsManualOnlyFields) {
+            item {
+                OutlinedTextField(
+                    value = fields.imageUrl,
+                    onValueChange = { fields = fields.copy(imageUrl = it) },
+                    label = { Text("Image URL") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(SmokeTag.ProductImageUrlField),
+                )
+            }
+            item {
+                OutlinedTextField(
+                    value = fields.maxOpenDays,
+                    onValueChange = { fields = fields.copy(maxOpenDays = it) },
+                    label = { Text("Maximum open days") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

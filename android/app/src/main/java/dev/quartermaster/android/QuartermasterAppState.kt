@@ -157,6 +157,8 @@ data class ProductFormFields(
     val preferredUnit: String = "g",
     val imageUrl: String = "",
     val maxOpenDays: String = "",
+    val packageQuantity: String = "",
+    val packageUnit: String = "g",
 )
 
 data class LocationFormFields(
@@ -1827,6 +1829,8 @@ class QuartermasterAppState(
         preferredUnit = product.preferredUnit,
         imageUrl = product.imageUrl.orEmpty(),
         maxOpenDays = product.maxOpenDays?.toString().orEmpty(),
+        packageQuantity = product.packageQuantity.orEmpty(),
+        packageUnit = product.packageUnit ?: defaultProductUnitFor(product.family),
     )
 
     fun productFormWithFamily(
@@ -1835,6 +1839,7 @@ class QuartermasterAppState(
     ): ProductFormFields = fields.copy(
         family = family,
         preferredUnit = defaultProductUnitFor(family),
+        packageUnit = defaultProductUnitFor(family),
     )
 
     fun visibleProducts(): List<ProductDto> = when (productIncludeFilter) {
@@ -1855,6 +1860,12 @@ class QuartermasterAppState(
             name.isEmpty() -> "Enter a product name."
             name.length > 256 -> "Product name must be 256 characters or fewer."
             fields.preferredUnit !in productUnitSymbolsFor(fields.family) -> "Choose a preferred unit that matches the product family."
+            fields.packageQuantity.trim().isNotEmpty() &&
+                fields.packageQuantity.trim().toBigDecimalOrNull()?.takeIf { it > java.math.BigDecimal.ZERO } == null ->
+                "Package quantity must be a positive number."
+            fields.packageQuantity.trim().isNotEmpty() &&
+                fields.packageUnit !in productUnitSymbolsFor(fields.family) ->
+                "Choose a package unit that matches the product family."
             fields.maxOpenDays.trim().isNotEmpty() &&
                 fields.maxOpenDays.trim().toLongOrNull()?.takeIf { it > 0 } == null ->
                 "Maximum open days must be a positive whole number."
@@ -2511,7 +2522,7 @@ private fun Throwable.productFacingMessage(action: ProductAction): String {
         }
     }
     return when (code) {
-        "off_product_read_only" -> "OpenFoodFacts products are read-only from the Android catalogue."
+        "off_product_read_only" -> "Only local OpenFoodFacts corrections can be saved here."
         "off_credentials_not_configured" -> "OpenFoodFacts contribution is not configured on this server."
         "off_credentials_missing" -> "Save your OpenFoodFacts credentials in Settings first."
         "off_contribution_no_changes" -> "There are no local OpenFoodFacts corrections to contribute."
@@ -2543,6 +2554,8 @@ private fun ProductFormFields.toCreateProductRequest(): CreateProductRequest = C
     preferredUnit = preferredUnit,
     barcode = null,
     imageUrl = imageUrl.trim().takeIf(String::isNotEmpty),
+    packageQuantity = packageQuantity.trim().takeIf(String::isNotEmpty),
+    packageUnit = packageQuantity.trim().takeIf(String::isNotEmpty)?.let { packageUnit },
     maxOpenDays = maxOpenDays.trim().toLongOrNull(),
 )
 
@@ -2554,6 +2567,10 @@ private fun ProductFormFields.toUpdatePatch(product: ProductDto): ProductUpdateR
     val currentImageUrl = product.imageUrl.orEmpty()
     val nextMaxOpenDays = maxOpenDays.trim().toLongOrNull()
     val currentMaxOpenDays = product.maxOpenDays
+    val nextPackageQuantity = packageQuantity.trim()
+    val currentPackageQuantity = product.packageQuantity.orEmpty()
+    val nextPackageUnit = packageUnit.trim()
+    val currentPackageUnit = product.packageUnit.orEmpty()
     val operations = buildList {
         if (nextName != product.name) add(JsonPatchOperation("replace", "/name", nextName))
         when {
@@ -2573,6 +2590,17 @@ private fun ProductFormFields.toUpdatePatch(product: ProductDto): ProductUpdateR
             nextMaxOpenDays != null && nextMaxOpenDays != currentMaxOpenDays ->
                 add(JsonPatchOperation("replace", "/max_open_days", nextMaxOpenDays))
             maxOpenDays.trim().isEmpty() && currentMaxOpenDays != null -> add(JsonPatchOperation("remove", "/max_open_days"))
+        }
+        if (nextPackageQuantity.isNotEmpty()) {
+            if (nextPackageQuantity != currentPackageQuantity) {
+                add(JsonPatchOperation("replace", "/package_quantity", nextPackageQuantity))
+            }
+            if (nextPackageUnit != currentPackageUnit) {
+                add(JsonPatchOperation("replace", "/package_unit", nextPackageUnit))
+            }
+        } else if (currentPackageQuantity.isNotEmpty() || currentPackageUnit.isNotEmpty()) {
+            add(JsonPatchOperation("remove", "/package_quantity"))
+            add(JsonPatchOperation("remove", "/package_unit"))
         }
     }
     return ProductUpdateRequest(operations)
