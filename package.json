@@ -1,6 +1,6 @@
 {
   "name": "quartermaster",
-  "version": "1.32.8",
+  "version": "1.32.9",
   "private": true,
   "scripts": {
     "format": "pnpm format:rust && pnpm format:swift && pnpm format:kotlin && pnpm format:shell && pnpm format:web",
