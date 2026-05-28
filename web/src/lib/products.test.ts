@@ -9,6 +9,7 @@ import {
   parseProductInclude,
   productListHref,
   productMutationErrorMessage,
+  setProductFormFamily,
   validateProductForm
 } from './products';
 
@@ -106,6 +107,59 @@ describe('product helpers', () => {
     ]);
   });
 
+  it('resets package unit when changing to a different unit family', () => {
+    expect(
+      setProductFormFamily(
+        {
+          name: 'Olive oil',
+          brand: '',
+          family: 'count',
+          preferredUnit: 'piece',
+          imageUrl: '',
+          maxOpenDays: '',
+          packageQuantity: '5',
+          packageUnit: 'piece'
+        },
+        'volume'
+      )
+    ).toMatchObject({
+      family: 'volume',
+      preferredUnit: 'ml',
+      packageQuantity: '5',
+      packageUnit: 'ml'
+    });
+  });
+
+  it('builds OFF local correction payloads for product family and package size', () => {
+    const product: Product = {
+      id: 'product-1',
+      name: 'Olive oil',
+      family: 'count',
+      preferred_unit: 'piece',
+      package_quantity: null,
+      package_unit: null,
+      source: 'openfoodfacts'
+    };
+
+    expect(
+      buildProductUpdateRequest(product, {
+        name: 'Olive oil',
+        brand: '',
+        family: 'volume',
+        preferredUnit: 'ml',
+        imageUrl: '',
+        maxOpenDays: '',
+        packageQuantity: '5000',
+        packageUnit: 'ml'
+      })
+    ).toEqual([
+      { op: 'replace', path: '/family', value: 'volume' },
+      { op: 'replace', path: '/preferred_unit', value: 'ml' },
+      { op: 'replace', path: '/package_quantity', value: '5000' },
+      { op: 'replace', path: '/package_unit', value: 'ml' }
+    ]);
+  });
+
   it('parses and serializes list filters', () => {
     expect(parseProductInclude(null)).toBe('active');
     expect(parseProductInclude('all')).toBe('all');
@@ -139,7 +193,7 @@ describe('product helpers', () => {
         new ApiFailure(403, 'server text', 'off_product_read_only'),
         'Fallback'
       )
-    ).toBe('OpenFoodFacts products are read-only from the web catalogue.');
+    ).toBe('Only local OpenFoodFacts corrections can be saved here.');
     expect(productMutationErrorMessage(new Error('nope'), 'Fallback')).toBe('Fallback');
   });
 

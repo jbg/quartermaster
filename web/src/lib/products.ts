@@ -114,10 +114,16 @@ export function setProductFormFamily(
   family: UnitFamily,
   units: Unit[] = []
 ): ProductFormFields {
+  const unitChoices = unitChoicesForFamily(family, units);
+  const packageUnit =
+    fields.packageUnit && unitChoices.includes(fields.packageUnit)
+      ? fields.packageUnit
+      : unitChoices[0];
   return {
     ...fields,
     family,
-    preferredUnit: unitChoicesForFamily(family, units)[0]
+    preferredUnit: unitChoices[0],
+    packageUnit
   };
 }
 
@@ -249,7 +255,7 @@ export function productMutationErrorMessage(err: unknown, fallback: string): str
   }
   switch (err.code) {
     case 'off_product_read_only':
-      return 'OpenFoodFacts products are read-only from the web catalogue.';
+      return 'Only local OpenFoodFacts corrections can be saved here.';
     case 'off_credentials_not_configured':
       return 'OpenFoodFacts contribution is not configured on this server.';
     case 'off_credentials_missing':
