@@ -392,6 +392,34 @@ class QuartermasterAppStateTest {
     }
 
     @Test
+    fun `product form family change resets preferred and package units`() = runTest {
+        val appState =
+            QuartermasterAppState(
+                sessionStore = FakeSessionStore(),
+                backend =
+                FakeBackend(
+                    meResponse = meResponseJson(),
+                    units = listOf(unitJson("piece", "count"), unitJson("ml", "volume")),
+                ),
+            )
+
+        appState.bootstrap()
+
+        val fields = ProductFormFields(
+            name = "Olive oil",
+            family = UnitFamily.COUNT,
+            preferredUnit = "piece",
+            packageQuantity = "5",
+            packageUnit = "piece",
+        )
+
+        assertEquals(
+            fields.copy(family = UnitFamily.VOLUME, preferredUnit = "ml", packageUnit = "ml"),
+            appState.productFormWithFamily(fields, UnitFamily.VOLUME),
+        )
+    }
+
+    @Test
     fun `openReminder keeps the inventory target after refreshing`() = runTest {
         val reminder = reminderJson()
         val appState =
@@ -1105,6 +1133,54 @@ class QuartermasterAppStateTest {
     }
 
     @Test
+    fun `OpenFoodFacts product update can save local family and package corrections`() = runTest {
+        val offProduct = productDtoJson(
+            name = "Olive oil",
+            source = "openfoodfacts",
+            barcode = "012345678905",
+            family = "count",
+            preferredUnit = "piece",
+        )
+        val updated = offProduct.copy(
+            family = UnitFamily.VOLUME,
+            preferredUnit = "ml",
+            packageQuantity = "5000",
+            packageUnit = "ml",
+        )
+        val backend =
+            FakeBackend(
+                meResponse = meResponseJson(),
+                products = listOf(offProduct),
+                updatedProduct = updated,
+                units = listOf(unitJson("piece", "count"), unitJson("ml", "volume")),
+            )
+        val appState = QuartermasterAppState(FakeSessionStore(), backend)
+
+        appState.bootstrap()
+        appState.openProduct(offProduct.id.toString())
+        val saved = appState.updateSelectedProduct(
+            ProductFormFields(
+                name = "Olive oil",
+                family = UnitFamily.VOLUME,
+                preferredUnit = "ml",
+                packageQuantity = "5000",
+                packageUnit = "ml",
+            ),
+        )
+
+        assertEquals(updated, saved)
+        assertEquals(
+            listOf(
+                JsonPatchOperation("replace", "/family", UnitFamily.VOLUME.value),
+                JsonPatchOperation("replace", "/preferred_unit", "ml"),
+                JsonPatchOperation("replace", "/package_quantity", "5000"),
+                JsonPatchOperation("replace", "/package_unit", "ml"),
+            ),
+            backend.updateProductRequests.single().operations,
+        )
+    }
+
+    @Test
     fun `product action failure clears in flight state and stores product error`() = runTest {
         val product = productDtoJson()
         val appState =
@@ -1801,11 +1877,15 @@ class QuartermasterAppStateTest {
         barcode: String? = null,
         imageUrl: String? = null,
         deletedAt: String? = null,
+        packageQuantity: String? = null,
+        packageUnit: String? = null,
     ): ProductDto {
         val nullableBrand = brand?.let { "\"$it\"" } ?: "null"
         val nullableBarcode = barcode?.let { "\"$it\"" } ?: "null"
         val nullableImageUrl = imageUrl?.let { "\"$it\"" } ?: "null"
         val nullableDeletedAt = deletedAt?.let { "\"$it\"" } ?: "null"
+        val nullablePackageQuantity = packageQuantity?.let { "\"$it\"" } ?: "null"
+        val nullablePackageUnit = packageUnit?.let { "\"$it\"" } ?: "null"
         return json.decodeFromString(
             """
             {
@@ -1817,7 +1897,9 @@ class QuartermasterAppStateTest {
               "brand": $nullableBrand,
               "barcode": $nullableBarcode,
               "image_url": $nullableImageUrl,
-              "deleted_at": $nullableDeletedAt
+              "deleted_at": $nullableDeletedAt,
+              "package_quantity": $nullablePackageQuantity,
+              "package_unit": $nullablePackageUnit
             }
             """.trimIndent(),
         )
@@ -2276,7 +2358,13 @@ class QuartermasterAppStateTest {
 
         override suspend fun createProduct(request: CreateProductRequest): ProductDto {
             createProductRequests += request
-            val product = createdProduct ?: productDtoJson(name = request.name, family = request.family.value, preferredUnit = request.preferredUnit ?: "g")
+            val product = createdProduct ?: productDtoJson(
+                name = request.name,
+                family = request.family.value,
+                preferredUnit = request.preferredUnit ?: "g",
+                packageQuantity = request.packageQuantity,
+                packageUnit = request.packageUnit,
+            )
             productState.removeAll { it.id == product.id }
             productState += product
             return product
