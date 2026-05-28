@@ -13,6 +13,7 @@ struct ProductSearchView: View {
   @State private var showManualCreate = false
   @State private var includeDeleted = false
   @State private var restoringDeleted: Product?
+  @State private var showingDetails: Product?
 
   var body: some View {
     NavigationStack {
@@ -40,17 +41,33 @@ struct ProductSearchView: View {
         }
 
         ForEach(results) { product in
-          Button {
-            if product.isDeleted {
-              restoringDeleted = product
-            } else {
-              onPick(product)
-              dismiss()
+          HStack(spacing: 12) {
+            Button {
+              if product.isDeleted {
+                restoringDeleted = product
+              } else {
+                onPick(product)
+                dismiss()
+              }
+            } label: {
+              ProductListRow(product: product)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-          } label: {
-            ProductListRow(product: product)
+            .buttonStyle(.plain)
+
+            if !product.isDeleted {
+              Button {
+                showingDetails = product
+              } label: {
+                Image(systemName: "info.circle")
+                  .font(.title3)
+                  .foregroundStyle(Color.quartermasterTextSecondary)
+                  .frame(width: 44, height: 44)
+              }
+              .buttonStyle(.plain)
+              .accessibilityLabel("Product details")
+            }
           }
-          .buttonStyle(.plain)
         }
 
         Section {
@@ -98,6 +115,16 @@ struct ProductSearchView: View {
           }
         }
       }
+      .sheet(item: $showingDetails) { product in
+        ProductDetailView(product: product) { action in
+          switch action {
+          case .updated(let updated), .refreshed(let updated), .restored(let updated):
+            updateResult(updated)
+          case .deleted:
+            removeResult(product)
+          }
+        }
+      }
     }
   }
 
@@ -112,6 +139,16 @@ struct ProductSearchView: View {
       results = fetched
     }
     isSearching = false
+  }
+
+  private func updateResult(_ product: Product) {
+    if let index = results.firstIndex(where: { $0.id == product.id }) {
+      results[index] = product
+    }
+  }
+
+  private func removeResult(_ product: Product) {
+    results.removeAll { $0.id == product.id }
   }
 }
 
