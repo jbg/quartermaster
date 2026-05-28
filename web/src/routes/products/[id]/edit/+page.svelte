@@ -198,27 +198,27 @@
           Brand
           <input bind:value={form.brand} data-testid="product-brand-input" />
         </label>
+        <label>
+          Product family
+          <select
+            value={form.family}
+            data-testid="product-family-select"
+            onchange={(event) => updateFamily(event.currentTarget.value)}
+          >
+            <option value="mass">Mass</option>
+            <option value="volume">Volume</option>
+            <option value="count">Count</option>
+          </select>
+        </label>
+        <label>
+          Preferred unit
+          <select bind:value={form.preferredUnit} data-testid="product-unit-select">
+            {#each unitChoices as unit}
+              <option value={unit}>{unit}</option>
+            {/each}
+          </select>
+        </label>
         {#if isManualProduct(product)}
-          <label>
-            Product family
-            <select
-              value={form.family}
-              data-testid="product-family-select"
-              onchange={(event) => updateFamily(event.currentTarget.value)}
-            >
-              <option value="mass">Mass</option>
-              <option value="volume">Volume</option>
-              <option value="count">Count</option>
-            </select>
-          </label>
-          <label>
-            Preferred unit
-            <select bind:value={form.preferredUnit} data-testid="product-unit-select">
-              {#each unitChoices as unit}
-                <option value={unit}>{unit}</option>
-              {/each}
-            </select>
-          </label>
           <label>
             Image URL
             <input bind:value={form.imageUrl} data-testid="product-image-url-input" />
