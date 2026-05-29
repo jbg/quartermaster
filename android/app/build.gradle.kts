@@ -132,7 +132,7 @@ tasks.withType<KotlinCompile>().configureEach {
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.05.01")
-    val firebaseBom = platform("com.google.firebase:firebase-bom:34.13.0")
+    val firebaseBom = platform("com.google.firebase:firebase-bom:34.14.0")
     val cameraxVersion = "1.6.1"
 
     implementation(composeBom)
