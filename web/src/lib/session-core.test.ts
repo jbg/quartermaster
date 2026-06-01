@@ -117,6 +117,7 @@ describe('QuartermasterSession', () => {
 
   it('builds root deployment paths', () => {
     const location = { pathname: '/' };
+    expect(appPath('/meal-plans', location)).toBe('/meal-plans');
     expect(appPath('/products', location)).toBe('/products');
     expect(appPath('/settings', location)).toBe('/settings');
     expect(appPath('/brand/quartermaster-mark.svg', location)).toBe(
@@ -124,8 +125,18 @@ describe('QuartermasterSession', () => {
     );
   });
 
+  it('builds asset paths from meal plan routes', () => {
+    const location = { pathname: '/meal-plans' };
+    expect(appPath('/brand/quartermaster-mark.svg', location)).toBe(
+      '/brand/quartermaster-mark.svg'
+    );
+  });
+
   it('builds Home Assistant ingress paths', () => {
     const location = { pathname: '/api/hassio_ingress/quartermaster-token/products/product-1' };
+    expect(appPath('/meal-plans', location)).toBe(
+      '/api/hassio_ingress/quartermaster-token/meal-plans'
+    );
     expect(appPath('/products', location)).toBe('/api/hassio_ingress/quartermaster-token/products');
     expect(appPath('/settings', location)).toBe('/api/hassio_ingress/quartermaster-token/settings');
     expect(appPath('/brand/quartermaster-mark.svg', location)).toBe(
