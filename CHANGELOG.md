@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.33.1](https://github.com/jbg/quartermaster/compare/1.33.0...1.33.1) (2026-06-01)
+
+
+### Bug Fixes
+
+* **web:** repair meal plans page chrome ([bb7f63c](https://github.com/jbg/quartermaster/commit/bb7f63cdba3c0d6c609f3d903b59abde24febada))
+
 ## [1.33.0](https://github.com/jbg/quartermaster/compare/1.32.9...1.33.0) (2026-06-01)
 
 
