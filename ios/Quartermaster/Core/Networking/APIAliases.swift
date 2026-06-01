@@ -406,6 +406,11 @@ typealias GeneratedRecipeIdea = Components.Schemas.GeneratedRecipeIdeaDto
 typealias PantrySuggestionMissing = Components.Schemas.PantrySuggestionMissingDto
 typealias PantrySuggestionListResponse = Components.Schemas.PantrySuggestionListResponse
 typealias PantrySuggestionsResponse = Components.Schemas.PantrySuggestionsResponse
+typealias MealPlan = Components.Schemas.MealPlanDto
+typealias MealPlanSummary = Components.Schemas.MealPlanSummaryDto
+typealias MealPlanDay = Components.Schemas.MealPlanDayDto
+typealias MealPlanMeal = Components.Schemas.MealPlanMealDto
+typealias MealPlanListResponse = Components.Schemas.MealPlanListResponse
 
 typealias ReplenishmentCartRun = Components.Schemas.ReplenishmentCartRunDto
 typealias ReplenishmentCreateCartDraftResponse = Components.Schemas
@@ -418,6 +423,10 @@ extension RecipeSummary: Identifiable {}
 extension Recipe: Identifiable {}
 extension RecipeIngredient: Identifiable {}
 extension PantrySuggestion: Identifiable {}
+extension MealPlan: Identifiable {}
+extension MealPlanSummary: Identifiable {}
+extension MealPlanDay: Identifiable {}
+extension MealPlanMeal: Identifiable {}
 extension SupplierCartDraft: Identifiable {}
 extension SupplierCartLine: Identifiable {}
 extension SupplierOrder: Identifiable {}

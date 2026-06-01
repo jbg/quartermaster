@@ -337,6 +337,15 @@ impl Modify for SecurityAddon {
         routes::pantry::list_suggestions,
         routes::pantry::get_suggestion,
         routes::pantry::update_suggestion_state,
+        routes::meal_plans::list,
+        routes::meal_plans::create,
+        routes::meal_plans::generate,
+        routes::meal_plans::get_one,
+        routes::meal_plans::update,
+        routes::meal_plans::delete_one,
+        routes::meal_plans::refresh,
+        routes::meal_plans::execute_meal,
+        routes::meal_plans::skip_meal,
         routes::devices::register,
         routes::households::create_household,
         routes::households::import_household,
@@ -484,6 +493,16 @@ impl Modify for SecurityAddon {
         routes::pantry::PantrySuggestionMissingDto,
         routes::pantry::GeneratedRecipeIdeaDto,
         routes::pantry::UpdatePantrySuggestionStateRequest,
+        routes::meal_plans::MealSlotDto,
+        routes::meal_plans::CreateMealPlanRequest,
+        routes::meal_plans::GenerateMealPlanRequest,
+        routes::meal_plans::MealPlanListResponse,
+        routes::meal_plans::MealPlanSummaryDto,
+        routes::meal_plans::MealPlanDto,
+        routes::meal_plans::MealPlanDayDto,
+        routes::meal_plans::MealPlanMealDto,
+        routes::meal_plans::MealPlanReservationDto,
+        routes::meal_plans::RefreshMealPlanResponse,
         routes::accounts::UserDto,
         routes::accounts::HouseholdDto,
         routes::devices::RegisterDeviceRequest,
@@ -647,6 +666,7 @@ impl Modify for SecurityAddon {
         (name = "accounts", description = "Authentication and session"),
         (name = "ai", description = "AI provider status and durable task audit records"),
         (name = "pantry", description = "Inventory-aware recipe suggestions and generated ideas"),
+        (name = "meal-plans", description = "Saved meal plans, recipe scheduling, and soft stock reservations"),
         (name = "devices", description = "Notification-capable client registrations"),
         (name = "households", description = "Household administration, invites, and members"),
         (name = "onboarding", description = "First-launch server setup and joining"),
@@ -681,6 +701,7 @@ pub fn router(state: AppState) -> Router {
         )))
         .merge(routes::ai::router())
         .merge(routes::pantry::router())
+        .merge(routes::meal_plans::router())
         .merge(routes::onboarding::router(RateLimitLayerState::new(
             state.clone(),
             RateLimitTarget::Auth,

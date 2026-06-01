@@ -17,6 +17,8 @@ import dev.quartermaster.android.generated.models.InviteDto
 import dev.quartermaster.android.generated.models.LabelPrintStatus
 import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.MeResponse
+import dev.quartermaster.android.generated.models.MealPlanDto
+import dev.quartermaster.android.generated.models.MealPlanSummaryDto
 import dev.quartermaster.android.generated.models.MeasurementSystem
 import dev.quartermaster.android.generated.models.OffContributionPreviewResponse
 import dev.quartermaster.android.generated.models.OffContributionResponse
@@ -2319,6 +2321,18 @@ class QuartermasterAppStateTest {
         override suspend fun listPantrySuggestions(): List<PantrySuggestionDto> = emptyList()
 
         override suspend fun createPantrySuggestions(generateRecipeIdeas: Boolean): PantrySuggestionsResponse = error("Unused in test")
+
+        override suspend fun listMealPlans(): List<MealPlanSummaryDto> = emptyList()
+
+        override suspend fun getMealPlan(id: String): MealPlanDto = error("Unused in test")
+
+        override suspend fun generateMealPlan(title: String?, dates: List<String>): MealPlanDto = error("Unused in test")
+
+        override suspend fun refreshMealPlan(id: String): MealPlanDto = error("Unused in test")
+
+        override suspend fun executeMealPlanMeal(planId: String, mealId: String): RecipeExecutionResponse = error("Unused in test")
+
+        override suspend fun skipMealPlanMeal(planId: String, mealId: String): MealPlanDto = error("Unused in test")
 
         override suspend fun generateReplenishmentCartDraft(): ReplenishmentCreateCartDraftResponse = error("Unused in test")
 

@@ -31,6 +31,7 @@
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
   const households = $derived(me?.households ?? []);
   const inventoryHref = $derived(appPath('/', page.url));
+  const mealPlansHref = $derived(appPath('/meal-plans', page.url));
   const aiTasksHref = $derived(appPath('/ai/tasks', page.url));
   const cartReviewHref = $derived(appPath('/suppliers/review', page.url));
 
@@ -149,6 +150,7 @@
         </div>
         <div class="action-row">
           <a class="secondary-action small" href={cartReviewHref}>Review shopping cart</a>
+          <a class="secondary-action small" href={mealPlansHref}>Meal plans</a>
           <a class="secondary-action small" href={aiTasksHref}>AI activity</a>
           <button
             class="primary-action small"

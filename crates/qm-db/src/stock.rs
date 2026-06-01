@@ -118,6 +118,8 @@ pub struct NewRecipeExecution<'a> {
     pub id: Uuid,
     pub recipe_id: Option<Uuid>,
     pub recipe_version_id: Option<Uuid>,
+    pub meal_plan_id: Option<Uuid>,
+    pub meal_plan_meal_id: Option<Uuid>,
     pub recipe_name: Option<&'a str>,
     pub serving_scale: &'a str,
     pub idempotency_key: Option<&'a str>,
@@ -929,15 +931,17 @@ pub async fn apply_recipe_execution(
 
     sqlx::query(
         "INSERT INTO recipe_execution \
-         (id, household_id, recipe_id, recipe_version_id, recipe_name, serving_scale, \
-          idempotency_key, adjusted_recipe_json, preflight_json, consume_request_id, \
-          created_at, created_by) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         (id, household_id, recipe_id, recipe_version_id, meal_plan_id, meal_plan_meal_id, \
+          recipe_name, serving_scale, idempotency_key, adjusted_recipe_json, preflight_json, \
+          consume_request_id, created_at, created_by) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(execution.id.to_string())
     .bind(household_id.to_string())
     .bind(execution.recipe_id.map(|id| id.to_string()))
     .bind(execution.recipe_version_id.map(|id| id.to_string()))
+    .bind(execution.meal_plan_id.map(|id| id.to_string()))
+    .bind(execution.meal_plan_meal_id.map(|id| id.to_string()))
     .bind(execution.recipe_name)
     .bind(execution.serving_scale)
     .bind(execution.idempotency_key)

@@ -3,6 +3,22 @@ import HTTPTypes
 import OpenAPIRuntime
 import OpenAPIURLSession
 
+private struct MealPlanSlotBody: Encodable {
+  let key: String
+  let label: String
+}
+
+private struct MealPlanGenerateBody: Encodable {
+  let title: String?
+  let dates: [String]
+  let slots: [MealPlanSlotBody]
+  let constraints: [String: String] = [:]
+}
+
+private struct MealPlanRefreshBody: Decodable {
+  let plan: MealPlan
+}
+
 /// Facade over the generated `Client`. Feature views still call
 /// `appState.api.listStockEvents(...)` etc.; the facade keeps those call sites
 /// stable while the API boundary uses generated OpenAPI request/response
@@ -1163,6 +1179,54 @@ actor APIClient: AppStateAPI {
         generateRecipeIdeas: generateRecipeIdeas,
         maxAiSuggestions: 2,
         maxMissingRequired: 2),
+      auth: true)
+  }
+
+  func mealPlans() async throws -> [MealPlanSummary] {
+    let response: MealPlanListResponse = try await rawJSON(
+      "GET", "meal-plans", body: Optional<Int>.none, auth: true)
+    return response.items
+  }
+
+  func getMealPlan(id: String) async throws -> MealPlan {
+    try await rawJSON("GET", "meal-plans/\(id)", body: Optional<Int>.none, auth: true)
+  }
+
+  func generateMealPlan(title: String?, dates: [String]) async throws -> MealPlan {
+    try await rawJSON(
+      "POST",
+      "meal-plans/generate",
+      body: MealPlanGenerateBody(
+        title: title,
+        dates: dates,
+        slots: [
+          MealPlanSlotBody(key: "breakfast", label: "Breakfast"),
+          MealPlanSlotBody(key: "lunch", label: "Lunch"),
+          MealPlanSlotBody(key: "dinner", label: "Dinner"),
+        ]),
+      auth: true,
+      successStatus: 201)
+  }
+
+  func refreshMealPlan(id: String) async throws -> MealPlan {
+    let response: MealPlanRefreshBody = try await rawJSON(
+      "POST", "meal-plans/\(id)/refresh", body: Optional<Int>.none, auth: true)
+    return response.plan
+  }
+
+  func executeMealPlanMeal(planID: String, mealID: String) async throws -> RecipeExecutionResult {
+    try await rawJSON(
+      "POST",
+      "meal-plans/\(planID)/meals/\(mealID)/execute",
+      body: Optional<Int>.none,
+      auth: true)
+  }
+
+  func skipMealPlanMeal(planID: String, mealID: String) async throws -> MealPlan {
+    try await rawJSON(
+      "POST",
+      "meal-plans/\(planID)/meals/\(mealID)/skip",
+      body: Optional<Int>.none,
       auth: true)
   }
 
