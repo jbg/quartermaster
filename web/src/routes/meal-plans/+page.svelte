@@ -149,7 +149,7 @@
     </section>
   {:else}
     <section class="meal-plan-grid">
-      <section class="panel">
+      <section class="panel meal-plan-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Plan ahead</p>
@@ -194,7 +194,7 @@
         </form>
       </section>
 
-      <section class="panel">
+      <section class="panel meal-plan-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Saved</p>
@@ -246,7 +246,7 @@
 
   .date-chip,
   .plan-row {
-    border: 1px solid var(--border-subtle);
+    border: 1px solid var(--qm-line);
     border-radius: 8px;
     color: inherit;
     padding: 0.7rem 0.85rem;
@@ -254,7 +254,7 @@
   }
 
   .date-chip {
-    background: var(--surface-subtle);
+    background: var(--qm-sage-100);
   }
 
   .plan-row h3 {

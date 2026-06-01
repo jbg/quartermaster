@@ -7,6 +7,7 @@ const WEB_ROUTE_ROOTS = new Set([
   'ai',
   'batches',
   'join',
+  'meal-plans',
   'products',
   'recipes',
   'reminders',

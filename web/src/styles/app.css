@@ -591,6 +591,7 @@ a:focus-visible {
 
 .settings-panel,
 .catalogue-panel,
+.meal-plan-panel,
 .product-detail-panel,
 .product-form-panel,
 .reminders-panel {
@@ -1429,6 +1430,7 @@ code {
   .empty-state,
   .settings-panel,
   .catalogue-panel,
+  .meal-plan-panel,
   .product-detail-panel,
   .product-form-panel,
   .reminders-panel,
