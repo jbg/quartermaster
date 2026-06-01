@@ -18,6 +18,7 @@ Use small, focused pull requests and Conventional Commits:
 |   |-- qm-core/            domain logic; no I/O
 |   |-- qm-db/              SQLx repositories and migrations
 |   |-- qm-api/             Axum handlers, middleware, OpenAPI, integration tests
+|   |-- qm-suppliers/       supplier integration boundary and mock supplier
 |   `-- qm-server/          shipped API and background worker binary
 |-- xtask/                  developer tasks
 |-- openapi.json            canonical generated API spec
@@ -221,6 +222,7 @@ cargo run -p qm-server -- worker
 - Product unit family is fixed across a product's stock batches. Cross-family conversion belongs in recipe concerns, not inventory.
 - Stock is event-sourced. Never mutate `stock_batch.quantity` directly; use the stock repository helpers that write events and update the cached quantity in one transaction.
 - Database enums are stored as `TEXT`; API DTOs expose typed Rust enums so OpenAPI and generated clients get real enum shapes.
+- Recipes, pantry suggestions, and replenishment are review-first surfaces. Keep recipe execution behind preflight/confirmation, and keep cart submission behind explicit guardrail review unless a trusted automation path rechecks policy server-side.
 - Authenticated requests resolve one current household per session.
 - Invite-backed registration and invite redemption must be transactional and duplicate-safe.
 - Expiry dates are household-local calendar dates. Reminder scheduling is household-local policy stored as UTC instants.

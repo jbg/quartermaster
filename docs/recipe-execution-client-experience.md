@@ -1,12 +1,15 @@
 # Recipe Execution Client Experience
 
-Phase 8 makes cooking an explicit review flow. A recipe can suggest inventory
-changes, but the client must show the plan before any stock ledger mutation is
-submitted.
+Cooking is an explicit review flow. A recipe can suggest inventory changes, but
+the client must show the plan before any stock ledger mutation is submitted.
+This covers saved recipes, imported recipes, and pantry/AI suggestions that
+become executable recipe plans.
 
 ## Goals
 
 - Show recipes as household data with clear source and provenance.
+- Support inventory-aware cooking and meal planning without introducing a
+  general household task list or calendar.
 - Turn "cook this" into a reviewable plan: matched batches, missing
   ingredients, conversion assumptions, optional substitutions, and produced
   stock.
@@ -72,14 +75,11 @@ Use these selectors or platform equivalents for smoke automation:
   - `recipe.preflight.execute`
   - `recipe.execution.result`
 - Android Compose test tags
-  - `smoke-recipe-screen`
-  - `smoke-recipe-row-{recipe_id}`
-  - `smoke-recipe-preflight-run`
-  - `smoke-recipe-preflight-row-{line_id_or_index}`
-  - `smoke-recipe-missing-row-{line_id_or_index}`
-  - `smoke-recipe-partial-confirm`
-  - `smoke-recipe-execute`
-  - `smoke-recipe-execution-result`
+  - `smoke-cook-screen`
+  - `recipe.row.{recipe_id}`
+  - `recipe.preflight.row.{line_id_or_index}`
+  - `recipe.missing.row.{line_id_or_index}`
+  - `recipe.preflight.execute`
 
 ## Acceptance Criteria
 

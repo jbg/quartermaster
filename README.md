@@ -1,8 +1,8 @@
 # Quartermaster
 
-Quartermaster is a self-hosted kitchen inventory app for households.
+Quartermaster is a self-hosted kitchen operations app for households.
 
-It helps you keep track of what is in your pantry, fridge, and freezer; what is about to expire; and what needs to be used up. You can add stock manually, search existing products, scan barcodes on supported mobile devices, group stock by location, review inventory history, print QR stock labels, and receive expiry reminders.
+It helps you keep track of what is in your pantry, fridge, and freezer; what is about to expire; what needs to be used up; and what you can cook or restock next. You can add stock manually, search existing products, scan barcodes on supported mobile devices, group stock by location, review inventory history, print QR stock labels, receive expiry reminders, manage recipes, review cooking plans before they consume stock, generate pantry-aware suggestions, and build reviewable shopping drafts from replenishment rules.
 
 There is no hosted Quartermaster service today. To use it, you run your own Quartermaster server and connect the mobile or web clients to it.
 
@@ -10,12 +10,12 @@ There is no hosted Quartermaster service today. To use it, you run your own Quar
 
 Quartermaster is usable today for adventurous self-hosters and is still evolving quickly. Expect occasional breaking changes between releases and read [CHANGELOG.md](CHANGELOG.md) before upgrading a running household.
 
-- **Server:** Rust API, SQLite by default, optional Postgres, Docker image support, local accounts, browser cookie auth, optional passkeys, verified recovery-email state, invite-based household sharing, authenticated mobile handoff, OpenFoodFacts barcode lookup/cache/contribution, stock history, reminders, background worker support, Brother QL label printing, and optional Prometheus metrics.
-- **iOS:** Native SwiftUI client is the primary client. It supports onboarding, sign-in, passkeys, authenticated mobile handoff, household switching, inventory, stock creation/editing/consumption, product editing, OpenFoodFacts correction contribution, barcode scanning on physical devices, history, recovery-email setup, settings, invite links, reminder push/inbox flows, and printing stock labels through configured server-side printers.
-- **Android:** Native Jetpack Compose client exists and can connect to self-hosted servers. It supports the core account, passkey, authenticated handoff, inventory, product, location, reminder, recovery-email, barcode, OpenFoodFacts credential/contribution, scan/add-stock, and invite flows, with push configuration available for self-hosters who provide Firebase details.
-- **Web:** A SvelteKit web client is included and can be served by the API process. It supports core inventory, batch deep links, split/repack workflows, location, product, OpenFoodFacts credential/contribution, barcode, history, invite, settings, label-printer administration, mobile setup QR, and reminder flows. The native mobile apps remain the most complete experience.
+- **Server:** Rust API, SQLite by default, optional Postgres, Docker image support, local accounts, browser cookie auth, optional passkeys, verified recovery-email state, invite-based household sharing, authenticated mobile handoff, OpenFoodFacts barcode lookup/cache/contribution, stock history, reminders, recipe and ingredient modeling, recipe import/validation/scaling/execution, pantry suggestions with optional AI-generated ideas, replenishment rules and cart draft generation, mock-backed supplier account/catalog/cart/order/receiving flows, background worker support, Brother QL label printing, and optional Prometheus metrics.
+- **iOS:** Native SwiftUI client is the primary client. It supports onboarding, sign-in, passkeys, authenticated mobile handoff, household switching, inventory, stock creation/editing/consumption, product editing, OpenFoodFacts correction contribution, barcode scanning on physical devices, history, recovery-email setup, settings, invite links, reminder push/inbox flows, a Cook tab for recipes, pantry ideas, and shopping draft review, and printing stock labels through configured server-side printers.
+- **Android:** Native Jetpack Compose client exists and can connect to self-hosted servers. It supports the core account, passkey, authenticated handoff, inventory, product, location, reminder, recovery-email, barcode, OpenFoodFacts credential/contribution, scan/add-stock, invite, recipe review/execution, pantry suggestion, and shopping draft flows, with push configuration available for self-hosters who provide Firebase details.
+- **Web:** A SvelteKit web client is included and can be served by the API process. It supports core inventory, batch deep links, split/repack workflows, location, product, OpenFoodFacts credential/contribution, barcode, history, invite, settings, label-printer administration, mobile setup QR, reminder flows, recipe import/review/execution, AI activity review, and supplier shopping cart review/receiving. The native mobile apps remain the most complete experience.
 
-Quartermaster is intentionally narrow: it is inventory software, not recipe planning, grocery automation, or a general household task app.
+Quartermaster stays kitchen-scoped: inventory, recipes, cooking plans, and replenishment are in scope; general household task management is not. Automation is review-first by design, especially anywhere a recipe would mutate stock or a shopping flow could spend money.
 
 ## What You Need
 
@@ -23,6 +23,8 @@ Quartermaster is intentionally narrow: it is inventory software, not recipe plan
 - A persistent database location. SQLite is the simplest option and stores everything in one file.
 - A reverse proxy with HTTPS if you want to use it outside your home network.
 - Optional: APNs and/or Firebase Cloud Messaging credentials if you want push notifications instead of only in-app reminder inboxes.
+- Optional: an OpenRouter-compatible AI key if you want generated pantry recipe ideas or AI explanations for shopping recommendations.
+- Optional: a Brother QL network label printer if you want server-rendered stock labels.
 
 ## Quick Start With Docker
 
@@ -185,10 +187,11 @@ Supplier integration foundations:
 | --------------------------------------- | ------- | -------------------------------------------------------- |
 | `QM_SUPPLIER_CREDENTIAL_ENCRYPTION_KEY` | unset   | Secret used to encrypt household supplier credentials    |
 
-Supplier APIs currently expose the in-tree mock supplier, account setup,
-catalog mapping, cart draft, order, and receiving lifecycle. Real external
-supplier integrations are intentionally deferred until a supplier, region,
-credential model, and terms are chosen. See
+Replenishment and supplier APIs currently expose household rules, demand
+signals, guardrail-reviewed cart generation, the in-tree mock supplier, account
+setup, catalog mapping, cart draft, order, and receiving lifecycle. Real
+external supplier integrations are intentionally deferred until a supplier,
+region, credential model, and terms are chosen. See
 [docs/supplier-integration-foundations.md](docs/supplier-integration-foundations.md).
 
 Reminder settings:

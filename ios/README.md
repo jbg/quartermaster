@@ -260,6 +260,7 @@ Quartermaster/
 │   └── Networking/    APIClient (URLSession + bearer + refresh rotation), DTOs, errors
 ├── Features/
 │   ├── AddStock/      Product search, manual product entry, and stock creation
+│   ├── Cook/          Pantry suggestions, recipe review/execution, and shopping draft review
 │   ├── History/       Stock event history and batch detail recovery actions
 │   ├── Households/    Shared household switching, redeem, and create surfaces
 │   ├── Inventory/     Grouped inventory, filters, batch edit/consume/discard/restore, label print
