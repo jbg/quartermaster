@@ -13,7 +13,8 @@ struct CookView: View {
   @State private var mealPlans: [MealPlanSummary] = []
   @State private var selectedMealPlan: MealPlan?
   @State private var mealPlanDates: [String] = []
-  @State private var mealPlanDate = Date()
+  @State private var mealPlanRangeStart = Date()
+  @State private var mealPlanRangeEnd = Date()
   @State private var mealPlanTitle = ""
   @State private var canGenerateRecipeIdeas = false
   @State private var cartRun: ReplenishmentCartRun?
@@ -23,6 +24,7 @@ struct CookView: View {
   @State private var allowPartial = false
   @State private var isLoading = false
   @State private var isGeneratingSuggestions = false
+  @State private var isGeneratingMealPlan = false
   @State private var errorMessage: String?
 
   enum CookSection: String, CaseIterable, Identifiable {
@@ -297,29 +299,47 @@ struct CookView: View {
     List {
       Section("Generate") {
         TextField("Title", text: $mealPlanTitle)
-        DatePicker("Date", selection: $mealPlanDate, displayedComponents: .date)
-        Button("Add date") {
-          let value = Self.dateFormatter.string(from: mealPlanDate)
-          if !mealPlanDates.contains(value) {
-            mealPlanDates.append(value)
-            mealPlanDates.sort()
-          }
-        }
-        if !mealPlanDates.isEmpty {
+        DatePicker("Start", selection: $mealPlanRangeStart, displayedComponents: .date)
+        DatePicker("End", selection: $mealPlanRangeEnd, displayedComponents: .date)
+        Button("Add date range") { addMealPlanDateRange() }
+          .disabled(isGeneratingMealPlan)
+        if mealPlanDates.isEmpty {
+          Text("Add a date range, then remove any dates you do not need.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else {
           ForEach(mealPlanDates, id: \.self) { date in
             HStack {
               Text(date)
               Spacer()
               Button("Remove") { mealPlanDates.removeAll { $0 == date } }
                 .buttonStyle(.borderless)
+                .disabled(isGeneratingMealPlan)
             }
           }
         }
-        Button("Generate meal plan") {
+        Button {
           Task { await generateMealPlan() }
+        } label: {
+          if isGeneratingMealPlan {
+            HStack {
+              ProgressView()
+              Text("Generating meal plan...")
+            }
+          } else {
+            Label("Generate meal plan", systemImage: "sparkles")
+          }
         }
-        .disabled(isLoading || mealPlanDates.isEmpty)
+        .disabled(isLoading || isGeneratingMealPlan || mealPlanDates.isEmpty)
         .accessibilityIdentifier("meal.plan.generate")
+        if isGeneratingMealPlan {
+          HStack {
+            ProgressView()
+            Text("Checking recipes and stock. This can take a little while.")
+              .foregroundStyle(.secondary)
+          }
+          .accessibilityIdentifier("meal.plan.generating")
+        }
       }
 
       Section("Plans") {
@@ -446,7 +466,11 @@ struct CookView: View {
 
   private func generateMealPlan() async {
     isLoading = true
-    defer { isLoading = false }
+    isGeneratingMealPlan = true
+    defer {
+      isGeneratingMealPlan = false
+      isLoading = false
+    }
     do {
       let plan = try await appState.api.generateMealPlan(
         title: mealPlanTitle.isEmpty ? nil : mealPlanTitle,
@@ -457,6 +481,29 @@ struct CookView: View {
     } catch {
       errorMessage = userMessage(error)
     }
+  }
+
+  private func addMealPlanDateRange() {
+    let calendar = Calendar(identifier: .gregorian)
+    let start = calendar.startOfDay(for: mealPlanRangeStart)
+    let end = calendar.startOfDay(for: mealPlanRangeEnd)
+    guard end >= start else {
+      errorMessage = "End date must be on or after start date."
+      return
+    }
+    let dayCount = (calendar.dateComponents([.day], from: start, to: end).day ?? 0) + 1
+    guard dayCount <= 90 else {
+      errorMessage = "Choose a range of 90 days or fewer."
+      return
+    }
+
+    var selected = Set(mealPlanDates)
+    for offset in 0..<dayCount {
+      if let date = calendar.date(byAdding: .day, value: offset, to: start) {
+        selected.insert(Self.dateFormatter.string(from: date))
+      }
+    }
+    mealPlanDates = selected.sorted()
   }
 
   private func openMealPlan(_ id: String) async {
