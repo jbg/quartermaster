@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.33.0](https://github.com/jbg/quartermaster/compare/1.32.9...1.33.0) (2026-06-01)
+
+
+### Features
+
+* add meal planning ([a3687f8](https://github.com/jbg/quartermaster/commit/a3687f8ea6ccbed6b2fbec18d26fdeed5de1b075))
+
 ## [1.32.9](https://github.com/jbg/quartermaster/compare/1.32.8...1.32.9) (2026-05-28)
 
 
