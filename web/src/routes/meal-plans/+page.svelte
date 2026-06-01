@@ -24,11 +24,14 @@
   let busy = $state(false);
   let error = $state<string | null>(null);
   let title = $state('');
-  let dateInput = $state('');
+  let rangeStart = $state('');
+  let rangeEnd = $state('');
   let dates = $state<string[]>([]);
   let includeBreakfast = $state(true);
   let includeLunch = $state(true);
   let includeDinner = $state(true);
+
+  const maxRangeDays = 90;
 
   const activeHousehold = $derived(me ? currentHousehold(me) : null);
   const households = $derived(me?.households ?? []);
@@ -66,10 +69,57 @@
     }
   }
 
-  function addDate() {
-    if (!dateInput || dates.includes(dateInput)) return;
-    dates = [...dates, dateInput].sort();
-    dateInput = '';
+  function parseDateInput(value: string): number | null {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const timestamp = Date.UTC(year, month - 1, day);
+    const parsed = new Date(timestamp);
+    if (
+      parsed.getUTCFullYear() !== year ||
+      parsed.getUTCMonth() !== month - 1 ||
+      parsed.getUTCDate() !== day
+    ) {
+      return null;
+    }
+    return timestamp;
+  }
+
+  function formatDateInput(timestamp: number): string {
+    return new Date(timestamp).toISOString().slice(0, 10);
+  }
+
+  function rangeDates(): string[] | null {
+    const start = parseDateInput(rangeStart);
+    const end = parseDateInput(rangeEnd);
+    if (start === null || end === null) {
+      error = 'Choose a start and end date.';
+      return null;
+    }
+    if (end < start) {
+      error = 'End date must be on or after start date.';
+      return null;
+    }
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    const dayCount = Math.floor((end - start) / dayMs) + 1;
+    if (dayCount > maxRangeDays) {
+      error = `Choose a range of ${maxRangeDays} days or fewer.`;
+      return null;
+    }
+
+    return Array.from({ length: dayCount }, (_, index) => formatDateInput(start + index * dayMs));
+  }
+
+  function addRange() {
+    const range = rangeDates();
+    if (!range) return;
+    dates = Array.from(new Set([...dates, ...range])).sort();
+    rangeStart = '';
+    rangeEnd = '';
+    error = null;
   }
 
   function removeDate(date: string) {
@@ -85,10 +135,25 @@
   }
 
   async function generatePlan() {
-    if (dates.length === 0) {
-      error = 'Add at least one date.';
+    let planDates = dates;
+    if (planDates.length === 0 && (rangeStart || rangeEnd)) {
+      const pendingRange = rangeDates();
+      if (!pendingRange) return;
+      planDates = pendingRange;
+      dates = pendingRange;
+    }
+
+    if (planDates.length === 0) {
+      error = 'Add at least one date range.';
       return;
     }
+
+    const slots = selectedSlots();
+    if (slots.length === 0) {
+      error = 'Choose at least one meal.';
+      return;
+    }
+
     busy = true;
     error = null;
     try {
@@ -96,8 +161,8 @@
         await mealPlanGenerate({
           body: {
             title: title.trim() || null,
-            dates,
-            slots: selectedSlots(),
+            dates: planDates,
+            slots,
             constraints: {}
           }
         })
@@ -163,33 +228,72 @@
             event.preventDefault();
             void generatePlan();
           }}
+          novalidate
+          aria-busy={busy}
         >
           <label>
             Title
-            <input bind:value={title} placeholder="Next week at home" />
+            <input bind:value={title} placeholder="Next week at home" disabled={busy} />
           </label>
-          <div class="date-row">
-            <label>
-              Date
-              <input type="date" bind:value={dateInput} />
-            </label>
-            <button class="secondary-action" type="button" onclick={addDate}>Add date</button>
+          <fieldset class="range-fieldset" disabled={busy}>
+            <legend>Date range</legend>
+            <div class="date-row">
+              <label>
+                Start
+                <input type="date" bind:value={rangeStart} />
+              </label>
+              <label>
+                End
+                <input type="date" bind:value={rangeEnd} min={rangeStart || undefined} />
+              </label>
+              <button class="secondary-action" type="button" onclick={addRange}>Add range</button>
+            </div>
+          </fieldset>
+          <div class="selected-dates">
+            <div class="selected-dates-heading">
+              <span>Selected dates</span>
+              <strong>{dates.length}</strong>
+            </div>
+            {#if dates.length === 0}
+              <p class="muted">Add a date range, then remove any dates you do not need.</p>
+            {:else}
+              <div class="chip-row" aria-label="Selected meal plan dates">
+                {#each dates as date}
+                  <button
+                    class="date-chip"
+                    type="button"
+                    onclick={() => removeDate(date)}
+                    disabled={busy}
+                    aria-label={`Remove ${date}`}
+                  >
+                    {date} x
+                  </button>
+                {/each}
+              </div>
+            {/if}
           </div>
-          <div class="chip-row">
-            {#each dates as date}
-              <button class="date-chip" type="button" onclick={() => removeDate(date)}>
-                {date} x
-              </button>
-            {/each}
-          </div>
-          <div class="slot-row">
-            <label><input type="checkbox" bind:checked={includeBreakfast} /> Breakfast</label>
-            <label><input type="checkbox" bind:checked={includeLunch} /> Lunch</label>
-            <label><input type="checkbox" bind:checked={includeDinner} /> Dinner</label>
-          </div>
+          <fieldset class="slot-fieldset" disabled={busy}>
+            <legend>Meals</legend>
+            <div class="slot-row">
+              <label><input type="checkbox" bind:checked={includeBreakfast} /> Breakfast</label>
+              <label><input type="checkbox" bind:checked={includeLunch} /> Lunch</label>
+              <label><input type="checkbox" bind:checked={includeDinner} /> Dinner</label>
+            </div>
+          </fieldset>
           <button class="primary-action" type="submit" disabled={busy}>
-            {busy ? 'Generating...' : 'Generate plan'}
+            {busy ? 'Generating plan...' : 'Generate plan'}
           </button>
+          {#if busy}
+            <div class="generation-status" role="status" aria-live="polite">
+              <span class="spinner" aria-hidden="true"></span>
+              <div>
+                <strong>Generating your meal plan</strong>
+                <p class="muted">
+                  This can take a little while as Quartermaster checks recipes and stock.
+                </p>
+              </div>
+            </div>
+          {/if}
           {#if error}<p class="error-text">{error}</p>{/if}
         </form>
       </section>
@@ -235,6 +339,21 @@
     gap: 0.8rem;
   }
 
+  .range-fieldset,
+  .slot-fieldset {
+    border: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  .range-fieldset legend,
+  .slot-fieldset legend,
+  .selected-dates-heading {
+    color: var(--qm-slate-700);
+    font-weight: 800;
+    margin-bottom: 0.45rem;
+  }
+
   .date-row,
   .slot-row,
   .chip-row {
@@ -244,8 +363,30 @@
     gap: 0.65rem;
   }
 
+  .date-row label {
+    flex: 1 1 150px;
+  }
+
+  .selected-dates {
+    border: 1px solid var(--qm-line);
+    border-radius: 8px;
+    padding: 0.8rem;
+  }
+
+  .selected-dates-heading {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.55rem;
+  }
+
+  .selected-dates-heading strong {
+    color: var(--qm-green-900);
+  }
+
   .date-chip,
-  .plan-row {
+  .plan-row,
+  .generation-status {
     border: 1px solid var(--qm-line);
     border-radius: 8px;
     color: inherit;
@@ -257,8 +398,36 @@
     background: var(--qm-sage-100);
   }
 
+  .generation-status {
+    align-items: center;
+    background: var(--qm-color-surface-subtle);
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  .generation-status p {
+    margin: 0.15rem 0 0;
+  }
+
+  .spinner {
+    animation: spin 0.8s linear infinite;
+    border: 3px solid var(--qm-line-strong);
+    border-top-color: var(--qm-green-800);
+    border-radius: 999px;
+    display: inline-block;
+    flex: 0 0 auto;
+    height: 24px;
+    width: 24px;
+  }
+
   .plan-row h3 {
     margin: 0;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   @media (max-width: 760px) {

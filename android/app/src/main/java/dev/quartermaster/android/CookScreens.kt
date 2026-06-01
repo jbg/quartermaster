@@ -7,10 +7,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -35,6 +37,8 @@ import dev.quartermaster.android.generated.models.RecipeSummaryDto
 import dev.quartermaster.android.generated.models.SupplierCartDraftDto
 import dev.quartermaster.android.generated.models.SupplierOrderDto
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 
 private enum class CookSection {
     Recipes,
@@ -65,7 +69,10 @@ internal fun CookScreen(
     var mealPlans by remember { mutableStateOf<List<MealPlanSummaryDto>>(emptyList()) }
     var selectedMealPlan by remember { mutableStateOf<MealPlanDto?>(null) }
     var mealPlanTitle by remember { mutableStateOf("") }
-    var mealPlanDates by remember { mutableStateOf("") }
+    var mealPlanRangeStart by remember { mutableStateOf("") }
+    var mealPlanRangeEnd by remember { mutableStateOf("") }
+    var mealPlanDates by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isGeneratingMealPlan by remember { mutableStateOf(false) }
     var selectedRecipe by remember { mutableStateOf<RecipeDto?>(null) }
     var preflight by remember { mutableStateOf<RecipeExecutionPreflightResponse?>(null) }
     var execution by remember { mutableStateOf<RecipeExecutionResponse?>(null) }
@@ -80,6 +87,33 @@ internal fun CookScreen(
             runCatching { block() }
                 .onFailure { localError = it.message ?: "Action failed" }
         }
+    }
+
+    fun addMealPlanDateRange() {
+        localError = null
+        val start = runCatching { LocalDate.parse(mealPlanRangeStart.trim()) }.getOrNull()
+        val end = runCatching { LocalDate.parse(mealPlanRangeEnd.trim()) }.getOrNull()
+        if (start == null || end == null) {
+            localError = "Choose a start and end date in YYYY-MM-DD format"
+            return
+        }
+        if (end.isBefore(start)) {
+            localError = "End date must be on or after start date"
+            return
+        }
+
+        val dayCount = ChronoUnit.DAYS.between(start, end).toInt() + 1
+        if (dayCount > 90) {
+            localError = "Choose a range of 90 days or fewer"
+            return
+        }
+
+        mealPlanDates = buildSet {
+            addAll(mealPlanDates)
+            repeat(dayCount) { offset -> add(start.plusDays(offset.toLong()).toString()) }
+        }.sorted()
+        mealPlanRangeStart = ""
+        mealPlanRangeEnd = ""
     }
 
     LaunchedEffect(appState.currentHouseholdId) {
@@ -230,32 +264,96 @@ internal fun CookScreen(
                                 value = mealPlanTitle,
                                 onValueChange = { mealPlanTitle = it },
                                 label = { Text("Title") },
+                                enabled = !isGeneratingMealPlan,
                                 modifier = Modifier.fillMaxWidth(),
                             )
                             OutlinedTextField(
-                                value = mealPlanDates,
-                                onValueChange = { mealPlanDates = it },
-                                label = { Text("Dates, comma separated") },
-                                placeholder = { Text("2026-06-02, 2026-06-04") },
+                                value = mealPlanRangeStart,
+                                onValueChange = { mealPlanRangeStart = it },
+                                label = { Text("Start date") },
+                                placeholder = { Text("2026-06-02") },
+                                enabled = !isGeneratingMealPlan,
                                 modifier = Modifier.fillMaxWidth(),
                             )
+                            OutlinedTextField(
+                                value = mealPlanRangeEnd,
+                                onValueChange = { mealPlanRangeEnd = it },
+                                label = { Text("End date") },
+                                placeholder = { Text("2026-06-08") },
+                                enabled = !isGeneratingMealPlan,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            OutlinedButton(
+                                onClick = { addMealPlanDateRange() },
+                                enabled = !isGeneratingMealPlan,
+                            ) {
+                                Text("Add date range")
+                            }
+                            if (mealPlanDates.isEmpty()) {
+                                Text(
+                                    "Add a range, then remove any dates you do not need.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            } else {
+                                Text(
+                                    "${mealPlanDates.size} selected dates",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                mealPlanDates.forEach { date ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text(date)
+                                        OutlinedButton(
+                                            onClick = {
+                                                mealPlanDates = mealPlanDates.filterNot { it == date }
+                                            },
+                                            enabled = !isGeneratingMealPlan,
+                                        ) {
+                                            Text("Remove")
+                                        }
+                                    }
+                                }
+                            }
                             Button(
                                 onClick = {
                                     launchCook {
-                                        val dates = mealPlanDates
-                                            .split(",")
-                                            .map { it.trim() }
-                                            .filter { it.isNotEmpty() }
-                                        selectedMealPlan = appState.generateMealPlan(
-                                            title = mealPlanTitle.ifBlank { null },
-                                            dates = dates,
-                                        )
-                                        mealPlans = appState.loadMealPlans()
+                                        isGeneratingMealPlan = true
+                                        try {
+                                            selectedMealPlan = appState.generateMealPlan(
+                                                title = mealPlanTitle.ifBlank { null },
+                                                dates = mealPlanDates,
+                                            )
+                                            mealPlans = appState.loadMealPlans()
+                                            mealPlanTitle = ""
+                                        } finally {
+                                            isGeneratingMealPlan = false
+                                        }
                                     }
                                 },
+                                enabled = !isGeneratingMealPlan && mealPlanDates.isNotEmpty(),
                                 modifier = Modifier.testTag("meal.plan.generate"),
                             ) {
-                                Text("Generate plan")
+                                if (isGeneratingMealPlan) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp,
+                                        )
+                                        Text("Generating...")
+                                    }
+                                } else {
+                                    Text("Generate plan")
+                                }
+                            }
+                            if (isGeneratingMealPlan) {
+                                Text(
+                                    "Checking recipes and stock. This can take a little while.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }
