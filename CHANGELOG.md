@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.33.2](https://github.com/jbg/quartermaster/compare/1.33.1...1.33.2) (2026-06-01)
+
+
+### Bug Fixes
+
+* improve meal plan generation feedback ([c526a58](https://github.com/jbg/quartermaster/commit/c526a58e430d812c31118fedc8a856c54afcb53e))
+
 ## [1.33.1](https://github.com/jbg/quartermaster/compare/1.33.0...1.33.1) (2026-06-01)
 
 
