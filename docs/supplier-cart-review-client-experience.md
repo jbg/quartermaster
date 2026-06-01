@@ -1,11 +1,13 @@
 # Supplier Cart Review Client Experience
 
-Supplier automation can spend money or require account intervention, so Phase 8
-keeps cart submission behind a review surface.
+Supplier automation can spend money or require account intervention, so cart
+submission stays behind a review surface.
 
 ## Goals
 
 - Make replenishment and supplier drafts understandable before submission.
+- Keep grocery automation tied to kitchen replenishment, not general shopping
+  or household errands.
 - Show guardrail decisions, suppressions, estimated costs, supplier mappings,
   and human-intervention states.
 - Require explicit user submission for review drafts.
@@ -69,15 +71,11 @@ Use these selectors or platform equivalents for smoke automation:
   - `cart.order.result`
   - `cart.receive.submit`
 - Android Compose test tags
-  - `smoke-cart-review-screen`
-  - `smoke-cart-generate`
-  - `smoke-cart-guardrail-banner`
-  - `smoke-cart-recommendation-row-{index}`
-  - `smoke-cart-suppression-row-{index}`
-  - `smoke-cart-draft-line-{line_id}`
-  - `smoke-cart-submit`
-  - `smoke-cart-order-result`
-  - `smoke-cart-receive-submit`
+  - `smoke-cook-screen`
+  - `cart.generate`
+  - `cart.row.{line_id}`
+  - `cart.submit`
+  - `cart.receive`
 
 ## Acceptance Criteria
 

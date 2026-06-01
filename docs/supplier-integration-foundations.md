@@ -1,7 +1,7 @@
 # Supplier Integration Foundations
 
-Phase 6 establishes the supplier boundary without binding Quartermaster to a
-real grocery, restaurant, wholesaler, or browser checkout flow yet. The first
+Quartermaster's supplier boundary is established without binding the project to
+a real grocery, restaurant, wholesaler, or browser checkout flow yet. The first
 implementation is intentionally in-tree and mock-backed: it gives API clients,
 database migrations, the job runner, and tests a real contract while avoiding
 spend, credential, and terms-of-service risk before a concrete supplier is
@@ -49,8 +49,8 @@ the stock ledger remains the source of truth.
 
 ## Real Supplier Deferral
 
-No real external supplier ships in this phase. The deterministic mock supplier
-is the executable contract for tests and client development. A first real thin
+No real external supplier ships today. The deterministic mock supplier is the
+executable contract for tests and client development. A first real thin
 integration should be selected only after the supplier, region, account model,
 terms, credential shape, and browser/API requirements are known.
 
