@@ -190,6 +190,13 @@ export type CreateLocationRequest = {
     sort_order?: number | null;
 };
 
+export type CreateMealPlanRequest = {
+    constraints?: unknown;
+    dates: Array<string>;
+    slots?: Array<MealSlotDto>;
+    title: string;
+};
+
 export type CreateOnboardingHouseholdRequest = {
     device_label?: string | null;
     display_name: string;
@@ -547,6 +554,13 @@ export type ExportStorageVessel = {
     updated_at: string;
 };
 
+export type GenerateMealPlanRequest = {
+    constraints?: unknown;
+    dates: Array<string>;
+    slots?: Array<MealSlotDto>;
+    title?: string | null;
+};
+
 export type GeneratedRecipeIdeaDto = {
     description?: string | null;
     explanation?: string | null;
@@ -750,6 +764,67 @@ export type MeResponse = {
     user: UserDto;
 };
 
+export type MealPlanDayDto = {
+    date: string;
+    id: string;
+    meals: Array<MealPlanMealDto>;
+};
+
+export type MealPlanDto = {
+    ai_task_id?: string | null;
+    constraints: unknown;
+    created_at: string;
+    days: Array<MealPlanDayDto>;
+    id: string;
+    status: string;
+    title: string;
+    updated_at: string;
+};
+
+export type MealPlanListResponse = {
+    items: Array<MealPlanSummaryDto>;
+};
+
+export type MealPlanMealDto = {
+    conflicts: Array<string>;
+    date: string;
+    id: string;
+    preflight?: null | RecipeExecutionPreflightResponse;
+    recipe_id?: string | null;
+    recipe_name?: string | null;
+    recipe_version_id?: string | null;
+    reservations: Array<MealPlanReservationDto>;
+    serving_scale: string;
+    slot_key: string;
+    slot_label: string;
+    status: string;
+    warnings: Array<string>;
+};
+
+export type MealPlanReservationDto = {
+    batch_id: string;
+    id: string;
+    product_id: string;
+    quantity: string;
+    status: string;
+    unit: string;
+};
+
+export type MealPlanSummaryDto = {
+    created_at: string;
+    dates: Array<string>;
+    id: string;
+    meal_count: number;
+    status: string;
+    title: string;
+    updated_at: string;
+};
+
+export type MealSlotDto = {
+    key: string;
+    label: string;
+};
+
 export type MeasurementSystem = 'metric' | 'us_customary' | 'australian' | 'imperial';
 
 export type MemberDto = {
@@ -837,7 +912,7 @@ export type PantrySuggestionDto = {
     ai_task_id?: string | null;
     created_at: string;
     created_by?: string | null;
-    generated_recipe?: null | GeneratedRecipeIdeaDto;
+    generated_recipe?: GeneratedRecipeIdeaDto | null;
     id: string;
     missing: Array<PantrySuggestionMissingDto>;
     pantry_items: Array<string>;
@@ -1252,6 +1327,11 @@ export type RecipeVisibility = 'household';
 
 export type RedeemInviteRequest = {
     invite_code: string;
+};
+
+export type RefreshMealPlanResponse = {
+    plan: MealPlanDto;
+    warnings: Array<string>;
 };
 
 export type RefreshRequest = {
@@ -3060,6 +3140,173 @@ export type LocationsUpdateResponses = {
 };
 
 export type LocationsUpdateResponse = LocationsUpdateResponses[keyof LocationsUpdateResponses];
+
+export type MealPlanListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/meal-plans';
+};
+
+export type MealPlanListResponses = {
+    200: MealPlanListResponse;
+};
+
+export type MealPlanListResponse2 = MealPlanListResponses[keyof MealPlanListResponses];
+
+export type MealPlanCreateData = {
+    body: CreateMealPlanRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/meal-plans';
+};
+
+export type MealPlanCreateResponses = {
+    201: MealPlanDto;
+};
+
+export type MealPlanCreateResponse = MealPlanCreateResponses[keyof MealPlanCreateResponses];
+
+export type MealPlanGenerateData = {
+    body: GenerateMealPlanRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/meal-plans/generate';
+};
+
+export type MealPlanGenerateResponses = {
+    201: MealPlanDto;
+};
+
+export type MealPlanGenerateResponse = MealPlanGenerateResponses[keyof MealPlanGenerateResponses];
+
+export type MealPlanDeleteData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/meal-plans/{id}';
+};
+
+export type MealPlanDeleteErrors = {
+    404: ApiErrorBody;
+};
+
+export type MealPlanDeleteError = MealPlanDeleteErrors[keyof MealPlanDeleteErrors];
+
+export type MealPlanDeleteResponses = {
+    204: void;
+};
+
+export type MealPlanDeleteResponse = MealPlanDeleteResponses[keyof MealPlanDeleteResponses];
+
+export type MealPlanGetData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/meal-plans/{id}';
+};
+
+export type MealPlanGetErrors = {
+    404: ApiErrorBody;
+};
+
+export type MealPlanGetError = MealPlanGetErrors[keyof MealPlanGetErrors];
+
+export type MealPlanGetResponses = {
+    200: MealPlanDto;
+};
+
+export type MealPlanGetResponse = MealPlanGetResponses[keyof MealPlanGetResponses];
+
+export type MealPlanUpdateData = {
+    body: CreateMealPlanRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/meal-plans/{id}';
+};
+
+export type MealPlanUpdateErrors = {
+    404: ApiErrorBody;
+};
+
+export type MealPlanUpdateError = MealPlanUpdateErrors[keyof MealPlanUpdateErrors];
+
+export type MealPlanUpdateResponses = {
+    200: MealPlanDto;
+};
+
+export type MealPlanUpdateResponse = MealPlanUpdateResponses[keyof MealPlanUpdateResponses];
+
+export type MealPlanMealExecuteData = {
+    body?: never;
+    path: {
+        id: string;
+        meal_id: string;
+    };
+    query?: never;
+    url: '/api/v1/meal-plans/{id}/meals/{meal_id}/execute';
+};
+
+export type MealPlanMealExecuteErrors = {
+    404: ApiErrorBody;
+};
+
+export type MealPlanMealExecuteError = MealPlanMealExecuteErrors[keyof MealPlanMealExecuteErrors];
+
+export type MealPlanMealExecuteResponses = {
+    200: RecipeExecutionResponse;
+};
+
+export type MealPlanMealExecuteResponse = MealPlanMealExecuteResponses[keyof MealPlanMealExecuteResponses];
+
+export type MealPlanMealSkipData = {
+    body?: never;
+    path: {
+        id: string;
+        meal_id: string;
+    };
+    query?: never;
+    url: '/api/v1/meal-plans/{id}/meals/{meal_id}/skip';
+};
+
+export type MealPlanMealSkipErrors = {
+    404: ApiErrorBody;
+};
+
+export type MealPlanMealSkipError = MealPlanMealSkipErrors[keyof MealPlanMealSkipErrors];
+
+export type MealPlanMealSkipResponses = {
+    200: MealPlanDto;
+};
+
+export type MealPlanMealSkipResponse = MealPlanMealSkipResponses[keyof MealPlanMealSkipResponses];
+
+export type MealPlanRefreshData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/meal-plans/{id}/refresh';
+};
+
+export type MealPlanRefreshErrors = {
+    404: ApiErrorBody;
+};
+
+export type MealPlanRefreshError = MealPlanRefreshErrors[keyof MealPlanRefreshErrors];
+
+export type MealPlanRefreshResponses = {
+    200: RefreshMealPlanResponse;
+};
+
+export type MealPlanRefreshResponse = MealPlanRefreshResponses[keyof MealPlanRefreshResponses];
 
 export type OnboardingCreateHouseholdData = {
     body: CreateOnboardingHouseholdRequest;

@@ -353,6 +353,36 @@ import UIKit
           #"{"context":{"inventory":[],"excluded_product_ids":[],"excluded_location_ids":[],"dietary_constraints":[],"equipment":[]},"suggestions":[\#(pantrySuggestionJSON)],"generation_task":null,"warnings":[]}"#
       )
     }
+
+    func mealPlans() async throws -> [MealPlanSummary] {
+      let response: MealPlanListResponse = try decodeFixture(
+        from:
+          #"{"items":[{"id":"99999999-9999-9999-9999-999999999951","title":"Smoke meal plan","status":"active","dates":["2026-06-02","2026-06-04"],"meal_count":2,"created_at":"2026-06-01T00:00:00Z","updated_at":"2026-06-01T00:00:00Z"}]}"#
+      )
+      return response.items
+    }
+
+    func getMealPlan(id: String) async throws -> MealPlan {
+      try decodeFixture(from: mealPlanJSON)
+    }
+
+    func generateMealPlan(title: String?, dates: [String]) async throws -> MealPlan {
+      try decodeFixture(from: mealPlanJSON)
+    }
+
+    func refreshMealPlan(id: String) async throws -> MealPlan {
+      try decodeFixture(from: mealPlanJSON)
+    }
+
+    func executeMealPlanMeal(planID: String, mealID: String) async throws
+      -> RecipeExecutionResult
+    {
+      try decodeFixture(from: recipeExecutionJSON)
+    }
+
+    func skipMealPlanMeal(planID: String, mealID: String) async throws -> MealPlan {
+      try decodeFixture(from: mealPlanJSON)
+    }
     func generateCartDraft() async throws -> ReplenishmentCreateCartDraftResponse {
       try decodeFixture(
         from:
@@ -639,6 +669,46 @@ import UIKit
         "generated_recipe": null,
         "created_at": "2026-01-01T00:00:00Z",
         "updated_at": "2026-01-01T00:00:00Z"
+      }
+      """
+    }
+
+    private var mealPlanJSON: String {
+      """
+      {
+        "id": "99999999-9999-9999-9999-999999999951",
+        "title": "Smoke meal plan",
+        "status": "active",
+        "constraints": {},
+        "ai_task_id": null,
+        "created_at": "2026-06-01T00:00:00Z",
+        "updated_at": "2026-06-01T00:00:00Z",
+        "days": [{
+          "id": "99999999-9999-9999-9999-999999999952",
+          "date": "2026-06-02",
+          "meals": [{
+            "id": "99999999-9999-9999-9999-999999999953",
+            "date": "2026-06-02",
+            "slot_key": "dinner",
+            "slot_label": "Dinner",
+            "recipe_id": "99999999-9999-9999-9999-999999999901",
+            "recipe_version_id": "99999999-9999-9999-9999-999999999902",
+            "recipe_name": "Smoke Recipe Rice Bowl",
+            "serving_scale": "1",
+            "status": "planned",
+            "preflight": \(recipePreflightJSON),
+            "warnings": [],
+            "conflicts": [],
+            "reservations": [{
+              "id": "99999999-9999-9999-9999-999999999954",
+              "batch_id": "\(activeBatchID)",
+              "product_id": "11111111-1111-1111-1111-111111111111",
+              "quantity": "50",
+              "unit": "g",
+              "status": "active"
+            }]
+          }]
+        }]
       }
       """
     }

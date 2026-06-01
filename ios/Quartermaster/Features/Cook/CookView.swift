@@ -10,6 +10,11 @@ struct CookView: View {
   @State private var suggestions: [PantrySuggestion] = []
   @State private var selectedSuggestion: PantrySuggestion?
   @State private var suggestionWarnings: [String] = []
+  @State private var mealPlans: [MealPlanSummary] = []
+  @State private var selectedMealPlan: MealPlan?
+  @State private var mealPlanDates: [String] = []
+  @State private var mealPlanDate = Date()
+  @State private var mealPlanTitle = ""
   @State private var canGenerateRecipeIdeas = false
   @State private var cartRun: ReplenishmentCartRun?
   @State private var cartDraft: SupplierCartDraft?
@@ -23,6 +28,7 @@ struct CookView: View {
   enum CookSection: String, CaseIterable, Identifiable {
     case suggestions = "Suggestions"
     case recipes = "Recipes"
+    case mealPlans = "Meal Plans"
     case shopping = "Shopping"
     var id: String { rawValue }
   }
@@ -44,6 +50,8 @@ struct CookView: View {
           recipeList
         case .suggestions:
           suggestionList
+        case .mealPlans:
+          mealPlanList
         case .shopping:
           shoppingReview
         }
@@ -285,6 +293,77 @@ struct CookView: View {
     .accessibilityIdentifier("cart.review")
   }
 
+  private var mealPlanList: some View {
+    List {
+      Section("Generate") {
+        TextField("Title", text: $mealPlanTitle)
+        DatePicker("Date", selection: $mealPlanDate, displayedComponents: .date)
+        Button("Add date") {
+          let value = Self.dateFormatter.string(from: mealPlanDate)
+          if !mealPlanDates.contains(value) {
+            mealPlanDates.append(value)
+            mealPlanDates.sort()
+          }
+        }
+        if !mealPlanDates.isEmpty {
+          ForEach(mealPlanDates, id: \.self) { date in
+            HStack {
+              Text(date)
+              Spacer()
+              Button("Remove") { mealPlanDates.removeAll { $0 == date } }
+                .buttonStyle(.borderless)
+            }
+          }
+        }
+        Button("Generate meal plan") {
+          Task { await generateMealPlan() }
+        }
+        .disabled(isLoading || mealPlanDates.isEmpty)
+        .accessibilityIdentifier("meal.plan.generate")
+      }
+
+      Section("Plans") {
+        if mealPlans.isEmpty {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("No meal plans yet")
+              .font(.headline)
+            Text("Choose non-contiguous dates and reserve stock for planned meals.")
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
+          }
+        } else {
+          ForEach(mealPlans) { plan in
+            Button {
+              Task { await openMealPlan(plan.id) }
+            } label: {
+              VStack(alignment: .leading) {
+                Text(plan.title)
+                Text("\(plan.dates.joined(separator: ", ")) - \(plan.mealCount) meals")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+            }
+            .accessibilityIdentifier("meal.plan.row.\(plan.id)")
+          }
+        }
+      }
+
+      if let selectedMealPlan {
+        MealPlanDetailSection(
+          plan: selectedMealPlan,
+          isLoading: isLoading,
+          onRefresh: { Task { await refreshMealPlan(selectedMealPlan.id) } },
+          onCook: { mealID in
+            Task { await cookMealPlanMeal(planID: selectedMealPlan.id, mealID: mealID) }
+          },
+          onSkip: { mealID in
+            Task { await skipMealPlanMeal(planID: selectedMealPlan.id, mealID: mealID) }
+          })
+      }
+    }
+    .accessibilityIdentifier("meal.plan.list")
+  }
+
   private func loadInitial() async {
     isLoading = true
     defer { isLoading = false }
@@ -292,10 +371,12 @@ struct CookView: View {
       async let recipeTask = appState.api.recipes()
       async let locationTask = appState.api.locations()
       async let suggestionTask = appState.api.pantrySuggestions()
+      async let mealPlanTask = appState.api.mealPlans()
       async let aiStatusTask = appState.api.aiStatus()
       recipes = try await recipeTask
       locations = try await locationTask
       suggestions = try await suggestionTask
+      mealPlans = try await mealPlanTask
       if let aiStatus = try? await aiStatusTask {
         canGenerateRecipeIdeas = aiStatus.enabled && aiStatus.configured
       } else {
@@ -363,6 +444,62 @@ struct CookView: View {
     }
   }
 
+  private func generateMealPlan() async {
+    isLoading = true
+    defer { isLoading = false }
+    do {
+      let plan = try await appState.api.generateMealPlan(
+        title: mealPlanTitle.isEmpty ? nil : mealPlanTitle,
+        dates: mealPlanDates)
+      selectedMealPlan = plan
+      mealPlans = try await appState.api.mealPlans()
+      mealPlanTitle = ""
+    } catch {
+      errorMessage = userMessage(error)
+    }
+  }
+
+  private func openMealPlan(_ id: String) async {
+    do {
+      selectedMealPlan = try await appState.api.getMealPlan(id: id)
+    } catch {
+      errorMessage = userMessage(error)
+    }
+  }
+
+  private func refreshMealPlan(_ id: String) async {
+    do {
+      selectedMealPlan = try await appState.api.refreshMealPlan(id: id)
+    } catch {
+      errorMessage = userMessage(error)
+    }
+  }
+
+  private func cookMealPlanMeal(planID: String, mealID: String) async {
+    do {
+      _ = try await appState.api.executeMealPlanMeal(planID: planID, mealID: mealID)
+      selectedMealPlan = try await appState.api.getMealPlan(id: planID)
+    } catch {
+      errorMessage = userMessage(error)
+    }
+  }
+
+  private func skipMealPlanMeal(planID: String, mealID: String) async {
+    do {
+      selectedMealPlan = try await appState.api.skipMealPlanMeal(planID: planID, mealID: mealID)
+    } catch {
+      errorMessage = userMessage(error)
+    }
+  }
+
+  private static let dateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter
+  }()
+
   private func generateCart() async {
     do {
       let response = try await appState.api.generateCartDraft()
@@ -404,6 +541,55 @@ struct CookView: View {
 
   private func userMessage(_ error: Error) -> String {
     (error as? APIError)?.userFacingMessage ?? error.localizedDescription
+  }
+}
+
+private struct MealPlanDetailSection: View {
+  let plan: MealPlan
+  let isLoading: Bool
+  let onRefresh: () -> Void
+  let onCook: (String) -> Void
+  let onSkip: (String) -> Void
+
+  var body: some View {
+    Section {
+      Button("Refresh reservations", action: onRefresh)
+        .disabled(isLoading)
+      ForEach(plan.days) { day in
+        VStack(alignment: .leading, spacing: 10) {
+          Text(day.date)
+            .font(.headline)
+          ForEach(day.meals) { meal in
+            VStack(alignment: .leading, spacing: 6) {
+              HStack {
+                Text(meal.slotLabel)
+                  .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(meal.status)
+                  .font(.caption)
+                  .foregroundStyle(meal.status == "conflicted" ? .orange : .secondary)
+              }
+              Text(meal.recipeName ?? "Unassigned meal")
+              if !meal.reservations.isEmpty {
+                Text("\(meal.reservations.count) stock reservations")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+              HStack {
+                Button("Cook") { onCook(meal.id) }
+                  .disabled(isLoading || meal.status != "planned")
+                Button("Skip") { onSkip(meal.id) }
+                  .disabled(isLoading || meal.status == "skipped")
+              }
+              .buttonStyle(.borderless)
+            }
+            .padding(.vertical, 4)
+          }
+        }
+      }
+    } header: {
+      Text(plan.title)
+    }
   }
 }
 

@@ -8,6 +8,7 @@ pub mod join;
 pub mod label_printers;
 pub mod locations;
 pub mod maintenance;
+pub mod meal_plans;
 pub mod onboarding;
 pub mod pantry;
 pub mod patch;

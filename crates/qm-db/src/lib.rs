@@ -24,6 +24,7 @@ pub mod invites;
 pub mod jobs;
 pub mod label_printers;
 pub mod locations;
+pub mod meal_plans;
 pub mod memberships;
 pub mod off_credentials;
 pub mod pantry_suggestions;

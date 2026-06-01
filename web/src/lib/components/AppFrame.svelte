@@ -8,6 +8,7 @@
     | 'inventory'
     | 'products'
     | 'recipes'
+    | 'meal-plans'
     | 'automation'
     | 'reminders'
     | 'settings';
@@ -45,6 +46,7 @@
     { key: 'inventory', label: 'Inventory', href: appPath('/', page.url) },
     { key: 'products', label: 'Products', href: appPath('/products', page.url) },
     { key: 'recipes', label: 'Recipes', href: appPath('/recipes', page.url) },
+    { key: 'meal-plans', label: 'Meal Plans', href: appPath('/meal-plans', page.url) },
     { key: 'automation', label: 'Shopping', href: appPath('/suppliers/review', page.url) },
     { key: 'reminders', label: 'Reminders', href: appPath('/reminders', page.url) },
     { key: 'settings', label: 'Settings', href: appPath('/settings', page.url) }

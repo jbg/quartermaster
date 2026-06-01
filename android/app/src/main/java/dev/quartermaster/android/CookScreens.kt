@@ -13,6 +13,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +25,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import dev.quartermaster.android.generated.models.MealPlanDto
+import dev.quartermaster.android.generated.models.MealPlanSummaryDto
 import dev.quartermaster.android.generated.models.PantrySuggestionDto
 import dev.quartermaster.android.generated.models.RecipeDto
 import dev.quartermaster.android.generated.models.RecipeExecutionPreflightResponse
@@ -36,6 +39,7 @@ import kotlinx.coroutines.launch
 private enum class CookSection {
     Recipes,
     Suggestions,
+    Plans,
     Shopping,
 }
 
@@ -43,6 +47,7 @@ private val CookSection.label: String
     get() = when (this) {
         CookSection.Recipes -> "Recipes"
         CookSection.Suggestions -> "Suggestions"
+        CookSection.Plans -> "Plans"
         CookSection.Shopping -> "Shopping"
     }
 
@@ -57,6 +62,10 @@ internal fun CookScreen(
     var recipes by remember { mutableStateOf<List<RecipeSummaryDto>>(emptyList()) }
     var suggestions by remember { mutableStateOf<List<PantrySuggestionDto>>(emptyList()) }
     var suggestionWarnings by remember { mutableStateOf<List<String>>(emptyList()) }
+    var mealPlans by remember { mutableStateOf<List<MealPlanSummaryDto>>(emptyList()) }
+    var selectedMealPlan by remember { mutableStateOf<MealPlanDto?>(null) }
+    var mealPlanTitle by remember { mutableStateOf("") }
+    var mealPlanDates by remember { mutableStateOf("") }
     var selectedRecipe by remember { mutableStateOf<RecipeDto?>(null) }
     var preflight by remember { mutableStateOf<RecipeExecutionPreflightResponse?>(null) }
     var execution by remember { mutableStateOf<RecipeExecutionResponse?>(null) }
@@ -76,6 +85,7 @@ internal fun CookScreen(
     LaunchedEffect(appState.currentHouseholdId) {
         recipes = runCatching { appState.loadCookRecipes() }.getOrDefault(emptyList())
         suggestions = runCatching { appState.loadPantrySuggestions() }.getOrDefault(emptyList())
+        mealPlans = runCatching { appState.loadMealPlans() }.getOrDefault(emptyList())
     }
 
     LazyColumn(
@@ -204,6 +214,87 @@ internal fun CookScreen(
                             warning,
                             modifier = Modifier.testTag("pantry.suggestion.warning.$index"),
                             color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
+            CookSection.Plans -> {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text("Generate meal plan", style = MaterialTheme.typography.titleMedium)
+                            OutlinedTextField(
+                                value = mealPlanTitle,
+                                onValueChange = { mealPlanTitle = it },
+                                label = { Text("Title") },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            OutlinedTextField(
+                                value = mealPlanDates,
+                                onValueChange = { mealPlanDates = it },
+                                label = { Text("Dates, comma separated") },
+                                placeholder = { Text("2026-06-02, 2026-06-04") },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Button(
+                                onClick = {
+                                    launchCook {
+                                        val dates = mealPlanDates
+                                            .split(",")
+                                            .map { it.trim() }
+                                            .filter { it.isNotEmpty() }
+                                        selectedMealPlan = appState.generateMealPlan(
+                                            title = mealPlanTitle.ifBlank { null },
+                                            dates = dates,
+                                        )
+                                        mealPlans = appState.loadMealPlans()
+                                    }
+                                },
+                                modifier = Modifier.testTag("meal.plan.generate"),
+                            ) {
+                                Text("Generate plan")
+                            }
+                        }
+                    }
+                }
+                if (mealPlans.isEmpty()) {
+                    item {
+                        StatusCard(
+                            title = "No meal plans yet",
+                            message = "Generate a saved plan for the dates you will be home.",
+                        )
+                    }
+                }
+                items(mealPlans, key = { it.id.toString() }) { plan ->
+                    MealPlanRow(
+                        plan = plan,
+                        selected = selectedMealPlan?.id == plan.id,
+                        onClick = {
+                            launchCook { selectedMealPlan = appState.loadMealPlan(plan.id.toString()) }
+                        },
+                    )
+                }
+                selectedMealPlan?.let { plan ->
+                    item {
+                        MealPlanDetailCard(
+                            plan = plan,
+                            onRefresh = {
+                                launchCook { selectedMealPlan = appState.refreshMealPlan(plan.id.toString()) }
+                            },
+                            onCook = { mealId ->
+                                launchCook {
+                                    appState.executeMealPlanMeal(plan.id.toString(), mealId)
+                                    selectedMealPlan = appState.loadMealPlan(plan.id.toString())
+                                }
+                            },
+                            onSkip = { mealId ->
+                                launchCook {
+                                    selectedMealPlan = appState.skipMealPlanMeal(plan.id.toString(), mealId)
+                                }
+                            },
                         )
                     }
                 }
@@ -337,6 +428,72 @@ private fun RecipeDetailCard(
                 }
             }
             execution?.let { Text("Cooked ${it.executionId}") }
+        }
+    }
+}
+
+@Composable
+private fun MealPlanRow(
+    plan: MealPlanSummaryDto,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("meal.plan.row.${plan.id}")
+            .clickable(onClick = onClick),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(plan.title, style = MaterialTheme.typography.titleMedium)
+            Text("${plan.dates.joinToString()} - ${plan.mealCount} meals - ${plan.status}")
+            if (selected) Text("Selected", color = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+@Composable
+private fun MealPlanDetailCard(
+    plan: MealPlanDto,
+    onRefresh: () -> Unit,
+    onCook: (String) -> Unit,
+    onSkip: (String) -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(plan.title, style = MaterialTheme.typography.titleLarge)
+                OutlinedButton(onClick = onRefresh) { Text("Refresh") }
+            }
+            plan.days.forEach { day ->
+                Text(day.date, style = MaterialTheme.typography.titleMedium)
+                day.meals.forEach { meal ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("${meal.slotLabel}: ${meal.recipeName ?: "Unassigned"}")
+                        Text("${meal.status} - ${meal.reservations.size} reservations")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { onCook(meal.id.toString()) },
+                                enabled = meal.status == "planned",
+                            ) {
+                                Text("Cook")
+                            }
+                            OutlinedButton(
+                                onClick = { onSkip(meal.id.toString()) },
+                                enabled = meal.status != "skipped",
+                            ) {
+                                Text("Skip")
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

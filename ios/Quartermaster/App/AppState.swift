@@ -129,6 +129,12 @@ protocol AppStateAPI: Actor {
   func aiStatus() async throws -> AiStatus
   func pantrySuggestions() async throws -> [PantrySuggestion]
   func createPantrySuggestions(generateRecipeIdeas: Bool) async throws -> PantrySuggestionsResponse
+  func mealPlans() async throws -> [MealPlanSummary]
+  func getMealPlan(id: String) async throws -> MealPlan
+  func generateMealPlan(title: String?, dates: [String]) async throws -> MealPlan
+  func refreshMealPlan(id: String) async throws -> MealPlan
+  func executeMealPlanMeal(planID: String, mealID: String) async throws -> RecipeExecutionResult
+  func skipMealPlanMeal(planID: String, mealID: String) async throws -> MealPlan
   func generateCartDraft() async throws -> ReplenishmentCreateCartDraftResponse
   func getCartRun(id: String) async throws -> ReplenishmentCartRun
   func getSupplierCartDraft(id: String) async throws -> SupplierCartDraft

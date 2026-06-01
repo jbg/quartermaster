@@ -21,6 +21,8 @@ import dev.quartermaster.android.generated.models.HouseholdDetailDto
 import dev.quartermaster.android.generated.models.InviteDto
 import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.MeResponse
+import dev.quartermaster.android.generated.models.MealPlanDto
+import dev.quartermaster.android.generated.models.MealPlanSummaryDto
 import dev.quartermaster.android.generated.models.MeasurementSystem
 import dev.quartermaster.android.generated.models.MembershipRole
 import dev.quartermaster.android.generated.models.OffContributionPreviewResponse
@@ -285,6 +287,12 @@ interface QuartermasterBackend {
     suspend fun executeRecipe(id: String, allowPartial: Boolean = false): RecipeExecutionResponse
     suspend fun listPantrySuggestions(): List<PantrySuggestionDto>
     suspend fun createPantrySuggestions(generateRecipeIdeas: Boolean): PantrySuggestionsResponse
+    suspend fun listMealPlans(): List<MealPlanSummaryDto>
+    suspend fun getMealPlan(id: String): MealPlanDto
+    suspend fun generateMealPlan(title: String?, dates: List<String>): MealPlanDto
+    suspend fun refreshMealPlan(id: String): MealPlanDto
+    suspend fun executeMealPlanMeal(planId: String, mealId: String): RecipeExecutionResponse
+    suspend fun skipMealPlanMeal(planId: String, mealId: String): MealPlanDto
     suspend fun generateReplenishmentCartDraft(): ReplenishmentCreateCartDraftResponse
     suspend fun getReplenishmentCartRun(id: String): ReplenishmentCartRunDto
     suspend fun getSupplierCartDraft(id: String): SupplierCartDraftDto
@@ -475,6 +483,12 @@ class QuartermasterApiBackend(
     override suspend fun executeRecipe(id: String, allowPartial: Boolean): RecipeExecutionResponse = api.executeRecipe(id, allowPartial)
     override suspend fun listPantrySuggestions(): List<PantrySuggestionDto> = api.listPantrySuggestions()
     override suspend fun createPantrySuggestions(generateRecipeIdeas: Boolean): PantrySuggestionsResponse = api.createPantrySuggestions(generateRecipeIdeas)
+    override suspend fun listMealPlans(): List<MealPlanSummaryDto> = api.listMealPlans()
+    override suspend fun getMealPlan(id: String): MealPlanDto = api.getMealPlan(id)
+    override suspend fun generateMealPlan(title: String?, dates: List<String>): MealPlanDto = api.generateMealPlan(title, dates)
+    override suspend fun refreshMealPlan(id: String): MealPlanDto = api.refreshMealPlan(id)
+    override suspend fun executeMealPlanMeal(planId: String, mealId: String): RecipeExecutionResponse = api.executeMealPlanMeal(planId, mealId)
+    override suspend fun skipMealPlanMeal(planId: String, mealId: String): MealPlanDto = api.skipMealPlanMeal(planId, mealId)
     override suspend fun generateReplenishmentCartDraft(): ReplenishmentCreateCartDraftResponse = api.generateReplenishmentCartDraft()
     override suspend fun getReplenishmentCartRun(id: String): ReplenishmentCartRunDto = api.getReplenishmentCartRun(id)
     override suspend fun getSupplierCartDraft(id: String): SupplierCartDraftDto = api.getSupplierCartDraft(id)
@@ -1171,6 +1185,30 @@ class QuartermasterAppState(
 
     suspend fun createPantrySuggestions(generateRecipeIdeas: Boolean): PantrySuggestionsResponse = runCookRequest {
         backend.createPantrySuggestions(generateRecipeIdeas)
+    }
+
+    suspend fun loadMealPlans(): List<MealPlanSummaryDto> = runCookRequest {
+        backend.listMealPlans()
+    }
+
+    suspend fun loadMealPlan(id: String): MealPlanDto = runCookRequest {
+        backend.getMealPlan(id)
+    }
+
+    suspend fun generateMealPlan(title: String?, dates: List<String>): MealPlanDto = runCookRequest {
+        backend.generateMealPlan(title, dates)
+    }
+
+    suspend fun refreshMealPlan(id: String): MealPlanDto = runCookRequest {
+        backend.refreshMealPlan(id)
+    }
+
+    suspend fun executeMealPlanMeal(planId: String, mealId: String): RecipeExecutionResponse = runCookRequest {
+        backend.executeMealPlanMeal(planId, mealId).also { refreshInventory(force = true) }
+    }
+
+    suspend fun skipMealPlanMeal(planId: String, mealId: String): MealPlanDto = runCookRequest {
+        backend.skipMealPlanMeal(planId, mealId)
     }
 
     suspend fun generateCookCartDraft(): ReplenishmentCreateCartDraftResponse = runCookRequest {

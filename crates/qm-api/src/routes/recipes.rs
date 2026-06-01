@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 use axum::{
     extract::{Path, State},
@@ -390,11 +390,21 @@ pub async fn create(
 ) -> ApiResult<(StatusCode, Json<RecipeDto>)> {
     let household_id = current.household_id.ok_or(ApiError::Forbidden)?;
     auth::require_read_write(&current)?;
-    let actor = current.user_id;
-    let sanitized = validate_recipe_request(&state, household_id, req).await?;
-    let new = sanitized.as_new();
-    let row = qm_db::recipes::create(&state.db, household_id, actor, &new).await?;
+    let row = create_recipe_from_request(&state, household_id, current.user_id, req).await?;
     Ok((StatusCode::CREATED, Json(full_into_dto(row)?)))
+}
+
+pub(crate) async fn create_recipe_from_request(
+    state: &AppState,
+    household_id: Uuid,
+    actor: Uuid,
+    req: CreateRecipeRequest,
+) -> ApiResult<RecipeFull> {
+    let sanitized = validate_recipe_request(state, household_id, req).await?;
+    let new = sanitized.as_new();
+    qm_db::recipes::create(&state.db, household_id, actor, &new)
+        .await
+        .map_err(ApiError::from)
 }
 
 #[utoipa::path(
@@ -693,6 +703,8 @@ pub async fn execute(
         id: execution_id,
         recipe_id: req.recipe_id,
         recipe_version_id: req.recipe_version_id,
+        meal_plan_id: None,
+        meal_plan_meal_id: None,
         recipe_name: req.recipe_name.as_deref(),
         serving_scale: &serving_scale,
         idempotency_key,
@@ -1519,6 +1531,15 @@ async fn build_preflight(
     household_id: Uuid,
     req: &RecipeExecutionRequest,
 ) -> ApiResult<RecipeExecutionPreflightResponse> {
+    build_preflight_with_reserved_quantities(state, household_id, req, &HashMap::new()).await
+}
+
+pub(crate) async fn build_preflight_with_reserved_quantities(
+    state: &AppState,
+    household_id: Uuid,
+    req: &RecipeExecutionRequest,
+    reserved_by_batch_id: &HashMap<Uuid, Decimal>,
+) -> ApiResult<RecipeExecutionPreflightResponse> {
     let serving_scale = req.serving_scale.as_deref().unwrap_or("1");
     validate_positive_decimal_field("serving_scale", serving_scale)?;
     if req.ingredients.is_empty() && req.outputs.is_empty() {
@@ -1572,8 +1593,11 @@ async fn build_preflight(
             if remaining <= Decimal::ZERO {
                 break;
             }
-            let available = Decimal::from_str(&batch.quantity)
+            let mut available = Decimal::from_str(&batch.quantity)
                 .map_err(|err| ApiError::Internal(anyhow::Error::from(err)))?;
+            if let Some(reserved) = reserved_by_batch_id.get(&batch.id) {
+                available -= *reserved;
+            }
             if available <= Decimal::ZERO {
                 continue;
             }
@@ -1775,7 +1799,40 @@ async fn resolve_execution_ingredient(
     }))
 }
 
-fn consumption_from_plan(
+pub(crate) fn execution_request_from_recipe(row: &RecipeFull) -> ApiResult<RecipeExecutionRequest> {
+    let mut ingredients = Vec::new();
+    for ingredient in &row.ingredients {
+        let quantity = quantity_from_ingredient(ingredient)?;
+        let (Some(amount), Some(unit)) = (quantity.amount, quantity.unit) else {
+            continue;
+        };
+        ingredients.push(RecipeExecutionIngredientRequest {
+            line_id: Some(ingredient.id.to_string()),
+            display_name: Some(ingredient.display_name.clone()),
+            ingredient_id: ingredient.ingredient_id,
+            product_id: ingredient.product_id,
+            location_id: None,
+            quantity: amount,
+            unit,
+            optional: ingredient.optional,
+            substitution_of: None,
+            preparation: ingredient.preparation.clone(),
+        });
+    }
+    Ok(RecipeExecutionRequest {
+        recipe_id: Some(row.recipe.id),
+        recipe_version_id: Some(row.version.id),
+        recipe_name: Some(row.recipe.name.clone()),
+        serving_scale: Some("1".to_owned()),
+        ingredients,
+        outputs: Vec::new(),
+        use_expiring_first: Some(true),
+        allow_partial: Some(false),
+        idempotency_key: None,
+    })
+}
+
+pub(crate) fn consumption_from_plan(
     plan: &RecipeExecutionPreflightResponse,
 ) -> ApiResult<Vec<BatchConsumption>> {
     let mut consumption = Vec::new();

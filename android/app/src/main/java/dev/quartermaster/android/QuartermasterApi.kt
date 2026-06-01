@@ -23,6 +23,9 @@ import dev.quartermaster.android.generated.models.LabelPrintStatus
 import dev.quartermaster.android.generated.models.LocationDto
 import dev.quartermaster.android.generated.models.LoginRequest
 import dev.quartermaster.android.generated.models.MeResponse
+import dev.quartermaster.android.generated.models.MealPlanDto
+import dev.quartermaster.android.generated.models.MealPlanListResponse
+import dev.quartermaster.android.generated.models.MealPlanSummaryDto
 import dev.quartermaster.android.generated.models.MeasurementSystem
 import dev.quartermaster.android.generated.models.MemberDto
 import dev.quartermaster.android.generated.models.OffContributionPreviewResponse
@@ -40,6 +43,7 @@ import dev.quartermaster.android.generated.models.ProductDto
 import dev.quartermaster.android.generated.models.ProductSearchResponse
 import dev.quartermaster.android.generated.models.PushAuthorizationStatus
 import dev.quartermaster.android.generated.models.RecipeDto
+import dev.quartermaster.android.generated.models.RecipeExecutionIngredientRequest
 import dev.quartermaster.android.generated.models.RecipeExecutionPreflightResponse
 import dev.quartermaster.android.generated.models.RecipeExecutionRequest
 import dev.quartermaster.android.generated.models.RecipeExecutionResponse
@@ -201,6 +205,30 @@ data class PantrySuggestionsRequest(
     val maxMissingRequired: Long = 2,
     @SerialName("max_ai_suggestions")
     val maxAiSuggestions: Long = 2,
+)
+
+@Serializable
+data class MealPlanSlotRequest(
+    val key: String,
+    val label: String,
+)
+
+@Serializable
+data class MealPlanGenerateRequest(
+    val title: String? = null,
+    val dates: List<String>,
+    val slots: List<MealPlanSlotRequest> = listOf(
+        MealPlanSlotRequest("breakfast", "Breakfast"),
+        MealPlanSlotRequest("lunch", "Lunch"),
+        MealPlanSlotRequest("dinner", "Dinner"),
+    ),
+    val constraints: Map<String, String> = emptyMap(),
+)
+
+@Serializable
+data class MealPlanRefreshResponse(
+    val plan: MealPlanDto,
+    val warnings: List<String> = emptyList(),
 )
 
 @Serializable
@@ -630,7 +658,7 @@ class QuartermasterApi(
     ): RecipeExecutionPreflightResponse = authedJson(
         method = "POST",
         path = "/recipes/executions/preflight",
-        body = recipeExecutionRequest(recipeId = recipeId, allowPartial = allowPartial),
+        body = recipeExecutionRequest(recipe = getRecipe(recipeId), allowPartial = allowPartial),
     )
 
     suspend fun executeRecipe(
@@ -639,7 +667,35 @@ class QuartermasterApi(
     ): RecipeExecutionResponse = authedJson(
         method = "POST",
         path = "/recipes/executions",
-        body = recipeExecutionRequest(recipeId = recipeId, allowPartial = allowPartial),
+        body = recipeExecutionRequest(recipe = getRecipe(recipeId), allowPartial = allowPartial),
+    )
+
+    suspend fun listMealPlans(): List<MealPlanSummaryDto> = authedJson<MealPlanListResponse>("GET", "/meal-plans").items
+
+    suspend fun getMealPlan(id: String): MealPlanDto = authedJson(
+        method = "GET",
+        path = "/meal-plans/${id.urlEncode()}",
+    )
+
+    suspend fun generateMealPlan(title: String?, dates: List<String>): MealPlanDto = authedJson(
+        method = "POST",
+        path = "/meal-plans/generate",
+        body = MealPlanGenerateRequest(title = title, dates = dates),
+    )
+
+    suspend fun refreshMealPlan(id: String): MealPlanDto = authedJson<MealPlanRefreshResponse>(
+        method = "POST",
+        path = "/meal-plans/${id.urlEncode()}/refresh",
+    ).plan
+
+    suspend fun executeMealPlanMeal(planId: String, mealId: String): RecipeExecutionResponse = authedJson(
+        method = "POST",
+        path = "/meal-plans/${planId.urlEncode()}/meals/${mealId.urlEncode()}/execute",
+    )
+
+    suspend fun skipMealPlanMeal(planId: String, mealId: String): MealPlanDto = authedJson(
+        method = "POST",
+        path = "/meal-plans/${planId.urlEncode()}/meals/${mealId.urlEncode()}/skip",
     )
 
     suspend fun generateReplenishmentCartDraft(): ReplenishmentCreateCartDraftResponse = authedJson(
@@ -880,14 +936,31 @@ class QuartermasterApi(
     )
 
     private fun recipeExecutionRequest(
-        recipeId: String,
+        recipe: RecipeDto,
         allowPartial: Boolean,
     ) = RecipeExecutionRequest(
-        recipeId = UUID.fromString(recipeId),
+        recipeId = recipe.id,
+        recipeVersionId = recipe.version.id,
+        recipeName = recipe.name,
         allowPartial = allowPartial,
         servingScale = "1",
         useExpiringFirst = true,
-        ingredients = emptyList(),
+        ingredients = recipe.version.ingredients.mapNotNull { ingredient ->
+            val amount = ingredient.quantity.amount ?: return@mapNotNull null
+            val unit = ingredient.quantity.unit ?: return@mapNotNull null
+            RecipeExecutionIngredientRequest(
+                lineId = ingredient.id?.toString() ?: ingredient.displayName,
+                displayName = ingredient.displayName,
+                ingredientId = ingredient.ingredientId,
+                productId = ingredient.productId,
+                locationId = null,
+                quantity = amount,
+                unit = unit,
+                optional = ingredient.optional ?: false,
+                substitutionOf = null,
+                preparation = ingredient.preparation,
+            )
+        },
         outputs = emptyList(),
     )
 
