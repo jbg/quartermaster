@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.33.3](https://github.com/jbg/quartermaster/compare/1.33.2...1.33.3) (2026-06-03)
+
+
+### Bug Fixes
+
+* stabilize Maven metadata audit fetches ([90a5d36](https://github.com/jbg/quartermaster/commit/90a5d3616258b4d4e84fe697a3ffbcc4feca7ec9))
+
 ## [1.33.2](https://github.com/jbg/quartermaster/compare/1.33.1...1.33.2) (2026-06-01)
 
 
