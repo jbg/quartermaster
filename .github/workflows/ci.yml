@@ -139,12 +139,53 @@ jobs:
       - name: Install swift-format
         run: brew install swift-format
 
+      - name: Install iOS dependency policy tools
+        run: |
+          brew install trivy
+          gem install bundler-audit
+          ruby -e 'puts Gem.bindir' >> "$GITHUB_PATH"
+
       - name: Check Swift formatting
         run: swift-format lint --strict --recursive ios/Quartermaster ios/QuartermasterTests
+
+      - name: Install Ruby dependencies
+        working-directory: ios
+        env:
+          BUNDLE_PATH: ${{ runner.temp }}/bundle
+        run: bundle install --jobs 4 --retry 3
+
+      - name: Check Ruby dependencies
+        working-directory: ios
+        run: bundle-audit check --update
+
+      - name: Check Ruby dependency registry metadata
+        run: ruby scripts/audit-rubygems-lock.rb ios/Gemfile.lock
 
       - name: Generate Xcode project
         working-directory: ios
         run: xcodegen generate
+
+      - name: Check Xcode project drift
+        run: git diff --exit-code -- ios/Quartermaster.xcodeproj/project.pbxproj
+
+      - name: Check SwiftPM dependency vulnerabilities
+        run: >-
+          trivy fs
+          --scanners vuln
+          --pkg-types library
+          --severity LOW,MEDIUM,HIGH,CRITICAL
+          --exit-code 1
+          --skip-java-db-update
+          --skip-version-check
+          --no-progress
+          ios/Quartermaster.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
+      - name: Check SwiftPM dependency registry metadata
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/audit-swiftpm-lock.mjs
+          ios/Quartermaster.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
       - name: Build iOS app
         env:
@@ -171,6 +212,24 @@ jobs:
         with:
           gradle-version: "9.4.1"
 
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.2"
+
+      - name: Install Android dependency policy tools
+        run: |
+          go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.3.8
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Check Android dependency vulnerabilities
+        run: >-
+          osv-scanner scan source
+          --lockfile=android/app/gradle.lockfile
+          --experimental-flag-deprecated-packages
+
+      - name: Check Android dependency registry metadata
+        run: node scripts/audit-maven-lock.mjs android/app/gradle.lockfile
+
       - name: Check Kotlin formatting
         working-directory: android
         run: gradle spotlessCheck
@@ -194,6 +253,12 @@ jobs:
 
       - name: Install web dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Check web dependency vulnerabilities
+        run: pnpm audit --audit-level low
+
+      - name: Check web dependency registry metadata
+        run: node scripts/audit-npm-lock.mjs pnpm-lock.yaml
 
       - name: Generate web API client
         run: pnpm -C web generate:api

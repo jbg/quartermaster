@@ -6,6 +6,12 @@ plugins {
     id("com.diffplug.spotless") version "8.6.0"
 }
 
+allprojects {
+    dependencyLocking {
+        lockAllConfigurations()
+    }
+}
+
 spotless {
     kotlin {
         target("app/src/**/*.kt")

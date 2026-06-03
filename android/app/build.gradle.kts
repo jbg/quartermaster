@@ -130,6 +130,22 @@ tasks.withType<KotlinCompile>().configureEach {
     dependsOn(tasks.named("openApiGenerate"))
 }
 
+configurations.configureEach {
+    resolutionStrategy.force(
+        "io.netty:netty-codec:4.1.133.Final",
+        "io.netty:netty-codec-http:4.1.133.Final",
+        "io.netty:netty-codec-http2:4.1.133.Final",
+        "io.netty:netty-common:4.1.133.Final",
+        "io.netty:netty-handler:4.1.133.Final",
+        "io.netty:netty-handler-proxy:4.1.133.Final",
+        "org.apache.commons:commons-lang3:3.18.0",
+        "org.apache.httpcomponents:httpclient:4.5.13",
+        "org.bouncycastle:bcpkix-jdk18on:1.84",
+        "org.bouncycastle:bcprov-jdk18on:1.84",
+        "org.bouncycastle:bcutil-jdk18on:1.84",
+    )
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.05.01")
     val firebaseBom = platform("com.google.firebase:firebase-bom:34.14.0")
