@@ -132,14 +132,14 @@ tasks.withType<KotlinCompile>().configureEach {
 
 configurations.configureEach {
     resolutionStrategy.force(
-        "io.netty:netty-codec:4.1.133.Final",
-        "io.netty:netty-codec-http:4.1.133.Final",
-        "io.netty:netty-codec-http2:4.1.133.Final",
-        "io.netty:netty-common:4.1.133.Final",
-        "io.netty:netty-handler:4.1.133.Final",
-        "io.netty:netty-handler-proxy:4.1.133.Final",
-        "org.apache.commons:commons-lang3:3.18.0",
-        "org.apache.httpcomponents:httpclient:4.5.13",
+        "io.netty:netty-codec:4.2.13.Final",
+        "io.netty:netty-codec-http:4.2.13.Final",
+        "io.netty:netty-codec-http2:4.2.13.Final",
+        "io.netty:netty-common:4.2.13.Final",
+        "io.netty:netty-handler:4.2.13.Final",
+        "io.netty:netty-handler-proxy:4.2.13.Final",
+        "org.apache.commons:commons-lang3:3.20.0",
+        "org.apache.httpcomponents:httpclient:4.5.14",
         "org.bouncycastle:bcpkix-jdk18on:1.84",
         "org.bouncycastle:bcprov-jdk18on:1.84",
         "org.bouncycastle:bcutil-jdk18on:1.84",
