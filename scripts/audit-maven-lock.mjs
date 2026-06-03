@@ -42,6 +42,9 @@ const repositories = [
   "https://dl.google.com/dl/android/maven2",
   "https://repo.maven.apache.org/maven2",
 ];
+const fetchConcurrency = 12;
+const fetchAttempts = 4;
+const fetchTimeoutMs = 20_000;
 const failures = [];
 
 function pomPath(group, artifact, version) {
@@ -53,11 +56,52 @@ async function fetchPom(group, artifact, version) {
   const errors = [];
   for (const repo of repositories) {
     const url = `${repo}/${path}`;
-    const response = await fetch(url);
-    if (response.ok) return { url, text: await response.text() };
-    errors.push(`${url} (${response.status})`);
+    try {
+      const response = await fetchWithRetry(url);
+      if (response.ok) return { url, text: await response.text() };
+      errors.push(`${url} (${response.status})`);
+    } catch (error) {
+      errors.push(`${url} (${error.message})`);
+    }
   }
   throw new Error(`POM not found in configured Maven repositories: ${errors.join(", ")}`);
+}
+
+function retryableStatus(status) {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function retryDelayMs(attempt) {
+  return 250 * 2 ** (attempt - 1);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(url) {
+  for (let attempt = 1; attempt <= fetchAttempts; attempt++) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(fetchTimeoutMs) });
+      if (!retryableStatus(response.status) || attempt === fetchAttempts) return response;
+    } catch (error) {
+      if (attempt === fetchAttempts) {
+        throw new Error(`${error.message} after ${fetchAttempts} attempts`);
+      }
+    }
+    await sleep(retryDelayMs(attempt));
+  }
+}
+
+async function forEachWithConcurrency(items, concurrency, callback) {
+  let index = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (index < items.length) {
+      const item = items[index++];
+      await callback(item);
+    }
+  });
+  await Promise.all(workers);
 }
 
 function licenseNames(pom) {
@@ -74,8 +118,10 @@ function allowed(name) {
   return allowedLicenseNames.some((pattern) => pattern.test(name));
 }
 
-await Promise.all(
-  coordinates.map(async (coordinate) => {
+await forEachWithConcurrency(
+  coordinates,
+  fetchConcurrency,
+  async (coordinate) => {
     const [group, artifact, version] = coordinate.split(":");
     try {
       const { text } = await fetchPom(group, artifact, version);
@@ -86,7 +132,7 @@ await Promise.all(
     } catch (error) {
       failures.push(`${coordinate}: ${error.message}`);
     }
-  }),
+  },
 );
 
 if (failures.length > 0) {
