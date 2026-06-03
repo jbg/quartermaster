@@ -128,6 +128,7 @@ set -- \
 	-configuration "$configuration" \
 	-destination "$destination" \
 	-derivedDataPath "$derived_data_path" \
+	-onlyUsePackageVersionsFromResolvedFile \
 	-skipPackagePluginValidation
 
 if [ -n "$team" ]; then

@@ -1,6 +1,10 @@
 packages:
   - web
 
+minimumReleaseAge: 10080
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false
+
 overrides:
   cookie@<0.7.0: ">=0.7.0 <0.8.0"
 
