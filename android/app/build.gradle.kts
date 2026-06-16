@@ -132,12 +132,12 @@ tasks.withType<KotlinCompile>().configureEach {
 
 configurations.configureEach {
     resolutionStrategy.force(
-        "io.netty:netty-codec:4.2.13.Final",
-        "io.netty:netty-codec-http:4.2.13.Final",
-        "io.netty:netty-codec-http2:4.2.13.Final",
-        "io.netty:netty-common:4.2.13.Final",
-        "io.netty:netty-handler:4.2.13.Final",
-        "io.netty:netty-handler-proxy:4.2.13.Final",
+        "io.netty:netty-codec:4.2.15.Final",
+        "io.netty:netty-codec-http:4.2.15.Final",
+        "io.netty:netty-codec-http2:4.2.15.Final",
+        "io.netty:netty-common:4.2.15.Final",
+        "io.netty:netty-handler:4.2.15.Final",
+        "io.netty:netty-handler-proxy:4.2.15.Final",
         "org.apache.commons:commons-lang3:3.20.0",
         "org.apache.httpcomponents:httpclient:4.5.14",
         "org.bouncycastle:bcpkix-jdk18on:1.84",
@@ -148,7 +148,7 @@ configurations.configureEach {
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.05.01")
-    val firebaseBom = platform("com.google.firebase:firebase-bom:34.14.0")
+    val firebaseBom = platform("com.google.firebase:firebase-bom:34.14.1")
     val cameraxVersion = "1.6.1"
 
     implementation(composeBom)
