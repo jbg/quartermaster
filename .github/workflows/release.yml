@@ -52,7 +52,7 @@ jobs:
             hass_arch: aarch64
             runner: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.0
         with:
           ref: ${{ inputs.release_tag || github.ref }}
 
@@ -205,7 +205,7 @@ jobs:
     if: github.event_name == 'release' || github.event_name == 'workflow_call' || inputs.release_tag != ''
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.0
         with:
           ref: ${{ inputs.release_tag || github.ref }}
 
@@ -236,7 +236,7 @@ jobs:
         run: xcodegen generate
 
       - name: Install fastlane bundle
-        uses: ruby/setup-ruby@v1
+        uses: ruby/setup-ruby@v1.314.0
         with:
           ruby-version: "3.3"
           bundler-cache: true
@@ -306,11 +306,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.0
         with:
           ref: ${{ inputs.release_tag || github.ref }}
 
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.0
         with:
           repository: jbg/quartermaster-home-assistant-apps
           token: ${{ secrets.HA_APPS_REPO_TOKEN }}
