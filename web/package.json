@@ -17,20 +17,20 @@
   "dependencies": {
     "qrcode": "1.5.4",
     "@sveltejs/adapter-static": "3.0.10",
-    "@sveltejs/kit": "2.61.1",
-    "@sveltejs/vite-plugin-svelte": "7.1.2",
-    "svelte": "5.55.10",
-    "vite": "8.0.14"
+    "@sveltejs/kit": "2.68.0",
+    "@sveltejs/vite-plugin-svelte": "7.1.4",
+    "svelte": "5.56.4",
+    "vite": "8.1.0"
   },
   "devDependencies": {
-    "@hey-api/openapi-ts": "0.97.3",
+    "@hey-api/openapi-ts": "0.99.0",
     "@types/qrcode": "1.5.6",
-    "@types/node": "25.9.1",
-    "svelte-check": "4.4.8",
+    "@types/node": "25.9.4",
+    "svelte-check": "4.7.1",
     "typescript": "6.0.3",
-    "prettier": "3.8.3",
-    "prettier-plugin-svelte": "4.0.1",
-    "@playwright/test": "1.60.0",
-    "vitest": "4.1.7"
+    "prettier": "3.9.4",
+    "prettier-plugin-svelte": "4.1.1",
+    "@playwright/test": "1.61.1",
+    "vitest": "4.1.10"
   }
 }
