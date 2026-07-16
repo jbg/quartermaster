@@ -132,12 +132,12 @@ tasks.withType<KotlinCompile>().configureEach {
 
 configurations.configureEach {
     resolutionStrategy.force(
-        "io.netty:netty-codec:4.2.13.Final",
-        "io.netty:netty-codec-http:4.2.13.Final",
-        "io.netty:netty-codec-http2:4.2.13.Final",
-        "io.netty:netty-common:4.2.13.Final",
-        "io.netty:netty-handler:4.2.13.Final",
-        "io.netty:netty-handler-proxy:4.2.13.Final",
+        "io.netty:netty-codec:4.2.16.Final",
+        "io.netty:netty-codec-http:4.2.16.Final",
+        "io.netty:netty-codec-http2:4.2.16.Final",
+        "io.netty:netty-common:4.2.16.Final",
+        "io.netty:netty-handler:4.2.16.Final",
+        "io.netty:netty-handler-proxy:4.2.16.Final",
         "org.apache.commons:commons-lang3:3.20.0",
         "org.apache.httpcomponents:httpclient:4.5.14",
         "org.bouncycastle:bcpkix-jdk18on:1.84",
@@ -147,7 +147,7 @@ configurations.configureEach {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2026.05.01")
+    val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
     val firebaseBom = platform("com.google.firebase:firebase-bom:34.14.0")
     val cameraxVersion = "1.6.1"
 
@@ -160,11 +160,11 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("androidx.navigation:navigation-compose:2.9.8")
     implementation("androidx.security:security-crypto:1.1.0")
-    implementation("androidx.core:core-ktx:1.18.0")
+    implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.core:core-splashscreen:1.2.0")
     implementation("androidx.credentials:credentials:1.6.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
@@ -177,8 +177,8 @@ dependencies {
 
     implementation("com.google.firebase:firebase-messaging")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
-    implementation("com.squareup.okhttp3:okhttp:5.3.2")
-    implementation("com.squareup.okhttp3:logging-interceptor:5.3.2")
+    implementation("com.squareup.okhttp3:okhttp:5.4.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:5.4.0")
     implementation("com.squareup.retrofit2:retrofit:3.0.0")
     implementation("com.squareup.retrofit2:converter-kotlinx-serialization:3.0.0")
     implementation("com.squareup.retrofit2:converter-scalars:3.0.0")
