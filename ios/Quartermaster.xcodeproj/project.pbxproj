@@ -928,7 +928,7 @@
 			repositoryURL = "https://github.com/apple/swift-openapi-generator";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 1.11.0;
+				minimumVersion = 1.13.0;
 			};
 		};
 		AE024804B23241640200686B /* XCRemoteSwiftPackageReference "swift-openapi-urlsession" */ = {
