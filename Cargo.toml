@@ -38,7 +38,7 @@ axum = { version = "0.8", default-features = false, features = [
     "macros",
 ] }
 tower = { version = "0.5", default-features = false, features = [] }
-tower-http = { version = "0.6", default-features = false, features = [
+tower-http = { version = "0.7", default-features = false, features = [
     "fs",
     "trace",
     "cors",
@@ -93,8 +93,8 @@ rand = { version = "0.10", default-features = false, features = [
     "thread_rng",
 ] }
 sha2 = { version = "0.11", default-features = false, features = ["alloc", "oid"] }
-base64 = { version = "0.22", default-features = false, features = ["std"] }
-aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
+base64 = { version = "0.23", default-features = false, features = ["std"] }
+aes-gcm = { version = "0.11", default-features = false, features = ["aes", "alloc"] }
 webauthn-rs = { version = "0.5.4", default-features = false, features = ["danger-allow-state-serialisation"] }
 url = { version = "2", default-features = false, features = ["serde", "std"] }
 
