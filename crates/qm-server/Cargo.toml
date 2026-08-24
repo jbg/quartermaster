@@ -41,7 +41,7 @@ jiff = { workspace = true, default-features = false, features = [
     "perf-inline",
     "serde",
 ] }
-jsonwebtoken = { version = "10", default-features = false, features = ["use_pem", "aws_lc_rs"] }
+jsonwebtoken = { version = "11", default-features = false, features = ["use_pem", "aws_lc_rs"] }
 lettre = { workspace = true, default-features = false, features = [
     "builder",
     "smtp-transport",
